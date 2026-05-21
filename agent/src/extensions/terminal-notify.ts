@@ -100,7 +100,7 @@ export const notify = (title: string, body: string): void => {
 const isTextPart = (part: unknown): part is { type: "text"; text: string } =>
   isRecord(part) && part.type === "text" && typeof part.text === "string";
 
-const extractLastAssistantText = (
+export const extractLastAssistantText = (
   messages: Array<{ role?: string; content?: unknown }>,
 ): string | null => {
   for (let i = messages.length - 1; i >= 0; i--) {

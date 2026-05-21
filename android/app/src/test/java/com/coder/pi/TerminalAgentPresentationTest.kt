@@ -105,14 +105,14 @@ class TerminalAgentPresentationTest {
     fun sanitizesAlertNotificationText() {
         val alert = AgentAlertState("provider", "Rate\nlimit", "HTTP\t429", "warning", 429, null, metadata())
 
-        assertEquals(TerminalAgentNotificationPresentation("Rate · limit", "HTTP 429"), alert.notificationPresentation())
+        assertEquals(TerminalAgentNotificationPresentation("Rate · limit", "HTTP 429", severity = "warning", kind = "provider"), alert.notificationPresentation())
     }
 
     @Test
     fun preservesSafeInterviewNotificationUrl() {
         val alert = AgentAlertState("interview", "Interview ready", "Tap to answer", "info", null, "http://127.0.0.1:3939/i/abc", metadata())
 
-        assertEquals(TerminalAgentNotificationPresentation("Interview ready", "Tap to answer", "http://127.0.0.1:3939/i/abc"), alert.notificationPresentation())
+        assertEquals(TerminalAgentNotificationPresentation("Interview ready", "Tap to answer", "http://127.0.0.1:3939/i/abc", "info", "interview"), alert.notificationPresentation())
     }
 
     private fun metadata(): AgentEventMetadata = AgentEventMetadata("id", 1, "agent", "session", "/workspace", 1)

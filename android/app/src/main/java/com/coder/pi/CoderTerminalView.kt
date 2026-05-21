@@ -1164,10 +1164,10 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
     fun oscNotificationSound(): String = TerminalNotificationSounds.option(preferences.getString("osc.notifications.sound", TerminalNotificationSounds.defaultSoundId).orEmpty()).id
 
     fun setOscProgressHapticPattern(pattern: String) {
-        preferences.edit { putString("osc.progress.haptic.pattern", pattern) }
+        preferences.edit { putString("osc.progress.haptic.pattern", TerminalHapticPatterns.option(pattern).id) }
     }
 
-    fun oscProgressHapticPattern(): String = preferences.getString("osc.progress.haptic.pattern", "ripple").orEmpty().ifBlank { "ripple" }
+    fun oscProgressHapticPattern(): String = TerminalHapticPatterns.option(preferences.getString("osc.progress.haptic.pattern", TerminalHapticPatterns.defaultProgressPatternId).orEmpty()).id
 
     fun previewOscProgressHapticPattern(pattern: String) {
         vibrateProgressPattern(pattern)
@@ -1365,7 +1365,8 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (now - lastNotificationMillis < 3000L) return
         lastNotificationMillis = now
         if (terminalViewForeground && isShown && hasWindowFocus()) return
-        if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled() || !postOscNotification(formatNotificationText(notification.title), formatNotificationText(notification.body), false, -1, false, launchUrl = notification.url)) {
+        val feedbackState = TerminalAlertFeedback.stateFor(notification.kind, notification.severity, notification.body)
+        if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled() || !postOscNotification(formatNotificationText(notification.title), formatNotificationText(notification.body), false, -1, false, launchUrl = notification.url, feedbackState = feedbackState)) {
             if (oscNotificationToastsEnabled()) Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
     }
@@ -1585,39 +1586,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             context.getSystemService(Vibrator::class.java)
         } ?: return
         if (!vibrator.hasVibrator()) return
-        val timings = progressHapticPatternTimings(pattern)
-        val amplitudes = progressHapticPatternAmplitudes(pattern)
+        val haptic = TerminalHapticPatterns.option(pattern)
+        if (haptic.id == "none") return
+        val timings = haptic.timings
+        val amplitudes = haptic.amplitudes
         if (Build.VERSION.SDK_INT >= 26) vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1)) else @Suppress("DEPRECATION") vibrator.vibrate(timings, -1)
-    }
-
-    private fun progressHapticPatternTimings(pattern: String): LongArray = when (pattern) {
-        "tick" -> longArrayOf(0, 12)
-        "double_tap" -> longArrayOf(0, 24, 70, 32)
-        "heartbeat" -> longArrayOf(0, 42, 110, 72, 360, 38, 110, 66)
-        "spark" -> longArrayOf(0, 14, 28, 18, 28, 24, 90, 16)
-        "wave" -> longArrayOf(0, 30, 45, 55, 45, 85, 45, 45, 45, 25)
-        "ramp" -> longArrayOf(0, 24, 36, 34, 36, 46, 36, 62)
-        "success" -> longArrayOf(0, 32, 80, 72)
-        "warning" -> longArrayOf(0, 55, 70, 55, 70, 120)
-        "heavy" -> longArrayOf(0, 95)
-        "buzz" -> longArrayOf(0, 28, 35, 28, 35, 28)
-        "typewriter" -> longArrayOf(0, 10, 38, 10, 38, 10, 38, 24)
-        else -> longArrayOf(0, 24, 60, 42, 110, 28)
-    }
-
-    private fun progressHapticPatternAmplitudes(pattern: String): IntArray = when (pattern) {
-        "tick" -> intArrayOf(0, 90)
-        "double_tap" -> intArrayOf(0, 170, 0, 220)
-        "heartbeat" -> intArrayOf(0, 165, 0, 245, 0, 150, 0, 235)
-        "spark" -> intArrayOf(0, 70, 0, 120, 0, 210, 0, 80)
-        "wave" -> intArrayOf(0, 55, 0, 95, 0, 155, 0, 115, 0, 70)
-        "ramp" -> intArrayOf(0, 55, 0, 95, 0, 150, 0, 230)
-        "success" -> intArrayOf(0, 130, 0, 240)
-        "warning" -> intArrayOf(0, 220, 0, 175, 0, 240)
-        "heavy" -> intArrayOf(0, 255)
-        "buzz" -> intArrayOf(0, 190, 0, 190, 0, 190)
-        "typewriter" -> intArrayOf(0, 105, 0, 105, 0, 105, 0, 170)
-        else -> intArrayOf(0, 80, 0, 150, 0, 210)
     }
 
     private fun terminalHapticsEnabled(): Boolean = context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)
@@ -1653,13 +1626,13 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return true
     }
 
-    private fun postOscNotification(title: String, body: String, ongoing: Boolean, progress: Int, indeterminate: Boolean, notificationId: Int = if (ongoing) oscProgressNotificationId() else nextTerminalNotificationId(), launchUrl: String? = null): Boolean {
-        if (notificationId == oscProgressNotificationId()) ensureOscProgressNotificationChannel() else ensureOscNotificationChannel()
+    private fun postOscNotification(title: String, body: String, ongoing: Boolean, progress: Int, indeterminate: Boolean, notificationId: Int = if (ongoing) oscProgressNotificationId() else nextTerminalNotificationId(), launchUrl: String? = null, feedbackState: TerminalAlertFeedbackState = TerminalAlertFeedbackState.SUCCESS): Boolean {
+        if (notificationId == oscProgressNotificationId()) ensureOscProgressNotificationChannel() else ensureOscNotificationChannel(feedbackState)
         if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             onNotificationPermissionNeeded?.invoke()
             return false
         }
-        val channelId = if (notificationId == oscProgressNotificationId()) oscProgressNotificationChannelId() else oscNotificationChannelId()
+        val channelId = if (notificationId == oscProgressNotificationId()) oscProgressNotificationChannelId() else oscNotificationChannelId(feedbackState)
         val launchIntent = terminalNotificationLaunchIntent(launchUrl)
         val pendingIntent = PendingIntent.getActivity(context, notificationId, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notificationBody = body.ifBlank { title }.take(512)
@@ -1684,7 +1657,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             builder.addAction(R.drawable.ic_feather_terminal, "Open terminal", pendingIntent)
             builder.addAction(replyNotificationAction(notificationId))
         }
-        if (!ongoing) TerminalNotificationBehavior.applyAlertDefaults(builder)
+        if (!ongoing) TerminalNotificationBehavior.applyAlertDefaults(builder, TerminalAlertFeedback.hapticId(context, feedbackState))
         workspaceIconBitmap(localOnly = notificationId == oscProgressNotificationId())?.let { builder.setLargeIcon(it) }
         if (ongoing) builder.setProgress(100, progress.coerceIn(0, 100), indeterminate) else builder.setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody))
         if (!ongoing) TerminalNotificationBehavior.wakeScreen(context)
@@ -1722,9 +1695,9 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         return if (workspaceBitmap != null) Icon.createWithBitmap(workspaceBitmap) else Icon.createWithResource(context, R.mipmap.ic_launcher)
     }
 
-    private fun ensureOscNotificationChannel() {
+    private fun ensureOscNotificationChannel(feedbackState: TerminalAlertFeedbackState) {
         if (Build.VERSION.SDK_INT < 26) return
-        TerminalNotificationBehavior.ensureAlertChannel(context, oscNotificationChannelId(), oscNotificationChannelName(), oscNotificationSound())
+        TerminalNotificationBehavior.ensureAlertChannel(context, oscNotificationChannelId(feedbackState), oscNotificationChannelName(feedbackState), TerminalAlertFeedback.soundId(context, feedbackState), TerminalAlertFeedback.hapticId(context, feedbackState))
     }
 
     private fun ensureOscProgressNotificationChannel() {
@@ -1742,11 +1715,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         }
     }
 
-    private fun oscNotificationChannelId(): String = "${TerminalNotificationFormat.oscChannelId(notificationContext)}.${TerminalNotificationSounds.channelSuffix(oscNotificationSound())}"
+    private fun oscNotificationChannelId(feedbackState: TerminalAlertFeedbackState): String = "${TerminalNotificationFormat.oscChannelId(notificationContext)}.${TerminalAlertFeedback.channelSuffix(context, feedbackState)}"
 
     private fun oscProgressNotificationChannelId(): String = TerminalNotificationFormat.progressChannelId(notificationContext)
 
-    private fun oscNotificationChannelName(): String = TerminalNotificationFormat.oscChannelName(notificationContext)
+    private fun oscNotificationChannelName(feedbackState: TerminalAlertFeedbackState): String = "${TerminalNotificationFormat.oscChannelName(notificationContext)} · ${feedbackState.label}"
 
     private fun oscProgressNotificationChannelName(): String = TerminalNotificationFormat.progressChannelName(notificationContext)
 

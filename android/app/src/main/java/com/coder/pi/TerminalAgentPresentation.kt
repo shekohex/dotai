@@ -1,7 +1,7 @@
 package com.coder.pi
 
 data class TerminalAgentStatusPresentation(val title: String, val subtitle: String)
-data class TerminalAgentNotificationPresentation(val title: String, val body: String, val url: String? = null)
+data class TerminalAgentNotificationPresentation(val title: String, val body: String, val url: String? = null, val severity: String = "info", val kind: String = "runtime")
 data class TerminalAgentProgressPresentation(val active: Boolean, val body: String = "", val elapsedSeconds: Long? = null)
 
 private const val AgentTitle = "Pi agent"
@@ -47,6 +47,8 @@ fun AgentAlertState.notificationPresentation(): TerminalAgentNotificationPresent
     title = title.agentDisplayText().ifBlank { AgentTitle }.take(128),
     body = body.agentDisplayText().ifBlank { kind.agentDisplayText() }.take(512),
     url = url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.take(2048),
+    severity = severity,
+    kind = kind,
 )
 
 fun AgentProgressState.progressPresentation(): TerminalAgentProgressPresentation = when (state) {

@@ -277,6 +277,28 @@ test("message updates emit debounced thinking progress", () => {
   ]);
 });
 
+test("agent end emits final assistant message as success alert", () => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  pi.emit("agent_end", {
+    type: "agent_end",
+    messages: [{ role: "assistant", content: "Done **now**" }],
+  });
+
+  const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
+  expect(decoded.at(-1)?.eventName).toBe("agent.alert");
+  expect(decoded.at(-1)?.envelope.data).toMatchObject({
+    kind: "runtime",
+    severity: "success",
+    title: "π",
+    body: "Done now",
+  });
+});
+
 test("non-429 provider responses do not emit alerts", () => {
   const pi = createPi();
   const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);

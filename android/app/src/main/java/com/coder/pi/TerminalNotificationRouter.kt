@@ -37,7 +37,7 @@ class TerminalNotificationRouter(
     private fun handlePiOscEvent(event: TerminalOscEvent.Pi, terminalTitle: String) {
         val snapshot = agentState.apply(event)
         when (event.eventName) {
-            "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { postNotification(it.title, it.body, it.url) }
+            "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { postNotification(it.title, it.body, it.url, TerminalAlertFeedback.stateFor(it.kind, it.severity, it.body)) }
             "agent.progress", "agent.run", "agent.tool", "agent.compaction", "agent.turn" -> snapshot.progressPresentation()?.let { postPiAgentProgress(terminalTitle, it) }
         }
     }
@@ -48,14 +48,16 @@ class TerminalNotificationRouter(
         runCatching { NotificationManagerCompat.from(context).notify(id, notification) }
     }
 
-    private fun postNotification(title: String, body: String, launchUrl: String? = null) {
+    private fun postNotification(title: String, body: String, launchUrl: String? = null, feedbackState: TerminalAlertFeedbackState = TerminalAlertFeedbackState.SUCCESS) {
         val cleanTitle = TerminalNotificationFormat.cleanText(title).ifBlank { notificationContext.workspaceDisplayName.ifBlank { notificationContext.workspaceName }.ifBlank { "Terminal" } }
         val cleanBody = TerminalNotificationFormat.cleanText(body).ifBlank { cleanTitle }
         if (!canPostNotifications()) return
-        ensureAlertChannel(oscNotificationChannelId(), oscNotificationChannelName())
+        val channelId = oscNotificationChannelId(feedbackState)
+        val hapticId = TerminalAlertFeedback.hapticId(context, feedbackState)
+        ensureAlertChannel(channelId, oscNotificationChannelName(feedbackState), feedbackState)
         val notificationId = nextNotificationId()
         val pendingIntent = PendingIntent.getActivity(context, notificationId, launchIntent(launchUrl), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val builder = NotificationCompat.Builder(context, oscNotificationChannelId())
+        val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.pi_logo_mark)
             .setContentTitle(cleanTitle.take(128))
             .setContentText(cleanBody.take(512))
@@ -75,7 +77,7 @@ class TerminalNotificationRouter(
             builder.addAction(R.drawable.ic_feather_terminal, "Open terminal", pendingIntent)
             builder.addAction(replyAction(notificationId))
         }
-        val notification = TerminalNotificationBehavior.applyAlertDefaults(builder)
+        val notification = TerminalNotificationBehavior.applyAlertDefaults(builder, hapticId)
             .build()
         TerminalNotificationBehavior.wakeScreen(context)
         notifySafely(notificationId, notification)
@@ -203,7 +205,7 @@ class TerminalNotificationRouter(
         }
     }
 
-    private fun ensureAlertChannel(id: String, name: String) = TerminalNotificationBehavior.ensureAlertChannel(context, id, name, TerminalNotificationSounds.selectedId(context))
+    private fun ensureAlertChannel(id: String, name: String, feedbackState: TerminalAlertFeedbackState) = TerminalNotificationBehavior.ensureAlertChannel(context, id, name, TerminalAlertFeedback.soundId(context, feedbackState), TerminalAlertFeedback.hapticId(context, feedbackState))
 
     private fun replyAction(notificationId: Int): NotificationCompat.Action {
         val input = RemoteInput.Builder(TerminalNotificationReplyInputKey).setLabel("Follow up").build()
@@ -230,11 +232,11 @@ class TerminalNotificationRouter(
 
     private fun groupKey(): String = TerminalNotificationFormat.groupKey(notificationContext, context.packageName)
 
-    private fun oscNotificationChannelId(): String = "${TerminalNotificationFormat.oscChannelId(notificationContext)}.${TerminalNotificationSounds.channelSuffix(TerminalNotificationSounds.selectedId(context))}"
+    private fun oscNotificationChannelId(feedbackState: TerminalAlertFeedbackState): String = "${TerminalNotificationFormat.oscChannelId(notificationContext)}.${TerminalAlertFeedback.channelSuffix(context, feedbackState)}"
 
     private fun oscProgressNotificationChannelId(): String = TerminalNotificationFormat.progressChannelId(notificationContext)
 
-    private fun oscNotificationChannelName(): String = TerminalNotificationFormat.oscChannelName(notificationContext)
+    private fun oscNotificationChannelName(feedbackState: TerminalAlertFeedbackState): String = "${TerminalNotificationFormat.oscChannelName(notificationContext)} · ${feedbackState.label}"
 
     private fun oscProgressNotificationChannelName(): String = TerminalNotificationFormat.progressChannelName(notificationContext)
 

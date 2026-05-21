@@ -148,7 +148,7 @@ private fun isValidPiOscToolPayload(data: JsonObject): Boolean {
 private fun isValidPiOscAlertPayload(data: JsonObject): Boolean {
     val allowed = setOf("kind", "title", "body", "severity", "statusCode", "url")
     if (!allowed.containsAll(data.keys)) return false
-    if (!data.stringIn("kind", setOf("provider", "runtime", "interview")) || data.stringField("title", 128) == null || data.stringField("body", 512) == null || !data.stringIn("severity", setOf("info", "warning", "error"))) return false
+    if (!data.stringIn("kind", setOf("provider", "runtime", "interview", "input")) || data.stringField("title", 128) == null || data.stringField("body", 512) == null || !data.stringIn("severity", setOf("success", "info", "warning", "error"))) return false
     if (data["statusCode"] != null && data.intField("statusCode") == null) return false
     if (data["url"] != null && data.stringField("url", 2048) == null) return false
     return true

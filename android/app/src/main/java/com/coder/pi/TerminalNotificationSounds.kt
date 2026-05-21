@@ -60,6 +60,11 @@ object TerminalNotificationSounds {
 
     fun option(id: String): TerminalNotificationSound = options.firstOrNull { it.id == id } ?: options.first()
 
+    fun next(id: String): TerminalNotificationSound {
+        val index = options.indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: 0
+        return options[(index + 1) % options.size]
+    }
+
     fun selectedId(context: Context): String = option(context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("osc.notifications.sound", defaultSoundId).orEmpty()).id
 
     fun uri(context: Context, id: String): Uri {

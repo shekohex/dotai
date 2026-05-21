@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 import { Value } from "typebox/value";
 import { GOAL_PROGRESS_EVENT, GoalProgressEventSchema } from "../goal/types.js";
 import {
+  extractLastAssistantText,
+  formatNotification,
+  shouldNotifyAgentEnd,
+} from "../terminal-notify.js";
+import {
   createTmuxPassthroughSequence,
   getTmuxClientTty,
   getTmuxPaneTty,
@@ -11,6 +16,7 @@ import {
 import { createPiOscSequence, type PiOscEnvelope, type PiOscV1Event } from "./encoder.js";
 import type { PiOscV1Payload } from "./schemas.js";
 import { interviewDetailsFromResult, toolLabel, toolSummary } from "./tool-presentations.js";
+import { readChildState } from "../../subagent-sdk/index.js";
 
 export const piOscRuntime = {
   now: () => Date.now(),
@@ -81,7 +87,55 @@ export const emitPiOscEvent = (
   writePiOscSequence(createPiOscSequence(eventName, createPiOscEnvelope(ctx, seq, data)));
 };
 
+const handleAgentEnd = (
+  event: { messages?: Array<{ role?: string; content?: unknown; stopReason?: string }> },
+  ctx: ExtensionContext,
+  childState: ReturnType<typeof readChildState>,
+  emit: (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload) => void,
+): void => {
+  emit("agent.run", ctx, { state: "idle" });
+  emit("agent.progress", ctx, { state: "clear" });
+  if (
+    event.messages?.some(
+      (message) => message.role === "assistant" && message.stopReason === "aborted",
+    ) === true
+  ) {
+    emit("agent.alert", ctx, {
+      kind: "runtime",
+      severity: "warning",
+      title: "π",
+      body: "Agent interrupted",
+    });
+    return;
+  }
+  if (!shouldNotifyAgentEnd(childState, ctx)) return;
+  const notification = formatNotification(extractLastAssistantText(event.messages ?? []));
+  if (notification === null) return;
+  emit("agent.alert", ctx, {
+    kind: "runtime",
+    severity: "success",
+    title: boundedText(notification.title, 128),
+    body: boundedText(notification.body, 512),
+  });
+};
+
+const handleProviderResponse = (
+  event: { status: number },
+  ctx: ExtensionContext,
+  emit: (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload) => void,
+): void => {
+  if (event.status !== 429) return;
+  emit("agent.alert", ctx, {
+    kind: "provider",
+    severity: "warning",
+    title: "Provider rate limit",
+    body: "Provider returned HTTP 429.",
+    statusCode: event.status,
+  });
+};
+
 export default function piOscExtension(pi: ExtensionAPI): void {
+  const childState = readChildState();
   let seq = 0;
   let goalProgressActive = false;
   let lastThinkingEmittedAt = 0;
@@ -131,9 +185,18 @@ export default function piOscExtension(pi: ExtensionAPI): void {
     emit("agent.progress", ctx, { state: "active" });
   });
 
-  pi.on("agent_end", (_event, ctx) => {
-    emit("agent.run", ctx, { state: "idle" });
-    emit("agent.progress", ctx, { state: "clear" });
+  pi.on("input", (_event, ctx) => {
+    emit("agent.alert", ctx, {
+      kind: "input",
+      severity: "info",
+      title: "π",
+      body: "Message submitted",
+    });
+    return { action: "continue" };
+  });
+
+  pi.on("agent_end", (event, ctx) => {
+    handleAgentEnd(event, ctx, childState, emit);
   });
 
   pi.on("turn_start", (event, ctx) => {
@@ -208,16 +271,6 @@ export default function piOscExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("after_provider_response", (event, ctx) => {
-    if (event.status !== 429) {
-      return;
-    }
-
-    emit("agent.alert", ctx, {
-      kind: "provider",
-      severity: "warning",
-      title: "Provider rate limit",
-      body: "Provider returned HTTP 429.",
-      statusCode: event.status,
-    });
+    handleProviderResponse(event, ctx, emit);
   });
 }

@@ -1724,8 +1724,8 @@ private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView,
     var progress by remember { mutableStateOf(terminalView.oscNotificationProgressEnabled()) }
     var toasts by remember { mutableStateOf(terminalView.oscNotificationToastsEnabled()) }
     var iconStyle by remember { mutableStateOf(terminalView.oscNotificationIconStyle()) }
-    var sound by remember { mutableStateOf(terminalView.oscNotificationSound()) }
     var hapticPattern by remember { mutableStateOf(terminalView.oscProgressHapticPattern()) }
+    var alertFeedbackRevision by remember { mutableIntStateOf(0) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     SettingsScaffold("Terminal Notifications", tokens, onBack) {
         SettingsSection("OSC", tokens) {
@@ -1746,12 +1746,22 @@ private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView,
                 }
             }
         }
-        SettingsSection("SOUND", tokens) {
-            TerminalNotificationSounds.options.forEach { option ->
-                SettingsValueRow(R.drawable.ic_feather_bell, option.label, "Tap to preview and select", if (sound == option.id) "✓" else null, tokens) {
-                    sound = option.id
-                    terminalView.setOscNotificationSound(option.id)
-                    TerminalNotificationSounds.playPreview(context, option.id)
+        SettingsSection("ALERT FEEDBACK", tokens) {
+            alertFeedbackRevision.hashCode()
+            TerminalAlertFeedbackState.entries.forEach { state ->
+                val soundId = TerminalAlertFeedback.soundId(context, state)
+                val hapticId = TerminalAlertFeedback.hapticId(context, state)
+                SettingsValueRow(R.drawable.ic_feather_bell, "${state.label} Sound", "Tap to cycle and preview", TerminalNotificationSounds.option(soundId).label, tokens) {
+                    val next = TerminalNotificationSounds.next(soundId)
+                    TerminalAlertFeedback.setSoundId(context, state, next.id)
+                    TerminalNotificationSounds.playPreview(context, next.id)
+                    alertFeedbackRevision++
+                }
+                SettingsValueRow(R.drawable.ic_feather_sliders, "${state.label} Vibration", "Tap to cycle and preview", TerminalHapticPatterns.option(hapticId).label, tokens) {
+                    val next = TerminalHapticPatterns.next(hapticId)
+                    TerminalAlertFeedback.setHapticId(context, state, next.id)
+                    terminalView.previewOscProgressHapticPattern(next.id)
+                    alertFeedbackRevision++
                 }
             }
         }
@@ -1773,20 +1783,7 @@ private fun TerminalNotificationsSettingsScreen(terminalView: CoderTerminalView,
     }
 }
 
-private fun progressHapticOptions(): List<Pair<String, String>> = listOf(
-    "ripple" to "Ripple",
-    "tick" to "Tick",
-    "double_tap" to "Double Tap",
-    "heartbeat" to "Heartbeat",
-    "spark" to "Spark",
-    "wave" to "Wave",
-    "ramp" to "Ramp Up",
-    "success" to "Success",
-    "warning" to "Warning",
-    "heavy" to "Heavy",
-    "buzz" to "Buzz",
-    "typewriter" to "Typewriter",
-)
+private fun progressHapticOptions(): List<Pair<String, String>> = TerminalHapticPatterns.options.filterNot { it.id == "none" }.map { it.id to it.label }
 
 @Composable
 private fun ThemePickerScreen(tokens: UiTokens, onBack: () -> Unit, onThemeChanged: () -> Unit) {

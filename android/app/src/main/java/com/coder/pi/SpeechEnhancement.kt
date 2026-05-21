@@ -2,11 +2,13 @@ package com.coder.pi
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.isSuccess
 import io.ktor.http.contentType
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
@@ -37,7 +39,10 @@ data class SpeechEnhancementResult(
     val enhanced: Boolean,
     val failedOpen: Boolean,
     val timedOut: Boolean = false,
+    val errorMessage: String? = null,
 )
+
+class SpeechEnhancementHttpException(val statusCode: Int, override val message: String) : Exception("HTTP $statusCode: $message")
 
 interface SpeechEnhancementClient {
     suspend fun enhance(request: SpeechEnhancementRequest): String
@@ -56,6 +61,7 @@ class SpeechEnhancementPromptRenderer(private val config: SpeechEnhancementPromp
         val prompt = template
             .replace("<TRANSCRIPT>", safeTranscript)
             .replace("<CONTEXT>", safeContext)
+            .replace("<CONTEXT_INFORMATION>", safeContext)
         return SpeechEnhancementRequest(prompt = prompt, transcript = safeTranscript, context = safeContext)
     }
 
@@ -74,8 +80,8 @@ class SpeechEnhancer(private val client: SpeechEnhancementClient, private val ti
             val enhanced = result.getOrNull().orEmpty()
             if (enhanced.isNotBlank()) return SpeechEnhancementResult(enhanced, enhanced = true, failedOpen = false)
             val failure = result.exceptionOrNull()
-            if (failure is TimeoutCancellationException) return SpeechEnhancementResult(request.transcript, enhanced = false, failedOpen = true, timedOut = true)
-            if (attempt == retries) return SpeechEnhancementResult(request.transcript, enhanced = false, failedOpen = true)
+            if (failure is TimeoutCancellationException) return SpeechEnhancementResult(request.transcript, enhanced = false, failedOpen = true, timedOut = true, errorMessage = "Timed out after ${timeoutMillis / 1_000}s")
+            if (attempt == retries) return SpeechEnhancementResult(request.transcript, enhanced = false, failedOpen = true, errorMessage = failure?.message ?: "Enhancement failed")
         }
         return SpeechEnhancementResult(request.transcript, enhanced = false, failedOpen = true)
     }
@@ -91,7 +97,7 @@ class GeminiSpeechEnhancementClient(private val complete: suspend (String) -> St
 
 class OpenAiHttpSpeechEnhancementClient(private val httpClient: HttpClient, private val baseUrl: String, private val apiKey: String, private val model: String) : SpeechEnhancementClient {
     override suspend fun enhance(request: SpeechEnhancementRequest): String {
-        val response = httpClient.post(baseUrl.trimEnd('/') + "/chat/completions") {
+        val response: HttpResponse = httpClient.post(baseUrl.trimEnd('/') + "/chat/completions") {
             bearerAuth(apiKey)
             contentType(ContentType.Application.Json)
             setBody(buildJsonObject {
@@ -104,15 +110,17 @@ class OpenAiHttpSpeechEnhancementClient(private val httpClient: HttpClient, priv
                     })
                 })
             }.toString())
-        }.body<String>()
-        val root = Json.parseToJsonElement(response).jsonObject
+        }
+        val body = response.body<String>()
+        if (!response.status.isSuccess()) throw SpeechEnhancementHttpException(response.status.value, enhancementErrorMessage(body).ifBlank { response.status.description })
+        val root = Json.parseToJsonElement(body).jsonObject
         return root["choices"]?.jsonArray?.firstOrNull()?.jsonObject?.get("message")?.jsonObject?.get("content")?.jsonPrimitive?.content.orEmpty()
     }
 }
 
 class GeminiHttpSpeechEnhancementClient(private val httpClient: HttpClient, private val apiKey: String, private val model: String) : SpeechEnhancementClient {
     override suspend fun enhance(request: SpeechEnhancementRequest): String {
-        val response = httpClient.post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent") {
+        val response: HttpResponse = httpClient.post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent") {
             header("x-goog-api-key", apiKey)
             contentType(ContentType.Application.Json)
             setBody(buildJsonObject {
@@ -125,8 +133,17 @@ class GeminiHttpSpeechEnhancementClient(private val httpClient: HttpClient, priv
                 })
                 put("generationConfig", buildJsonObject { put("temperature", JsonPrimitive(0.2)) })
             }.toString())
-        }.body<String>()
-        val root = Json.parseToJsonElement(response).jsonObject
+        }
+        val body = response.body<String>()
+        if (!response.status.isSuccess()) throw SpeechEnhancementHttpException(response.status.value, enhancementErrorMessage(body).ifBlank { response.status.description })
+        val root = Json.parseToJsonElement(body).jsonObject
         return root["candidates"]?.jsonArray?.firstOrNull()?.jsonObject?.get("content")?.jsonObject?.get("parts")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content.orEmpty()
     }
 }
+
+private fun enhancementErrorMessage(body: String): String = runCatching {
+    val root = Json.parseToJsonElement(body).jsonObject
+    root["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
+        ?: root["message"]?.jsonPrimitive?.content
+        ?: body.take(180)
+}.getOrElse { body.take(180) }.trim()

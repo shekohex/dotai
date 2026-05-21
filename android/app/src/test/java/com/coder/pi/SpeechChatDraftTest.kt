@@ -68,4 +68,10 @@ class SpeechChatDraftTest {
     fun blankAcceptedSpeechDoesNotAlterDraft() {
         assertEquals("existing", mergeSpeechTranscriptIntoDraft("existing", "  \n"))
     }
+
+    @Test
+    fun waveformVisualLevelBoostsQuietSpeechMeters() {
+        assertTrue(speechWaveformVisualLevel(0.02f) > 0.4f)
+        assertEquals(1f, speechWaveformVisualLevel(1f), 0.0f)
+    }
 }

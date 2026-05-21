@@ -23,7 +23,7 @@ data class SpeechSettingsValues(
     val enhancementProvider: String = SpeechEnhancementProvider.OpenAiCompatible.id,
     val enhancementBaseUrl: String = "https://api.openai.com/v1",
     val enhancementModel: String = "gpt-4o-mini",
-    val enhancementTimeoutSeconds: Int = 10,
+    val enhancementTimeoutSeconds: Int = 30,
     val enhancementHapticPattern: String = TerminalHapticPatterns.defaultProgressPatternId,
 ) {
     fun resolvedPrompt(defaultPrompt: String): String = promptOverride.trim().ifBlank { defaultPrompt }
@@ -67,7 +67,7 @@ object SpeechSettingsStore {
             enhancementProvider = preferences.getString(enhancementProviderKey, SpeechEnhancementProvider.OpenAiCompatible.id).orEmpty().ifBlank { SpeechEnhancementProvider.OpenAiCompatible.id },
             enhancementBaseUrl = preferences.getString(enhancementBaseUrlKey, "https://api.openai.com/v1").orEmpty().ifBlank { "https://api.openai.com/v1" },
             enhancementModel = preferences.getString(enhancementModelKey, "gpt-4o-mini").orEmpty().ifBlank { "gpt-4o-mini" },
-            enhancementTimeoutSeconds = preferences.getInt(enhancementTimeoutSecondsKey, 10).coerceIn(3, 60),
+            enhancementTimeoutSeconds = preferences.getInt(enhancementTimeoutSecondsKey, 30).coerceIn(3, 60),
             enhancementHapticPattern = TerminalHapticPatterns.option(preferences.getString(enhancementHapticPatternKey, TerminalHapticPatterns.defaultProgressPatternId).orEmpty()).id,
         )
     }

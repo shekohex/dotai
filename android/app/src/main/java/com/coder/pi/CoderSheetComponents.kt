@@ -15,6 +15,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -133,6 +134,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     var partialTranscriptionLoopJob by remember { mutableStateOf<Job?>(null) }
     var finalTranscriptionJob by remember { mutableStateOf<Job?>(null) }
     var enhancementJob by remember { mutableStateOf<Job?>(null) }
+    var enhancementHapticJob by remember { mutableStateOf<Job?>(null) }
     var warmModelJob by remember { mutableStateOf<Job?>(null) }
     var dictationSessionId by remember { mutableIntStateOf(0) }
     var liveChunkEndSample by remember { mutableIntStateOf(16_000) }
@@ -165,7 +167,9 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
         finalTranscriptionJob?.cancel()
         finalTranscriptionJob = null
         enhancementJob?.cancel()
+        enhancementHapticJob?.cancel()
         enhancementJob = null
+        enhancementHapticJob = null
         partialTranscriptionJob?.cancel()
         partialTranscriptionJob = null
         partialTranscriptionLoopJob?.cancel()
@@ -193,9 +197,15 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             acceptDictationTranscript(transcript)
             return
         }
-        context.performSpeechEnhancementHaptic(speechSettings.enhancementHapticPattern)
         dictationState = SpeechDictationDisplayState.ENHANCING_COLLAPSED
         enhancementJob?.cancel()
+        enhancementHapticJob?.cancel()
+        enhancementHapticJob = scope.launch {
+            while (sessionId == dictationSessionId && dictationState == SpeechDictationDisplayState.ENHANCING_COLLAPSED) {
+                context.performSpeechEnhancementHaptic(speechSettings.enhancementHapticPattern)
+                delay(1_200L)
+            }
+        }
         enhancementJob = scope.launch {
             runCatching {
                 val prompt = speechSettings.resolvedPrompt(SpeechSettingsStore.defaultPrompt(context))
@@ -205,15 +215,22 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             }.fold(
                 onSuccess = { result ->
                     if (sessionId != dictationSessionId) return@fold
+                    enhancementHapticJob?.cancel()
+                    enhancementHapticJob = null
                     if (result.timedOut) {
+                        Toast.makeText(context, "Enhancement timed out: ${result.errorMessage.orEmpty()}", Toast.LENGTH_LONG).show()
                         dictationTranscript = transcript
                         dictationState = SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT
                     } else {
+                        if (result.failedOpen && result.errorMessage != null) Toast.makeText(context, "Enhancement failed: ${result.errorMessage}", Toast.LENGTH_LONG).show()
                         acceptDictationTranscript(result.text)
                     }
                 },
                 onFailure = {
                     if (sessionId != dictationSessionId) return@fold
+                    enhancementHapticJob?.cancel()
+                    enhancementHapticJob = null
+                    Toast.makeText(context, "Enhancement failed: ${it.message ?: it::class.java.simpleName}", Toast.LENGTH_LONG).show()
                     acceptDictationTranscript(transcript)
                 },
             )
@@ -340,8 +357,9 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
             onFrame = { frame ->
                 val job = scope.launch {
                     dictationAudioFrames.add(frame.samples.copyOf())
-                    dictationMeter = frame.meter
-                    dictationWaveformLevels = dictationWaveformLevels.drop(1) + frame.meter
+                    val visualMeter = speechWaveformVisualLevel(frame.meter)
+                    dictationMeter = visualMeter
+                    dictationWaveformLevels = dictationWaveformLevels.drop(1) + visualMeter
                     if (frame.speechDetected && dictationState == SpeechDictationDisplayState.RECORDING_EMPTY) dictationState = SpeechDictationDisplayState.RECORDING_WITH_SPEECH
                 }
                 frameJobs.add(job)
@@ -386,7 +404,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     LaunchedEffect(context, speechSettings.selectedSpeechModelId, speechSettings.accelerator) {
         speechTranscriber = SpeechWarmModelStore.transcriber(context, speechSettings)
     }
-    DisposableEffect(speechAudioCapture) { onDispose { partialTranscriptionLoopJob?.cancel(); partialTranscriptionJob?.cancel(); finalTranscriptionJob?.cancel(); enhancementJob?.cancel(); warmModelJob?.cancel(); speechAudioCapture.stopAsync() } }
+    DisposableEffect(speechAudioCapture) { onDispose { partialTranscriptionLoopJob?.cancel(); partialTranscriptionJob?.cancel(); finalTranscriptionJob?.cancel(); enhancementJob?.cancel(); enhancementHapticJob?.cancel(); warmModelJob?.cancel(); speechAudioCapture.stopAsync() } }
     if (dictating) {
         DictationInputSurface(
             tokens = tokens,
@@ -893,6 +911,8 @@ private fun DictationStaticWaveform(tokens: UiTokens) {
 }
 
 private fun Float.powForWaveform(): Float = this.toDouble().pow(0.7).toFloat()
+
+fun speechWaveformVisualLevel(meter: Float): Float = (meter.coerceAtLeast(0f) * 18f).coerceIn(0f, 1f).powForWaveform()
 
 @Composable
 private fun DictationPrimaryAction(action: SpeechDictationAction?, tokens: UiTokens, onAction: (SpeechDictationAction) -> Unit) {

@@ -19,6 +19,13 @@ class SpeechEnhancementTest {
     }
 
     @Test
+    fun rendererInjectsVoiceInkContextInformationPlaceholder() {
+        val request = SpeechEnhancementPromptRenderer().render("Clean <TRANSCRIPT> using <CONTEXT_INFORMATION>", "run tests", listOf("SpeechEnhancementTest failed"))
+
+        assertTrue(request.prompt.contains("Clean run tests using SpeechEnhancementTest failed"))
+    }
+
+    @Test
     fun rendererBoundsContextLinesAndChars() {
         val request = SpeechEnhancementPromptRenderer(SpeechEnhancementPromptConfig(maxContextLines = 2, maxContextChars = 12)).render(template, "hello", listOf("one", "two", "three very long"))
 

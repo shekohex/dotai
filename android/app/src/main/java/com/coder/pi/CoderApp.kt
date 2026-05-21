@@ -2844,7 +2844,7 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
         speechSettings = SpeechSettingsStore.values(context)
         baseUrlDialogOpen = false
     }
-    if (timeoutDialogOpen) SpeechSingleLineDialog(tokens, "Enhancement Timeout", speechSettings.enhancementTimeoutSeconds.toString(), "10", { timeoutDialogOpen = false }) {
+    if (timeoutDialogOpen) SpeechSingleLineDialog(tokens, "Enhancement Timeout", speechSettings.enhancementTimeoutSeconds.toString(), "30", { timeoutDialogOpen = false }) {
         SpeechSettingsStore.setEnhancementTimeoutSeconds(context, it.toIntOrNull() ?: speechSettings.enhancementTimeoutSeconds)
         speechSettings = SpeechSettingsStore.values(context)
         timeoutDialogOpen = false

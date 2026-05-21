@@ -538,7 +538,10 @@ Review:
 
 Commit:
 
-- TBD.
+- Partial implementation: `241762b` (`feat(android): add parakeet transcriber contracts`).
+- Partial implementation: `593c751` (`feat(android): wire parakeet LiteRT loading`).
+- Partial implementation: `2e02012` (`feat(android): add parakeet tokenizer helpers`).
+- Partial implementation: `00ae531` (`feat(android): add parakeet log mel preprocessing`).
 
 ## ASTT-8: Add Enhancement Prompt And Terminal Context
 

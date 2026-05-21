@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { buildTPSStatus, composeFooterLine } from "../src/extensions/coreui/footer.js";
+import {
+  buildSessionElapsedStatus,
+  buildTPSStatus,
+  composeFooterLine,
+} from "../src/extensions/coreui/footer.js";
 import type { CoreUIState } from "../src/extensions/coreui/types.js";
 
 const theme = {
@@ -34,6 +38,7 @@ const stateWithTps = (tpsVisible: boolean): CoreUIState => ({
 describe("coreui footer", () => {
   test("hides only tps when tps visibility is disabled", () => {
     expect(buildTPSStatus(theme, stateWithTps(false), 120)).toBe("");
+    expect(buildSessionElapsedStatus(theme, stateWithTps(false))).toBe("1m 5s");
     expect(composeFooterLine("Pursuing goal", "ctx 10K", 40)).toContain("Pursuing goal");
   });
 
@@ -59,6 +64,7 @@ describe("coreui footer", () => {
 
   test("auto hides tps on narrow terminals", () => {
     expect(buildTPSStatus(theme, stateWithTps(true), 95)).toBe("");
+    expect(buildSessionElapsedStatus(theme, stateWithTps(true))).toBe("1m 5s");
     expect(buildTPSStatus(theme, stateWithTps(true), 96)).toContain("tps 12.3");
   });
 });

@@ -51,9 +51,14 @@ export function bindCoreUI(
       render(width: number): string[] {
         try {
           const left = buildProjectStatus(theme, footerData.getGitBranch(), state, ctx);
-          const leftBottom = appendGoalRuntimeStatus(
+          const leftBottomStatus = joinStatusParts(
             theme,
             buildTPSStatus(theme, state, width),
+            buildSessionElapsedStatus(theme, state),
+          );
+          const leftBottom = appendGoalRuntimeStatus(
+            theme,
+            leftBottomStatus,
             footerData.getExtensionStatuses().get(GOAL_STATUS_KEY),
           );
           const rightTop = buildModelStatus(
@@ -93,9 +98,8 @@ export function buildTPSStatus(theme: Theme, state: CoreUIState, width: number):
   }
 
   const current = `${theme.fg("dim", "tps ")}${theme.fg("accent", state.tps.current.toFixed(1))}`;
-  const elapsed = `${theme.fg("dim", " · ")}${theme.fg("dim", formatDuration(state.tpsElapsedMs))}`;
   if (state.tps.sampleCount < state.tps.bufferSize) {
-    return `${current}${elapsed}`;
+    return current;
   }
 
   return (
@@ -105,9 +109,16 @@ export function buildTPSStatus(theme: Theme, state: CoreUIState, width: number):
     theme.fg("dim", "/") +
     theme.fg("warning", state.tps.median.toFixed(1)) +
     theme.fg("dim", "/") +
-    theme.fg("error", state.tps.min.toFixed(1)) +
-    elapsed
+    theme.fg("error", state.tps.min.toFixed(1))
   );
+}
+
+export function buildSessionElapsedStatus(theme: Theme, state: CoreUIState): string {
+  return theme.fg("dim", formatDuration(state.tpsElapsedMs));
+}
+
+function joinStatusParts(theme: Theme, ...parts: string[]): string {
+  return parts.filter((part) => part.length > 0).join(theme.fg("dim", " · "));
 }
 
 function buildProjectStatus(

@@ -93,7 +93,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
     val scope = rememberCoroutineScope()
     val speechSettings = remember(context) { SpeechSettingsStore.values(context) }
     val speechAudioCapture = remember(context, speechSettings.vadSensitivity) { SpeechAudioCapture(context, speechSettings.toAudioCaptureConfig()) }
-    val speechTranscriber = remember(context) { LiteRtParakeetTranscriber(ParakeetModelCache(context), ParakeetTokenizerCache(context)) }
+    val speechTranscriber = remember(context, speechSettings.selectedSpeechModelId) { LiteRtParakeetTranscriber(ParakeetModelCache(context, ParakeetModelArtifacts.byId(speechSettings.selectedSpeechModelId)), ParakeetTokenizerCache(context)) }
     val speechPromptRenderer = remember { SpeechEnhancementPromptRenderer() }
     var dictating by remember { mutableStateOf(false) }
     var dictationState by remember { mutableStateOf(SpeechDictationDisplayState.IDLE) }

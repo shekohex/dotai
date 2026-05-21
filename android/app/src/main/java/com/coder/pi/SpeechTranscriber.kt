@@ -1,6 +1,10 @@
 package com.coder.pi
 
+import android.app.DownloadManager
 import android.content.Context
+import android.net.Uri
+import android.os.Environment as AndroidEnvironment
+import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.google.ai.edge.litert.Accelerator
@@ -45,6 +49,10 @@ interface SpeechTranscriber : AutoCloseable {
 }
 
 data class ParakeetModelArtifact(
+    val id: String,
+    val title: String,
+    val precision: String,
+    val recommendedUse: String,
     val fileName: String,
     val url: String,
     val sha256: String,
@@ -94,16 +102,37 @@ data class ParakeetFeatureConfig(
 
 object ParakeetModelArtifacts {
     val int8 = ParakeetModelArtifact(
+        id = "parakeet-tdt-i8-stateful",
+        title = "Parakeet TDT 0.6B i8",
+        precision = "Int8 quantized",
+        recommendedUse = "Recommended for Pixel 7 Pro and tablets. Lower memory, faster startup.",
         fileName = "parakeet_tdt_0.6b_v3_5s_i8_stateful.tflite",
         url = "https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3/resolve/main/parakeet_tdt_0.6b_v3_5s_i8_stateful.tflite",
         sha256 = "334745b8bc7fd372b1c213516f0b6338bb827b1a2abb3e77ad35fe6fea5cd16b",
         sizeBytes = 614_261_072L,
     )
+
+    val f32 = ParakeetModelArtifact(
+        id = "parakeet-tdt-f32-stateful",
+        title = "Parakeet TDT 0.6B f32",
+        precision = "Float32 full precision",
+        recommendedUse = "Experimental. Much larger download and memory footprint.",
+        fileName = "parakeet_tdt_0.6b_v3_5s_f32_stateful.tflite",
+        url = "https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3/resolve/main/parakeet_tdt_0.6b_v3_5s_f32_stateful.tflite",
+        sha256 = "8c1f06a9e1682ab2f4d95f65d413055c8f83d64a7b3daab3185b5e0e91e9f4ab",
+        sizeBytes = 2_421_888_688L,
+    )
+
+    val all = listOf(int8, f32)
+
+    fun byId(id: String): ParakeetModelArtifact = all.firstOrNull { it.id == id } ?: int8
 }
 
 class ParakeetModelCache(private val context: Context, private val artifact: ParakeetModelArtifact = ParakeetModelArtifacts.int8) {
     private val directory: File = File(context.filesDir, "speech/parakeet")
     val modelFile: File = File(directory, artifact.fileName)
+    private val preferences = context.getSharedPreferences("terminal", Context.MODE_PRIVATE)
+    private val downloadKey = "speech.model_download.${artifact.id}"
 
     fun isReady(): Boolean = modelFile.isFile && !modelFile.isGitLfsPointerFile() && modelFile.length() == artifact.sizeBytes && modelFile.sha256OrNull() == artifact.sha256
 
@@ -113,34 +142,90 @@ class ParakeetModelCache(private val context: Context, private val artifact: Par
         runCatching {
             if (isReady()) return@runCatching modelFile
             directory.mkdirs()
-            val tempFile = File(directory, "${artifact.fileName}.part")
-            URL(artifact.url).openStream().use { input ->
-                tempFile.outputStream().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var total = 0L
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                        total += read
-                        onEvent(SpeechTranscriberEvent.ModelDownloadProgress(total, artifact.sizeBytes))
-                    }
+            val manager = context.getSystemService(DownloadManager::class.java)
+            val downloadId = activeDownloadId().takeIf { it != -1L } ?: enqueueDownload(manager)
+            var tempFile = downloadDestinationFile()
+            while (true) {
+                val state = manager.queryModelDownload(downloadId)
+                onEvent(SpeechTranscriberEvent.ModelDownloadProgress(state.bytesDownloaded, artifact.sizeBytes))
+                when (state.status) {
+                    DownloadManager.STATUS_SUCCESSFUL -> break
+                    DownloadManager.STATUS_FAILED -> error("Model download failed")
+                    else -> SystemClock.sleep(500)
                 }
             }
+            if (!tempFile.isFile) error("Downloaded model file missing")
             val actualSha256 = tempFile.sha256OrNull().orEmpty()
             if (actualSha256 != artifact.sha256) {
                 tempFile.delete()
                 error("Model integrity failed: expected ${artifact.sha256}, got $actualSha256")
             }
             if (modelFile.exists()) modelFile.delete()
-            check(tempFile.renameTo(modelFile)) { "Unable to move model into cache" }
+            tempFile.inputStream().use { input -> modelFile.outputStream().use { output -> input.copyTo(output) } }
+            tempFile.delete()
+            clearDownloadId()
             modelFile
         }
+    }
+
+    fun startDownload(): Long = enqueueDownload(context.getSystemService(DownloadManager::class.java))
+
+    fun downloadStatus(): ModelDownloadState = activeDownloadId().takeIf { it != -1L }?.let { context.getSystemService(DownloadManager::class.java).queryModelDownload(it) } ?: ModelDownloadState(DownloadManager.STATUS_FAILED, 0, artifact.sizeBytes)
+
+    fun cancelDownload() {
+        activeDownloadId().takeIf { it != -1L }?.let { context.getSystemService(DownloadManager::class.java).remove(it) }
+        clearDownloadId()
+        downloadDestinationFile().delete()
+    }
+
+    suspend fun finalizeDownloadIfComplete(): Boolean = withContext(Dispatchers.IO) {
+        val state = downloadStatus()
+        if (state.status != DownloadManager.STATUS_SUCCESSFUL) return@withContext false
+        val file = downloadDestinationFile()
+        if (!file.isFile || file.sha256OrNull() != artifact.sha256) return@withContext false
+        directory.mkdirs()
+        if (modelFile.exists()) modelFile.delete()
+        file.inputStream().use { input -> modelFile.outputStream().use { output -> input.copyTo(output) } }
+        file.delete()
+        clearDownloadId()
+        true
     }
 
     fun delete(): Boolean {
         if (!directory.exists()) return true
         return directory.deleteRecursively()
+    }
+
+    private fun enqueueDownload(manager: DownloadManager): Long {
+        cancelDownload()
+        val request = DownloadManager.Request(Uri.parse(artifact.url))
+            .setTitle(artifact.title)
+            .setDescription("Speech model download")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(false)
+            .setDestinationInExternalFilesDir(context, AndroidEnvironment.DIRECTORY_DOWNLOADS, "speech/${artifact.fileName}.part")
+        val id = manager.enqueue(request)
+        preferences.edit().putLong(downloadKey, id).apply()
+        return id
+    }
+
+    private fun activeDownloadId(): Long = preferences.getLong(downloadKey, -1L)
+
+    private fun clearDownloadId() = preferences.edit().remove(downloadKey).apply()
+
+    private fun downloadDestinationFile(): File = File(context.getExternalFilesDir(AndroidEnvironment.DIRECTORY_DOWNLOADS), "speech/${artifact.fileName}.part")
+}
+
+data class ModelDownloadState(val status: Int, val bytesDownloaded: Long, val totalBytes: Long)
+
+private fun DownloadManager.queryModelDownload(id: Long): ModelDownloadState {
+    query(DownloadManager.Query().setFilterById(id)).use { cursor ->
+        if (!cursor.moveToFirst()) return ModelDownloadState(DownloadManager.STATUS_FAILED, 0, 0)
+        val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+        val downloaded = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+        val total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+        return ModelDownloadState(status, downloaded, total.takeIf { it > 0 } ?: 0)
     }
 }
 

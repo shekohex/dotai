@@ -144,7 +144,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
 enum class AppDestination { HOME, SETTINGS, DEBUG_RENDER, DEBUG_SPEECH }
-enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
+enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, SPEECH_MODELS, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 
 private sealed interface AuthState {
     data object Loading : AuthState
@@ -1742,6 +1742,7 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
             SettingsPage.TEXT -> SettingsPage.FONTS
             SettingsPage.SHORTCUT_TAB -> SettingsPage.SHORTCUTS
             SettingsPage.SHORTCUT -> shortcutBackPage
+            SettingsPage.SPEECH_MODELS -> SettingsPage.SPEECH
             SettingsPage.DEBUG_LOGS -> SettingsPage.CONNECTION
             else -> SettingsPage.ROOT
         }
@@ -1764,7 +1765,8 @@ private fun SettingsNavigator(session: CoderSession?, sessionStore: CoderSession
         SettingsPage.KEYBOARD -> KeyboardSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.GESTURES -> GesturesSettingsScreen(terminalView, tokens, ::navigateBack)
         SettingsPage.CHAT -> ChatModeSettingsScreen(terminalView, tokens, ::navigateBack)
-        SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens, ::navigateBack)
+        SettingsPage.SPEECH -> SpeechSettingsScreen(terminalView, tokens, { page = SettingsPage.SPEECH_MODELS }, ::navigateBack)
+        SettingsPage.SPEECH_MODELS -> SpeechModelSettingsScreen(tokens, ::navigateBack)
         SettingsPage.LINKS -> LinkAllowlistSettingsScreen(tokens, false, ::navigateBack)
         SettingsPage.LINKS_ADD -> LinkAllowlistSettingsScreen(tokens, true, ::navigateBack)
         SettingsPage.NOTIFICATIONS -> TerminalNotificationsSettingsScreen(terminalView, tokens, ::navigateBack)
@@ -2695,18 +2697,11 @@ private fun ChatModeSettingsScreen(terminalView: CoderTerminalView, tokens: UiTo
 }
 
 @Composable
-private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onBack: () -> Unit) {
+private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiTokens, onModels: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     var speechSettings by remember { mutableStateOf(SpeechSettingsStore.values(context)) }
     var promptDialogOpen by remember { mutableStateOf(false) }
     val defaultPrompt = remember(context) { SpeechSettingsStore.defaultPrompt(context) }
-    val modelCache = remember(context) { ParakeetModelCache(context) }
-    val tokenizerCache = remember(context) { ParakeetTokenizerCache(context) }
-    var modelCacheStatus by remember(context) { mutableStateOf(modelCache.status()) }
-    var tokenizerReady by remember(context) { mutableStateOf(tokenizerCache.isReady()) }
-    var modelDownloadProgress by remember { mutableStateOf<Long?>(null) }
-    var modelDownloadFailed by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
     SettingsScaffold("Speech", tokens, onBack) {
         SettingsSection("DICTATION INPUT", tokens) {
             SettingsValueRow(R.drawable.ic_feather_mic, "Microphone Button", "Available inside chat input mode", null, tokens) {}
@@ -2714,24 +2709,9 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
                 SpeechSettingsStore.setLocalTranscriptionEnabled(context, it)
                 speechSettings = SpeechSettingsStore.values(context)
             }
-            SettingsValueRow(R.drawable.ic_feather_server, "Model Cache", modelDownloadProgress?.let { "Downloading ${it.coerceAtMost(100)}%" } ?: if (modelDownloadFailed) "Download failed" else if (modelCacheStatus.ready && !tokenizerReady) "Tokenizer missing" else modelCacheStatus.label, if ((!modelCacheStatus.ready || !tokenizerReady) && modelDownloadProgress == null) "Download" else null, tokens) {
-                if (modelDownloadProgress == null) scope.launch {
-                    modelDownloadProgress = 0
-                    modelDownloadFailed = false
-                    val modelResult = modelCache.ensureModel { progress -> modelDownloadProgress = if (progress.totalBytes > 0) (progress.bytesRead * 100 / progress.totalBytes).coerceIn(0, 100) else 0 }
-                    modelDownloadFailed = modelResult.isFailure || tokenizerCache.ensureTokenizer().isFailure
-                    modelDownloadProgress = null
-                    modelCacheStatus = modelCache.status()
-                    tokenizerReady = tokenizerCache.isReady()
-                }
-            }
-            SettingsValueRow(R.drawable.ic_feather_trash_2, "Delete Model Cache", if (modelCacheStatus.hasCache) "Remove cached Parakeet files" else "No cached model to delete", if (modelCacheStatus.hasCache) "Delete" else null, tokens) {
-                modelCache.delete()
-                modelCacheStatus = modelCache.status()
-                tokenizerReady = tokenizerCache.isReady()
-            }
+            SettingsValueRow(R.drawable.ic_feather_box, "Models", ParakeetModelArtifacts.byId(speechSettings.selectedSpeechModelId).title, "Manage", tokens, chevron = true) { onModels() }
             SettingsValueRow(R.drawable.ic_feather_sliders, "VAD Sensitivity", speechSettings.vadSensitivityLabel(), "+", tokens) {
-                SpeechSettingsStore.setVadSensitivity(context, speechSettings.vadSensitivity + 1)
+                SpeechSettingsStore.setVadSensitivity(context, (speechSettings.vadSensitivity + 1) % 5)
                 speechSettings = SpeechSettingsStore.values(context)
             }
         }
@@ -2755,6 +2735,121 @@ private fun SpeechSettingsValues.vadSensitivityLabel(): String = when (vadSensit
     2 -> "Normal"
     3 -> "High"
     else -> "Very high"
+}
+
+@Composable
+private fun SpeechModelSettingsScreen(tokens: UiTokens, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var speechSettings by remember { mutableStateOf(SpeechSettingsStore.values(context)) }
+    var refreshTick by remember { mutableIntStateOf(0) }
+    val tokenizerCache = remember(context) { ParakeetTokenizerCache(context) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(800)
+            refreshTick++
+        }
+    }
+    SettingsScaffold("Speech Models", tokens, onBack) {
+        SettingsSection("ACTIVE MODEL", tokens) {
+            val activeArtifact = ParakeetModelArtifacts.byId(speechSettings.selectedSpeechModelId)
+            SettingsValueRow(R.drawable.ic_feather_check, activeArtifact.title, activeArtifact.precision, "Active", tokens) {}
+            SettingsValueRow(R.drawable.ic_feather_download_cloud, "Tokenizer", if (tokenizerCache.isReady()) "Ready" else "Required for Parakeet decoding", if (tokenizerCache.isReady()) "✓" else "Download", tokens) {
+                if (!tokenizerCache.isReady()) scope.launch { tokenizerCache.ensureTokenizer(); refreshTick++ }
+            }
+        }
+        item { Text("MODELS", color = tokens.secondary, fontSize = sectionSize(), letterSpacing = 0.6.sp, modifier = Modifier.padding(start = spacingLarge(), end = spacingLarge(), top = 14.dp, bottom = 7.dp)) }
+        ParakeetModelArtifacts.all.forEach { artifact ->
+            item {
+                val cache = remember(context, artifact.id, refreshTick) { ParakeetModelCache(context, artifact) }
+                val status = cache.status()
+                val downloadState = cache.downloadStatus()
+                val downloading = downloadState.status in setOf(android.app.DownloadManager.STATUS_PENDING, android.app.DownloadManager.STATUS_RUNNING, android.app.DownloadManager.STATUS_PAUSED)
+                val progress = if (downloadState.totalBytes > 0) (downloadState.bytesDownloaded * 100 / downloadState.totalBytes).coerceIn(0, 100) else 0
+                SpeechModelCard(
+                    tokens = tokens,
+                    artifact = artifact,
+                    selected = artifact.id == speechSettings.selectedSpeechModelId,
+                    statusText = when {
+                        status.ready -> "Ready · ${artifact.sizeBytes.toHumanBytesLabel()}"
+                        downloading -> "Downloading ${progress}% · ${downloadState.bytesDownloaded.toHumanBytesLabel()}"
+                        status.hasCache -> status.label
+                        else -> "Not downloaded · ${artifact.sizeBytes.toHumanBytesLabel()}"
+                    },
+                    progress = if (downloading) progress.toInt() else null,
+                    onSelect = {
+                        SpeechSettingsStore.setSelectedSpeechModelId(context, artifact.id)
+                        speechSettings = SpeechSettingsStore.values(context)
+                    },
+                    onDownload = {
+                        cache.startDownload()
+                        refreshTick++
+                    },
+                    onResume = {
+                        cache.startDownload()
+                        refreshTick++
+                    },
+                    onCancel = {
+                        cache.cancelDownload()
+                        refreshTick++
+                    },
+                    onDelete = {
+                        cache.cancelDownload()
+                        cache.delete()
+                        refreshTick++
+                    },
+                    onFinalize = {
+                        scope.launch {
+                            cache.finalizeDownloadIfComplete()
+                            tokenizerCache.ensureTokenizer()
+                            refreshTick++
+                        }
+                    },
+                    onOpen = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3"))) },
+                )
+            }
+        }
+        item { Text("Downloads use Android DownloadManager. Pause is controlled by the system/network; Cancel stops a download, Resume starts it again. Models are verified with SHA-256 before activation.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
+    }
+}
+
+@Composable
+private fun SpeechModelCard(tokens: UiTokens, artifact: ParakeetModelArtifact, selected: Boolean, statusText: String, progress: Int?, onSelect: () -> Unit, onDownload: () -> Unit, onResume: () -> Unit, onCancel: () -> Unit, onDelete: () -> Unit, onFinalize: () -> Unit, onOpen: () -> Unit) {
+    Column(Modifier.padding(horizontal = spacingLarge(), vertical = 6.dp).clip(RoundedCornerShape(18.dp)).background(tokens.surfaceHigh).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(painterResource(if (artifact.precision.contains("Float")) R.drawable.ic_feather_cpu else R.drawable.ic_feather_zap), null, tint = tokens.secondary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(artifact.title, color = tokens.text, fontSize = rowTitleSize(), fontWeight = FontWeight.SemiBold)
+                Text(artifact.precision, color = tokens.secondary, fontSize = captionSize())
+            }
+            if (selected) Text("ACTIVE", color = tokens.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(artifact.recommendedUse, color = tokens.secondary, fontSize = captionSize(), lineHeight = 18.sp)
+        Text(statusText, color = tokens.text, fontSize = captionSize(), fontFamily = FontFamily.Monospace)
+        if (progress != null) Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(tokens.separator)) { Box(Modifier.fillMaxWidth(progress / 100f).height(6.dp).background(tokens.accent)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            SpeechModelChip(if (selected) "✓ Selected" else "Use", tokens, selected, onSelect)
+            SpeechModelChip("↓ Download", tokens, false, onDownload)
+            SpeechModelChip("▶ Resume", tokens, false, onResume)
+            SpeechModelChip("× Cancel", tokens, false, onCancel)
+            SpeechModelChip("ⓘ Details", tokens, false, onFinalize)
+            SpeechModelChip("↗ Hugging Face", tokens, false, onOpen)
+            SpeechModelChip("Delete", tokens, false, onDelete)
+        }
+    }
+}
+
+@Composable
+private fun SpeechModelChip(label: String, tokens: UiTokens, selected: Boolean, onClick: () -> Unit) {
+    Box(Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(if (selected) tokens.accent.copy(alpha = 0.28f) else tokens.surface).clickable { hapticClick(); onClick() }.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) { Text(label, color = if (selected) tokens.accent else tokens.text, fontSize = captionSize(), fontWeight = FontWeight.SemiBold) }
+}
+
+private fun Long.toHumanBytesLabel(): String = when {
+    this >= 1_000_000_000L -> "${this / 100_000_000L / 10.0} GB"
+    this >= 1_000_000L -> "${this / 1_000_000L} MB"
+    this >= 1_000L -> "${this / 1_000L} KB"
+    else -> "$this B"
 }
 
 @Composable

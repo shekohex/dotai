@@ -572,7 +572,8 @@ Validation:
 - `./gradlew assembleDebug --no-daemon` passed after TDT wiring, `BUILD SUCCESSFUL in 8s`.
 - Device fixture smoke on target hardware is blocked because no Pixel 7 Pro or Samsung Tab A9 is attached.
 - Current device check: `adb devices` shows only `emulator-5554`; no Pixel 7 Pro or Samsung Tab A9 target device is attached.
-- Current model cache check: `~/.cache/checkouts/huggingface.co/litert-community/parakeet-tdt-0.6b-v3/*.tflite` files are 134-135 byte Git LFS pointer files, not downloaded model payloads, so real fixture transcription cannot run from the local cache.
+- Reference model cache updated with Git LFS: `parakeet_tdt_0.6b_v3_5s_i8.tflite` and `parakeet_tdt_0.6b_v3_5s_i8_stateful.tflite` are downloaded at `586M` each.
+- `shasum -a 256 ~/.cache/checkouts/huggingface.co/litert-community/parakeet-tdt-0.6b-v3/parakeet_tdt_0.6b_v3_5s_i8.tflite` matches expected `f25e5972fe72048f67272e26d4badfe19d876e0fa19027cb2c6c0e0fc4da692b`.
 - Added explicit Git LFS pointer detection in `ParakeetModelCache.isReady()` so pointer files are treated as missing model payloads, not valid runtime input.
 - Added settings-facing model cache status labels for missing, Git LFS pointer, incomplete, downloading, failed, tokenizer-missing, and ready cache states, plus download and delete actions for cached Parakeet model/tokenizer files.
 - `./gradlew testDebugUnitTest --tests '*SpeechTranscriberTest*' --no-daemon` passed after Git LFS pointer detection, `BUILD SUCCESSFUL in 12s`.
@@ -588,7 +589,7 @@ Validation:
 Review:
 
 - Subagent review pending: `subagent` tool is unavailable in current toolset.
-- Self-review residual risk: fixture transcription and real-device model proof are blocked by missing downloaded model payloads/tokenizer and no connected target device; NPU path is not claimed.
+- Self-review residual risk: fixture transcription and real-device model proof are blocked by missing connected target device and app-cache tokenizer/runtime proof; NPU path is not claimed.
 
 Commit:
 

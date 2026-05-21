@@ -912,4 +912,4 @@ Commit:
 - Emulator UI journey stabilization: `5ed947e` (`test(android): stabilize speech debug UI journey`).
 - VAD silence pause: `cfba7e2` (`fix(android): pause live speech transcription on silence`).
 - VAD peak gate: `ac0c2be` (`fix(android): improve speech VAD peak detection`).
-- Real-device smoke helper: pending commit.
+- Real-device smoke helper: `aa3ced7` (`test(android): add speech real-device smoke helper`).

@@ -14,6 +14,7 @@ class SpeechSettingsTest {
         assertTrue(values.localTranscriptionEnabled)
         assertFalse(values.enhancementEnabled)
         assertTrue(values.includeVisibleTerminalContext)
+        assertTrue(values.keepModelWarmEnabled)
         assertEquals(2, values.vadSensitivity)
         assertEquals("Improve me", values.resolvedPrompt("Improve me"))
     }

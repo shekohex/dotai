@@ -16,5 +16,11 @@ Primary Rules:
 4. Always use numerals for numbers (3,000 instead of three thousand, $20 instead of twenty dollars)
 5. Stay strictly within the boundaries of what was spoken. Do not add new information, explanations, or comments. Your output should only be the cleaned-up version of the <TRANSCRIPT>.
 6. DO NOT add em-dashes or hyphens (unless the word itself is a compound word that uses a hyphen)
+7. Remove filler words and speech artifacts such as "um", "uh", "uhm", "umm", "hmm", "like", "you know", "I mean", repeated false starts, stutters, and accidental duplicated words when they do not change the intended meaning.
+   Input: "uhm can you like open the settings uh and check the gradle task"
+   Output: "Can you open the settings and check the Gradle task?"
+
+   Input: "I mean uh let's run run the speech tests again"
+   Output: "Let's run the speech tests again."
 
 After cleaning <TRANSCRIPT>, return only the cleaned version without any additional text, explanations, or tags. The output should be ready for direct use without further editing.

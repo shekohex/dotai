@@ -36,15 +36,19 @@ data class SpeechAudioFrame(
     val samples: FloatArray,
     val meter: Float,
     val speechDetected: Boolean,
+    val voiceActive: Boolean,
+    val speechPaused: Boolean,
     val finalized: Boolean,
     val silenced: Boolean,
 ) {
-    override fun equals(other: Any?): Boolean = other is SpeechAudioFrame && samples.contentEquals(other.samples) && meter == other.meter && speechDetected == other.speechDetected && finalized == other.finalized && silenced == other.silenced
+    override fun equals(other: Any?): Boolean = other is SpeechAudioFrame && samples.contentEquals(other.samples) && meter == other.meter && speechDetected == other.speechDetected && voiceActive == other.voiceActive && speechPaused == other.speechPaused && finalized == other.finalized && silenced == other.silenced
 
     override fun hashCode(): Int {
         var result = samples.contentHashCode()
         result = 31 * result + meter.hashCode()
         result = 31 * result + speechDetected.hashCode()
+        result = 31 * result + voiceActive.hashCode()
+        result = 31 * result + speechPaused.hashCode()
         result = 31 * result + finalized.hashCode()
         result = 31 * result + silenced.hashCode()
         return result
@@ -70,16 +74,18 @@ class SpeechVadSegmenter(private val config: SpeechAudioCaptureConfig) {
         totalFrames++
         val rms = samples.rms()
         meter = meter * 0.78f + rms * 0.22f
-        val speech = !silenced && rms >= config.silenceThreshold
+        val voiceActive = !silenced && rms >= config.silenceThreshold
+        val normalizedSamples = if (voiceActive) samples else FloatArray(samples.size)
         if (!speechStarted) {
-            preRoll.addLast(samples.copyOf())
+            preRoll.addLast(normalizedSamples.copyOf())
             while (preRoll.size > config.preRollFrames) preRoll.removeFirst()
-            speechFrames = if (speech) speechFrames + 1 else 0
+            speechFrames = if (voiceActive) speechFrames + 1 else 0
             speechStarted = speechFrames >= config.speechStartFrames
         } else {
-            silenceFrames = if (speech) 0 else silenceFrames + 1
+            silenceFrames = if (voiceActive) 0 else silenceFrames + 1
         }
-        return SpeechAudioFrame(samples = samples, meter = meter.coerceIn(0f, 1f), speechDetected = speechStarted, finalized = false, silenced = silenced)
+        val speechPaused = speechStarted && !voiceActive && silenceFrames >= config.trailingSilenceFrames
+        return SpeechAudioFrame(samples = normalizedSamples, meter = meter.coerceIn(0f, 1f), speechDetected = speechStarted, voiceActive = voiceActive, speechPaused = speechPaused, finalized = false, silenced = silenced)
     }
 
     fun reset() {

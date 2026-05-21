@@ -220,7 +220,7 @@ fun ChatInputBar(tokens: UiTokens, text: String, onTextChanged: (String) -> Unit
                     dictationAudioFrames.add(frame.samples.copyOf())
                     dictationMeter = frame.meter
                     if (frame.speechDetected && dictationState == SpeechDictationDisplayState.RECORDING_EMPTY) dictationState = SpeechDictationDisplayState.RECORDING_WITH_SPEECH
-                    if (frame.speechDetected) maybeTranscribePartialAudio()
+                    if (frame.speechDetected && !frame.speechPaused) maybeTranscribePartialAudio()
                 }
             },
             onFailure = { failure ->

@@ -478,6 +478,7 @@ Review:
 Commit:
 
 - Implementation: `6477cfb` (`feat(android): add speech audio capture`).
+- Follow-up: `412224e` (`feat(android): wire chat mic to audio capture`).
 
 ## ASTT-7: Implement Local LiteRT Parakeet Transcriber
 

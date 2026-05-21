@@ -2700,6 +2700,7 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
     var promptDialogOpen by remember { mutableStateOf(false) }
     val defaultPrompt = remember(context) { SpeechSettingsStore.defaultPrompt(context) }
     val modelCache = remember(context) { ParakeetModelCache(context) }
+    val tokenizerCache = remember(context) { ParakeetTokenizerCache(context) }
     var modelCacheStatus by remember(context) { mutableStateOf(modelCache.status()) }
     var modelDownloadProgress by remember { mutableStateOf<Long?>(null) }
     var modelDownloadFailed by remember { mutableStateOf(false) }
@@ -2715,7 +2716,8 @@ private fun SpeechSettingsScreen(terminalView: CoderTerminalView, tokens: UiToke
                 if (modelDownloadProgress == null) scope.launch {
                     modelDownloadProgress = 0
                     modelDownloadFailed = false
-                    modelDownloadFailed = modelCache.ensureModel { progress -> modelDownloadProgress = if (progress.totalBytes > 0) (progress.bytesRead * 100 / progress.totalBytes).coerceIn(0, 100) else 0 }.isFailure
+                    val modelResult = modelCache.ensureModel { progress -> modelDownloadProgress = if (progress.totalBytes > 0) (progress.bytesRead * 100 / progress.totalBytes).coerceIn(0, 100) else 0 }
+                    modelDownloadFailed = modelResult.isFailure || tokenizerCache.ensureTokenizer().isFailure
                     modelDownloadProgress = null
                     modelCacheStatus = modelCache.status()
                 }

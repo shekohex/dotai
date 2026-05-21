@@ -573,12 +573,14 @@ Validation:
 - Current device check: `adb devices` shows only `emulator-5554`; no Pixel 7 Pro or Samsung Tab A9 target device is attached.
 - Current model cache check: `~/.cache/checkouts/huggingface.co/litert-community/parakeet-tdt-0.6b-v3/*.tflite` files are 134-135 byte Git LFS pointer files, not downloaded model payloads, so real fixture transcription cannot run from the local cache.
 - Added explicit Git LFS pointer detection in `ParakeetModelCache.isReady()` so pointer files are treated as missing model payloads, not valid runtime input.
-- Added settings-facing model cache status labels for missing, Git LFS pointer, incomplete, downloading, failed, and ready cache states, plus download and delete actions for cached Parakeet files.
+- Added settings-facing model cache status labels for missing, Git LFS pointer, incomplete, downloading, failed, and ready cache states, plus download and delete actions for cached Parakeet model/tokenizer files.
 - `./gradlew testDebugUnitTest --tests '*SpeechTranscriberTest*' --no-daemon` passed after Git LFS pointer detection, `BUILD SUCCESSFUL in 12s`.
 - `./gradlew testDebugUnitTest --tests '*SpeechTranscriberTest*' --no-daemon` passed after model cache settings status/delete wiring, `BUILD SUCCESSFUL in 19s`.
 - `./gradlew assembleDebug --no-daemon` passed after model cache settings status/delete wiring, `BUILD SUCCESSFUL in 11s`.
 - `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after model cache download UI wiring, `BUILD SUCCESSFUL in 17s`.
 - `./gradlew assembleDebug --no-daemon` passed after model cache download UI wiring, `BUILD SUCCESSFUL in 10s`.
+- `./gradlew testDebugUnitTest --tests '*Speech*' --no-daemon` passed after tokenizer download wiring, `BUILD SUCCESSFUL in 17s`.
+- `./gradlew assembleDebug --no-daemon` passed after tokenizer download wiring, `BUILD SUCCESSFUL in 10s`.
 
 Review:
 

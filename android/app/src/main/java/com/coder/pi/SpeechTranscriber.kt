@@ -248,7 +248,8 @@ class ParakeetTdtLiteRtDecoder(private val compiledModel: CompiledModel) {
     private val outputBuffers = compiledModel.createOutputBuffers(LiteRtParakeetTranscriber.DECODE_SIGNATURE)
     private val maxTimeIndex = compiledModel.getInputTensorType(LiteRtParakeetTranscriber.inputBufferName(0), LiteRtParakeetTranscriber.DECODE_SIGNATURE).numElements / LiteRtParakeetTranscriber.NUM_FEATURES
     private val tokenCount = compiledModel.getInputTensorType(LiteRtParakeetTranscriber.inputBufferName(1), LiteRtParakeetTranscriber.DECODE_SIGNATURE).numElements
-    private val logitsPerToken = compiledModel.getOutputTensorType(LiteRtParakeetTranscriber.outputBufferName(0), LiteRtParakeetTranscriber.DECODE_SIGNATURE).numElements / tokenCount / maxTimeIndex
+    private val logitsOutputType = compiledModel.getOutputTensorType(LiteRtParakeetTranscriber.outputBufferName(0), LiteRtParakeetTranscriber.DECODE_SIGNATURE)
+    private val logitsPerToken = logitsOutputType.numElements / tokenCount / maxTimeIndex
     private val stateCount = compiledModel.getInputTensorType(LiteRtParakeetTranscriber.inputBufferName(2), LiteRtParakeetTranscriber.DECODE_SIGNATURE).numElements
 
     fun decode(encodeOutputBuffers: List<TensorBuffer>): Sequence<Pair<Int, Int>> = sequence {
@@ -261,7 +262,7 @@ class ParakeetTdtLiteRtDecoder(private val compiledModel: CompiledModel) {
         while (timeIndex < maxTimeIndex) {
             inputBuffers[1].writeInt(tokenIds)
             compiledModel.run(listOf(encodeOutputBuffers[0], inputBuffers[1], inputBuffers[2], inputBuffers[3]), outputBuffers, LiteRtParakeetTranscriber.DECODE_SIGNATURE)
-            val logits = outputBuffers[0].readFloat()
+            val logits = outputBuffers[0].readLogits(logitsOutputType)
             val stepStart = timeIndex * tokenCount * logitsPerToken
             val tokenStart = stepStart + tokenIndex * logitsPerToken
             val durationEnd = stepStart + (tokenIndex + 1) * logitsPerToken
@@ -278,6 +279,14 @@ class ParakeetTdtLiteRtDecoder(private val compiledModel: CompiledModel) {
         }
         yield(LiteRtParakeetTranscriber.END_OF_SEQUENCE to maxTimeIndex)
     }
+}
+
+internal fun TensorBuffer.readLogits(tensorType: TensorType): FloatArray = when (tensorType.elementType) {
+    TensorType.ElementType.FLOAT -> readFloat()
+    TensorType.ElementType.INT8 -> readInt8().map { it.toFloat() }.toFloatArray()
+    TensorType.ElementType.INT -> readInt().map { it.toFloat() }.toFloatArray()
+    TensorType.ElementType.INT64 -> readLong().map { it.toFloat() }.toFloatArray()
+    TensorType.ElementType.BOOLEAN -> readBoolean().map { if (it) 1f else 0f }.toFloatArray()
 }
 
 class ParakeetFeatureExtractor(private val config: ParakeetFeatureConfig = ParakeetFeatureConfig()) {

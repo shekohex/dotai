@@ -1,6 +1,7 @@
 package com.coder.pi
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SpeechChatDraftTest {
@@ -10,8 +11,16 @@ class SpeechChatDraftTest {
     }
 
     @Test
-    fun longFinalSpeechPreservesLiveTranscriptWhenPresent() {
-        assertEquals("Open settings and explain gradle", selectFinalSpeechTranscript("Open settings", "Open settings and explain gradle", sampleCount = 16_000 * 8, sampleRate = 16_000))
+    fun longFinalSpeechUsesFinalTranscriptWhenPresent() {
+        assertEquals("Open settings", selectFinalSpeechTranscript("Open settings", "Open settings and explain gradle", sampleCount = 16_000 * 8, sampleRate = 16_000))
+    }
+
+    @Test
+    fun finalSpeechChunksStayWithinFiveSecondModelWindow() {
+        val chunks = finalSpeechChunks(FloatArray(16_000 * 8), 16_000)
+
+        assertEquals(3, chunks.size)
+        chunks.forEach { chunk -> assertTrue(chunk.size <= 16_000 * 5) }
     }
 
     @Test

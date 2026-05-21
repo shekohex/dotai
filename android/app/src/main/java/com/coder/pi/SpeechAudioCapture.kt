@@ -64,7 +64,6 @@ sealed interface SpeechAudioCaptureFailure {
 }
 
 class SpeechVadSegmenter(private val config: SpeechAudioCaptureConfig) {
-    private val preRoll = ArrayDeque<FloatArray>()
     private var speechFrames = 0
     private var silenceFrames = 0
     private var meter = 0f
@@ -76,21 +75,17 @@ class SpeechVadSegmenter(private val config: SpeechAudioCaptureConfig) {
         val metrics = samples.metrics()
         meter = meter * 0.78f + metrics.magnitude * 0.22f
         val voiceActive = !silenced && (metrics.rms >= config.silenceThreshold || metrics.peak >= config.peakThreshold)
-        val normalizedSamples = if (voiceActive) samples else FloatArray(samples.size)
         if (!speechStarted) {
-            preRoll.addLast(normalizedSamples.copyOf())
-            while (preRoll.size > config.preRollFrames) preRoll.removeFirst()
             speechFrames = if (voiceActive) speechFrames + 1 else 0
             speechStarted = speechFrames >= config.speechStartFrames
         } else {
             silenceFrames = if (voiceActive) 0 else silenceFrames + 1
         }
         val speechPaused = speechStarted && !voiceActive && silenceFrames >= config.trailingSilenceFrames
-        return SpeechAudioFrame(samples = normalizedSamples, meter = meter.coerceIn(0f, 1f), speechDetected = speechStarted, voiceActive = voiceActive, speechPaused = speechPaused, finalized = false, silenced = silenced)
+        return SpeechAudioFrame(samples = samples, meter = meter.coerceIn(0f, 1f), speechDetected = speechStarted, voiceActive = voiceActive, speechPaused = speechPaused, finalized = false, silenced = silenced)
     }
 
     fun reset() {
-        preRoll.clear()
         speechFrames = 0
         silenceFrames = 0
         meter = 0f

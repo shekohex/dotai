@@ -138,6 +138,7 @@ stateDiagram-v2
     recordingWithSpeech --> transcribing: stop recording
     recordingWithSpeech --> canceled: cancel
     transcribing --> transcriptReady: complete transcription
+    transcribing --> noSpeech: complete with no speech
     transcribing --> canceled: cancel
     transcriptReady --> enhancingCollapsed: start enhancement
     transcriptReady --> submitted: send raw
@@ -156,6 +157,8 @@ stateDiagram-v2
     enhancedReady --> submitted: send enhanced
     enhancedReady --> submitted: send raw
     enhancedReady --> canceled: cancel
+    noSpeech --> recordingEmpty: retry recording
+    noSpeech --> canceled: cancel
     submitted --> idle: reset
     canceled --> idle: reset
 ```
@@ -167,6 +170,7 @@ UX contract:
 - Retry allowed only from `enhancementTimedOut` and `enhancementFailed`.
 - Raw send allowed from `transcriptReady`, `enhancingCollapsed`, `enhancementTimedOut`, `enhancementFailed`, and `enhancedReady`.
 - Enhanced send allowed only from `enhancedReady`.
+- No-speech retry allowed only from `noSpeech` and returns to `recordingEmpty`.
 - Auto-send eligible only from `transcriptReady` and `enhancedReady`; existing Auto Send controls Enter in later integration tickets.
 - Compact/collapsed display used by `idle`, `recordingEmpty`, `enhancingCollapsed`, `submitted`, and `canceled`; transcript-bearing states render expanded.
 - Transition durations are bounded to `180ms`, `220ms`, or `300ms`.

@@ -59,14 +59,14 @@ class SpeechAudioCaptureTest {
     }
 
     @Test
-    fun vadZerosSilentFramesLikeLiteRtSample() {
+    fun vadPreservesRawSilentFramesForAsrContext() {
         val segmenter = SpeechVadSegmenter(SpeechAudioCaptureConfig(silenceThreshold = 0.01f, speechStartFrames = 1))
         val quietNoise = FloatArray(320) { 0.005f }
 
         val frame = segmenter.accept(quietNoise)
 
         assertFalse(frame.voiceActive)
-        assertTrue(frame.samples.all { it == 0f })
+        assertTrue(frame.samples.all { it == 0.005f })
     }
 
     @Test

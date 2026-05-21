@@ -230,12 +230,14 @@ export default function piOscExtension(pi: ExtensionAPI): void {
   pi.on("tool_execution_end", (event, ctx) => {
     const args = activeToolArgs.get(event.toolCallId);
     activeToolArgs.delete(event.toolCallId);
+    const label = boundedOptionalText(toolLabel(event.toolName, args), 128);
     const summary = boundedOptionalText(toolSummary(event.toolName, args, event.result), 512);
     emit("agent.tool", ctx, {
       toolCallId: boundedText(event.toolCallId, 128),
       toolName: boundedText(event.toolName, 128),
       state: "complete",
       isError: event.isError,
+      ...(label === undefined ? {} : { label }),
       ...(summary === undefined ? {} : { summary }),
     });
   });

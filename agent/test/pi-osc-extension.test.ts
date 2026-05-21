@@ -253,7 +253,43 @@ test("tool progress includes safe file labels and summaries", () => {
   });
   expect(decoded[1]?.envelope.data).toMatchObject({
     state: "complete",
+    label: "Reading foo.ts",
     summary: "Read foo.ts (3 lines)",
+  });
+});
+
+test("tool completion carries cached safe label from matching tool call id", () => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  pi.emit("tool_execution_start", {
+    type: "tool_execution_start",
+    toolCallId: "tool-a",
+    toolName: "read",
+    args: { file_path: "/workspace/a.ts" },
+  });
+  pi.emit("tool_execution_start", {
+    type: "tool_execution_start",
+    toolCallId: "tool-b",
+    toolName: "read",
+    args: { file_path: "/workspace/b.ts" },
+  });
+  pi.emit("tool_execution_end", {
+    type: "tool_execution_end",
+    toolCallId: "tool-a",
+    toolName: "read",
+    result: "one",
+    isError: false,
+  });
+
+  const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
+  expect(decoded.at(-1)?.envelope.data).toMatchObject({
+    toolCallId: "tool-a",
+    label: "Reading a.ts",
+    summary: "Read a.ts (1 lines)",
   });
 });
 

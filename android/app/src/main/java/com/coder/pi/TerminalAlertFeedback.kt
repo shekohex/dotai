@@ -12,9 +12,8 @@ enum class TerminalAlertFeedbackState(val id: String, val label: String, val def
 }
 
 object TerminalAlertFeedback {
-    fun stateFor(kind: String, severity: String, body: String = ""): TerminalAlertFeedbackState = when {
+    fun stateFor(kind: String, severity: String): TerminalAlertFeedbackState = when {
         kind == "input" -> TerminalAlertFeedbackState.SUBMIT
-        body.equals("Agent interrupted", ignoreCase = true) -> TerminalAlertFeedbackState.INTERRUPTED
         else -> stateForSeverity(severity)
     }
 

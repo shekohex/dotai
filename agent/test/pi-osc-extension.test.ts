@@ -335,7 +335,7 @@ test("agent end emits final assistant message as success alert", () => {
   });
 });
 
-test("aborted turn emits operation aborted alert once", () => {
+test("aborted turn emits operation aborted event once", () => {
   const pi = createPi();
   const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
   vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
@@ -347,13 +347,11 @@ test("aborted turn emits operation aborted alert once", () => {
   pi.emit("agent_end", { type: "agent_end", messages: [message] });
 
   const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
-  const alerts = decoded.filter((item) => item.eventName === "agent.alert");
-  expect(alerts).toHaveLength(1);
-  expect(alerts[0]?.envelope.data).toMatchObject({
-    kind: "runtime",
-    severity: "warning",
-    title: "π",
-    body: "Operation aborted",
+  const aborted = decoded.filter((item) => item.eventName === "agent.aborted");
+  expect(aborted).toHaveLength(1);
+  expect(aborted[0]?.envelope.data).toMatchObject({
+    reason: "user",
+    message: "Operation aborted",
   });
 });
 

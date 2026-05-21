@@ -35,7 +35,7 @@ data class PiOscEnvelope(
 
 private val piOscJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
 private val piOscPayloadPattern = Regex("^[A-Za-z0-9_-]+$")
-private val piOscEvents = setOf("hello", "agent.session", "agent.run", "agent.turn", "agent.progress", "agent.tool", "agent.alert", "agent.compaction")
+private val piOscEvents = setOf("hello", "agent.session", "agent.run", "agent.turn", "agent.progress", "agent.tool", "agent.alert", "agent.aborted", "agent.compaction")
 
 fun parseTerminalOscEvent(raw: String): TerminalOscEvent {
     val parts = raw.split("\t", limit = if (raw.startsWith("pi\t")) 4 else 3)
@@ -122,6 +122,7 @@ private fun isValidPiOscPayload(eventName: String, data: JsonObject): Boolean = 
     "agent.progress" -> isValidPiOscProgressPayload(data)
     "agent.tool" -> isValidPiOscToolPayload(data)
     "agent.alert" -> isValidPiOscAlertPayload(data)
+    "agent.aborted" -> isValidPiOscAbortedPayload(data)
     "agent.compaction" -> data.stringIn("state", setOf("preparing", "complete")) && data.keys == setOf("state")
     else -> false
 }
@@ -152,6 +153,11 @@ private fun isValidPiOscAlertPayload(data: JsonObject): Boolean {
     if (data["statusCode"] != null && data.intField("statusCode") == null) return false
     if (data["url"] != null && data.stringField("url", 2048) == null) return false
     return true
+}
+
+private fun isValidPiOscAbortedPayload(data: JsonObject): Boolean {
+    if (data.keys != setOf("reason", "message")) return false
+    return data.stringIn("reason", setOf("user")) && data.stringField("message", 512) != null
 }
 
 private fun JsonObject.stringEquals(name: String, expected: String): Boolean = stringField(name, expected.length) == expected

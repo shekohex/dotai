@@ -102,12 +102,7 @@ const handleAgentEnd = (
     ) === true
   ) {
     if (abortAlertAlreadyEmitted) return;
-    emit("agent.alert", ctx, {
-      kind: "runtime",
-      severity: "warning",
-      title: "π",
-      body: "Agent interrupted",
-    });
+    emit("agent.aborted", ctx, { reason: "user", message: "Agent interrupted" });
     return;
   }
   if (!shouldNotifyAgentEnd(childState, ctx)) return;
@@ -153,11 +148,9 @@ const handleTurnEnd = (
   ) {
     return abortAlertEmitted;
   }
-  emit("agent.alert", ctx, {
-    kind: "runtime",
-    severity: "warning",
-    title: "π",
-    body:
+  emit("agent.aborted", ctx, {
+    reason: "user",
+    message:
       event.message.errorMessage === "Operation aborted"
         ? "Operation aborted"
         : "Agent interrupted",

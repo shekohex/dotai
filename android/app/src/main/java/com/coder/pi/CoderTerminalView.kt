@@ -1326,6 +1326,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         onAgentStateChanged?.invoke(snapshot)
         when (event.eventName) {
             "agent.alert" -> snapshot.alerts.lastOrNull()?.notificationPresentation()?.let { handlePiAgentNotification(it) }
+            "agent.aborted" -> handlePiAgentAbort(event.envelope.data.stringValue("message").ifBlank { "Operation aborted" })
             "agent.progress", "agent.run", "agent.tool", "agent.compaction", "agent.turn" -> snapshot.progressPresentation()?.let { handlePiAgentProgress(it) }
         }
     }
@@ -1366,9 +1367,16 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         if (now - lastNotificationMillis < 3000L) return
         lastNotificationMillis = now
         if (terminalViewForeground && isShown && hasWindowFocus()) return
-        val feedbackState = TerminalAlertFeedback.stateFor(notification.kind, notification.severity, notification.body)
+        val feedbackState = TerminalAlertFeedback.stateFor(notification.kind, notification.severity)
         if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled() || !postOscNotification(formatNotificationText(notification.title), formatNotificationText(notification.body), false, -1, false, launchUrl = notification.url, feedbackState = feedbackState)) {
             if (oscNotificationToastsEnabled()) Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun handlePiAgentAbort(message: String) {
+        val cleanMessage = formatNotificationText(message).ifBlank { "Operation aborted" }
+        if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled() || !postOscNotification("π", cleanMessage, false, -1, false, feedbackState = TerminalAlertFeedbackState.INTERRUPTED)) {
+            if (oscNotificationToastsEnabled()) Toast.makeText(context, cleanMessage, Toast.LENGTH_LONG).show()
         }
     }
 

@@ -82,6 +82,6 @@ class TerminalAgentState(
 
 private fun PiOscEnvelope.toMetadata(): AgentEventMetadata = AgentEventMetadata(id, ts, source, sessionId, cwd, seq)
 
-private fun JsonObject.stringValue(name: String): String = this[name]?.jsonPrimitive?.contentOrNull.orEmpty()
+fun JsonObject.stringValue(name: String): String = this[name]?.jsonPrimitive?.contentOrNull.orEmpty()
 private fun JsonObject.optionalStringValue(name: String): String? = this[name]?.jsonPrimitive?.contentOrNull
 private fun JsonObject.longValue(name: String): Long = this[name]?.jsonPrimitive?.longOrNull ?: 0L

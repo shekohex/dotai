@@ -85,6 +85,14 @@ export const PiOscAgentAlertPayloadSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const PiOscAgentAbortedPayloadSchema = Type.Object(
+  {
+    reason: Type.Literal("user"),
+    message: BoundedString(512),
+  },
+  { additionalProperties: false },
+);
+
 export const PiOscAgentCompactionPayloadSchema = Type.Object(
   {
     state: Type.Union([Type.Literal("preparing"), Type.Literal("complete")]),
@@ -99,6 +107,7 @@ export type PiOscAgentTurnPayload = Static<typeof PiOscAgentTurnPayloadSchema>;
 export type PiOscAgentProgressPayload = Static<typeof PiOscAgentProgressPayloadSchema>;
 export type PiOscAgentToolPayload = Static<typeof PiOscAgentToolPayloadSchema>;
 export type PiOscAgentAlertPayload = Static<typeof PiOscAgentAlertPayloadSchema>;
+export type PiOscAgentAbortedPayload = Static<typeof PiOscAgentAbortedPayloadSchema>;
 export type PiOscAgentCompactionPayload = Static<typeof PiOscAgentCompactionPayloadSchema>;
 
 export type PiOscV1Payload =
@@ -109,6 +118,7 @@ export type PiOscV1Payload =
   | PiOscAgentProgressPayload
   | PiOscAgentToolPayload
   | PiOscAgentAlertPayload
+  | PiOscAgentAbortedPayload
   | PiOscAgentCompactionPayload;
 
 export const getPiOscPayloadSchema = (eventName: PiOscV1Event): TSchema => {
@@ -127,6 +137,8 @@ export const getPiOscPayloadSchema = (eventName: PiOscV1Event): TSchema => {
       return PiOscAgentToolPayloadSchema;
     case "agent.alert":
       return PiOscAgentAlertPayloadSchema;
+    case "agent.aborted":
+      return PiOscAgentAbortedPayloadSchema;
     case "agent.compaction":
       return PiOscAgentCompactionPayloadSchema;
   }

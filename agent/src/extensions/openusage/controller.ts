@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import { registerOpenUsageCommands } from "./commands.js";
 import {
   emitThresholdAlerts,
@@ -34,6 +35,7 @@ export class OpenUsageController {
   private unsubscribeUpdated: (() => void) | undefined;
   private unsubscribeAlert: (() => void) | undefined;
   private unsubscribeModeChanged: (() => void) | undefined;
+  private publishCurrentModelUsageTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly pi: ExtensionAPI) {
     this.state = createRuntimeState();
@@ -141,6 +143,7 @@ export class OpenUsageController {
   private onSessionShutdown(ctx: ExtensionContext): void {
     this.currentCtx = undefined;
     this.stopInterval();
+    this.clearPublishCurrentModelUsageTimer();
     this.unsubscribeRefreshRequested?.();
     this.unsubscribeUpdated?.();
     this.unsubscribeAlert?.();
@@ -169,10 +172,14 @@ export class OpenUsageController {
   }
 
   private publishCurrentModelUsage(ctx: ExtensionContext): void {
-    this.publishUsageForProvider(
-      ctx,
-      resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id),
-    );
+    try {
+      this.publishUsageForProvider(
+        ctx,
+        resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id),
+      );
+    } catch (error) {
+      if (!isStaleSessionReplacementContextError(error)) throw error;
+    }
   }
 
   private publishUsageForProvider(
@@ -190,11 +197,20 @@ export class OpenUsageController {
   }
 
   private schedulePublishCurrentModelUsage(ctx: ExtensionContext): void {
-    setTimeout(() => {
+    this.clearPublishCurrentModelUsageTimer();
+    this.publishCurrentModelUsageTimer = setTimeout(() => {
+      this.publishCurrentModelUsageTimer = undefined;
       if (this.currentCtx === ctx) {
         this.publishCurrentModelUsage(ctx);
       }
     }, 150);
+  }
+
+  private clearPublishCurrentModelUsageTimer(): void {
+    if (this.publishCurrentModelUsageTimer !== undefined) {
+      clearTimeout(this.publishCurrentModelUsageTimer);
+      this.publishCurrentModelUsageTimer = undefined;
+    }
   }
 
   private async refreshProvider(

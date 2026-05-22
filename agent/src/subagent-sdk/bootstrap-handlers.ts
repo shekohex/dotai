@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getContextPruneAPI } from "../extensions/context-prune/public-api.js";
 import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 import { extractMessageText } from "../extensions/session-launch-utils.js";
 
@@ -186,6 +187,10 @@ function registerChildSessionStartHandler(
     }
     state.timeoutModeActive = isAutoExitTimeoutModeActive(childState.sessionId);
     applyChildToolState(pi, childState);
+    const contextPrune = getContextPruneAPI(ctx);
+    if (contextPrune !== null && childState.contextPrune !== undefined) {
+      contextPrune.updateConfig(childState.contextPrune);
+    }
     pi.setSessionName(formatChildSessionDisplayName(childState.name, childState.prompt));
     if (!ctx.hasUI) {
       return;

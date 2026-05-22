@@ -192,6 +192,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
     sessionId: string,
   ): { childState: ChildBootstrapState; provisionalState: RuntimeSubagent } {
     const persisted = parentSessionPersisted ? (params.persisted ?? true) : false;
+    const contextPrune = params.contextPrune ?? (persisted ? undefined : { enabled: false });
     const sessionPath = createChildSessionFile({
       cwd: mode.cwd,
       sessionId,
@@ -213,6 +214,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
         handoff: params.handoff ?? false,
         tools: mode.tools,
         outputFormat: params.outputFormat,
+        contextPrune,
         startedAt,
       },
       provisionalState: {

@@ -3174,6 +3174,7 @@ timedTest("SubagentRuntime launches ephemeral children when persisted=false", as
     expect(launched.length).toBe(1);
     expect(launched[0]?.childState.persisted).toBe(false);
     expect(launched[0]?.childState.sessionPath).toBe(undefined);
+    expect(launched[0]?.childState.contextPrune).toEqual({ enabled: false });
     expect(launched[0]?.options).toEqual({
       launchTarget: { kind: "ephemeral" },
       tmuxTarget: "pane",
@@ -3225,6 +3226,38 @@ timedTest("SubagentRuntime infers ephemeral children from ephemeral parents", as
     expect(started.state.persisted).toBe(false);
     expect(started.state.sessionPath).toBe(undefined);
     expect(launched[0]?.childState.persisted).toBe(false);
+    expect(launched[0]?.childState.contextPrune).toEqual({ enabled: false });
+  } finally {
+    runtime.dispose();
+  }
+});
+
+timedTest("SubagentRuntime preserves explicit context prune options", async () => {
+  const fakePi = new FakePi();
+  const fakeMux = new FakeMuxAdapter();
+  const launched: Array<{ childState: ChildBootstrapState }> = [];
+  const runtime = new SubagentRuntime(
+    fakePi as unknown as ExtensionAPI,
+    fakeMux,
+    (_state, childState) => {
+      launched.push({ childState });
+      return "pi --no-session fake";
+    },
+  );
+
+  try {
+    const ctx = createFakeContext({ cwd: process.cwd(), sessionFile: "/tmp/parent.jsonl" });
+    await runtime.spawn(
+      {
+        name: "worker-prune",
+        task: "Inspect context",
+        persisted: false,
+        contextPrune: { enabled: true, batchingMode: "turn" },
+      },
+      ctx,
+    );
+
+    expect(launched[0]?.childState.contextPrune).toEqual({ enabled: true, batchingMode: "turn" });
   } finally {
     runtime.dispose();
   }

@@ -46,6 +46,7 @@ describe("context-prune public API", () => {
     };
     setContextPruneRuntime({
       getConfig: () => ({ ...DEFAULT_CONFIG, enabled: true }),
+      updateConfig() {},
       async flush() {
         for (const callback of callbacks) callback(result);
         return result;
@@ -60,6 +61,7 @@ describe("context-prune public API", () => {
     });
     const api = getContextPruneAPI({} as never);
     expect(api?.enabled).toBe(true);
+    api?.updateConfig({ enabled: false });
     const seen: FlushResult[] = [];
     const unsubscribe = api?.onPrune((value) => seen.push(value));
     await expect(api?.flush({ delivery: "session" })).resolves.toEqual(result);

@@ -20,6 +20,7 @@ export type FlushResult =
 export interface ContextPruneAPI {
   readonly enabled: boolean;
   readonly config: ContextPruneConfig;
+  updateConfig(patch: Partial<ContextPruneConfig>): void;
   flush(options?: FlushOptions): Promise<FlushResult>;
   pendingBatchCount(): number;
   getIndexer(): ToolCallIndexer;
@@ -35,6 +36,7 @@ export interface ContextPruneFooterState {
 
 interface ContextPruneRuntime {
   getConfig(): ContextPruneConfig;
+  updateConfig(patch: Partial<ContextPruneConfig>): void;
   flush(ctx: ExtensionContext, options?: FlushOptions): Promise<FlushResult>;
   pendingBatchCount(): number;
   getIndexer(): ToolCallIndexer;
@@ -80,6 +82,9 @@ export function getContextPruneAPI(_ctx?: ExtensionContext): ContextPruneAPI | n
     },
     get config() {
       return currentRuntime.getConfig();
+    },
+    updateConfig: (patch) => {
+      currentRuntime.updateConfig(patch);
     },
     flush: (options) => currentRuntime.flush(_ctx, options),
     pendingBatchCount: () => currentRuntime.pendingBatchCount(),

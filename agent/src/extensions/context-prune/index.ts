@@ -13,6 +13,7 @@ import {
 import { ToolCallIndexer } from "./indexer.js";
 import {
   setContextPruneLastResult,
+  setContextPruneFooterState,
   setContextPruneRuntime,
   type FlushResult,
 } from "./public-api.js";
@@ -89,7 +90,7 @@ export default function contextPruneExtension(pi: ExtensionAPI): void {
   const state = createRuntimeState();
   const flushPending = (ctx: ExtensionContext, options?: FlushOptions) =>
     flushPendingBatches(pi, state, ctx, options ?? {});
-  registerPublicApi(state, flushPending);
+  registerPublicApi(pi, state, flushPending);
   registerEvents(pi, state, flushPending);
   registerQueryTool(pi, state.indexer);
   registerContextPruneTool(pi, (ctx, options) =>
@@ -121,11 +122,15 @@ function createRuntimeState(): RuntimeState {
 }
 
 function registerPublicApi(
+  pi: ExtensionAPI,
   state: RuntimeState,
   flushPending: (ctx: ExtensionContext, options?: FlushOptions) => Promise<FlushResult>,
 ): void {
   setContextPruneRuntime({
     getConfig: () => state.currentConfig.value,
+    updateConfig: (patch) => {
+      updateRuntimeConfig(pi, state, patch);
+    },
     flush: (ctx, options) => flushPending(ctx, options),
     pendingBatchCount: () => state.pendingBatches.length,
     getIndexer: () => state.indexer,
@@ -135,6 +140,20 @@ function registerPublicApi(
         state.pruneCallbacks.delete(callback);
       };
     },
+  });
+}
+
+function updateRuntimeConfig(
+  pi: ExtensionAPI,
+  state: RuntimeState,
+  patch: Partial<ContextPruneConfig>,
+): void {
+  state.currentConfig.value = { ...state.currentConfig.value, ...patch };
+  syncToolActivation(pi, state);
+  setContextPruneFooterState({
+    config: state.currentConfig.value,
+    stats: state.stats.getStats(),
+    pendingBatchCount: state.pendingBatches.length,
   });
 }
 

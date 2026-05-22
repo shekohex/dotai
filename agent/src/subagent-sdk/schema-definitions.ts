@@ -104,6 +104,33 @@ export const OutputFormatSchema = Type.Union([
   OutputFormatJsonSchemaSchema,
 ]);
 
+const ContextPruneOverrideSchema = Type.Partial(
+  Type.Object({
+    enabled: Type.Boolean(),
+    showPruneStatusLine: Type.Boolean(),
+    summarizerModels: Type.Array(Type.String()),
+    summarizerThinking: Type.Union([
+      Type.Literal("default"),
+      Type.Literal("off"),
+      Type.Literal("minimal"),
+      Type.Literal("low"),
+      Type.Literal("medium"),
+      Type.Literal("high"),
+      Type.Literal("xhigh"),
+    ]),
+    pruneOn: Type.Union([
+      Type.Literal("every-turn"),
+      Type.Literal("on-context-tag"),
+      Type.Literal("on-demand"),
+      Type.Literal("agent-message"),
+      Type.Literal("agentic-auto"),
+    ]),
+    remindUnprunedCount: Type.Boolean(),
+    batchingMode: Type.Union([Type.Literal("turn"), Type.Literal("agent-message")]),
+    minRawCharsToPrune: Type.Number({ minimum: 0 }),
+  }),
+);
+
 export const SubagentIpcConfigSchema = Type.Object(
   {
     endpoint: Type.String(),
@@ -180,6 +207,7 @@ export const SubagentToolParamsSchema = Type.Object({
         "Optional for start. Defaults to true (persistent). Set false for ephemeral: launches child with --no-session, no session file. Ephemeral subagents can be messaged while running but cannot be resumed after exit. Good for one-off exploration, git commits, or quick tasks where follow-up is not needed. If parent session is ephemeral, children are automatically ephemeral.",
     }),
   ),
+  contextPrune: Type.Optional(ContextPruneOverrideSchema),
   completion: Type.Optional(SubagentCompletionSchema),
   outputFormat: Type.Optional(
     Type.Union([
@@ -279,6 +307,7 @@ export const ChildBootstrapStateSchema = Type.Object(
     handoff: Type.Boolean(),
     tools: Type.Array(Type.String()),
     outputFormat: Type.Optional(OutputFormatSchema),
+    contextPrune: Type.Optional(ContextPruneOverrideSchema),
     ipc: Type.Optional(SubagentIpcConfigSchema),
     startedAt: Type.Number(),
   },

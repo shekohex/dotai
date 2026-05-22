@@ -1,4 +1,5 @@
 import type { CustomEntry } from "@earendil-works/pi-coding-agent";
+import type { ContextPruneConfig } from "../extensions/context-prune/types.js";
 import type { Static, TSchema } from "typebox";
 import { Value } from "typebox/value";
 
@@ -93,6 +94,7 @@ type StartSubagentBaseParams = {
   cwd?: string;
   autoExit?: boolean;
   persisted?: boolean;
+  contextPrune?: Partial<ContextPruneConfig>;
   completion?: SubagentCompletion;
 };
 

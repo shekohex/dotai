@@ -109,9 +109,9 @@ export function buildTPSStatus(theme: Theme, state: CoreUIState): string {
   const icon = colorTPSIcon(
     theme,
     state.tps.current,
-    state.tps.min,
+    state.tps.sessionMin,
     state.tps.median,
-    state.tps.max,
+    state.tps.sessionMax,
   );
   return `${icon}${theme.fg("dim", " ")}${theme.fg("accent", state.tps.current.toFixed(1))}`;
 }

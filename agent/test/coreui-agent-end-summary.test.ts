@@ -21,6 +21,8 @@ function createNotifyContext(): { messages: string[]; ctx: never } {
 
 const stats = {
   current: 16.1,
+  sessionMin: 10.5,
+  sessionMax: 17.6,
   min: 11.7,
   median: 14.8,
   max: 16.1,
@@ -40,12 +42,12 @@ describe("agent end summary", () => {
       "5h 94% wk 61%",
       123,
     );
-    expect(messages[0]).toContain("󰓅 16.1/14.8/11.7");
+    expect(messages[0]).toContain("󰓅 17.6/14.8/10.5 123ms");
     expect(messages[0]).toContain(" 10");
     expect(messages[0]).toContain(" 20");
     expect(messages[0]).toContain("󰍛 r 5 w 2");
     expect(messages[0]).toContain("5h 94% wk 61%");
-    expect(messages[0]).toContain("ttft 123ms");
+    expect(messages[0]).not.toContain("ttft");
     expect(messages[0]).not.toContain("pruned");
   });
 
@@ -67,7 +69,7 @@ describe("agent end summary", () => {
       undefined,
       undefined,
     );
-    expect(messages[0]).toContain("󰓅 16.1/14.8/11.7");
+    expect(messages[0]).toContain("󰓅 17.6/14.8/10.5");
     expect(messages[0]).toContain("󰩫 4t/2b");
     clearContextPruneLastResult();
   });

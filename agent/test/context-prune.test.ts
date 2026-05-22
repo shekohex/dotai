@@ -8,6 +8,7 @@ import {
   setContextPruneRuntime,
   type FlushResult,
 } from "../src/extensions/context-prune/public-api.js";
+import { shouldSkipUndersizedBatch } from "../src/extensions/context-prune/index.js";
 import {
   renderContextPruneCall,
   renderContextPruneResult,
@@ -68,6 +69,48 @@ describe("context-prune public API", () => {
 });
 
 describe("context-prune settings", () => {
+  test("defaults skip tiny raw outputs before summarization", () => {
+    expect(DEFAULT_CONFIG.minRawCharsToPrune).toBe(700);
+    expect(
+      shouldSkipUndersizedBatch(DEFAULT_CONFIG, {
+        turnIndex: 1,
+        timestamp: 1,
+        assistantText: "",
+        toolCalls: [
+          {
+            toolCallId: "tool-1",
+            toolName: "read",
+            args: {},
+            resultText: "tiny result",
+            isError: false,
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  test("min raw size guard can be disabled", () => {
+    expect(
+      shouldSkipUndersizedBatch(
+        { ...DEFAULT_CONFIG, minRawCharsToPrune: 0 },
+        {
+          turnIndex: 1,
+          timestamp: 1,
+          assistantText: "",
+          toolCalls: [
+            {
+              toolCallId: "tool-1",
+              toolName: "read",
+              args: {},
+              resultText: "tiny result",
+              isError: false,
+            },
+          ],
+        },
+      ),
+    ).toBe(false);
+  });
+
   test("saves under contextPrune in main agent settings", async () => {
     const agentDir = mkdtempSync(join(tmpdir(), "context-prune-settings-"));
     process.env.PI_CODING_AGENT_DIR = agentDir;

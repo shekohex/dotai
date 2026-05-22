@@ -132,7 +132,7 @@ export function isIndexEntryData(value: unknown): value is IndexEntryData {
 }
 
 function isPruneFrontierOutcome(value: unknown): value is PruneFrontierOutcome {
-  return value === "summarized" || value === "skipped-oversized";
+  return value === "summarized" || value === "skipped-oversized" || value === "skipped-undersized";
 }
 
 export function isPruneFrontier(value: unknown): value is PruneFrontier {

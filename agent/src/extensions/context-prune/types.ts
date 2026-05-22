@@ -179,6 +179,8 @@ export interface ContextPruneConfig {
    * messages are merged)
    */
   batchingMode: BatchingMode;
+  /** Raw result chars below this threshold are left unpruned without calling summarizer. */
+  minRawCharsToPrune: number;
 }
 
 export const DEFAULT_CONFIG: ContextPruneConfig = {
@@ -193,6 +195,7 @@ export const DEFAULT_CONFIG: ContextPruneConfig = {
   pruneOn: "agent-message",
   remindUnprunedCount: true,
   batchingMode: "turn",
+  minRawCharsToPrune: 700,
 };
 
 // ── Captured batch ─────────────────────────────────────────────────────────
@@ -291,7 +294,7 @@ export interface SummarizerStats {
 }
 
 /** Outcome of the most recent completed prune attempt. */
-export type PruneFrontierOutcome = "summarized" | "skipped-oversized";
+export type PruneFrontierOutcome = "summarized" | "skipped-oversized" | "skipped-undersized";
 
 /**
  * Snapshot of the last successfully completed prune attempt boundary.

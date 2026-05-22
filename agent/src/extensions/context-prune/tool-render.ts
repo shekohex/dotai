@@ -107,6 +107,7 @@ function readTreeQueryDetails(value: unknown): ContextTreeQueryDetails {
 
 function pruneResultDetail(result: ContextPruneResultDetails): string {
   if (result.reason === "skipped-oversized") return "summary larger than raw output";
+  if (result.reason === "skipped-undersized") return "raw output below threshold";
   const calls = result.toolCallCount ?? 0;
   const batches = result.batchCount ?? 0;
   return `${calls} tool call${calls === 1 ? "" : "s"}, ${batches} batch${batches === 1 ? "" : "es"}`;

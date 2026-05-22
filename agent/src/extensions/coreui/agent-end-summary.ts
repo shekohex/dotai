@@ -27,16 +27,13 @@ export function notifyAgentEndSummary(
   openUsageStatus: string | undefined,
   ttftMs: number | undefined,
 ): void {
-  const parts = [formatTPSSummary(usage, stats)];
+  const parts = [formatSpeedSummary(stats, ttftMs), formatTokenSummary(usage)];
   if (openUsageStatus !== undefined && openUsageStatus.length > 0) {
     parts.push(openUsageStatus);
   }
   const pruneSummary = formatPruneSummary();
   if (pruneSummary !== undefined) {
     parts.push(pruneSummary);
-  }
-  if (ttftMs !== undefined && Number.isFinite(ttftMs)) {
-    parts.push(`ttft ${formatHumanMs(ttftMs)}`);
   }
   parts.push(formatDurationHuman(elapsedMs));
   ctx.ui.notify(parts.join(" · "), "info");
@@ -54,12 +51,18 @@ function formatHumanMs(value: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
-function formatTPSSummary(usage: UsageSummary, stats: CoreUITPSStats | undefined): string {
+function formatSpeedSummary(stats: CoreUITPSStats | undefined, ttftMs: number | undefined): string {
   const tpsText =
     stats === undefined
       ? "0.0/0.0/0.0"
-      : `${stats.max.toFixed(1)}/${stats.median.toFixed(1)}/${stats.min.toFixed(1)}`;
-  return `${TPS_ICON} ${tpsText} . ${INPUT_ICON} ${formatCompactCount(usage.input)} ${OUTPUT_ICON} ${formatCompactCount(usage.output)} ${TOTAL_ICON} ${formatCompactCount(usage.totalTokens)}, ${MEMORY_ICON} ${formatCacheUsage(usage)}`;
+      : `${stats.sessionMax.toFixed(1)}/${stats.median.toFixed(1)}/${stats.sessionMin.toFixed(1)}`;
+  const ttftText =
+    ttftMs !== undefined && Number.isFinite(ttftMs) ? ` ${formatHumanMs(ttftMs)}` : "";
+  return `${TPS_ICON} ${tpsText}${ttftText}`;
+}
+
+function formatTokenSummary(usage: UsageSummary): string {
+  return `${INPUT_ICON} ${formatCompactCount(usage.input)} ${OUTPUT_ICON} ${formatCompactCount(usage.output)} ${TOTAL_ICON} ${formatCompactCount(usage.totalTokens)}, ${MEMORY_ICON} ${formatCacheUsage(usage)}`;
 }
 
 function formatCacheUsage(usage: UsageSummary): string {
@@ -75,6 +78,9 @@ function formatPruneSummary(): string | undefined {
   }
   if (result.reason === "skipped-oversized") {
     return `${PRUNE_ICON} skipped ${result.toolCallCount}t`;
+  }
+  if (result.reason === "skipped-undersized") {
+    return `${PRUNE_ICON} skipped ${result.toolCallCount}t <min`;
   }
   return `${PRUNE_ICON} ${result.toolCallCount}t/${result.batchCount}b, ${formatCompactCount(result.rawCharCount)}→${formatCompactCount(result.summaryCharCount)}`;
 }

@@ -41,7 +41,6 @@ import {
   makeSummaryDetails,
   pruneMessages,
   summarizeBatch,
-  summarizeBatches,
   countUnprunedToolCalls,
 } from "./runtime-support.js";
 
@@ -67,13 +66,16 @@ interface RuntimeState {
 
 interface FlushContext {
   batches: CapturedBatch[];
-  results: (SummarizeResult | null)[];
+  results: SummaryOutcome[];
   processedBatches: CapturedBatch[];
   oversizedBatches: CapturedBatch[];
+  undersizedBatches: CapturedBatch[];
   rawCharCount: number;
   summaryCharCount: number;
   toolCallCount: number;
 }
+
+type SummaryOutcome = SummarizeResult | "undersized" | null;
 
 interface BeforeAgentStartResult {
   systemPrompt?: string;
@@ -126,6 +128,7 @@ function registerPublicApi(
     getConfig: () => state.currentConfig.value,
     flush: (ctx, options) => flushPending(ctx, options),
     pendingBatchCount: () => state.pendingBatches.length,
+    getIndexer: () => state.indexer,
     onPrune: (callback) => {
       state.pruneCallbacks.add(callback);
       return () => {
@@ -374,39 +377,70 @@ async function summarizePendingBatches(
   ctx: ExtensionContext,
   batches: CapturedBatch[],
   options: FlushOptions,
-): Promise<(SummarizeResult | null)[]> {
+): Promise<SummaryOutcome[]> {
   if (options.onProgress === undefined) {
-    return summarizeBatches(batches, state.currentConfig.value, ctx, {
-      onBatchTextProgress: options.onBatchTextProgress,
-      signal: options.signal,
-    });
+    return Promise.all(
+      batches.map((batch, index) =>
+        summarizeBatchWithGuard(state, ctx, batch, options, index, batches.length),
+      ),
+    );
   }
-  const results: (SummarizeResult | null)[] = [];
+  const results: SummaryOutcome[] = [];
   for (const [index, batch] of batches.entries()) {
     options.onProgress(index, batches.length, batch, "start");
-    const result = await summarizeBatch(batch, state.currentConfig.value, ctx, {
-      signal: options.signal,
-      onTextProgress: (receivedChars) =>
-        options.onBatchTextProgress?.(index, batches.length, batch, receivedChars),
-    });
+    const result = await summarizeBatchWithGuard(state, ctx, batch, options, index, batches.length);
     results.push(result);
-    options.onProgress(index, batches.length, batch, result === null ? "skipped" : "done");
+    options.onProgress(
+      index,
+      batches.length,
+      batch,
+      result === null || result === "undersized" ? "skipped" : "done",
+    );
   }
   return results;
+}
+
+function summarizeBatchWithGuard(
+  state: RuntimeState,
+  ctx: ExtensionContext,
+  batch: CapturedBatch,
+  options: FlushOptions,
+  index: number,
+  total: number,
+): Promise<SummaryOutcome> {
+  if (shouldSkipUndersizedBatch(state.currentConfig.value, batch)) {
+    return Promise.resolve("undersized");
+  }
+  return summarizeBatch(batch, state.currentConfig.value, ctx, {
+    signal: options.signal,
+    onTextProgress: (receivedChars) =>
+      options.onBatchTextProgress?.(index, total, batch, receivedChars),
+  });
+}
+
+export function shouldSkipUndersizedBatch(
+  config: ContextPruneConfig,
+  batch: CapturedBatch,
+): boolean {
+  return config.minRawCharsToPrune > 0 && batchRawCharCount(batch) < config.minRawCharsToPrune;
 }
 
 function processSummaries(
   pi: ExtensionAPI,
   state: RuntimeState,
   batches: CapturedBatch[],
-  results: (SummarizeResult | null)[],
+  results: SummaryOutcome[],
   options: FlushOptions,
   sessionAppender: SessionAppender | undefined,
 ): FlushContext {
   const context = emptyFlushContext(batches, results);
   for (const [index, batch] of batches.entries()) {
     const result = results[index];
-    if (result === null || result === undefined) break;
+    if (result === undefined || result === null) break;
+    if (result === "undersized") {
+      processUndersizedSummary(context, batch);
+      continue;
+    }
     processSummary(pi, state, context, batch, result, options, sessionAppender);
   }
   return context;
@@ -421,10 +455,7 @@ function processSummary(
   options: FlushOptions,
   sessionAppender: SessionAppender | undefined,
 ): void {
-  const rawCharCount = batch.toolCalls.reduce(
-    (sum, toolCall) => sum + toolCall.resultText.length,
-    0,
-  );
+  const rawCharCount = batchRawCharCount(batch);
   const refs = state.indexer.allocateSummaryRefs(batch);
   const summaryText = result.summaryText + formatSummaryToolCallRefs(refs);
   state.stats.add(result.usage);
@@ -458,19 +489,24 @@ function processSummary(
   context.processedBatches.push(batch);
 }
 
-function emptyFlushContext(
-  batches: CapturedBatch[],
-  results: (SummarizeResult | null)[],
-): FlushContext {
+function emptyFlushContext(batches: CapturedBatch[], results: SummaryOutcome[]): FlushContext {
   return {
     batches,
     results,
     processedBatches: [],
     oversizedBatches: [],
+    undersizedBatches: [],
     rawCharCount: 0,
     summaryCharCount: 0,
     toolCallCount: 0,
   };
+}
+
+function processUndersizedSummary(context: FlushContext, batch: CapturedBatch): void {
+  context.rawCharCount += batchRawCharCount(batch);
+  context.toolCallCount += batch.toolCalls.length;
+  context.undersizedBatches.push(batch);
+  context.processedBatches.push(batch);
 }
 
 function persistBatchIndex(
@@ -519,25 +555,42 @@ function frontierSnapshot(context: FlushContext): PruneFrontier {
     attemptedToolCallCount: context.toolCallCount,
     rawCharCount: context.rawCharCount,
     summaryCharCount: context.summaryCharCount,
-    outcome:
-      context.oversizedBatches.length === context.processedBatches.length
-        ? "skipped-oversized"
-        : "summarized",
+    outcome: pruneOutcome(context),
   };
+}
+
+function pruneOutcome(context: FlushContext): PruneFrontier["outcome"] {
+  if (context.oversizedBatches.length === context.processedBatches.length) {
+    return "skipped-oversized";
+  }
+  if (context.undersizedBatches.length === context.processedBatches.length)
+    return "skipped-undersized";
+  return "summarized";
 }
 
 function flushResult(context: FlushContext): FlushResult {
   return {
     ok: true,
-    reason:
-      context.oversizedBatches.length === context.processedBatches.length
-        ? "skipped-oversized"
-        : "flushed",
+    reason: flushResultReason(context),
     batchCount: context.processedBatches.length,
     toolCallCount: context.toolCallCount,
     rawCharCount: context.rawCharCount,
     summaryCharCount: context.summaryCharCount,
   };
+}
+
+function flushResultReason(context: FlushContext): Extract<FlushResult, { ok: true }>["reason"] {
+  if (context.undersizedBatches.length === context.processedBatches.length) {
+    return "skipped-undersized";
+  }
+  if (context.oversizedBatches.length === context.processedBatches.length) {
+    return "skipped-oversized";
+  }
+  return "flushed";
+}
+
+function batchRawCharCount(batch: CapturedBatch): number {
+  return batch.toolCalls.reduce((sum, toolCall) => sum + toolCall.resultText.length, 0);
 }
 
 function notifyPruneCallbacks(state: RuntimeState, result: FlushResult): void {

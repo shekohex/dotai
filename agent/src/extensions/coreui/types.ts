@@ -2,6 +2,8 @@ import type { ThemeColor } from "../../mode-utils.js";
 
 export type CoreUITPSStats = {
   current: number;
+  sessionMin: number;
+  sessionMax: number;
   min: number;
   median: number;
   max: number;

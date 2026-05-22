@@ -27,6 +27,8 @@ const stateWithTps = (tpsVisible: boolean): CoreUIState => ({
   tpsElapsedMs: 65_000,
   tps: {
     current: 12.3,
+    sessionMin: 5,
+    sessionMax: 20,
     min: 10,
     median: 11,
     max: 14,
@@ -70,7 +72,7 @@ describe("coreui footer", () => {
 
   test("renders hot tps icon red and bold near max", () => {
     const state = stateWithTps(true);
-    state.tps = { ...state.tps!, current: 13.5 };
+    state.tps = { ...state.tps!, current: 18.5 };
     expect(buildTPSStatus(theme, state)).toContain("<b><error>󰓅</error></b>");
   });
 });

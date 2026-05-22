@@ -6,4 +6,4 @@ export {
 export { pruneMessages } from "./pruner.js";
 export { annotateWithUnprunedCount, countUnprunedToolCalls } from "./reminder.js";
 export { formatSummaryToolCallRefs, makeSummaryDetails } from "./summary-refs.js";
-export { summarizeBatch, summarizeBatches } from "./summarizer.js";
+export { summarizeBatch } from "./summarizer.js";

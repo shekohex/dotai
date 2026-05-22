@@ -117,6 +117,8 @@ function setTPSState(
   }
   const nextStats: CoreUITPSStats = {
     current: currentTPS,
+    sessionMin: Math.min(state.tps?.sessionMin ?? currentTPS, aggregateStats.min),
+    sessionMax: Math.max(state.tps?.sessionMax ?? currentTPS, aggregateStats.max),
     max: aggregateStats.max,
     median: aggregateStats.median,
     min: aggregateStats.min,
@@ -134,6 +136,8 @@ function hasSameTPSStats(current: CoreUITPSStats | undefined, next: CoreUITPSSta
   return (
     current !== undefined &&
     current.current === next.current &&
+    current.sessionMin === next.sessionMin &&
+    current.sessionMax === next.sessionMax &&
     current.max === next.max &&
     current.median === next.median &&
     current.min === next.min &&
@@ -176,6 +180,8 @@ function parseTPSStats(stats: Partial<CoreUITPSStats>): CoreUITPSStats | undefin
   }
   return {
     current,
+    sessionMin: readNumberOrFallback(stats.sessionMin, min),
+    sessionMax: readNumberOrFallback(stats.sessionMax, max),
     min,
     median,
     max,

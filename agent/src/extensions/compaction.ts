@@ -2,10 +2,18 @@ import { complete } from "@earendil-works/pi-ai";
 import {
   convertToLlm,
   serializeConversation,
+  type compact,
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../utils/error-message.js";
+import {
+  mergeCompactSanitizeStats,
+  sanitizeMessagesForCompact,
+} from "./context-prune/compact-sanitizer.js";
+import { getContextPruneAPI } from "./context-prune/public-api.js";
+
+type CompactionPreparation = Parameters<typeof compact>[0];
 
 const COMPACTION_MODEL_FALLBACKS = [
   { provider: "gemini", model: "gemini-3.1-flash-lite-preview" },
@@ -25,7 +33,11 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_before_compact", async (event, ctx) => {
     ctx.ui.notify("Compaction extension triggered", "info");
     const preparation = event.preparation;
-    const allMessages = [...preparation.messagesToSummarize, ...preparation.turnPrefixMessages];
+    const sanitizedPreparation = sanitizePreparationForCompaction(ctx, preparation);
+    const allMessages = [
+      ...sanitizedPreparation.messagesToSummarize,
+      ...sanitizedPreparation.turnPrefixMessages,
+    ];
 
     for (const fallbackModel of COMPACTION_MODEL_FALLBACKS) {
       const modelAuth = await resolveCompactionModelAndAuth(
@@ -65,6 +77,7 @@ export default function (pi: ExtensionAPI) {
             summary: `${SUMMARY_PREFIX}\n\n${summary}`,
             firstKeptEntryId: preparation.firstKeptEntryId,
             tokensBefore: preparation.tokensBefore,
+            details: sanitizedPreparation.details,
           },
         };
       } catch (error) {
@@ -81,6 +94,26 @@ export default function (pi: ExtensionAPI) {
 
     return {};
   });
+}
+
+function sanitizePreparationForCompaction(
+  ctx: ExtensionContext,
+  preparation: CompactionPreparation,
+) {
+  const pruner = getContextPruneAPI(ctx);
+  if (pruner === null || pruner.getIndexer().getIndex().size === 0) {
+    return { ...preparation, details: undefined };
+  }
+  const indexer = pruner.getIndexer();
+  const summarized = sanitizeMessagesForCompact(preparation.messagesToSummarize, indexer);
+  const turnPrefix = sanitizeMessagesForCompact(preparation.turnPrefixMessages, indexer);
+  const stats = mergeCompactSanitizeStats(summarized.stats, turnPrefix.stats);
+  return {
+    ...preparation,
+    messagesToSummarize: summarized.messages,
+    turnPrefixMessages: turnPrefix.messages,
+    details: stats.changed ? { contextPrune: { sanitized: true, ...stats } } : undefined,
+  };
 }
 
 async function resolveCompactionModelAndAuth(

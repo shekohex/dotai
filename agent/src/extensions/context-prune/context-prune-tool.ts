@@ -21,7 +21,7 @@ type FlushResult =
     }
   | {
       ok: true;
-      reason: "skipped-oversized";
+      reason: "skipped-oversized" | "skipped-undersized";
       batchCount: number;
       toolCallCount: number;
       rawCharCount: number;
@@ -106,6 +106,18 @@ export function registerContextPruneTool(
               {
                 type: "text",
                 text: `Context prune skipped ${result.toolCallCount} tool call${result.toolCallCount === 1 ? "" : "s"}: the summary was ${result.summaryCharCount} chars while the raw tool results were ${result.rawCharCount} chars. The original tool results were kept, and the prune frontier advanced so the next prune starts after this range.`,
+              },
+            ],
+            details: result,
+          };
+        }
+
+        if (result.reason === "skipped-undersized") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Context prune skipped ${result.toolCallCount} tool call${result.toolCallCount === 1 ? "" : "s"}: raw results were below the configured minimum size. The original tool results were kept, and the prune frontier advanced so the next prune starts after this range.`,
               },
             ],
             details: result,

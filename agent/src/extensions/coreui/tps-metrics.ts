@@ -85,6 +85,8 @@ function buildTPSStats(samples: number[]): CoreUITPSStats | undefined {
       : (sorted[middleIndex] ?? 0);
   return {
     current: samples.at(-1) ?? 0,
+    sessionMin: sorted[0] ?? 0,
+    sessionMax: sorted.at(-1) ?? 0,
     min: sorted[0] ?? 0,
     median,
     max: sorted.at(-1) ?? 0,

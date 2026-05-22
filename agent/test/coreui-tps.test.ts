@@ -107,6 +107,8 @@ timedTest("resolveAssistantOutputTokens prefers provider usage when available", 
 timedTest("buildTPSStats returns current max median and min", () => {
   expect(buildTPSStats([42.1, 55.4, 39.2, 48.6])).toEqual({
     current: 48.6,
+    sessionMin: 39.2,
+    sessionMax: 55.4,
     max: 55.4,
     median: 45.4,
     min: 39.2,
@@ -157,7 +159,16 @@ timedTest("restoreTPSState rehydrates latest stats and visibility from custom en
   ] as any);
 
   expect(restored).toEqual({
-    tps: { current: 42.1, max: 55.4, median: 45.4, min: 39.2, sampleCount: 50, bufferSize: 50 },
+    tps: {
+      current: 42.1,
+      sessionMin: 39.2,
+      sessionMax: 55.4,
+      max: 55.4,
+      median: 45.4,
+      min: 39.2,
+      sampleCount: 50,
+      bufferSize: 50,
+    },
     tpsVisible: false,
     tpsElapsedMs: 1000,
   });
@@ -184,7 +195,16 @@ timedTest("restoreTPSState accepts older persisted TPS entries without buffer me
   ] as any);
 
   expect(restored).toEqual({
-    tps: { current: 40.5, max: 45.4, median: 33.3, min: 0.6, sampleCount: 50, bufferSize: 50 },
+    tps: {
+      current: 40.5,
+      sessionMin: 0.6,
+      sessionMax: 45.4,
+      max: 45.4,
+      median: 33.3,
+      min: 0.6,
+      sampleCount: 50,
+      bufferSize: 50,
+    },
     tpsVisible: true,
     tpsElapsedMs: 13320,
   });

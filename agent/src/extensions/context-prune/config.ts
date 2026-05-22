@@ -25,6 +25,7 @@ const ConfigFileSchema = Type.Partial(
     pruneOn: Type.Union(PRUNE_ON_MODES.map((mode) => Type.Literal(mode.value))),
     remindUnprunedCount: Type.Boolean(),
     batchingMode: Type.Union(BATCHING_MODES.map((mode) => Type.Literal(mode.value))),
+    minRawCharsToPrune: Type.Number({ minimum: 0 }),
   }),
 );
 
@@ -78,6 +79,9 @@ export async function loadConfig(): Promise<ContextPruneConfig> {
       batchingMode: isBatchingMode(merged.batchingMode)
         ? merged.batchingMode
         : DEFAULT_CONFIG.batchingMode,
+      minRawCharsToPrune: Number.isFinite(merged.minRawCharsToPrune)
+        ? Math.max(0, merged.minRawCharsToPrune)
+        : DEFAULT_CONFIG.minRawCharsToPrune,
     };
   } catch {
     return { ...DEFAULT_CONFIG };

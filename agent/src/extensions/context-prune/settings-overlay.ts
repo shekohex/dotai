@@ -99,6 +99,12 @@ function buildSettingItems(
       BATCHING_MODES.map((mode) => mode.value),
       config.batchingMode,
     ),
+    selectItem(
+      "minRawCharsToPrune",
+      "Min raw chars",
+      ["0", "700", "1000"],
+      String(config.minRawCharsToPrune),
+    ),
   ];
 }
 
@@ -189,6 +195,8 @@ function applySetting(config: ContextPruneConfig, id: string, value: string): Co
     return { ...config, summarizerThinking: value };
   if (id === "remindUnprunedCount") return { ...config, remindUnprunedCount: value === "true" };
   if (id === "batchingMode" && isBatching(value)) return { ...config, batchingMode: value };
+  if (id === "minRawCharsToPrune")
+    return { ...config, minRawCharsToPrune: Math.max(0, Number(value)) };
   return config;
 }
 
@@ -207,6 +215,7 @@ function nextItemValue(id: string, config: ContextPruneConfig): string | undefin
   if (id === "summarizerThinking") return config.summarizerThinking;
   if (id === "remindUnprunedCount") return String(config.remindUnprunedCount);
   if (id === "batchingMode") return config.batchingMode;
+  if (id === "minRawCharsToPrune") return String(config.minRawCharsToPrune);
   return undefined;
 }
 

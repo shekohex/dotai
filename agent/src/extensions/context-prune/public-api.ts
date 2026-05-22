@@ -1,10 +1,11 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ToolCallIndexer } from "./indexer.js";
 import type { ContextPruneConfig, FlushOptions, SummarizerStats } from "./types.js";
 
 export type FlushResult =
   | {
       ok: true;
-      reason: "flushed" | "skipped-oversized";
+      reason: "flushed" | "skipped-oversized" | "skipped-undersized";
       batchCount: number;
       toolCallCount: number;
       rawCharCount: number;
@@ -21,6 +22,7 @@ export interface ContextPruneAPI {
   readonly config: ContextPruneConfig;
   flush(options?: FlushOptions): Promise<FlushResult>;
   pendingBatchCount(): number;
+  getIndexer(): ToolCallIndexer;
   onPrune(callback: (result: FlushResult) => void): () => void;
 }
 
@@ -35,6 +37,7 @@ interface ContextPruneRuntime {
   getConfig(): ContextPruneConfig;
   flush(ctx: ExtensionContext, options?: FlushOptions): Promise<FlushResult>;
   pendingBatchCount(): number;
+  getIndexer(): ToolCallIndexer;
   onPrune(callback: (result: FlushResult) => void): () => void;
 }
 
@@ -80,6 +83,7 @@ export function getContextPruneAPI(_ctx?: ExtensionContext): ContextPruneAPI | n
     },
     flush: (options) => currentRuntime.flush(_ctx, options),
     pendingBatchCount: () => currentRuntime.pendingBatchCount(),
+    getIndexer: () => currentRuntime.getIndexer(),
     onPrune: (callback) => currentRuntime.onPrune(callback),
   };
 }

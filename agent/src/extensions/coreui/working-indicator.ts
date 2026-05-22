@@ -1,8 +1,8 @@
 import type { ExtensionContext, WorkingIndicatorOptions } from "@earendil-works/pi-coding-agent";
 
-const DOTS2_INTERVAL_MS = 80;
+export const COREUI_SHIMMER_INTERVAL_MS = 80;
 const DOTS2_FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
-const PASTEL_COLORS = [
+export const COREUI_PASTEL_COLORS = [
   "\u001B[38;2;255;179;186m",
   "\u001B[38;2;255;223;186m",
   "\u001B[38;2;255;255;186m",
@@ -15,10 +15,11 @@ const RESET_FG = "\u001B[39m";
 export function buildCoreUIWorkingIndicator(): WorkingIndicatorOptions {
   return {
     frames: DOTS2_FRAMES.map((frame, index) => {
-      const color = PASTEL_COLORS[index % PASTEL_COLORS.length] ?? PASTEL_COLORS[0];
+      const color =
+        COREUI_PASTEL_COLORS[index % COREUI_PASTEL_COLORS.length] ?? COREUI_PASTEL_COLORS[0];
       return colorizeFrame(frame, color);
     }),
-    intervalMs: DOTS2_INTERVAL_MS,
+    intervalMs: COREUI_SHIMMER_INTERVAL_MS,
   };
 }
 
@@ -28,4 +29,10 @@ export function applyCoreUIWorkingIndicator(ctx: ExtensionContext): void {
 
 function colorizeFrame(frame: string, color: string): string {
   return `${color}${frame}${RESET_FG}`;
+}
+
+export function colorizeCoreUIShimmerFrame(frame: string, nowMs = Date.now()): string {
+  const index = Math.floor(nowMs / COREUI_SHIMMER_INTERVAL_MS) % COREUI_PASTEL_COLORS.length;
+  const color = COREUI_PASTEL_COLORS[index] ?? COREUI_PASTEL_COLORS[0];
+  return colorizeFrame(frame, color);
 }

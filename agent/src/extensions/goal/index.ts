@@ -6,6 +6,7 @@ import {
 } from "../../utils/tool-state.js";
 import { emitNotifyPublish } from "../notify/index.js";
 import { NOTIFY_DEFAULT_TOPIC } from "../notify/settings.js";
+import { getContextPruneAPI } from "../context-prune/public-api.js";
 import { registerGoalCommand } from "./commands.js";
 import { completionUsageReport, formatFooterStatus } from "./format.js";
 import {
@@ -640,7 +641,10 @@ class GoalRuntime {
     }
   }
 
-  private handleAgentEnd(event: { messages: AssistantMessageLike[] }, ctx: ExtensionContext): void {
+  private async handleAgentEnd(
+    event: { messages: AssistantMessageLike[] },
+    ctx: ExtensionContext,
+  ): Promise<void> {
     const abortedMessages = event.messages.filter(isAbortedAssistantMessage);
     const abortedTurnTokens = abortedMessages.reduce(
       (sum, message) => sum + assistantTurnTokens(message),
@@ -660,6 +664,10 @@ class GoalRuntime {
       return;
     }
 
+    const pruner = getContextPruneAPI(ctx);
+    if (pruner?.enabled === true && pruner.pendingBatchCount() > 0) {
+      await pruner.flush({ delivery: "session" });
+    }
     this.scheduleContinuationAfterAgentSettles(ctx);
   }
 
@@ -751,8 +759,8 @@ class GoalRuntime {
     this.pi.on("turn_end", (event, ctx) => {
       this.handleTurnEnd(event, ctx);
     });
-    this.pi.on("agent_end", (event, ctx) => {
-      this.handleAgentEnd(event, ctx);
+    this.pi.on("agent_end", async (event, ctx) => {
+      await this.handleAgentEnd(event, ctx);
     });
     this.pi.on("session_before_compact", (event, ctx) => {
       this.handleSessionBeforeCompact(event, ctx);

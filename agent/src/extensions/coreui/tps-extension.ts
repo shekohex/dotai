@@ -1,16 +1,9 @@
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
+import { notifyAgentEndSummary } from "./agent-end-summary.js";
 import type { CoreUIState } from "./types.js";
-import {
-  formatCompactCount,
-  resolveAssistantOutputTokens,
-  summarizeAssistantUsage,
-} from "./tps-metrics.js";
+import { resolveAssistantOutputTokens, summarizeAssistantUsage } from "./tps-metrics.js";
 import {
   appendTPSEntry,
   formatTPSNotification,
@@ -22,7 +15,6 @@ import {
   updateTPSElapsedInState,
   type TPSRunState,
 } from "./tps-state.js";
-import { formatDurationHuman } from "../fetch/render.js";
 
 type RuntimeState = {
   run: TPSRunState | null;
@@ -89,17 +81,6 @@ function updateTPSForRun(
   if (result.changed || elapsedChanged) {
     requestRenderSafely(requestRender);
   }
-}
-
-function notifyTPSSummary(
-  ctx: ExtensionContext,
-  usage: ReturnType<typeof summarizeAssistantUsage>,
-  elapsedMs: number,
-): void {
-  const elapsedSeconds = elapsedMs / 1000;
-  const tokensPerSecond = usage.output / elapsedSeconds;
-  const message = `TPS ${tokensPerSecond.toFixed(1)} tok/s. out ${formatCompactCount(usage.output)}, in ${formatCompactCount(usage.input)}, cache r/w ${formatCompactCount(usage.cacheRead)}/${formatCompactCount(usage.cacheWrite)}, total ${formatCompactCount(usage.totalTokens)}, ${formatDurationHuman(elapsedMs)}`;
-  ctx.ui.notify(message, "info");
 }
 
 export default function registerTPSExtension(
@@ -246,7 +227,7 @@ function registerTurnAndAgentEndEvents(
         appendTPSEntry(pi, finalStats, usage, elapsedMs);
       }
       if (state.tpsVisible && elapsedMs > 0 && usage.output > 0) {
-        notifyTPSSummary(ctx, usage, elapsedMs);
+        notifyAgentEndSummary(ctx, usage, elapsedMs);
       }
     } catch (error) {
       ignoreStaleSessionReplacementError(error);

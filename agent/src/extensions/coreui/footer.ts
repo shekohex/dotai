@@ -4,15 +4,19 @@ import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { GOAL_STATUS_KEY } from "../goal/types.js";
 import { OPENUSAGE_STATUS_KEY } from "../openusage/types.js";
 import { OPENAI_BETTER_STATUS_KEY } from "../openai-better/types.js";
+import { getContextPruneFooterState } from "../context-prune/public-api.js";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import { appendGoalRuntimeStatus } from "./goal-status.js";
 import { shortenHome } from "./path.js";
 import { formatDuration } from "./tps.js";
 import type { CoreUIState } from "./types.js";
+import { colorizeCoreUIShimmerFrame } from "./working-indicator.js";
 
 const FOOTER_SIDE_PADDING = 1;
 const FOOTER_TOP_PADDING = 1;
 const TPS_MIN_WIDTH = 96;
+const MEMORY_ICON = "\u{F035B}";
+const PRUNE_ICON = "\u{F0A6B}";
 
 type Theme = ExtensionContext["ui"]["theme"];
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -90,6 +94,17 @@ export function bindCoreUI(
       },
     };
   });
+}
+
+function formatContextPruneStatus(
+  theme: Theme,
+  state: NonNullable<ReturnType<typeof getContextPruneFooterState>>,
+): string {
+  if (state.overrideText !== undefined && state.overrideText.length > 0) {
+    return colorizeCoreUIShimmerFrame(PRUNE_ICON);
+  }
+
+  return state.config.enabled ? theme.fg("success", PRUNE_ICON) : theme.fg("error", PRUNE_ICON);
 }
 
 export function buildTPSStatus(theme: Theme, state: CoreUIState, width: number): string {
@@ -226,6 +241,11 @@ function buildUsageStatus(
 ): string {
   const contextAndCost = formatContextAndCost(theme, ctx, totalCost);
   const parts = [contextAndCost];
+  const pruneState = getContextPruneFooterState();
+
+  if (pruneState !== undefined) {
+    parts.push(formatContextPruneStatus(theme, pruneState));
+  }
 
   if (usageStatus !== undefined && usageStatus.length > 0) {
     parts.push(usageStatus);
@@ -242,7 +262,7 @@ function formatContextAndCost(theme: Theme, ctx: ExtensionContext, totalCost: nu
   const percentText = percent === null ? "?" : `${percent.toFixed(0)}%`;
 
   return (
-    `${theme.fg("dim", "ctx ")}${theme.fg("dim", tokensText)}` +
+    `${theme.fg("dim", `${MEMORY_ICON} `)}${theme.fg("dim", tokensText)}` +
     `${theme.fg("dim", " (")}${styleContextPercent(theme, percent, percentText)}${theme.fg("dim", ") · ")}` +
     theme.fg("dim", `$${totalCost.toFixed(2)}`)
   );

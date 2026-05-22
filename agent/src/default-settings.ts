@@ -7,6 +7,7 @@ import { Value } from "typebox/value";
 import { defaultModes, defaultModesSchema, type DefaultModes } from "./default-modes.js";
 import { defaultInterviewSettings } from "./extensions/interview/settings.js";
 import { defaultOpenAIBetterSettings } from "./extensions/openai-better/settings.js";
+import { DEFAULT_CONFIG as defaultContextPruneSettings } from "./extensions/context-prune/types.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
 const PackageJsonSchema = Type.Object({
@@ -24,6 +25,7 @@ export type DefaultModesSettings = { current: AvailableModes };
 
 export type DefaultSettings = AgentSettings & {
   interview: typeof defaultInterviewSettings;
+  contextPrune: typeof defaultContextPruneSettings;
   modes: DefaultModesSettings;
   openaiBetter: typeof defaultOpenAIBetterSettings;
 };
@@ -51,6 +53,7 @@ export const defaultSettings = {
     clearOnShrink: false,
     showTerminalProgress: true,
   },
+  contextPrune: defaultContextPruneSettings,
   interview: defaultInterviewSettings,
   openaiBetter: defaultOpenAIBetterSettings,
   modes: {

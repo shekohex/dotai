@@ -5,6 +5,7 @@ import { ThemeColorSchema, type ThemeColor } from "../mode-utils.js";
 import { applyGitStateUpdatedEvent, GIT_STATE_UPDATED_EVENT } from "./git-state.js";
 import { isStaleSessionReplacementContextError } from "./session-replacement.js";
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
+import { clearContextPruneLastResult, getContextPruneAPI } from "./context-prune/public-api.js";
 import { OPENAI_BETTER_UPDATED_EVENT } from "./openai-better/types.js";
 import {
   applyCoreUIWorkingIndicator,
@@ -241,11 +242,30 @@ function createCoreUIBindings(pi: ExtensionAPI): {
     refreshUsageMetrics(ctx);
     refreshProjectInfo(ctx, true);
   };
-  const clearSubscriptions = createCoreUISubscriptions({
+  let unsubscribeContextPrune: (() => void) | undefined;
+  const clearCoreUISubscriptions = createCoreUISubscriptions({
     pi,
     state,
     getRequestRender: () => requestRender,
   });
+
+  pi.on("agent_start", () => {
+    clearContextPruneLastResult();
+  });
+
+  pi.on("session_start", (_event, ctx) => {
+    unsubscribeContextPrune?.();
+    const api = getContextPruneAPI(ctx);
+    unsubscribeContextPrune = api?.onPrune(() => {
+      refreshUsageMetrics(ctx);
+    });
+  });
+
+  const clearSubscriptions = (): void => {
+    unsubscribeContextPrune?.();
+    unsubscribeContextPrune = undefined;
+    clearCoreUISubscriptions();
+  };
 
   return {
     state,

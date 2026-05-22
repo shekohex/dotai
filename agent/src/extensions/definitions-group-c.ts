@@ -1,4 +1,6 @@
 import agentAlertsExtension from "./agent-alerts/index.js";
+import cacheGraphExtension from "./cache-graph/index.js";
+import contextPruneExtension from "./context-prune/index.js";
 import executorExtension from "./executor/index.js";
 import goalExtension from "./goal/index.js";
 // import gsdExtension from "./gsd/index.js";
@@ -13,6 +15,8 @@ import type { GroupedExtensionDefinition } from "./definitions.js";
 
 export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "agent-alerts", factory: agentAlertsExtension },
+  { id: "cache-graph", factory: cacheGraphExtension },
+  { id: "context-prune", factory: contextPruneExtension },
   { id: "mermaid", factory: mermaidExtension },
   { id: "notify", factory: notifyExtension },
   { id: "goal", factory: goalExtension },

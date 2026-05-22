@@ -25,7 +25,7 @@ export function bindCoreUI(
 ): void {
   ctx.ui.setHeader(() => ({
     render: () => [],
-    invalidate() {},
+    invalidate() { },
   }));
 
   ctx.ui.setFooter((tui, theme, footerData) => {
@@ -47,7 +47,7 @@ export function bindCoreUI(
         unsubscribe();
         setRequestRender(undefined);
       },
-      invalidate() {},
+      invalidate() { },
       render(width: number): string[] {
         try {
           const left = buildProjectStatus(theme, footerData.getGitBranch(), state, ctx);
@@ -114,6 +114,9 @@ export function buildTPSStatus(theme: Theme, state: CoreUIState, width: number):
 }
 
 export function buildSessionElapsedStatus(theme: Theme, state: CoreUIState): string {
+  if (state.tpsElapsedMs <= 0) {
+    return "";
+  }
   return theme.fg("dim", formatDuration(state.tpsElapsedMs));
 }
 

@@ -5,8 +5,10 @@ import { registerContextPruneTool } from "./context-prune-tool.js";
 import { registerCommands, setPruneStatusWidget } from "./commands.js";
 import { PruneFrontierTracker } from "./frontier.js";
 import {
+  errorMessage,
   isAssistantMessage,
   isRecord,
+  isStaleContextError,
   isToolCallContent,
   type ToolResultMessageWithUnknownDetails,
 } from "./guards.js";
@@ -62,6 +64,7 @@ interface RuntimeState {
   frontier: PruneFrontierTracker;
   pendingBatches: CapturedBatch[];
   pruneCallbacks: Set<(result: FlushResult) => void>;
+  currentAbortController: AbortController | undefined;
   isFlushing: boolean;
 }
 
@@ -117,6 +120,7 @@ function createRuntimeState(): RuntimeState {
     frontier: new PruneFrontierTracker(),
     pendingBatches: [],
     pruneCallbacks: new Set(),
+    currentAbortController: undefined,
     isFlushing: false,
   };
 }
@@ -130,6 +134,9 @@ function registerPublicApi(
     getConfig: () => state.currentConfig.value,
     updateConfig: (patch) => {
       updateRuntimeConfig(pi, state, patch);
+    },
+    cancel: (reason) => {
+      state.currentAbortController?.abort(reason ?? "context prune cancelled");
     },
     flush: (ctx, options) => flushPending(ctx, options),
     pendingBatchCount: () => state.pendingBatches.length,
@@ -169,12 +176,12 @@ function registerEvents(
   pi.on("turn_end", (event, ctx) => handleTurnEnd(state, event, ctx, flushPending));
   pi.on("tool_execution_end", async (event, ctx) => {
     if (event.toolName === "context_tag" && shouldFlushOnContextTag(state)) {
-      await flushPending(ctx, { delivery: "runtime" });
+      await flushPending(ctx, { delivery: "runtime", signal: ctx.signal });
     }
   });
   pi.on("message_end", async (event, ctx) => {
     if (shouldFlushOnFinalMessage(state, event.message)) {
-      await flushPending(ctx, { delivery: "session" });
+      await flushPending(ctx, { delivery: "session", signal: ctx.signal });
     }
   });
   pi.on("agent_end", (_event, ctx) => {
@@ -193,7 +200,6 @@ async function handleSessionStart(
 ): Promise<void> {
   state.currentConfig.value = await loadConfig();
   restoreSessionState(state, ctx);
-  setPruneStatusWidget(ctx, state.currentConfig.value, state.stats.getStats());
   syncToolActivation(pi, state);
   setPruneStatusWidget(ctx, state.currentConfig.value, state.stats.getStats());
 }
@@ -226,7 +232,7 @@ async function handleTurnEnd(
   if (batch === null) return;
   state.pendingBatches.push(batch);
   if (state.currentConfig.value.pruneOn === "every-turn") {
-    await flushPending(ctx, { delivery: "session" });
+    await flushPending(ctx, { delivery: "session", signal: ctx.signal });
     return;
   }
   updatePendingStatus(state, ctx);
@@ -350,17 +356,56 @@ async function flushPendingBatches(
       options.batchingMode ?? state.currentConfig.value.batchingMode,
     );
   if (batches.length === 0) return { ok: false, reason: "empty" };
-  if (options.signal?.aborted === true) return { ok: false, reason: "aborted" };
+  const abortController = createPruneAbortController(ctx.signal, options.signal);
+  if (abortController.signal.aborted) {
+    return { ok: false, reason: "aborted", error: abortReason(abortController.signal) };
+  }
   state.pendingBatches.length = 0;
   state.isFlushing = true;
+  state.currentAbortController = abortController;
   try {
-    return await flushCapturedBatches(pi, state, ctx, batches, options);
+    return await flushCapturedBatches(pi, state, ctx, batches, {
+      ...options,
+      signal: abortController.signal,
+    });
   } catch (error) {
     state.pendingBatches.unshift(...batches);
-    return handleFlushError(state, ctx, options, error);
+    return handleFlushError(state, ctx, { ...options, signal: abortController.signal }, error);
   } finally {
+    if (state.currentAbortController === abortController) state.currentAbortController = undefined;
     state.isFlushing = false;
   }
+}
+
+export function createPruneAbortController(
+  ...signals: (AbortSignal | undefined)[]
+): AbortController {
+  const controller = new AbortController();
+  const abort = (signal: AbortSignal): void => {
+    if (!controller.signal.aborted) controller.abort(signal.reason ?? "context prune aborted");
+  };
+  for (const signal of signals) {
+    if (signal === undefined) continue;
+    if (signal.aborted) {
+      abort(signal);
+      continue;
+    }
+    signal.addEventListener(
+      "abort",
+      () => {
+        abort(signal);
+      },
+      { once: true },
+    );
+  }
+  return controller;
+}
+
+export function abortReason(signal: AbortSignal): string | undefined {
+  if (!signal.aborted) return undefined;
+  return signal.reason instanceof Error
+    ? signal.reason.message
+    : String(signal.reason ?? "aborted");
 }
 
 async function flushCapturedBatches(
@@ -379,16 +424,33 @@ async function flushCapturedBatches(
       error: "session manager does not support appending entries",
     };
   }
-  setPruneStatusWidget(ctx, state.currentConfig.value, "prune: summarizing…");
-  const results = await summarizePendingBatches(state, ctx, batches, options);
-  const flushContext = processSummaries(pi, state, batches, results, options, sessionAppender);
-  if (flushContext.processedBatches.length === 0) return { ok: false, reason: "summarizer-failed" };
-  persistFrontier(pi, state, flushContext, options, sessionAppender);
-  setPruneStatusWidget(ctx, state.currentConfig.value, state.stats.getStats());
-  const result = flushResult(flushContext);
-  setContextPruneLastResult(result);
-  notifyPruneCallbacks(state, result);
-  return result;
+  safeSetPruneStatusWidgetText(ctx, state, "prune: summarizing…");
+  try {
+    const results = await summarizePendingBatches(state, ctx, batches, options);
+    const flushContext = processSummaries(pi, state, batches, results, options, sessionAppender);
+    if (flushContext.processedBatches.length === 0) {
+      return { ok: false, reason: "summarizer-failed" };
+    }
+    persistFrontier(pi, state, flushContext, options, sessionAppender);
+    const result = flushResult(flushContext);
+    setContextPruneLastResult(result);
+    notifyPruneCallbacks(state, result);
+    return result;
+  } finally {
+    safeSetPruneStatusWidget(ctx, state);
+  }
+}
+
+function safeSetPruneStatusWidgetText(
+  ctx: ExtensionContext,
+  state: RuntimeState,
+  text: string,
+): void {
+  try {
+    setPruneStatusWidget(ctx, state.currentConfig.value, text);
+  } catch (error) {
+    if (!isStaleContextError(error)) throw error;
+  }
 }
 
 async function summarizePendingBatches(
@@ -624,11 +686,39 @@ function handleFlushError(
   options: FlushOptions,
   error: unknown,
 ): FlushResult {
-  setPruneStatusWidget(ctx, state.currentConfig.value, state.stats.getStats());
-  if (options.signal?.aborted === true) return { ok: false, reason: "aborted" };
+  safeSetPruneStatusWidget(ctx, state);
+  if (options.signal?.aborted === true) {
+    return { ok: false, reason: "aborted", error: abortReason(options.signal) };
+  }
+  if (isStaleContextError(error)) {
+    return { ok: false, reason: "stale-context", error: errorMessage(error) };
+  }
   const message = errorMessage(error);
-  ctx.ui.notify(`pruner: summarization failed: ${message}`, "error");
+  safeNotify(ctx, `pruner: summarization failed: ${message}`, "error");
   return { ok: false, reason: "failed", error: message };
+}
+
+export function safeSetPruneStatusWidget(
+  ctx: ExtensionContext,
+  state: Pick<RuntimeState, "currentConfig" | "stats">,
+): void {
+  try {
+    setPruneStatusWidget(ctx, state.currentConfig.value, state.stats.getStats());
+  } catch (error) {
+    if (!isStaleContextError(error)) throw error;
+  }
+}
+
+function safeNotify(
+  ctx: ExtensionContext,
+  message: string,
+  level: "error" | "warning" | "info",
+): void {
+  try {
+    ctx.ui.notify(message, level);
+  } catch (error) {
+    if (!isStaleContextError(error)) throw error;
+  }
 }
 
 function resolveSessionAppender(
@@ -661,8 +751,4 @@ function syncToolActivation(pi: ExtensionAPI, state: RuntimeState): void {
   } else if (!shouldActivate && activeTools.includes(CONTEXT_PRUNE_TOOL_NAME)) {
     pi.setActiveTools(activeTools.filter((toolName) => toolName !== CONTEXT_PRUNE_TOOL_NAME));
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

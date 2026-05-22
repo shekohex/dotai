@@ -8,7 +8,12 @@ import {
   setContextPruneRuntime,
   type FlushResult,
 } from "../src/extensions/context-prune/public-api.js";
-import { shouldSkipUndersizedBatch } from "../src/extensions/context-prune/index.js";
+import {
+  abortReason,
+  createPruneAbortController,
+  safeSetPruneStatusWidget,
+  shouldSkipUndersizedBatch,
+} from "../src/extensions/context-prune/index.js";
 import {
   renderContextPruneCall,
   renderContextPruneResult,
@@ -126,6 +131,41 @@ describe("context-prune settings", () => {
     expect(settings.contextPrune).toMatchObject({ enabled: true, pruneOn: "on-demand" });
     await expect(loadConfig()).resolves.toMatchObject({ enabled: true, pruneOn: "on-demand" });
     delete process.env.PI_CODING_AGENT_DIR;
+  });
+});
+
+describe("context-prune cancellation", () => {
+  test("combined abort controller follows context signal reason", () => {
+    const source = new AbortController();
+    const combined = createPruneAbortController(source.signal);
+    source.abort("session switched");
+    expect(combined.signal.aborted).toBe(true);
+    expect(abortReason(combined.signal)).toBe("session switched");
+  });
+
+  test("status cleanup ignores stale context errors", () => {
+    expect(() =>
+      safeSetPruneStatusWidget(
+        {
+          ui: {
+            setStatus() {
+              throw new Error("This extension ctx is stale after session replacement or reload.");
+            },
+          },
+        } as never,
+        {
+          currentConfig: { value: DEFAULT_CONFIG },
+          stats: {
+            getStats: () => ({
+              callCount: 0,
+              totalInputTokens: 0,
+              totalOutputTokens: 0,
+              totalCost: 0,
+            }),
+          },
+        },
+      ),
+    ).not.toThrow();
   });
 });
 

@@ -5,6 +5,8 @@ import { ThemeColorSchema, type ThemeColor } from "../mode-utils.js";
 import { applyGitStateUpdatedEvent, GIT_STATE_UPDATED_EVENT } from "./git-state.js";
 import { isStaleSessionReplacementContextError } from "./session-replacement.js";
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
+import { parseUpdatedEvent } from "./openusage/events.js";
+import { renderStatus as renderOpenUsageStatus } from "./openusage/status.js";
 import { clearContextPruneLastResult, getContextPruneAPI } from "./context-prune/public-api.js";
 import { OPENAI_BETTER_UPDATED_EVENT } from "./openai-better/types.js";
 import {
@@ -181,7 +183,13 @@ function createCoreUISubscriptions(input: {
   state: ReturnType<typeof createCoreUIState>;
   getRequestRender: () => (() => void) | undefined;
 }): () => void {
-  const unsubscribeOpenUsageEvents = input.pi.events.on(OPENUSAGE_UPDATED_EVENT, () => {
+  const unsubscribeOpenUsageEvents = input.pi.events.on(OPENUSAGE_UPDATED_EVENT, (data) => {
+    const event = parseUpdatedEvent(data);
+    if (event?.active === true) {
+      input.state.openUsageStatus = event.snapshot
+        ? renderOpenUsageStatus(event.snapshot)
+        : undefined;
+    }
     requestRenderSafely(input.getRequestRender());
   });
 

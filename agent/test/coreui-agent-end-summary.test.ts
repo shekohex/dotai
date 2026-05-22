@@ -19,6 +19,15 @@ function createNotifyContext(): { messages: string[]; ctx: never } {
   };
 }
 
+const stats = {
+  current: 16.1,
+  min: 11.7,
+  median: 14.8,
+  max: 16.1,
+  sampleCount: 3,
+  bufferSize: 50,
+};
+
 describe("agent end summary", () => {
   test("includes TPS without stale prune stats", () => {
     clearContextPruneLastResult();
@@ -27,8 +36,14 @@ describe("agent end summary", () => {
       ctx,
       { input: 10, output: 20, cacheRead: 5, cacheWrite: 2, totalTokens: 37 },
       2_000,
+      stats,
+      "5h 94% wk 61%",
     );
-    expect(messages[0]).toContain("TPS 10.0 tok/s");
+    expect(messages[0]).toContain("󰓅 16.1/14.8/11.7");
+    expect(messages[0]).toContain(" 10");
+    expect(messages[0]).toContain(" 20");
+    expect(messages[0]).toContain("󰍛 r 5 w 2");
+    expect(messages[0]).toContain("5h 94% wk 61%");
     expect(messages[0]).not.toContain("pruned");
   });
 
@@ -46,9 +61,25 @@ describe("agent end summary", () => {
       ctx,
       { input: 10, output: 20, cacheRead: 5, cacheWrite: 2, totalTokens: 37 },
       2_000,
+      stats,
+      undefined,
     );
-    expect(messages[0]).toContain("TPS 10.0 tok/s");
-    expect(messages[0]).toContain("pruned 4 tools/2 batches");
+    expect(messages[0]).toContain("󰓅 16.1/14.8/11.7");
+    expect(messages[0]).toContain("󰩫 4t/2b");
     clearContextPruneLastResult();
+  });
+
+  test("omits cache write when zero", () => {
+    clearContextPruneLastResult();
+    const { messages, ctx } = createNotifyContext();
+    notifyAgentEndSummary(
+      ctx,
+      { input: 10, output: 20, cacheRead: 5, cacheWrite: 0, totalTokens: 37 },
+      2_000,
+      stats,
+      undefined,
+    );
+    expect(messages[0]).toContain("󰍛 r 5");
+    expect(messages[0]).not.toContain(" w 0");
   });
 });

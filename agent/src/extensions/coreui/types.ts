@@ -18,6 +18,7 @@ export type CoreUIState = {
   tps?: CoreUITPSStats;
   tpsElapsedMs: number;
   tpsVisible: boolean;
+  openUsageStatus?: string;
   dirty: boolean;
   addedLines: number;
   removedLines: number;

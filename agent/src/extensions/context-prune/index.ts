@@ -437,7 +437,7 @@ function processSummary(
     sessionAppender.appendCustomMessageEntry(
       CUSTOM_TYPE_SUMMARY,
       summaryText,
-      true,
+      false,
       makeSummaryDetails(batch, refs),
     );
     state.indexer.registerSummaryRefs(refs);
@@ -447,7 +447,7 @@ function processSummary(
       {
         customType: CUSTOM_TYPE_SUMMARY,
         content: summaryText,
-        display: true,
+        display: false,
         details: makeSummaryDetails(batch, refs),
       },
       { deliverAs: "steer" },

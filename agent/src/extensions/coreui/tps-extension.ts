@@ -227,7 +227,7 @@ function registerTurnAndAgentEndEvents(
         appendTPSEntry(pi, finalStats, usage, elapsedMs);
       }
       if (state.tpsVisible && elapsedMs > 0 && usage.output > 0) {
-        notifyAgentEndSummary(ctx, usage, elapsedMs);
+        notifyAgentEndSummary(ctx, usage, elapsedMs, finalStats, state.openUsageStatus);
       }
     } catch (error) {
       ignoreStaleSessionReplacementError(error);

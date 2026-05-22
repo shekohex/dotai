@@ -2,7 +2,6 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { GOAL_STATUS_KEY } from "../goal/types.js";
-import { OPENUSAGE_STATUS_KEY } from "../openusage/types.js";
 import { OPENAI_BETTER_STATUS_KEY } from "../openai-better/types.js";
 import { getContextPruneFooterState } from "../context-prune/public-api.js";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
@@ -14,9 +13,9 @@ import { colorizeCoreUIShimmerFrame } from "./working-indicator.js";
 
 const FOOTER_SIDE_PADDING = 1;
 const FOOTER_TOP_PADDING = 1;
-const TPS_MIN_WIDTH = 96;
 const MEMORY_ICON = "\u{F035B}";
 const PRUNE_ICON = "\u{F0A6B}";
+const TPS_ICON = "\u{F04C5}";
 
 type Theme = ExtensionContext["ui"]["theme"];
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -55,9 +54,9 @@ export function bindCoreUI(
       render(width: number): string[] {
         try {
           const left = buildProjectStatus(theme, footerData.getGitBranch(), state, ctx);
-          const leftBottomStatus = joinStatusParts(
+          const leftBottomStatus = joinFooterParts(
             theme,
-            buildTPSStatus(theme, state, width),
+            buildTPSStatus(theme, state),
             buildSessionElapsedStatus(theme, state),
           );
           const leftBottom = appendGoalRuntimeStatus(
@@ -72,12 +71,7 @@ export function bindCoreUI(
             state,
             footerData.getExtensionStatuses().get(OPENAI_BETTER_STATUS_KEY),
           );
-          const rightBottom = buildUsageStatus(
-            theme,
-            ctx,
-            state.totalCost,
-            footerData.getExtensionStatuses().get(OPENUSAGE_STATUS_KEY),
-          );
+          const rightBottom = buildUsageStatus(theme, ctx, state.totalCost);
 
           return [
             ...Array.from({ length: FOOTER_TOP_PADDING }, () => " ".repeat(Math.max(0, width))),
@@ -107,25 +101,19 @@ function formatContextPruneStatus(
   return state.config.enabled ? theme.fg("success", PRUNE_ICON) : theme.fg("error", PRUNE_ICON);
 }
 
-export function buildTPSStatus(theme: Theme, state: CoreUIState, width: number): string {
-  if (!state.tpsVisible || !state.tps || width < TPS_MIN_WIDTH) {
+export function buildTPSStatus(theme: Theme, state: CoreUIState): string {
+  if (!state.tpsVisible || !state.tps) {
     return "";
   }
 
-  const current = `${theme.fg("dim", "tps ")}${theme.fg("accent", state.tps.current.toFixed(1))}`;
-  if (state.tps.sampleCount < state.tps.bufferSize) {
-    return current;
-  }
-
-  return (
-    current +
-    theme.fg("dim", " ") +
-    theme.fg("success", state.tps.max.toFixed(1)) +
-    theme.fg("dim", "/") +
-    theme.fg("warning", state.tps.median.toFixed(1)) +
-    theme.fg("dim", "/") +
-    theme.fg("error", state.tps.min.toFixed(1))
+  const icon = colorTPSIcon(
+    theme,
+    state.tps.current,
+    state.tps.min,
+    state.tps.median,
+    state.tps.max,
   );
+  return `${icon}${theme.fg("dim", " ")}${theme.fg("accent", state.tps.current.toFixed(1))}`;
 }
 
 export function buildSessionElapsedStatus(theme: Theme, state: CoreUIState): string {
@@ -135,8 +123,27 @@ export function buildSessionElapsedStatus(theme: Theme, state: CoreUIState): str
   return theme.fg("dim", formatDuration(state.tpsElapsedMs));
 }
 
-function joinStatusParts(theme: Theme, ...parts: string[]): string {
+function joinFooterParts(theme: Theme, ...parts: string[]): string {
   return parts.filter((part) => part.length > 0).join(theme.fg("dim", " · "));
+}
+
+function colorTPSIcon(
+  theme: Theme,
+  current: number,
+  min: number,
+  median: number,
+  max: number,
+): string {
+  if (max <= min) {
+    return theme.fg("muted", TPS_ICON);
+  }
+  if (current >= max * 0.9) {
+    return theme.bold(theme.fg("error", TPS_ICON));
+  }
+  if (current >= median) {
+    return theme.fg("warning", TPS_ICON);
+  }
+  return theme.fg("success", TPS_ICON);
 }
 
 function buildProjectStatus(
@@ -233,22 +240,13 @@ function colorThinkingLevel(theme: Theme, level: ThinkingLevel): string {
   }
 }
 
-function buildUsageStatus(
-  theme: Theme,
-  ctx: ExtensionContext,
-  totalCost: number,
-  usageStatus: string | undefined,
-): string {
+function buildUsageStatus(theme: Theme, ctx: ExtensionContext, totalCost: number): string {
   const contextAndCost = formatContextAndCost(theme, ctx, totalCost);
   const parts = [contextAndCost];
   const pruneState = getContextPruneFooterState();
 
   if (pruneState !== undefined) {
     parts.push(formatContextPruneStatus(theme, pruneState));
-  }
-
-  if (usageStatus !== undefined && usageStatus.length > 0) {
-    parts.push(usageStatus);
   }
 
   return parts.join(theme.fg("dim", " · "));

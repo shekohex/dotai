@@ -7,8 +7,8 @@ import {
 import type { CoreUIState } from "../src/extensions/coreui/types.js";
 
 const theme = {
-  fg: (_color: string, value: string) => value,
-  bold: (value: string) => value,
+  fg: (color: string, value: string) => `<${color}>${value}</${color}>`,
+  bold: (value: string) => `<b>${value}</b>`,
   italic: (value: string) => value,
 } as never;
 
@@ -37,8 +37,8 @@ const stateWithTps = (tpsVisible: boolean): CoreUIState => ({
 
 describe("coreui footer", () => {
   test("hides only tps when tps visibility is disabled", () => {
-    expect(buildTPSStatus(theme, stateWithTps(false), 120)).toBe("");
-    expect(buildSessionElapsedStatus(theme, stateWithTps(false))).toBe("1m 5s");
+    expect(buildTPSStatus(theme, stateWithTps(false))).toBe("");
+    expect(buildSessionElapsedStatus(theme, stateWithTps(false))).toBe("<dim>1m 5s</dim>");
     expect(composeFooterLine("Pursuing goal", "ctx 10K", 40)).toContain("Pursuing goal");
   });
 
@@ -62,9 +62,15 @@ describe("coreui footer", () => {
     expect(line).not.toContain("ctx");
   });
 
-  test("auto hides tps on narrow terminals", () => {
-    expect(buildTPSStatus(theme, stateWithTps(true), 95)).toBe("");
-    expect(buildSessionElapsedStatus(theme, stateWithTps(true))).toBe("1m 5s");
-    expect(buildTPSStatus(theme, stateWithTps(true), 96)).toContain("tps 12.3");
+  test("shows compact current tps only", () => {
+    expect(buildTPSStatus(theme, stateWithTps(true))).toBe(
+      "<warning>󰓅</warning><dim> </dim><accent>12.3</accent>",
+    );
+  });
+
+  test("renders hot tps icon red and bold near max", () => {
+    const state = stateWithTps(true);
+    state.tps = { ...state.tps!, current: 13.5 };
+    expect(buildTPSStatus(theme, state)).toContain("<b><error>󰓅</error></b>");
   });
 });

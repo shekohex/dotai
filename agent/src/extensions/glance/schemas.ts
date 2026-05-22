@@ -40,6 +40,7 @@ export const GlanceConfigSchema = Type.Object({
   ok: Type.Literal(true),
   maxUploadBytes: Type.Number(),
   storageDir: Type.String(),
+  publicUrl: Type.String(),
   supportedMimeTypes: Type.Array(Type.String()),
 });
 

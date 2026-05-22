@@ -121,6 +121,10 @@ async function deleteImageByName(paths: GlancePaths, name: string): Promise<bool
   return true;
 }
 
+function getGlanceResourcePath(name: "favicon.svg" | "index.html"): string {
+  return join(import.meta.dirname, "..", "..", "resources", "glance", name);
+}
+
 function joinGlanceUrl(baseUrl: string, path: string): string {
   const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL(path, normalizedBaseUrl).toString();
@@ -158,8 +162,27 @@ async function handleGlanceRequest(
       ok: true,
       maxUploadBytes: options.maxUploadBytes,
       storageDir: options.paths.storageDir,
+      publicUrl: options.status.publicBaseUrl ?? options.status.baseUrl,
       supportedMimeTypes: [...GLANCE_SUPPORTED_MIME_TYPES],
     });
+    return;
+  }
+
+  if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/upload")) {
+    response.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end(await readFile(getGlanceResourcePath("index.html"), "utf8"));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/favicon.svg") {
+    response.writeHead(200, {
+      "content-type": "image/svg+xml; charset=utf-8",
+      "cache-control": "public, max-age=86400",
+    });
+    response.end(await readFile(getGlanceResourcePath("favicon.svg"), "utf8"));
     return;
   }
 

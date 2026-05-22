@@ -157,6 +157,21 @@ it("serves health and config schemas", async () => {
   expect(handle.status.storageDir).toBe(paths.storageDir);
 });
 
+it("serves browser upload page and favicon", async () => {
+  const { baseUrl } = await createServer();
+  const pageResponse = await fetch(`${baseUrl}/`);
+  const uploadPageResponse = await fetch(`${baseUrl}/upload`);
+  const faviconResponse = await fetch(`${baseUrl}/favicon.svg`);
+  expect(pageResponse.status).toBe(200);
+  expect(pageResponse.headers.get("content-type")).toContain("text/html");
+  expect(await pageResponse.text()).toContain("Copy all");
+  expect(uploadPageResponse.status).toBe(200);
+  expect(uploadPageResponse.headers.get("content-type")).toContain("text/html");
+  expect(await uploadPageResponse.text()).toContain("Copy all");
+  expect(faviconResponse.status).toBe(200);
+  expect(faviconResponse.headers.get("content-type")).toContain("image/svg+xml");
+});
+
 it("stores valid image uploads under runtime storage", async () => {
   const { baseUrl, paths } = await createServer();
   const response = await fetch(`${baseUrl}/upload`, {

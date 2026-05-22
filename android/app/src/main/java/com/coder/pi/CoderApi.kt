@@ -24,31 +24,50 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.io.Closeable
 import okhttp3.Protocol
-import java.util.concurrent.atomic.AtomicBoolean
+import java.io.Closeable
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
-class CoderApi(private val baseUrl: String, private val token: String, private val onClose: () -> Unit = {}) : Closeable {
-    private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
-    private val client = HttpClient(OkHttp) {
-        engine { config { protocols(listOf(Protocol.HTTP_3, Protocol.HTTP_2, Protocol.HTTP_1_1)) } }
-        install(ContentNegotiation) { json(json) }
-        install(WebSockets)
-    }
+class CoderApi(
+    private val baseUrl: String,
+    private val token: String,
+    private val onClose: () -> Unit = {},
+) : Closeable {
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            explicitNulls = false
+        }
+    private val client =
+        HttpClient(OkHttp) {
+            engine { config { protocols(listOf(Protocol.HTTP_3, Protocol.HTTP_2, Protocol.HTTP_1_1)) } }
+            install(ContentNegotiation) { json(json) }
+            install(WebSockets)
+        }
     private val closed = AtomicBoolean(false)
 
     suspend fun me(): CoderUser = client.get(url("/api/v2/users/me")) { auth() }.body<CoderUserDto>().toModel()
 
-    suspend fun workspaces(): List<CoderWorkspace> = client.get(url("/api/v2/workspaces")) {
-        auth()
-        parameter("limit", 100)
-    }.body<WorkspacesResponseDto>().workspaces.map { it.toModel() }
+    suspend fun workspaces(): List<CoderWorkspace> =
+        client
+            .get(url("/api/v2/workspaces")) {
+                auth()
+                parameter("limit", 100)
+            }.body<WorkspacesResponseDto>()
+            .workspaces
+            .map { it.toModel() }
 
-    suspend fun favoriteWorkspace(workspaceId: String, favorite: Boolean) {
-        if (favorite) client.put(url("/api/v2/workspaces/$workspaceId/favorite")) { auth() }
-        else client.delete(url("/api/v2/workspaces/$workspaceId/favorite")) { auth() }
+    suspend fun favoriteWorkspace(
+        workspaceId: String,
+        favorite: Boolean,
+    ) {
+        if (favorite) {
+            client.put(url("/api/v2/workspaces/$workspaceId/favorite")) { auth() }
+        } else {
+            client.delete(url("/api/v2/workspaces/$workspaceId/favorite")) { auth() }
+        }
     }
 
     suspend fun startWorkspace(workspaceId: String) {
@@ -64,7 +83,10 @@ class CoderApi(private val baseUrl: String, private val token: String, private v
         createWorkspaceBuild(workspaceId, "start")
     }
 
-    suspend fun tmuxSessions(agentId: String, reconnectId: String): List<TmuxSession> {
+    suspend fun tmuxSessions(
+        agentId: String,
+        reconnectId: String,
+    ): List<TmuxSession> {
         val output = runProcess(agentId, reconnectId, "tmux list-sessions -F '#{session_name}|#{session_windows}|#{session_attached}'", 5_000)
         return output.lines().mapNotNull { line ->
             val parts = line.split('|')
@@ -72,20 +94,35 @@ class CoderApi(private val baseUrl: String, private val token: String, private v
         }
     }
 
-    suspend fun runProcess(agentId: String, reconnectId: String, command: String, timeoutMillis: Long): String = withContext(Dispatchers.IO) {
-        val output = StringBuilder()
-        val latch = CountDownLatch(1)
-        val terminal = CoderTerminalSocket(connectTerminal(agentId, reconnectId, "bash -lc ${shellQuote(command)}", 100, 24))
-        terminal.onBytes = { output.append(it.toString(Charsets.UTF_8)) }
-        terminal.onClosed = { latch.countDown() }
-        terminal.start()
-        latch.await(timeoutMillis, TimeUnit.MILLISECONDS)
-        terminal.close()
-        output.toString()
-    }
+    suspend fun runProcess(
+        agentId: String,
+        reconnectId: String,
+        command: String,
+        timeoutMillis: Long,
+    ): String =
+        withContext(Dispatchers.IO) {
+            val output = StringBuilder()
+            val latch = CountDownLatch(1)
+            val terminal = CoderTerminalSocket(connectTerminal(agentId, reconnectId, "bash -lc ${shellQuote(command)}", 100, 24))
+            terminal.onBytes = { output.append(it.toString(Charsets.UTF_8)) }
+            terminal.onClosed = { latch.countDown() }
+            terminal.start()
+            latch.await(timeoutMillis, TimeUnit.MILLISECONDS)
+            terminal.close()
+            output.toString()
+        }
 
-    suspend fun connectTerminal(agentId: String, reconnectId: String, command: String, width: Int, height: Int, container: String? = null, containerUser: String? = null, backendType: String? = null): DefaultClientWebSocketSession {
-        return client.webSocketSession {
+    suspend fun connectTerminal(
+        agentId: String,
+        reconnectId: String,
+        command: String,
+        width: Int,
+        height: Int,
+        container: String? = null,
+        containerUser: String? = null,
+        backendType: String? = null,
+    ): DefaultClientWebSocketSession =
+        client.webSocketSession {
             url(wsUrl("/api/v2/workspaceagents/$agentId/pty"))
             header(sessionTokenHeader, token)
             parameter("reconnect", reconnectId)
@@ -96,9 +133,11 @@ class CoderApi(private val baseUrl: String, private val token: String, private v
             if (container != null && containerUser != null) parameter("container_user", containerUser)
             backendType?.let { parameter("backend_type", it) }
         }
-    }
 
-    private suspend fun createWorkspaceBuild(workspaceId: String, transition: String) {
+    private suspend fun createWorkspaceBuild(
+        workspaceId: String,
+        transition: String,
+    ) {
         client.post(url("/api/v2/workspaces/$workspaceId/builds")) {
             auth()
             contentType(ContentType.Application.Json)
@@ -140,7 +179,9 @@ private data class CoderUserDto(
 }
 
 @Serializable
-private data class WorkspacesResponseDto(val workspaces: List<CoderWorkspaceDto> = emptyList())
+private data class WorkspacesResponseDto(
+    val workspaces: List<CoderWorkspaceDto> = emptyList(),
+)
 
 @Serializable
 private data class CoderWorkspaceDto(
@@ -164,12 +205,19 @@ private data class CoderWorkspaceDto(
 }
 
 @Serializable
-private data class CoderWorkspaceHealthDto(@SerialName("healthy") val healthy: Boolean = true, @SerialName("failing_agents") val failingAgents: List<String> = emptyList()) {
+private data class CoderWorkspaceHealthDto(
+    @SerialName("healthy") val healthy: Boolean = true,
+    @SerialName("failing_agents") val failingAgents: List<String> = emptyList(),
+) {
     fun toModel(): CoderWorkspaceHealth = CoderWorkspaceHealth(healthy, failingAgents.size)
 }
 
 @Serializable
-private data class CoderWorkspaceAppStatusDto(val state: String = "", val message: String = "", @SerialName("needs_user_attention") val needsUserAttention: Boolean = false) {
+private data class CoderWorkspaceAppStatusDto(
+    val state: String = "",
+    val message: String = "",
+    @SerialName("needs_user_attention") val needsUserAttention: Boolean = false,
+) {
     fun toModel(): CoderWorkspaceAppStatus = CoderWorkspaceAppStatus(state, message, needsUserAttention)
 }
 
@@ -224,12 +272,19 @@ private data class CoderWorkspaceAgentDto(
 }
 
 @Serializable
-private data class CoderAgentHealthDto(val healthy: Boolean = true, val reason: String = "") {
+private data class CoderAgentHealthDto(
+    val healthy: Boolean = true,
+    val reason: String = "",
+) {
     fun toModel(): CoderAgentHealth = CoderAgentHealth(healthy, reason)
 }
 
 @Serializable
-private data class CoderAgentLatencyDto(@SerialName("latency_ms") val latencyMilliseconds: Double = 0.0)
+private data class CoderAgentLatencyDto(
+    @SerialName("latency_ms") val latencyMilliseconds: Double = 0.0,
+)
 
 @Serializable
-private data class WorkspaceBuildRequestDto(val transition: String)
+private data class WorkspaceBuildRequestDto(
+    val transition: String,
+)

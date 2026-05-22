@@ -1,8 +1,8 @@
 package com.coder.pi
 
-import android.graphics.Color
 import android.content.Context
 import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
@@ -10,10 +10,10 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
@@ -22,8 +22,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
-import androidx.core.content.getSystemService
 import androidx.core.app.ActivityCompat
+import androidx.core.content.getSystemService
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -53,14 +53,16 @@ class TerminalActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         @Suppress("DEPRECATION")
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
-        val launch = terminalLaunchRequestFromIntent() ?: run {
-            finish()
-            return
-        }
-        val identity = terminalIdentityFromIntent(launch) ?: run {
-            finish()
-            return
-        }
+        val launch =
+            terminalLaunchRequestFromIntent() ?: run {
+                finish()
+                return
+            }
+        val identity =
+            terminalIdentityFromIntent(launch) ?: run {
+                finish()
+                return
+            }
         val windowTitle = terminalWindowTitle(launch)
         title = windowTitle
         @Suppress("DEPRECATION")
@@ -73,35 +75,63 @@ class TerminalActivity : AppCompatActivity() {
         terminalStore = CoderSessionStore(this)
         val localWorkspaceState = terminalStore?.workspaceState(identity.baseUrl, identity.userId, identity.workspaceId)
         terminalId = terminalSessionKey(identity)
-        terminalView = CoderTerminalView(this, attachedEngine = TerminalConnectionManager.engineFor(terminalId)).also {
-            it.setPreviewFontFamily(currentFontKey ?: CoderFonts.selectedKey(this))
-            it.applyTheme(theme)
-            it.setNotificationContext(TerminalNotificationContext(identity.workspaceId, launch.workspaceName, localWorkspaceState?.alias ?: launch.title, "pi://terminal?id=${android.net.Uri.encode(terminalId)}", localWorkspaceState?.iconUri.orEmpty(), launch.workspaceIconUrl.orEmpty(), terminalId))
-            it.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 52) }
-            it.onAgentStateChanged = { persistTerminalState() }
-        }
+        terminalView =
+            CoderTerminalView(this, attachedEngine = TerminalConnectionManager.engineFor(terminalId)).also {
+                it.setPreviewFontFamily(currentFontKey ?: CoderFonts.selectedKey(this))
+                it.applyTheme(theme)
+                it.setNotificationContext(TerminalNotificationContext(identity.workspaceId, launch.workspaceName, localWorkspaceState?.alias ?: launch.title, "pi://terminal?id=${android.net.Uri.encode(terminalId)}", localWorkspaceState?.iconUri.orEmpty(), launch.workspaceIconUrl.orEmpty(), terminalId))
+                it.onNotificationPermissionNeeded = { if (android.os.Build.VERSION.SDK_INT >= 33) ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 52) }
+                it.onAgentStateChanged = { persistTerminalState() }
+            }
         terminalMetadata = CoderActiveTerminalMetadata(identity.baseUrl, identity.userId, identity.workspaceId, launch.workspaceName, identity.agentId, launch.badge, identity.command, launch.reconnectId, System.currentTimeMillis(), workspaceIconUrl = launch.workspaceIconUrl)
         terminalStore?.saveActiveTerminal(terminalMetadata ?: return)
-        terminalSession = TerminalConnectionManager.startVisible(terminalId, launch, terminalView, { status ->
-            terminalStatus = status
-            terminalStore?.appendDebugLog("terminal window ${launch.title} $status")
-        }, { safeError ->
-            safeError?.let { terminalStore?.appendDebugLog("terminal window ${launch.title} error $it") }
-        })
+        terminalSession =
+            TerminalConnectionManager.startVisible(terminalId, launch, terminalView, { status ->
+                terminalStatus = status
+                terminalStore?.appendDebugLog("terminal window ${launch.title} $status")
+            }, { safeError ->
+                safeError?.let { terminalStore?.appendDebugLog("terminal window ${launch.title} error $it") }
+            })
         startPreviewPersistence()
         applySystemBars(currentTheme ?: theme)
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                moveTaskToBack(true)
-            }
-        })
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    moveTaskToBack(true)
+                }
+            },
+        )
         setContent {
             MaterialTheme(typography = appTypography(CoderFonts.uiFontFamily(this))) {
                 val renderedTheme = currentTheme ?: CoderThemes.current(this)
-                TerminalSurface(terminalView, renderedTheme, { showTerminalKeyboard() }, { hideTerminalKeyboard() }, Modifier.fillMaxSize().background(renderedTheme.background.toComposeColor()).windowInsetsPadding(WindowInsets.displayCutout).imePadding(), showMetadataOverlay = false)
+                TerminalSurface(
+                    terminalView,
+                    renderedTheme,
+                    { showTerminalKeyboard() },
+                    { hideTerminalKeyboard() },
+                    Modifier
+                        .fillMaxSize()
+                        .background(renderedTheme.background.toComposeColor())
+                        .windowInsetsPadding(WindowInsets.displayCutout)
+                        .imePadding(),
+                    showMetadataOverlay = false,
+                )
                 DisposableEffect(terminalStatus) {
                     val metadata = terminalMetadata
-                    if (metadata != null) terminalStore?.saveActiveTerminal(metadata.copy(updatedAtMillis = System.currentTimeMillis(), preview = terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5).joinToString("\n")))
+                    if (metadata != null) {
+                        terminalStore?.saveActiveTerminal(
+                            metadata.copy(
+                                updatedAtMillis = System.currentTimeMillis(),
+                                preview =
+                                    terminalView
+                                        .snapshotText()
+                                        .filter { it.isNotBlank() }
+                                        .takeLast(5)
+                                        .joinToString("\n"),
+                            ),
+                        )
+                    }
                     onDispose {}
                 }
             }
@@ -155,13 +185,14 @@ class TerminalActivity : AppCompatActivity() {
 
     private fun startPreviewPersistence() {
         previewJob?.cancel()
-        previewJob = CoroutineScope(SupervisorJob() + Dispatchers.Main).launch {
-            while (true) {
-                persistTerminalState()
-                applyCurrentSettings()
-                delay(1000)
+        previewJob =
+            CoroutineScope(SupervisorJob() + Dispatchers.Main).launch {
+                while (true) {
+                    persistTerminalState()
+                    applyCurrentSettings()
+                    delay(1000)
+                }
             }
-        }
     }
 
     private fun applyCurrentSettings() {
@@ -184,9 +215,7 @@ class TerminalActivity : AppCompatActivity() {
         applyKeepScreenAwake()
     }
 
-    private fun selectedTerminalFontSizePoints(): Int {
-        return selectedTerminalFontSizeSp(this)
-    }
+    private fun selectedTerminalFontSizePoints(): Int = selectedTerminalFontSizeSp(this)
 
     private fun applyKeepScreenAwake() {
         if (getSharedPreferences("terminal", Context.MODE_PRIVATE).getBoolean("keep_screen_awake", false)) {
@@ -202,12 +231,18 @@ class TerminalActivity : AppCompatActivity() {
 
     private fun persistTerminalState() {
         val metadata = terminalMetadata ?: return
-        val nextMetadata = metadata.copy(
-            updatedAtMillis = System.currentTimeMillis(),
-            preview = terminalView.snapshotText().filter { it.isNotBlank() }.takeLast(5).joinToString("\n"),
-            agentStatusTitle = terminalView.agentStateSnapshot().statusPresentation()?.title,
-            agentStatusSubtitle = terminalView.agentStateSnapshot().statusPresentation()?.subtitle,
-        )
+        val nextMetadata =
+            metadata.copy(
+                updatedAtMillis = System.currentTimeMillis(),
+                preview =
+                    terminalView
+                        .snapshotText()
+                        .filter { it.isNotBlank() }
+                        .takeLast(5)
+                        .joinToString("\n"),
+                agentStatusTitle = terminalView.agentStateSnapshot().statusPresentation()?.title,
+                agentStatusSubtitle = terminalView.agentStateSnapshot().statusPresentation()?.subtitle,
+            )
         terminalMetadata = nextMetadata
         terminalStore?.saveActiveTerminal(nextMetadata)
     }
@@ -276,7 +311,10 @@ class TerminalActivity : AppCompatActivity() {
     companion object {
         private val terminalActivities = mutableSetOf<WeakReference<TerminalActivity>>()
 
-        fun finishDetachedTerminals(baseUrl: String, userId: String) {
+        fun finishDetachedTerminals(
+            baseUrl: String,
+            userId: String,
+        ) {
             terminalActivities.toList().forEach { reference ->
                 val activity = reference.get()
                 val metadata = activity?.terminalMetadata

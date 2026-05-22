@@ -4,17 +4,19 @@ import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.concurrent.atomic.AtomicBoolean
 
-class CoderTerminalSocket(private val session: DefaultClientWebSocketSession) {
+class CoderTerminalSocket(
+    private val session: DefaultClientWebSocketSession,
+) {
     var onBytes: ((ByteArray) -> Unit)? = null
     var onClosed: (() -> Unit)? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -23,19 +25,20 @@ class CoderTerminalSocket(private val session: DefaultClientWebSocketSession) {
     private val closedNotified = AtomicBoolean(false)
 
     fun start() {
-        receiveJob = scope.launch {
-            runCatching {
-                for (frame in session.incoming) {
-                    when (frame) {
-                        is Frame.Binary -> onBytes?.invoke(frame.readBytes())
-                        is Frame.Text -> onBytes?.invoke(frame.data)
-                        is Frame.Close -> break
-                        else -> Unit
+        receiveJob =
+            scope.launch {
+                runCatching {
+                    for (frame in session.incoming) {
+                        when (frame) {
+                            is Frame.Binary -> onBytes?.invoke(frame.readBytes())
+                            is Frame.Text -> onBytes?.invoke(frame.data)
+                            is Frame.Close -> break
+                            else -> Unit
+                        }
                     }
                 }
+                if (!closing.get() && closedNotified.compareAndSet(false, true)) onClosed?.invoke()
             }
-            if (!closing.get() && closedNotified.compareAndSet(false, true)) onClosed?.invoke()
-        }
     }
 
     fun send(bytes: ByteArray) {
@@ -43,7 +46,10 @@ class CoderTerminalSocket(private val session: DefaultClientWebSocketSession) {
         scope.launch { session.send(Frame.Binary(true, payload)) }
     }
 
-    fun resize(width: Int, height: Int) {
+    fun resize(
+        width: Int,
+        height: Int,
+    ) {
         val payload = Json.encodeToString(mapOf("width" to width, "height" to height)).toByteArray()
         scope.launch { session.send(Frame.Binary(true, payload)) }
     }

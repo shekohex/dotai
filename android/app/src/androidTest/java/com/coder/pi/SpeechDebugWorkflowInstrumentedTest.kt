@@ -1,7 +1,7 @@
 package com.coder.pi
 
-import android.content.Intent
 import android.app.Instrumentation
+import android.content.Intent
 import android.net.Uri
 import androidx.core.content.edit
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -58,14 +58,23 @@ class SpeechDebugWorkflowInstrumentedTest {
         check(device.wait(Until.hasObject(By.text("Reset")), 10_000)) { "Submitted reset action missing" }
     }
 
-    private fun openSpeechState(context: android.content.Context, instrumentation: Instrumentation, state: String) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/speech?state=$state"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+    private fun openSpeechState(
+        context: android.content.Context,
+        instrumentation: Instrumentation,
+        state: String,
+    ) {
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/speech?state=$state"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
     }
 
-    private fun captureSpeechScreenshot(device: UiDevice, instrumentation: Instrumentation, name: String) {
+    private fun captureSpeechScreenshot(
+        device: UiDevice,
+        instrumentation: Instrumentation,
+        name: String,
+    ) {
         val directory = File(instrumentation.context.getExternalFilesDir(null), "speech-debug")
         directory.mkdirs()
         device.takeScreenshot(File(directory, "$name.png"))

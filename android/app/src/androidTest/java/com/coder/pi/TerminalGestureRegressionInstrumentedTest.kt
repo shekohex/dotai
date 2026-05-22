@@ -97,19 +97,48 @@ class TerminalGestureRegressionInstrumentedTest {
         }
     }
 
-    private fun terminalView(context: Context): CoderTerminalView {
-        return CoderTerminalView(context).also {
+    private fun terminalView(context: Context): CoderTerminalView =
+        CoderTerminalView(context).also {
             views += it
             it.layout(0, 0, 640, 480)
             it.refreshSurface()
         }
-    }
 
-    private fun motion(action: Int, x: Float, y: Float): MotionEvent = MotionEvent.obtain(0L, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
+    private fun motion(
+        action: Int,
+        x: Float,
+        y: Float,
+    ): MotionEvent = MotionEvent.obtain(0L, android.os.SystemClock.uptimeMillis(), action, x, y, 0)
 
-    private fun pinchMotion(action: Int, x0: Float, y0: Float, x1: Float, y1: Float): MotionEvent {
-        val properties = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_FINGER }, MotionEvent.PointerProperties().apply { id = 1; toolType = MotionEvent.TOOL_TYPE_FINGER })
-        val coords = arrayOf(MotionEvent.PointerCoords().apply { x = x0; y = y0 }, MotionEvent.PointerCoords().apply { x = x1; y = y1 })
+    private fun pinchMotion(
+        action: Int,
+        x0: Float,
+        y0: Float,
+        x1: Float,
+        y1: Float,
+    ): MotionEvent {
+        val properties =
+            arrayOf(
+                MotionEvent.PointerProperties().apply {
+                    id = 0
+                    toolType = MotionEvent.TOOL_TYPE_FINGER
+                },
+                MotionEvent.PointerProperties().apply {
+                    id = 1
+                    toolType = MotionEvent.TOOL_TYPE_FINGER
+                },
+            )
+        val coords =
+            arrayOf(
+                MotionEvent.PointerCoords().apply {
+                    x = x0
+                    y = y0
+                },
+                MotionEvent.PointerCoords().apply {
+                    x = x1
+                    y = y1
+                },
+            )
         return MotionEvent.obtain(0L, android.os.SystemClock.uptimeMillis(), action, 2, properties, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
     }
 }

@@ -1,18 +1,18 @@
 package com.coder.pi
 
-import android.graphics.Color
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -43,18 +43,19 @@ class MainActivity : AppCompatActivity() {
         handleDeepLink(intent)
         terminalView = CoderTerminalView(this)
         terminalPreferences = getSharedPreferences("terminal", MODE_PRIVATE)
-        terminalPreferencesListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            when (key) {
-                "themeMode", "themeName" -> {
-                    currentTheme = CoderThemes.current(this)
-                    terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
-                    applySystemBars(currentTheme ?: CoderThemes.current(this))
+        terminalPreferencesListener =
+            SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                when (key) {
+                    "themeMode", "themeName" -> {
+                        currentTheme = CoderThemes.current(this)
+                        terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
+                        applySystemBars(currentTheme ?: CoderThemes.current(this))
+                    }
+                    "fontFamily" -> terminalView.setPreviewFontFamily(CoderFonts.selectedKey(this))
+                    "fontSizeSp", "cellHeight", "cellWidth" -> terminalView.setFontSizePoints(selectedTerminalFontSizeSp(this))
+                    "keep_screen_awake" -> applyKeepScreenAwake()
                 }
-                "fontFamily" -> terminalView.setPreviewFontFamily(CoderFonts.selectedKey(this))
-                "fontSizeSp", "cellHeight", "cellWidth" -> terminalView.setFontSizePoints(selectedTerminalFontSizeSp(this))
-                "keep_screen_awake" -> applyKeepScreenAwake()
             }
-        }
         terminalPreferences?.registerOnSharedPreferenceChangeListener(terminalPreferencesListener)
         applySystemBars(currentTheme ?: CoderThemes.current(this))
         applyKeepScreenAwake()
@@ -113,23 +114,24 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (uri.host != "settings") return
-        deepLinkSettingsPage = when (uri.path?.trim('/')) {
-            "fonts", "font", "size" -> SettingsPage.FONTS
-            "text", "customize-text", "opentype", "open-type", "font-features" -> SettingsPage.TEXT
-            "theme" -> SettingsPage.THEME
-            "toolbar" -> SettingsPage.TOOLBAR
-            "shortcuts/add", "shortcut", "shortcut/new" -> SettingsPage.SHORTCUT
-            "shortcuts" -> SettingsPage.SHORTCUTS
-            "keyboard" -> SettingsPage.KEYBOARD
-            "gestures" -> SettingsPage.GESTURES
-            "chat", "chat-mode" -> SettingsPage.CHAT
-            "speech" -> SettingsPage.SPEECH
-            "links", "link-allowlist", "allowed-links" -> SettingsPage.LINKS
-            "links/add", "link-allowlist/add", "allowed-links/add" -> SettingsPage.LINKS_ADD
-            "notifications", "terminal-notifications" -> SettingsPage.NOTIFICATIONS
-            "connection" -> SettingsPage.CONNECTION
-            else -> SettingsPage.ROOT
-        }
+        deepLinkSettingsPage =
+            when (uri.path?.trim('/')) {
+                "fonts", "font", "size" -> SettingsPage.FONTS
+                "text", "customize-text", "opentype", "open-type", "font-features" -> SettingsPage.TEXT
+                "theme" -> SettingsPage.THEME
+                "toolbar" -> SettingsPage.TOOLBAR
+                "shortcuts/add", "shortcut", "shortcut/new" -> SettingsPage.SHORTCUT
+                "shortcuts" -> SettingsPage.SHORTCUTS
+                "keyboard" -> SettingsPage.KEYBOARD
+                "gestures" -> SettingsPage.GESTURES
+                "chat", "chat-mode" -> SettingsPage.CHAT
+                "speech" -> SettingsPage.SPEECH
+                "links", "link-allowlist", "allowed-links" -> SettingsPage.LINKS
+                "links/add", "link-allowlist/add", "allowed-links/add" -> SettingsPage.LINKS_ADD
+                "notifications", "terminal-notifications" -> SettingsPage.NOTIFICATIONS
+                "connection" -> SettingsPage.CONNECTION
+                else -> SettingsPage.ROOT
+            }
         deepLinkRevision++
     }
 

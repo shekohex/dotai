@@ -20,10 +20,11 @@ enum class SpeechFailureKind {
 }
 
 object SpeechMetricsSanitizer {
-    fun sanitize(metrics: SpeechMetrics): SpeechMetrics = metrics.copy(
-        modelLoadMillis = metrics.modelLoadMillis.coerceAtLeast(0),
-        chunkMillis = metrics.chunkMillis.coerceAtLeast(0),
-        vadSegmentCount = metrics.vadSegmentCount.coerceAtLeast(0),
-        enhancementMillis = metrics.enhancementMillis.coerceAtLeast(0),
-    )
+    fun sanitize(metrics: SpeechMetrics): SpeechMetrics =
+        metrics.copy(
+            modelLoadMillis = metrics.modelLoadMillis.coerceAtLeast(0),
+            chunkMillis = metrics.chunkMillis.coerceAtLeast(0),
+            vadSegmentCount = metrics.vadSegmentCount.coerceAtLeast(0),
+            enhancementMillis = metrics.enhancementMillis.coerceAtLeast(0),
+        )
 }

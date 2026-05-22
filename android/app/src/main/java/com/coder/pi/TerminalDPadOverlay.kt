@@ -40,7 +40,14 @@ import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
-fun TerminalDPadOverlay(expanded: Boolean, tokens: UiTokens, terminalView: CoderTerminalView, offset: IntOffset, onOffsetChanged: (IntOffset) -> Unit, onDragFinished: () -> Unit) {
+fun TerminalDPadOverlay(
+    expanded: Boolean,
+    tokens: UiTokens,
+    terminalView: CoderTerminalView,
+    offset: IntOffset,
+    onOffsetChanged: (IntOffset) -> Unit,
+    onDragFinished: () -> Unit,
+) {
     if (!expanded) return
     val visibleState = remember { MutableTransitionState(false).apply { targetState = true } }
     Popup(alignment = Alignment.BottomCenter, offset = IntOffset(offset.x, offset.y - 116), properties = PopupProperties(focusable = false)) {
@@ -54,7 +61,13 @@ fun TerminalDPadOverlay(expanded: Boolean, tokens: UiTokens, terminalView: Coder
 }
 
 @Composable
-private fun TerminalDPad(tokens: UiTokens, terminalView: CoderTerminalView, modifier: Modifier, onOffsetChanged: (IntOffset) -> Unit, onDragFinished: () -> Unit) {
+private fun TerminalDPad(
+    tokens: UiTokens,
+    terminalView: CoderTerminalView,
+    modifier: Modifier,
+    onOffsetChanged: (IntOffset) -> Unit,
+    onDragFinished: () -> Unit,
+) {
     val destructive = tokens.accent.copy(alpha = 0.42f)
     val topLeftAction = terminalView.selectedGestureAction("dpad_top_left", "backspace")
     val topRightAction = terminalView.selectedGestureAction("dpad_top_right", "ctrl_c")
@@ -73,8 +86,14 @@ private fun TerminalDPad(tokens: UiTokens, terminalView: CoderTerminalView, modi
                 Modifier.pointerInput(Unit) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { hapticClick() },
-                        onDragEnd = { hapticClick(); onDragFinished() },
-                        onDragCancel = { hapticClick(); onDragFinished() },
+                        onDragEnd = {
+                            hapticClick()
+                            onDragFinished()
+                        },
+                        onDragCancel = {
+                            hapticClick()
+                            onDragFinished()
+                        },
                     ) { change, dragAmount ->
                         change.consume()
                         onOffsetChanged(IntOffset(dragAmount.x.roundToInt(), dragAmount.y.roundToInt()))
@@ -88,14 +107,31 @@ private fun TerminalDPad(tokens: UiTokens, terminalView: CoderTerminalView, modi
 }
 
 @Composable
-private fun DPadIconButton(icon: Int, color: Color, background: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(background).border(BorderStroke(1.dp, color.copy(alpha = 0.18f)), RoundedCornerShape(13.dp)).clickable { hapticClick(); onClick() }, contentAlignment = Alignment.Center) {
+private fun DPadIconButton(
+    icon: Int,
+    color: Color,
+    background: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(background).border(BorderStroke(1.dp, color.copy(alpha = 0.18f)), RoundedCornerShape(13.dp)).clickable {
+            hapticClick()
+            onClick()
+        },
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(painterResource(icon), null, tint = color, modifier = Modifier.size(20.dp))
     }
 }
 
 @Composable
-private fun AcceleratingDPadButton(icon: Int, color: Color, background: Color, onClick: () -> Unit) {
+private fun AcceleratingDPadButton(
+    icon: Int,
+    color: Color,
+    background: Color,
+    onClick: () -> Unit,
+) {
     var repeating by remember { mutableStateOf(false) }
     LaunchedEffect(repeating) {
         if (!repeating) return@LaunchedEffect

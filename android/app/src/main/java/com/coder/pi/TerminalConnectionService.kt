@@ -16,7 +16,11 @@ class TerminalConnectionService : Service() {
         startForeground(ServiceNotificationId, serviceNotification())
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         if (intent?.action == StopAction) {
             TerminalConnectionManager.stopAll()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -34,34 +38,38 @@ class TerminalConnectionService : Service() {
         super.onDestroy()
     }
 
-    private fun serviceNotification() = NotificationCompat.Builder(this, ServiceChannelId)
-        .setSmallIcon(R.drawable.pi_logo_mark)
-        .setContentTitle("Terminal connections active")
-        .setContentText("Keeping terminal sessions connected in background")
-        .setOngoing(true)
-        .setSilent(true)
-        .setOnlyAlertOnce(true)
-        .setShowWhen(false)
-        .setLocalOnly(true)
-        .setPriority(NotificationCompat.PRIORITY_MIN)
-        .setCategory(NotificationCompat.CATEGORY_SERVICE)
-        .setVisibility(NotificationCompat.VISIBILITY_SECRET)
-        .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
-        .setContentIntent(PendingIntent.getActivity(this, 0, packageManager.getLaunchIntentForPackage(packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-        .addAction(R.drawable.ic_feather_x, "Stop", PendingIntent.getService(this, 1, Intent(this, TerminalConnectionService::class.java).setAction(StopAction), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-        .build()
+    private fun serviceNotification() =
+        NotificationCompat
+            .Builder(this, ServiceChannelId)
+            .setSmallIcon(R.drawable.pi_logo_mark)
+            .setContentTitle("Terminal connections active")
+            .setContentText("Keeping terminal sessions connected in background")
+            .setOngoing(true)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setLocalOnly(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
+            .setContentIntent(PendingIntent.getActivity(this, 0, packageManager.getLaunchIntentForPackage(packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .addAction(R.drawable.ic_feather_x, "Stop", PendingIntent.getService(this, 1, Intent(this, TerminalConnectionService::class.java).setAction(StopAction), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .build()
 
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT < 26) return
         val manager = getSystemService(NotificationManager::class.java)
         if (manager.getNotificationChannel(ServiceChannelId) == null) {
-            manager.createNotificationChannel(NotificationChannel(ServiceChannelId, "Terminal Connections", NotificationManager.IMPORTANCE_MIN).apply {
-                setSound(null, null)
-                enableVibration(false)
-                enableLights(false)
-                setShowBadge(false)
-                lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
-            })
+            manager.createNotificationChannel(
+                NotificationChannel(ServiceChannelId, "Terminal Connections", NotificationManager.IMPORTANCE_MIN).apply {
+                    setSound(null, null)
+                    enableVibration(false)
+                    enableLights(false)
+                    setShowBadge(false)
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET
+                },
+            )
         }
     }
 

@@ -1,19 +1,25 @@
 package com.coder.pi
 
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -31,16 +37,10 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -121,7 +121,13 @@ fun rememberCoderUiMetrics(): CoderUiMetrics {
 }
 
 @Composable
-fun CoderSectionHeader(title: String, trailing: String?, tokens: UiTokens, metrics: CoderUiMetrics, onTrailingClick: (() -> Unit)? = null) {
+fun CoderSectionHeader(
+    title: String,
+    trailing: String?,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    onTrailingClick: (() -> Unit)? = null,
+) {
     Row(Modifier.fillMaxWidth().padding(start = metrics.screenPadding, end = metrics.screenPadding, top = metrics.screenPadding, bottom = metrics.screenPadding / 2), verticalAlignment = Alignment.CenterVertically) {
         Text(title.uppercase(), color = tokens.secondary, fontSize = metrics.sectionSize, letterSpacing = 0.6.sp, modifier = Modifier.weight(1f))
         if (trailing != null) Text(trailing.uppercase(), color = tokens.accent, fontSize = metrics.sectionSize, modifier = if (onTrailingClick == null) Modifier else Modifier.clickable { onTrailingClick() })
@@ -129,7 +135,12 @@ fun CoderSectionHeader(title: String, trailing: String?, tokens: UiTokens, metri
 }
 
 @Composable
-fun CoderHeaderActions(title: String, tokens: UiTokens, metrics: CoderUiMetrics, onOpenSettings: () -> Unit) {
+fun CoderHeaderActions(
+    title: String,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    onOpenSettings: () -> Unit,
+) {
     Row(Modifier.fillMaxWidth().height(metrics.headerHeight).padding(horizontal = metrics.screenPadding), verticalAlignment = Alignment.CenterVertically) {
         PiLogo(tokens, title, Modifier.size(width = metrics.headerHeight * 0.38f, height = metrics.headerHeight * 0.29f))
         Spacer(Modifier.weight(1f))
@@ -138,12 +149,22 @@ fun CoderHeaderActions(title: String, tokens: UiTokens, metrics: CoderUiMetrics,
 }
 
 @Composable
-fun PiLogo(tokens: UiTokens, contentDescription: String?, modifier: Modifier = Modifier, tint: Color = tokens.text) {
+fun PiLogo(
+    tokens: UiTokens,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    tint: Color = tokens.text,
+) {
     Icon(painterResource(R.drawable.pi_logo_mark), contentDescription, tint = tint, modifier = modifier)
 }
 
 @Composable
-fun CoderIconButton(icon: Int, tokens: UiTokens, metrics: CoderUiMetrics, onClick: () -> Unit) {
+fun CoderIconButton(
+    icon: Int,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    onClick: () -> Unit,
+) {
     Box(Modifier.size(metrics.iconSize + metrics.iconGap / 2).clip(CircleShape).clickable { onClick() }, contentAlignment = Alignment.Center) {
         Icon(painterResource(icon), null, tint = tokens.secondary, modifier = Modifier.size(metrics.iconSize))
     }
@@ -158,11 +179,30 @@ data class CoderSwipeActionItem(
 )
 
 @Composable
-fun CoderWorkspaceCard(title: String, subtitle: String, iconUri: String?, iconUrl: String?, favorite: Boolean, inactive: Boolean = false, tokens: UiTokens, metrics: CoderUiMetrics, actions: List<CoderSwipeActionItem>, onOpen: () -> Unit) {
+fun CoderWorkspaceCard(
+    title: String,
+    subtitle: String,
+    iconUri: String?,
+    iconUrl: String?,
+    favorite: Boolean,
+    inactive: Boolean = false,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    actions: List<CoderSwipeActionItem>,
+    onOpen: () -> Unit,
+) {
     var offsetX by remember { mutableFloatStateOf(0f) }
     val actionRevealWidth = with(LocalDensity.current) { metrics.actionRevealWidth.toPx() }
     Box(Modifier.fillMaxWidth().height(metrics.rowHeight).padding(horizontal = metrics.screenPadding, vertical = metrics.screenPadding / 5)) {
-        Row(Modifier.align(Alignment.CenterEnd).width(metrics.actionRevealWidth).height(metrics.rowHeight).padding(end = metrics.rowHorizontalPadding / 2), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(metrics.actionRailGap, Alignment.End)) {
+        Row(
+            Modifier
+                .align(Alignment.CenterEnd)
+                .width(metrics.actionRevealWidth)
+                .height(metrics.rowHeight)
+                .padding(end = metrics.rowHorizontalPadding / 2),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(metrics.actionRailGap, Alignment.End),
+        ) {
             actions.forEach { action -> CoderActionButton(action.icon, action.variant, tokens, metrics, action.onClick) }
         }
         Row(
@@ -180,8 +220,7 @@ fun CoderWorkspaceCard(title: String, subtitle: String, iconUri: String?, iconUr
                             offsetX = (offsetX + dragAmount).coerceIn(-actionRevealWidth, 0f)
                         },
                     )
-                }
-                .clickable { if (offsetX == 0f) onOpen() else offsetX = 0f }
+                }.clickable { if (offsetX == 0f) onOpen() else offsetX = 0f }
                 .padding(horizontal = metrics.rowHorizontalPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -196,9 +235,27 @@ fun CoderWorkspaceCard(title: String, subtitle: String, iconUri: String?, iconUr
 }
 
 @Composable
-fun CoderWorkspaceIcon(title: String, iconUri: String?, iconUrl: String?, tokens: UiTokens, metrics: CoderUiMetrics, inactive: Boolean = false) {
+fun CoderWorkspaceIcon(
+    title: String,
+    iconUri: String?,
+    iconUrl: String?,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    inactive: Boolean = false,
+) {
     val model = iconUri ?: iconUrl
-    Box(Modifier.size(metrics.iconSize + 10.dp).clip(RoundedCornerShape(metrics.rowCorner / 2)).background(if (inactive) tokens.background else if (model.isNullOrBlank()) tokens.surface else Color(0xfff4f4f6)), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.size(metrics.iconSize + 10.dp).clip(RoundedCornerShape(metrics.rowCorner / 2)).background(
+            if (inactive) {
+                tokens.background
+            } else if (model.isNullOrBlank()) {
+                tokens.surface
+            } else {
+                Color(0xfff4f4f6)
+            },
+        ),
+        contentAlignment = Alignment.Center,
+    ) {
         if (model.isNullOrBlank()) {
             Text(workspaceInitials(title), color = tokens.secondary.copy(alpha = if (inactive) 0.68f else 1f), fontSize = metrics.captionSize, fontWeight = FontWeight.SemiBold)
         } else {
@@ -208,19 +265,26 @@ fun CoderWorkspaceIcon(title: String, iconUri: String?, iconUrl: String?, tokens
 }
 
 @Composable
-private fun CoderCachedImage(model: String, title: String, tokens: UiTokens, metrics: CoderUiMetrics) {
+private fun CoderCachedImage(
+    model: String,
+    title: String,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+) {
     val context = LocalContext.current
     var loaded by remember(model) { mutableStateOf(false) }
     var failed by remember(model) { mutableStateOf(false) }
-    val request = remember(model) {
-        ImageRequest.Builder(context)
-            .data(model)
-            .crossfade(true)
-            .memoryCachePolicy(CachePolicy.ENABLED)
-            .diskCachePolicy(CachePolicy.ENABLED)
-            .decoderFactory(SvgDecoder.Factory())
-            .build()
-    }
+    val request =
+        remember(model) {
+            ImageRequest
+                .Builder(context)
+                .data(model)
+                .crossfade(true)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .decoderFactory(SvgDecoder.Factory())
+                .build()
+        }
     Box(Modifier.size(metrics.iconSize + 2.dp).clip(RoundedCornerShape(metrics.rowCorner / 2)), contentAlignment = Alignment.Center) {
         if (!loaded && !failed) CoderImageShimmer(tokens)
         if (failed) Text(workspaceInitials(title), color = tokens.secondary, fontSize = metrics.captionSize, fontWeight = FontWeight.SemiBold)
@@ -237,7 +301,10 @@ private fun CoderCachedImage(model: String, title: String, tokens: UiTokens, met
 }
 
 @Composable
-fun CoderShimmerBox(tokens: UiTokens, modifier: Modifier) {
+fun CoderShimmerBox(
+    tokens: UiTokens,
+    modifier: Modifier,
+) {
     val transition = rememberInfiniteTransition(label = "coder-image-shimmer")
     val progress by transition.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "coder-image-shimmer-progress")
     BoxWithConstraints(modifier.background(tokens.surface)) {
@@ -252,43 +319,90 @@ private fun CoderImageShimmer(tokens: UiTokens) {
     CoderShimmerBox(tokens, Modifier.fillMaxSize())
 }
 
-private fun workspaceInitials(title: String): String = title.split(Regex("[^A-Za-z0-9]+"))
-    .filter { it.isNotBlank() }
-    .take(2)
-    .joinToString("") { it.first().uppercaseChar().toString() }
-    .ifBlank { "?" }
+private fun workspaceInitials(title: String): String =
+    title
+        .split(Regex("[^A-Za-z0-9]+"))
+        .filter { it.isNotBlank() }
+        .take(2)
+        .joinToString("") { it.first().uppercaseChar().toString() }
+        .ifBlank { "?" }
 
 @Composable
-fun CoderActionButton(icon: Int, variant: CoderActionButtonVariant, tokens: UiTokens, metrics: CoderUiMetrics, onClick: () -> Unit) {
-    val background = when (variant) {
-        CoderActionButtonVariant.Neutral -> tokens.surfaceHigh
-        CoderActionButtonVariant.Accent -> tokens.accent.copy(alpha = 0.18f)
-        CoderActionButtonVariant.Destructive -> Color(0xffff5c7a).copy(alpha = 0.16f)
-    }
-    val tint = when (variant) {
-        CoderActionButtonVariant.Neutral -> tokens.secondary
-        CoderActionButtonVariant.Accent -> tokens.accent
-        CoderActionButtonVariant.Destructive -> Color(0xffff5c7a)
-    }
-    Box(Modifier.size(metrics.actionIconHitSize).clip(CircleShape).background(background).clickable { onClick() }, contentAlignment = Alignment.Center) {
+fun CoderActionButton(
+    icon: Int,
+    variant: CoderActionButtonVariant,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    onClick: () -> Unit,
+) {
+    val background =
+        when (variant) {
+            CoderActionButtonVariant.Neutral -> tokens.surfaceHigh
+            CoderActionButtonVariant.Accent -> tokens.accent.copy(alpha = 0.18f)
+            CoderActionButtonVariant.Destructive -> Color(0xffff5c7a).copy(alpha = 0.16f)
+        }
+    val tint =
+        when (variant) {
+            CoderActionButtonVariant.Neutral -> tokens.secondary
+            CoderActionButtonVariant.Accent -> tokens.accent
+            CoderActionButtonVariant.Destructive -> Color(0xffff5c7a)
+        }
+    Box(
+        Modifier
+            .size(metrics.actionIconHitSize)
+            .clip(CircleShape)
+            .background(background)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(painterResource(icon), null, tint = tint, modifier = Modifier.size(metrics.iconSize * 0.82f))
     }
 }
 
 @Composable
-fun CoderSheetHandle(tokens: UiTokens, metrics: CoderUiMetrics) {
+fun CoderSheetHandle(
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+) {
     Box(Modifier.fillMaxWidth().height(metrics.sheetPadding), contentAlignment = Alignment.Center) {
-        Box(Modifier.width(metrics.sheetHandleWidth).height(metrics.sheetHandleHeight).clip(CircleShape).background(tokens.separator))
+        Box(
+            Modifier
+                .width(metrics.sheetHandleWidth)
+                .height(metrics.sheetHandleHeight)
+                .clip(CircleShape)
+                .background(tokens.separator),
+        )
     }
 }
 
 @Composable
-fun CoderPill(label: String, tokens: UiTokens, metrics: CoderUiMetrics, onClick: (() -> Unit)? = null) {
-    Text(label, color = tokens.text, fontSize = metrics.bodySize, modifier = Modifier.clip(RoundedCornerShape(metrics.pillCorner)).background(tokens.surface).then(if (onClick == null) Modifier else Modifier.clickable { onClick() }).padding(horizontal = metrics.pillHorizontalPadding, vertical = metrics.pillVerticalPadding))
+fun CoderPill(
+    label: String,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    onClick: (() -> Unit)? = null,
+) {
+    Text(
+        label,
+        color = tokens.text,
+        fontSize = metrics.bodySize,
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(metrics.pillCorner))
+                .background(tokens.surface)
+                .then(if (onClick == null) Modifier else Modifier.clickable { onClick() })
+                .padding(horizontal = metrics.pillHorizontalPadding, vertical = metrics.pillVerticalPadding),
+    )
 }
 
 @Composable
-fun CoderScreenHeader(title: String, action: String, tokens: UiTokens, metrics: CoderUiMetrics, onAction: () -> Unit) {
+fun CoderScreenHeader(
+    title: String,
+    action: String,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    onAction: () -> Unit,
+) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(title.uppercase(), color = tokens.secondary, fontSize = metrics.sectionSize, letterSpacing = 0.6.sp, modifier = Modifier.weight(1f))
         CoderPill(action, tokens, metrics) { onAction() }
@@ -296,7 +410,15 @@ fun CoderScreenHeader(title: String, action: String, tokens: UiTokens, metrics: 
 }
 
 @Composable
-fun CoderWorkspaceSummary(title: String, subtitle: String, iconUri: String?, iconUrl: String?, inactive: Boolean, tokens: UiTokens, metrics: CoderUiMetrics) {
+fun CoderWorkspaceSummary(
+    title: String,
+    subtitle: String,
+    iconUri: String?,
+    iconUrl: String?,
+    inactive: Boolean,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         CoderWorkspaceIcon(title, iconUri, iconUrl, tokens, metrics, inactive)
         Spacer(Modifier.width(metrics.iconGap * 0.7f))
@@ -308,8 +430,25 @@ fun CoderWorkspaceSummary(title: String, subtitle: String, iconUri: String?, ico
 }
 
 @Composable
-fun CoderAvatarPicker(title: String, iconUri: String?, iconUrl: String?, inactive: Boolean, tokens: UiTokens, metrics: CoderUiMetrics, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(metrics.rowCorner)).background(tokens.surface).border(BorderStroke(0.5.dp, tokens.separator), RoundedCornerShape(metrics.rowCorner)).clickable { onClick() }.padding(metrics.sheetPadding), horizontalAlignment = Alignment.CenterHorizontally) {
+fun CoderAvatarPicker(
+    title: String,
+    iconUri: String?,
+    iconUrl: String?,
+    inactive: Boolean,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    onClick: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(metrics.rowCorner))
+            .background(tokens.surface)
+            .border(BorderStroke(0.5.dp, tokens.separator), RoundedCornerShape(metrics.rowCorner))
+            .clickable { onClick() }
+            .padding(metrics.sheetPadding),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Box(Modifier.size(metrics.iconSize * 3.1f).clip(CircleShape).background(tokens.background), contentAlignment = Alignment.Center) {
             CoderWorkspaceIcon(title, iconUri, iconUrl, tokens, metrics.copy(iconSize = metrics.iconSize * 2.2f), inactive)
         }
@@ -320,14 +459,33 @@ fun CoderAvatarPicker(title: String, iconUri: String?, iconUrl: String?, inactiv
 }
 
 @Composable
-fun CoderHeaderIconButton(icon: Int, tokens: UiTokens, metrics: CoderUiMetrics, enabled: Boolean = true, onClick: () -> Unit) {
-    Box(Modifier.size(metrics.actionIconHitSize).clip(CircleShape).background(if (enabled) tokens.surface else tokens.surface.copy(alpha = 0.5f)).clickable(enabled = enabled) { onClick() }, contentAlignment = Alignment.Center) {
+fun CoderHeaderIconButton(
+    icon: Int,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(metrics.actionIconHitSize)
+            .clip(CircleShape)
+            .background(if (enabled) tokens.surface else tokens.surface.copy(alpha = 0.5f))
+            .clickable(enabled = enabled) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(painterResource(icon), null, tint = if (enabled) tokens.text else tokens.secondary.copy(alpha = 0.55f), modifier = Modifier.size(metrics.iconSize * 0.78f))
     }
 }
 
 @Composable
-fun CoderInfoSection(title: String, rows: List<Pair<String, String>>, tokens: UiTokens, metrics: CoderUiMetrics, modifier: Modifier = Modifier) {
+fun CoderInfoSection(
+    title: String,
+    rows: List<Pair<String, String>>,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier.fillMaxWidth()) {
         CoderSectionLabel(title, tokens, metrics)
         if (rows.isEmpty()) return@Column
@@ -337,13 +495,29 @@ fun CoderInfoSection(title: String, rows: List<Pair<String, String>>, tokens: Ui
 }
 
 @Composable
-fun CoderSectionLabel(title: String, tokens: UiTokens, metrics: CoderUiMetrics) {
+fun CoderSectionLabel(
+    title: String,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+) {
     Text(title.uppercase(), color = tokens.secondary, fontSize = metrics.sectionSize, letterSpacing = 0.6.sp)
 }
 
 @Composable
-fun CoderInfoCard(rows: List<Pair<String, String>>, tokens: UiTokens, metrics: CoderUiMetrics, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(metrics.rowCorner)).background(tokens.surface).border(BorderStroke(0.5.dp, tokens.separator), RoundedCornerShape(metrics.rowCorner)).padding(metrics.sheetPadding * 0.7f)) {
+fun CoderInfoCard(
+    rows: List<Pair<String, String>>,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(metrics.rowCorner))
+            .background(tokens.surface)
+            .border(BorderStroke(0.5.dp, tokens.separator), RoundedCornerShape(metrics.rowCorner))
+            .padding(metrics.sheetPadding * 0.7f),
+    ) {
         rows.forEachIndexed { index, row ->
             CoderInfoRow(row.first, tokens, metrics) { Text(row.second, color = tokens.text, fontSize = metrics.bodySize, modifier = Modifier.weight(1f)) }
             if (index != rows.lastIndex) Box(Modifier.fillMaxWidth().height(0.5.dp).background(tokens.separator))
@@ -352,7 +526,12 @@ fun CoderInfoCard(rows: List<Pair<String, String>>, tokens: UiTokens, metrics: C
 }
 
 @Composable
-fun CoderInfoRow(label: String, tokens: UiTokens, metrics: CoderUiMetrics, content: @Composable RowScope.() -> Unit) {
+fun CoderInfoRow(
+    label: String,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    content: @Composable RowScope.() -> Unit,
+) {
     Row(Modifier.fillMaxWidth().padding(vertical = metrics.sheetPadding * 0.3f), verticalAlignment = Alignment.Top) {
         Text(label, color = tokens.secondary, fontSize = metrics.captionSize, modifier = Modifier.width(metrics.screenPadding * 4.8f))
         content()
@@ -360,7 +539,14 @@ fun CoderInfoRow(label: String, tokens: UiTokens, metrics: CoderUiMetrics, conte
 }
 
 @Composable
-fun CoderToggleDateValue(timestamp: String, tokens: UiTokens, metrics: CoderUiMetrics, sinceLabel: (String) -> String, dateLabel: (String) -> String, modifier: Modifier = Modifier) {
+fun CoderToggleDateValue(
+    timestamp: String,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    sinceLabel: (String) -> String,
+    dateLabel: (String) -> String,
+    modifier: Modifier = Modifier,
+) {
     var showDate by remember(timestamp) { mutableStateOf(false) }
     Text(if (showDate) dateLabel(timestamp) else sinceLabel(timestamp), color = tokens.text, fontSize = metrics.bodySize, modifier = modifier.clip(RoundedCornerShape(metrics.pillCorner)).clickable { showDate = !showDate }.padding(vertical = 1.dp))
 }

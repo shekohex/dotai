@@ -47,35 +47,10 @@ fun resourceFontName(name: String): String = name
     .trim('_')
     .lowercase(Locale.US)
 
-val vendorTerminalFonts by tasks.registering {
-    outputs.dir(generatedFontResources)
-    doLast {
-        val archiveDir = downloadedFontArchives.asFile
-        val outputDir = generatedFontResources.get().dir("font").asFile
-        archiveDir.mkdirs()
-        outputDir.deleteRecursively()
-        outputDir.mkdirs()
-        terminalFonts.forEach { font ->
-            val archive = archiveDir.resolve("${font.family}.zip")
-            if (!archive.exists()) {
-                URI(font.url).toURL().openStream().use { input ->
-                    archive.outputStream().use { output -> input.copyTo(output) }
-                }
-            }
-            copy {
-                from(zipTree(archive))
-                into(outputDir)
-                include(font.includes)
-                eachFile {
-                    val extension = name.substringAfterLast('.', "ttf").lowercase(Locale.US)
-                    val baseName = name.substringBeforeLast('.')
-                    name = "${resourceFontName(font.family)}_${resourceFontName(baseName)}.$extension"
-                    path = name
-                }
-                includeEmptyDirs = false
-            }
-        }
-    }
+val vendorTerminalFonts by tasks.registering(VendorTerminalFontsTask::class) {
+    archiveDirectory.set(downloadedFontArchives)
+    outputDirectory.set(generatedFontResources)
+    fontArchives.set(terminalFonts.map { font -> "${font.family}|${font.url}|${font.includes.joinToString(",")}" })
 }
 
 android {
@@ -177,7 +152,6 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.svg)
     implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.litert)
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)

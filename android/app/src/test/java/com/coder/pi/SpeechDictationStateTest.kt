@@ -6,20 +6,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SpeechDictationStateTest {
-    private val expectedTransitions = mapOf(
-        SpeechDictationDisplayState.IDLE to mapOf(SpeechDictationAction.REQUEST_PERMISSION to SpeechDictationDisplayState.IDLE, SpeechDictationAction.START_RECORDING to SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-        SpeechDictationDisplayState.RECORDING_EMPTY to mapOf(SpeechDictationAction.DETECT_SPEECH to SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationAction.STOP_RECORDING to SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-        SpeechDictationDisplayState.RECORDING_WITH_SPEECH to mapOf(SpeechDictationAction.STOP_RECORDING to SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-        SpeechDictationDisplayState.TRANSCRIBING to mapOf(SpeechDictationAction.COMPLETE_TRANSCRIPTION to SpeechDictationDisplayState.TRANSCRIPT_READY, SpeechDictationAction.COMPLETE_NO_SPEECH to SpeechDictationDisplayState.NO_SPEECH, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-        SpeechDictationDisplayState.TRANSCRIPT_READY to mapOf(SpeechDictationAction.START_ENHANCEMENT to SpeechDictationDisplayState.ENHANCING_COLLAPSED, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-        SpeechDictationDisplayState.ENHANCING_COLLAPSED to mapOf(SpeechDictationAction.TIME_OUT_ENHANCEMENT to SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT, SpeechDictationAction.FAIL_ENHANCEMENT to SpeechDictationDisplayState.ENHANCEMENT_FAILED, SpeechDictationAction.COMPLETE_ENHANCEMENT to SpeechDictationDisplayState.ENHANCED_READY, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-        SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT to mapOf(SpeechDictationAction.RETRY_ENHANCEMENT to SpeechDictationDisplayState.ENHANCING_COLLAPSED, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-        SpeechDictationDisplayState.ENHANCEMENT_FAILED to mapOf(SpeechDictationAction.RETRY_ENHANCEMENT to SpeechDictationDisplayState.ENHANCING_COLLAPSED, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-        SpeechDictationDisplayState.ENHANCED_READY to mapOf(SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.SEND_ENHANCED to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-        SpeechDictationDisplayState.NO_SPEECH to mapOf(SpeechDictationAction.START_RECORDING to SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-        SpeechDictationDisplayState.SUBMITTED to mapOf(SpeechDictationAction.RESET to SpeechDictationDisplayState.IDLE),
-        SpeechDictationDisplayState.CANCELED to mapOf(SpeechDictationAction.RESET to SpeechDictationDisplayState.IDLE),
-    )
+    private val expectedTransitions =
+        mapOf(
+            SpeechDictationDisplayState.IDLE to mapOf(SpeechDictationAction.REQUEST_PERMISSION to SpeechDictationDisplayState.IDLE, SpeechDictationAction.START_RECORDING to SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.RECORDING_EMPTY to mapOf(SpeechDictationAction.DETECT_SPEECH to SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationAction.STOP_RECORDING to SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.RECORDING_WITH_SPEECH to mapOf(SpeechDictationAction.STOP_RECORDING to SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.TRANSCRIBING to mapOf(SpeechDictationAction.COMPLETE_TRANSCRIPTION to SpeechDictationDisplayState.TRANSCRIPT_READY, SpeechDictationAction.COMPLETE_NO_SPEECH to SpeechDictationDisplayState.NO_SPEECH, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.TRANSCRIPT_READY to mapOf(SpeechDictationAction.START_ENHANCEMENT to SpeechDictationDisplayState.ENHANCING_COLLAPSED, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.ENHANCING_COLLAPSED to mapOf(SpeechDictationAction.TIME_OUT_ENHANCEMENT to SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT, SpeechDictationAction.FAIL_ENHANCEMENT to SpeechDictationDisplayState.ENHANCEMENT_FAILED, SpeechDictationAction.COMPLETE_ENHANCEMENT to SpeechDictationDisplayState.ENHANCED_READY, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT to mapOf(SpeechDictationAction.RETRY_ENHANCEMENT to SpeechDictationDisplayState.ENHANCING_COLLAPSED, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.ENHANCEMENT_FAILED to mapOf(SpeechDictationAction.RETRY_ENHANCEMENT to SpeechDictationDisplayState.ENHANCING_COLLAPSED, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.ENHANCED_READY to mapOf(SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.SEND_ENHANCED to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.NO_SPEECH to mapOf(SpeechDictationAction.START_RECORDING to SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.SUBMITTED to mapOf(SpeechDictationAction.RESET to SpeechDictationDisplayState.IDLE),
+            SpeechDictationDisplayState.CANCELED to mapOf(SpeechDictationAction.RESET to SpeechDictationDisplayState.IDLE),
+        )
 
     @Test
     fun everyDisplayStateHasContract() {
@@ -118,9 +119,10 @@ class SpeechDictationStateTest {
 
     @Test
     fun invalidTransitionsThrow() {
-        val invalidPairs = SpeechDictationDisplayState.entries.flatMap { state ->
-            SpeechDictationAction.entries.filterNot { action -> action in SpeechDictationUxContract.allowedActions(state) }.map { state to it }
-        }
+        val invalidPairs =
+            SpeechDictationDisplayState.entries.flatMap { state ->
+                SpeechDictationAction.entries.filterNot { action -> action in SpeechDictationUxContract.allowedActions(state) }.map { state to it }
+            }
 
         assertTrue(invalidPairs.isNotEmpty())
         invalidPairs.forEach { (state, action) ->

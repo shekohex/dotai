@@ -8,6 +8,7 @@ class TerminalEngine(
 ) {
     internal val native = CoderNative()
     private val lock = Any()
+
     @Volatile internal var handle = native.nativeInitTerminal(columns, rows, cellWidth, cellHeight)
 
     fun feed(bytes: ByteArray): TerminalEngineUpdate {
@@ -39,4 +40,7 @@ class TerminalEngine(
     }
 }
 
-data class TerminalEngineUpdate(val oscEvents: List<TerminalOscEvent>, val title: String)
+data class TerminalEngineUpdate(
+    val oscEvents: List<TerminalOscEvent>,
+    val title: String,
+)

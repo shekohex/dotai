@@ -1,10 +1,5 @@
 package com.coder.pi
 
-import java.util.Base64
-import java.nio.ByteBuffer
-import java.nio.charset.CharacterCodingException
-import java.nio.charset.CodingErrorAction
-import java.nio.charset.StandardCharsets
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -14,12 +9,34 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 sealed interface TerminalOscEvent {
-    data class Clipboard(val kind: String, val data: String) : TerminalOscEvent
-    data class Notification(val title: String, val body: String) : TerminalOscEvent
-    data class Progress(val stateText: String, val valueText: String) : TerminalOscEvent
-    data class Pi(val version: Int, val eventName: String, val envelope: PiOscEnvelope) : TerminalOscEvent
+    data class Clipboard(
+        val kind: String,
+        val data: String,
+    ) : TerminalOscEvent
+
+    data class Notification(
+        val title: String,
+        val body: String,
+    ) : TerminalOscEvent
+
+    data class Progress(
+        val stateText: String,
+        val valueText: String,
+    ) : TerminalOscEvent
+
+    data class Pi(
+        val version: Int,
+        val eventName: String,
+        val envelope: PiOscEnvelope,
+    ) : TerminalOscEvent
+
     data object Ignored : TerminalOscEvent
 }
 
@@ -33,7 +50,11 @@ data class PiOscEnvelope(
     val data: JsonObject,
 )
 
-private val piOscJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
+private val piOscJson =
+    Json {
+        ignoreUnknownKeys = true
+        explicitNulls = false
+    }
 private val piOscPayloadPattern = Regex("^[A-Za-z0-9_-]+$")
 private val piOscEvents = setOf("hello", "agent.session", "agent.run", "agent.turn", "agent.progress", "agent.input", "agent.tool", "agent.alert", "agent.aborted", "agent.compaction")
 
@@ -50,16 +71,21 @@ fun parseTerminalOscEvent(raw: String): TerminalOscEvent {
 
 fun Array<String>.toTerminalOscEvents(): List<TerminalOscEvent> = map(::parseTerminalOscEvent).filterNot { it is TerminalOscEvent.Ignored }
 
-private fun parsePiOscEvent(versionText: String, eventName: String, payload: String): TerminalOscEvent = runCatching {
-    val version = versionText.toIntOrNull() ?: return TerminalOscEvent.Ignored
-    if (version != 1 || eventName !in piOscEvents || payload.isBlank() || payload.length > 8192 || !piOscPayloadPattern.matches(payload)) return TerminalOscEvent.Ignored
-    val bytes = Base64.getUrlDecoder().decode(paddedBase64Url(payload))
-    if (bytes.size > 8192) return TerminalOscEvent.Ignored
-    val root = piOscJson.parseToJsonElement(strictUtf8(bytes)).jsonObject
-    val envelope = parsePiOscEnvelope(root) ?: return TerminalOscEvent.Ignored
-    if (!isValidPiOscPayload(eventName, envelope.data)) return TerminalOscEvent.Ignored
-    TerminalOscEvent.Pi(version, eventName, envelope)
-}.getOrElse { TerminalOscEvent.Ignored }
+private fun parsePiOscEvent(
+    versionText: String,
+    eventName: String,
+    payload: String,
+): TerminalOscEvent =
+    runCatching {
+        val version = versionText.toIntOrNull() ?: return TerminalOscEvent.Ignored
+        if (version != 1 || eventName !in piOscEvents || payload.isBlank() || payload.length > 8192 || !piOscPayloadPattern.matches(payload)) return TerminalOscEvent.Ignored
+        val bytes = Base64.getUrlDecoder().decode(paddedBase64Url(payload))
+        if (bytes.size > 8192) return TerminalOscEvent.Ignored
+        val root = piOscJson.parseToJsonElement(strictUtf8(bytes)).jsonObject
+        val envelope = parsePiOscEnvelope(root) ?: return TerminalOscEvent.Ignored
+        if (!isValidPiOscPayload(eventName, envelope.data)) return TerminalOscEvent.Ignored
+        TerminalOscEvent.Pi(version, eventName, envelope)
+    }.getOrElse { TerminalOscEvent.Ignored }
 
 private fun paddedBase64Url(value: String): String {
     val padding = (4 - value.length % 4) % 4
@@ -88,17 +114,23 @@ private fun parsePiOscEnvelope(root: JsonObject): PiOscEnvelope? {
     )
 }
 
-private fun strictUtf8(bytes: ByteArray): String = try {
-    StandardCharsets.UTF_8.newDecoder()
-        .onMalformedInput(CodingErrorAction.REPORT)
-        .onUnmappableCharacter(CodingErrorAction.REPORT)
-        .decode(ByteBuffer.wrap(bytes))
-        .toString()
-} catch (_: CharacterCodingException) {
-    throw IllegalArgumentException("Invalid UTF-8")
-}
+private fun strictUtf8(bytes: ByteArray): String =
+    try {
+        StandardCharsets.UTF_8
+            .newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
+    } catch (_: CharacterCodingException) {
+        throw IllegalArgumentException("Invalid UTF-8")
+    }
 
-private fun JsonObject.stringField(name: String, maxLength: Int, required: Boolean = true): String? {
+private fun JsonObject.stringField(
+    name: String,
+    maxLength: Int,
+    required: Boolean = true,
+): String? {
     val value = this[name] ?: return if (required) null else null
     val primitive = value as? JsonPrimitive ?: return null
     if (!primitive.isString) return null
@@ -106,7 +138,10 @@ private fun JsonObject.stringField(name: String, maxLength: Int, required: Boole
     return text.takeIf { it.isNotBlank() && it.length <= maxLength }
 }
 
-private fun JsonObject.optionalStringField(name: String, maxLength: Int): String? {
+private fun JsonObject.optionalStringField(
+    name: String,
+    maxLength: Int,
+): String? {
     val value = this[name] ?: return null
     val primitive = value as? JsonPrimitive ?: return null
     if (!primitive.isString) return null
@@ -114,19 +149,23 @@ private fun JsonObject.optionalStringField(name: String, maxLength: Int): String
     return text.takeIf { it.length <= maxLength }
 }
 
-private fun isValidPiOscPayload(eventName: String, data: JsonObject): Boolean = when (eventName) {
-    "hello" -> data.intField("protocol") == 1 && data.stringEquals("extension", "pi-osc") && data.longField("version") != null && data.keys == setOf("protocol", "extension", "version")
-    "agent.session" -> data.stringEquals("state", "started") && data.stringIn("reason", setOf("startup", "reload", "new", "resume", "fork")) && data.keys == setOf("state", "reason")
-    "agent.run" -> data.stringIn("state", setOf("running", "idle")) && data.keys == setOf("state")
-    "agent.turn" -> data.stringIn("state", setOf("running", "complete")) && data.longField("turnIndex") != null && data.keys == setOf("state", "turnIndex")
-    "agent.progress" -> isValidPiOscProgressPayload(data)
-    "agent.input" -> data.stringIn("state", setOf("submitted")) && data.keys == setOf("state")
-    "agent.tool" -> isValidPiOscToolPayload(data)
-    "agent.alert" -> isValidPiOscAlertPayload(data)
-    "agent.aborted" -> isValidPiOscAbortedPayload(data)
-    "agent.compaction" -> data.stringIn("state", setOf("preparing", "complete")) && data.keys == setOf("state")
-    else -> false
-}
+private fun isValidPiOscPayload(
+    eventName: String,
+    data: JsonObject,
+): Boolean =
+    when (eventName) {
+        "hello" -> data.intField("protocol") == 1 && data.stringEquals("extension", "pi-osc") && data.longField("version") != null && data.keys == setOf("protocol", "extension", "version")
+        "agent.session" -> data.stringEquals("state", "started") && data.stringIn("reason", setOf("startup", "reload", "new", "resume", "fork")) && data.keys == setOf("state", "reason")
+        "agent.run" -> data.stringIn("state", setOf("running", "idle")) && data.keys == setOf("state")
+        "agent.turn" -> data.stringIn("state", setOf("running", "complete")) && data.longField("turnIndex") != null && data.keys == setOf("state", "turnIndex")
+        "agent.progress" -> isValidPiOscProgressPayload(data)
+        "agent.input" -> data.stringIn("state", setOf("submitted")) && data.keys == setOf("state")
+        "agent.tool" -> isValidPiOscToolPayload(data)
+        "agent.alert" -> isValidPiOscAlertPayload(data)
+        "agent.aborted" -> isValidPiOscAbortedPayload(data)
+        "agent.compaction" -> data.stringIn("state", setOf("preparing", "complete")) && data.keys == setOf("state")
+        else -> false
+    }
 
 private fun isValidPiOscProgressPayload(data: JsonObject): Boolean {
     val allowed = setOf("state", "label", "elapsedSeconds")
@@ -161,9 +200,15 @@ private fun isValidPiOscAbortedPayload(data: JsonObject): Boolean {
     return data.stringIn("reason", setOf("user")) && data.stringField("message", 512) != null
 }
 
-private fun JsonObject.stringEquals(name: String, expected: String): Boolean = stringField(name, expected.length) == expected
+private fun JsonObject.stringEquals(
+    name: String,
+    expected: String,
+): Boolean = stringField(name, expected.length) == expected
 
-private fun JsonObject.stringIn(name: String, values: Set<String>): Boolean = stringField(name, values.maxOf { it.length }) in values
+private fun JsonObject.stringIn(
+    name: String,
+    values: Set<String>,
+): Boolean = stringField(name, values.maxOf { it.length }) in values
 
 private fun JsonObject.longField(name: String): Long? {
     val primitive = this[name] as? JsonPrimitive ?: return null

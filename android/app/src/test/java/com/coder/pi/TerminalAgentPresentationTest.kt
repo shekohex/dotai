@@ -7,11 +7,12 @@ import org.junit.Test
 class TerminalAgentPresentationTest {
     @Test
     fun prefersActiveToolForStatus() {
-        val snapshot = TerminalAgentStateSnapshot(
-            run = AgentRunState("running", metadata()),
-            progress = AgentProgressState("active", null, null, metadata()),
-            tools = listOf(AgentToolState("tool-1", "bash", "running", false, null, null, metadata())),
-        )
+        val snapshot =
+            TerminalAgentStateSnapshot(
+                run = AgentRunState("running", metadata()),
+                progress = AgentProgressState("active", null, null, metadata()),
+                tools = listOf(AgentToolState("tool-1", "bash", "running", false, null, null, metadata())),
+            )
 
         assertEquals(TerminalAgentStatusPresentation("Pi agent", "Bashing"), snapshot.statusPresentation())
     }
@@ -27,21 +28,23 @@ class TerminalAgentPresentationTest {
 
     @Test
     fun clearsStatusWhenAgentIdle() {
-        val snapshot = TerminalAgentStateSnapshot(
-            run = AgentRunState("idle", metadata()),
-            tools = listOf(AgentToolState("tool-1", "read", "complete", false, "Reading foo.ts", "Read foo.ts", metadata())),
-        )
+        val snapshot =
+            TerminalAgentStateSnapshot(
+                run = AgentRunState("idle", metadata()),
+                tools = listOf(AgentToolState("tool-1", "read", "complete", false, "Reading foo.ts", "Read foo.ts", metadata())),
+            )
 
         assertNull(snapshot.statusPresentation())
     }
 
     @Test
     fun clearsStatusWhenProgressClears() {
-        val snapshot = TerminalAgentStateSnapshot(
-            run = AgentRunState("running", metadata()),
-            progress = AgentProgressState("clear", null, null, metadata()),
-            tools = listOf(AgentToolState("tool-1", "read", "complete", false, "Reading foo.ts", "Read foo.ts", metadata())),
-        )
+        val snapshot =
+            TerminalAgentStateSnapshot(
+                run = AgentRunState("running", metadata()),
+                progress = AgentProgressState("clear", null, null, metadata()),
+                tools = listOf(AgentToolState("tool-1", "read", "complete", false, "Reading foo.ts", "Read foo.ts", metadata())),
+            )
 
         assertNull(snapshot.statusPresentation())
     }
@@ -56,39 +59,43 @@ class TerminalAgentPresentationTest {
 
     @Test
     fun mapsSnapshotProgressToAgentActivityText() {
-        val snapshot = TerminalAgentStateSnapshot(
-            progress = AgentProgressState("active", null, null, metadata()),
-            tools = listOf(AgentToolState("tool-1", "apply_patch", "running", false, null, null, metadata())),
-        )
+        val snapshot =
+            TerminalAgentStateSnapshot(
+                progress = AgentProgressState("active", null, null, metadata()),
+                tools = listOf(AgentToolState("tool-1", "apply_patch", "running", false, null, null, metadata())),
+            )
 
         assertEquals(TerminalAgentProgressPresentation(true, "Editing files"), snapshot.progressPresentation())
     }
 
     @Test
     fun activeToolDrivesProgressWithoutRunState() {
-        val snapshot = TerminalAgentStateSnapshot(
-            tools = listOf(AgentToolState("tool-1", "read", "running", false, "Reading foo.ts", null, metadata())),
-        )
+        val snapshot =
+            TerminalAgentStateSnapshot(
+                tools = listOf(AgentToolState("tool-1", "read", "running", false, "Reading foo.ts", null, metadata())),
+            )
 
         assertEquals(TerminalAgentProgressPresentation(true, "Reading foo.ts"), snapshot.progressPresentation())
     }
 
     @Test
     fun failedToolCompletionShowsFailure() {
-        val snapshot = TerminalAgentStateSnapshot(
-            progress = AgentProgressState("active", null, null, metadata()),
-            tools = listOf(AgentToolState("tool-1", "read", "complete", true, "Reading foo.ts", "Read foo.ts", metadata())),
-        )
+        val snapshot =
+            TerminalAgentStateSnapshot(
+                progress = AgentProgressState("active", null, null, metadata()),
+                tools = listOf(AgentToolState("tool-1", "read", "complete", true, "Reading foo.ts", "Read foo.ts", metadata())),
+            )
 
         assertEquals(TerminalAgentProgressPresentation(true, "Read foo.ts failed"), snapshot.progressPresentation())
     }
 
     @Test
     fun includesFileNameInGenericCompletionSummaryWhenLabelHasContext() {
-        val snapshot = TerminalAgentStateSnapshot(
-            progress = AgentProgressState("active", null, null, metadata()),
-            tools = listOf(AgentToolState("tool-1", "read", "complete", false, "Reading foo.ts", "Read file", metadata())),
-        )
+        val snapshot =
+            TerminalAgentStateSnapshot(
+                progress = AgentProgressState("active", null, null, metadata()),
+                tools = listOf(AgentToolState("tool-1", "read", "complete", false, "Reading foo.ts", "Read file", metadata())),
+            )
 
         assertEquals(TerminalAgentStatusPresentation("Pi agent", "Read foo.ts"), snapshot.statusPresentation())
         assertEquals(TerminalAgentProgressPresentation(true, "Read foo.ts"), snapshot.progressPresentation())
@@ -96,10 +103,11 @@ class TerminalAgentPresentationTest {
 
     @Test
     fun ignoresProgressClearWhileAgentRunIsStillActive() {
-        val snapshot = TerminalAgentStateSnapshot(
-            run = AgentRunState("running", metadata()),
-            progress = AgentProgressState("clear", null, null, metadata()),
-        )
+        val snapshot =
+            TerminalAgentStateSnapshot(
+                run = AgentRunState("running", metadata()),
+                progress = AgentProgressState("clear", null, null, metadata()),
+            )
 
         assertEquals(TerminalAgentProgressPresentation(true, "Thinking"), snapshot.progressPresentation())
     }
@@ -136,8 +144,9 @@ class TerminalAgentPresentationTest {
 
     private fun metadata(): AgentEventMetadata = AgentEventMetadata("id", 1, "agent", "session", "/workspace", 1)
 
-    private fun snapshotWithTool(toolName: String): TerminalAgentStateSnapshot = TerminalAgentStateSnapshot(
-        progress = AgentProgressState("active", null, null, metadata()),
-        tools = listOf(AgentToolState("tool-1", toolName, "running", false, null, null, metadata())),
-    )
+    private fun snapshotWithTool(toolName: String): TerminalAgentStateSnapshot =
+        TerminalAgentStateSnapshot(
+            progress = AgentProgressState("active", null, null, metadata()),
+            tools = listOf(AgentToolState("tool-1", toolName, "running", false, null, null, metadata())),
+        )
 }

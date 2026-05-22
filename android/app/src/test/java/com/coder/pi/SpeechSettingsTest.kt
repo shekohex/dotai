@@ -8,14 +8,13 @@ import java.io.File
 
 class SpeechSettingsTest {
     @Test
-    fun defaultsPreferLocalTranscriptionAndVisibleContext() {
+    fun defaultsUseRealtimeTranscriptionAndVisibleContext() {
         val values = SpeechSettingsValues()
 
-        assertTrue(values.localTranscriptionEnabled)
+        assertTrue(values.realtimeTranscriptionEnabled)
         assertFalse(values.enhancementEnabled)
         assertTrue(values.includeVisibleTerminalContext)
         assertTrue(values.soundFeedbackEnabled)
-        assertTrue(values.keepModelWarmEnabled)
         assertEquals(2, values.vadSensitivity)
         assertEquals("Improve me", values.resolvedPrompt("Improve me"))
     }
@@ -42,16 +41,12 @@ class SpeechSettingsTest {
     }
 
     @Test
-    fun unknownAcceleratorFallsBackToAuto() {
-        assertEquals(SpeechAcceleratorMode.Auto, SpeechAcceleratorMode.byId("unknown"))
-    }
-
-    @Test
     fun bundledPromptContainsTranscriptAndContextPlaceholders() {
-        val promptFile = listOf(
-            File("src/main/res/raw/speech_enhancement_prompt.txt"),
-            File("app/src/main/res/raw/speech_enhancement_prompt.txt"),
-        ).first { it.exists() }
+        val promptFile =
+            listOf(
+                File("src/main/res/raw/speech_enhancement_prompt.txt"),
+                File("app/src/main/res/raw/speech_enhancement_prompt.txt"),
+            ).first { it.exists() }
         val prompt = promptFile.readText()
 
         assertTrue(prompt.contains("<TRANSCRIPT>"))

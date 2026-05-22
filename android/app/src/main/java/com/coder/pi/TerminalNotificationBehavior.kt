@@ -12,29 +12,42 @@ import androidx.core.app.NotificationCompat
 object TerminalNotificationBehavior {
     private val vibrationPattern = longArrayOf(0, 80, 50, 160, 80, 240)
 
-    fun ensureAlertChannel(context: Context, id: String, name: String, soundId: String, hapticId: String = TerminalHapticPatterns.defaultAttentionPatternId) {
+    fun ensureAlertChannel(
+        context: Context,
+        id: String,
+        name: String,
+        soundId: String,
+        hapticId: String = TerminalHapticPatterns.defaultAttentionPatternId,
+    ) {
         if (Build.VERSION.SDK_INT < 26) return
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val existingChannel = notificationManager.getNotificationChannel(id)
         if (existingChannel != null) return
         val soundUri = TerminalNotificationSounds.uri(context, soundId)
         val haptic = TerminalHapticPatterns.option(hapticId)
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-        notificationManager.createNotificationChannel(NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH).apply {
-            setSound(soundUri, audioAttributes)
-            enableVibration(haptic.id != "none")
-            vibrationPattern = haptic.timings
-            enableLights(true)
-            lightColor = Color.rgb(120, 91, 255)
-            setShowBadge(true)
-            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
-        })
+        val audioAttributes =
+            AudioAttributes
+                .Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+        notificationManager.createNotificationChannel(
+            NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(soundUri, audioAttributes)
+                enableVibration(haptic.id != "none")
+                vibrationPattern = haptic.timings
+                enableLights(true)
+                lightColor = Color.rgb(120, 91, 255)
+                setShowBadge(true)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            },
+        )
     }
 
-    fun applyAlertDefaults(builder: NotificationCompat.Builder, hapticId: String = TerminalHapticPatterns.defaultAttentionPatternId): NotificationCompat.Builder {
+    fun applyAlertDefaults(
+        builder: NotificationCompat.Builder,
+        hapticId: String = TerminalHapticPatterns.defaultAttentionPatternId,
+    ): NotificationCompat.Builder {
         val haptic = TerminalHapticPatterns.option(hapticId)
         return builder
             .setPriority(NotificationCompat.PRIORITY_HIGH)

@@ -1,16 +1,6 @@
-<introduction>
 You are talking with "Mr. Khalifa" (@shekohex), a senior software engineer with over 10 years of experience in software development.
-</introduction>
-
-<guidance>
-For maximum efficiency, whenever you need to perform multiple independent operations, invoke all relevant tools simultaneously rather than sequentially.
-Before you finish, please verify your solution
-Always verify code works by running tests or checking output when possible
-</guidance>
 
 <code-style>
-IMPORTANT: DO NOT ADD **_ANY_** COMMENTS unless asked
-VERY IMPORTANT: DO NOT ADD **_ANY_** EMOJIS unless asked.
 Use descriptive variable and function names that clearly indicate purpose
 Keep functions focused and single-purpose (SRP)
 Prefer composition over inheritance
@@ -27,7 +17,6 @@ Code Changes: No explanations needed unless requested
 Improvements: Suggest only when asked
 Provide actionable insights rather than theoretical discussions
 Focus on "what" and "how" rather than "why" unless context requires it
-Drop caveman for: security warnings, irreversible action confirmations, multi-step sequences where fragment order risks misread, user asks to clarify or repeats question. Resume caveman after clear part done.
 </communication-preferences>
 
 <coding-rules>

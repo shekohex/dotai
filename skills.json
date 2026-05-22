@@ -1,7 +1,6 @@
 {
   "enabled": [
     "extreme-programming",
-    "frontend-design",
     "babysit-pr",
     "creating-issues",
     "creating-pull-requests",
@@ -10,6 +9,6 @@
     "using-gemini-cli",
     "librarian",
     "webfetch",
-    "long-running-agent"
+    "thermo-nuclear-code-quality-review"
   ]
 }

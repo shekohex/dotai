@@ -20,7 +20,7 @@ Before drafting the goal prompt, read `references/PROMPT_GUIDE_GPT5_5.md` and ap
 1. Read relevant codebase files, docs, and prior context that can answer open questions about the goal.
 2. Ask the user for clarification before drafting when the goal is still ambiguous after inspection.
 3. Run `./scripts/draft-goal.sh <short-slug>` on Unix or `./scripts/draft-goal.ps1 <short-slug>` on PowerShell to create the temporary draft file and get the Plannotator annotation command.
-4. Fill the draft file with the full goal prompt from the user's intent, discovered context, and the prompt guide, then present that file path for review before using any goal tool.
+4. The file has a prompt template for you to fill in with the full goal prompt from the user's intent, discovered context, and the prompt guide, then present that file path for review before using any goal tool.
 5. If the user requests changes, update the temporary file and present the same file path again. Repeat until explicit approval.
 6. If the user approves, call the `goal` tool to create or update the goal using `objectiveFile` with the absolute path to the approved prompt file. Prefer `objectiveFile` over inline `objective` so the file content is used exactly as written and the prompt is not duplicated into the tool call. If the `goal` tool is unavailable, ask the user to run `/goal on`.
 7. After goal tool success, delete the temporary file, then report the goal created or updated and any identifier returned by the tool.

@@ -1,6 +1,7 @@
 package com.coder.pi
 
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -38,10 +39,10 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import androidx.core.content.edit
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
@@ -1490,10 +1491,11 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             .addAction(R.drawable.ic_feather_terminal, "Open terminal", pendingIntent)
             .addAction(replyNotificationAction(notificationId))
         workspaceIconBitmap(localOnly = true)?.let { builder.setLargeIcon(it) }
-        NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+        notifySafely(notificationId, builder.build())
         return true
     }
 
+    @SuppressLint("NewApi")
     private fun postNativePiAgentProgressNotification(notificationId: Int, title: String, body: String, elapsedSeconds: Long?, notificationWhen: Long): Boolean {
         val channelId = oscProgressNotificationChannelId()
         val launchIntent = terminalNotificationLaunchIntent()
@@ -1537,7 +1539,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             .addAction(android.app.Notification.Action.Builder(Icon.createWithResource(context, R.drawable.ic_feather_terminal), "Open terminal", pendingIntent).build())
             .addAction(android.app.Notification.Action.Builder(Icon.createWithResource(context, R.drawable.ic_feather_message_circle), "Follow up", replyPendingIntent).addRemoteInput(android.app.RemoteInput.Builder(TerminalNotificationReplyInputKey).setLabel("Follow up").build()).setAllowGeneratedReplies(false).build())
         builder.setLargeIcon(workspaceNotificationIcon())
-        NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+        notifySafely(notificationId, builder.build())
         return true
     }
 
@@ -1627,6 +1629,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
 
     private fun terminalHapticsEnabled(): Boolean = context.getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)
 
+    @SuppressLint("NewApi")
     private fun postNativeProgressNotification(title: String, body: String, state: Int, progress: Int, indeterminate: Boolean): Boolean {
         ensureOscProgressNotificationChannel()
         if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -1654,7 +1657,7 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
             .setStyle(style)
             .addAction(android.app.Notification.Action.Builder(oscNotificationIconRes(), "Open terminal", pendingIntent).build())
         builder.setLargeIcon(workspaceNotificationIcon())
-        NotificationManagerCompat.from(context).notify(oscProgressNotificationId(), builder.build())
+        notifySafely(oscProgressNotificationId(), builder.build())
         return true
     }
 
@@ -1693,8 +1696,14 @@ class CoderTerminalView @JvmOverloads constructor(context: Context, attrs: Attri
         workspaceIconBitmap(localOnly = notificationId == oscProgressNotificationId())?.let { builder.setLargeIcon(it) }
         if (ongoing) builder.setProgress(100, progress.coerceIn(0, 100), indeterminate) else builder.setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody))
         if (!ongoing) TerminalNotificationBehavior.wakeScreen(context)
-        NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+        notifySafely(notificationId, builder.build())
         return true
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun notifySafely(notificationId: Int, notification: android.app.Notification) {
+        if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        runCatching { NotificationManagerCompat.from(context).notify(notificationId, notification) }
     }
 
     private fun replyNotificationAction(notificationId: Int): NotificationCompat.Action {

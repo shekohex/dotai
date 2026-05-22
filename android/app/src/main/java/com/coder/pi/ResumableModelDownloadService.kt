@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -200,6 +201,7 @@ class ResumableModelDownloadService : Service() {
         return builder.build()
     }
 
+    @SuppressLint("NewApi")
     private fun nativeProgressNotification(title: String, text: String, downloaded: Long, total: Long, progress: Int, status: Int, modelId: String): android.app.Notification {
         val pendingIntent = PendingIntent.getActivity(this, 0, packageManager.getLaunchIntentForPackage(packageName), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val style = android.app.Notification.ProgressStyle()

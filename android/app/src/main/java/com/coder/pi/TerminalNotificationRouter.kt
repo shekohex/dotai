@@ -147,6 +147,7 @@ class TerminalNotificationRouter(
             .build())
     }
 
+    @SuppressLint("NewApi")
     private fun postNativePiAgentProgress(notificationId: Int, title: String, progress: TerminalAgentProgressPresentation, notificationWhen: Long): Boolean {
         val pendingIntent = PendingIntent.getActivity(context, notificationId, launchIntent(), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notificationBody = progress.body.ifBlank { WhimsicalStatusMessages.working[nextNotificationId().mod(WhimsicalStatusMessages.working.size)] }.take(512)

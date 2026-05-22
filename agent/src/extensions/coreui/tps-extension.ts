@@ -142,7 +142,11 @@ function registerSessionLifecycleEvents(
   pi.on("agent_start", (_event, ctx) => {
     try {
       if (!ctx.hasUI) return;
-      runtime.run = { startedAtMs: Date.now(), completedOutputTokens: 0, currentOutputTokens: 0 };
+      runtime.run = {
+        startedAtMs: Date.now(),
+        completedOutputTokens: 0,
+        currentOutputTokens: 0,
+      };
     } catch (error) {
       ignoreStaleSessionReplacementError(error);
     }
@@ -159,6 +163,9 @@ function registerMessageEvents(
     try {
       if (!ctx.hasUI || !runtime.run || event.message.role !== "assistant") return;
       runtime.run.currentOutputTokens = resolveAssistantOutputTokens(event.message);
+      if (runtime.run.firstTokenAtMs === undefined && runtime.run.currentOutputTokens > 0) {
+        runtime.run.firstTokenAtMs = Date.now();
+      }
       updateTPSForRun(
         state,
         requestRender,
@@ -206,6 +213,10 @@ function registerTurnAndAgentEndEvents(
     try {
       if (!ctx.hasUI || !runtime.run) return;
       const elapsedMs = Date.now() - runtime.run.startedAtMs;
+      const ttftMs =
+        runtime.run.firstTokenAtMs === undefined
+          ? undefined
+          : runtime.run.firstTokenAtMs - runtime.run.startedAtMs;
       const usage = summarizeAssistantUsage(event.messages);
       const outputTokens = Math.max(
         usage.output,
@@ -227,7 +238,7 @@ function registerTurnAndAgentEndEvents(
         appendTPSEntry(pi, finalStats, usage, elapsedMs);
       }
       if (state.tpsVisible && elapsedMs > 0 && usage.output > 0) {
-        notifyAgentEndSummary(ctx, usage, elapsedMs, finalStats, state.openUsageStatus);
+        notifyAgentEndSummary(ctx, usage, elapsedMs, finalStats, state.openUsageStatus, ttftMs);
       }
     } catch (error) {
       ignoreStaleSessionReplacementError(error);

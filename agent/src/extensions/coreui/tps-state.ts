@@ -5,6 +5,7 @@ import { buildTPSStats, calculateIntervalTPS, formatCompactCount } from "./tps-m
 
 type TPSRunState = {
   startedAtMs: number;
+  firstTokenAtMs?: number;
   completedOutputTokens: number;
   currentOutputTokens: number;
 };

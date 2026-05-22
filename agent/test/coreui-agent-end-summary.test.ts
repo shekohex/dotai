@@ -38,12 +38,14 @@ describe("agent end summary", () => {
       2_000,
       stats,
       "5h 94% wk 61%",
+      123,
     );
     expect(messages[0]).toContain("󰓅 16.1/14.8/11.7");
     expect(messages[0]).toContain(" 10");
     expect(messages[0]).toContain(" 20");
     expect(messages[0]).toContain("󰍛 r 5 w 2");
     expect(messages[0]).toContain("5h 94% wk 61%");
+    expect(messages[0]).toContain("ttft 123ms");
     expect(messages[0]).not.toContain("pruned");
   });
 
@@ -63,6 +65,7 @@ describe("agent end summary", () => {
       2_000,
       stats,
       undefined,
+      undefined,
     );
     expect(messages[0]).toContain("󰓅 16.1/14.8/11.7");
     expect(messages[0]).toContain("󰩫 4t/2b");
@@ -77,6 +80,7 @@ describe("agent end summary", () => {
       { input: 10, output: 20, cacheRead: 5, cacheWrite: 0, totalTokens: 37 },
       2_000,
       stats,
+      undefined,
       undefined,
     );
     expect(messages[0]).toContain("󰍛 r 5");

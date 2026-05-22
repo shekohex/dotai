@@ -25,6 +25,7 @@ export function notifyAgentEndSummary(
   elapsedMs: number,
   stats: CoreUITPSStats | undefined,
   openUsageStatus: string | undefined,
+  ttftMs: number | undefined,
 ): void {
   const parts = [formatTPSSummary(usage, stats)];
   if (openUsageStatus !== undefined && openUsageStatus.length > 0) {
@@ -34,8 +35,23 @@ export function notifyAgentEndSummary(
   if (pruneSummary !== undefined) {
     parts.push(pruneSummary);
   }
+  if (ttftMs !== undefined && Number.isFinite(ttftMs)) {
+    parts.push(`ttft ${formatHumanMs(ttftMs)}`);
+  }
   parts.push(formatDurationHuman(elapsedMs));
   ctx.ui.notify(parts.join(" · "), "info");
+}
+
+function formatHumanMs(value: number): string {
+  if (value < 1_000) {
+    return `${Math.round(value)}ms`;
+  }
+  if (value < 60_000) {
+    return `${(value / 1_000).toFixed(3)}s`;
+  }
+  const minutes = Math.floor(value / 60_000);
+  const seconds = ((value % 60_000) / 1_000).toFixed(3);
+  return `${minutes}m ${seconds}s`;
 }
 
 function formatTPSSummary(usage: UsageSummary, stats: CoreUITPSStats | undefined): string {

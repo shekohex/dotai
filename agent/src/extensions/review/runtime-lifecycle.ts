@@ -2,10 +2,10 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import {
   buildLaunchCommand,
+  createDefaultMuxAdapter,
   createDefaultSubagentRuntimeHooks,
   createSubagentSDK,
   SUBAGENT_STATUS_MESSAGE,
-  TmuxAdapter,
 } from "../../subagent-sdk/index.js";
 import type { CreateReviewExtensionOptions, ReviewRuntimeState } from "./deps.js";
 
@@ -36,12 +36,7 @@ export function createReviewSubagentSdk(
     },
   };
 
-  const adapter =
-    resolvedOptions.adapterFactory?.(pi) ??
-    new TmuxAdapter(
-      (command, args, execOptions) => pi.exec(command, args, execOptions),
-      process.cwd(),
-    );
+  const adapter = resolvedOptions.adapterFactory?.(pi) ?? createDefaultMuxAdapter(pi);
   return createSubagentSDK(pi, {
     adapter,
     buildLaunchCommand,

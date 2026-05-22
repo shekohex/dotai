@@ -2,8 +2,8 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { Type, type Static } from "typebox";
 
 import { buildLaunchCommand } from "../subagent-sdk/launch.js";
+import { createDefaultMuxAdapter } from "../subagent-sdk/default-mux.js";
 import { createSubagentSDK, type SubagentHandle, type SubagentSDK } from "../subagent-sdk/sdk.js";
-import { TmuxAdapter } from "../subagent-sdk/tmux.js";
 import type { MuxAdapter } from "../subagent-sdk/mux.js";
 import { errorMessage } from "../utils/error-message.js";
 import { Value } from "typebox/value";
@@ -183,12 +183,7 @@ function createCommitSdk(
   pi: ExtensionAPI,
   options: CreateCommitExtensionOptions,
 ): Pick<SubagentSDK, "start" | "dispose"> {
-  const adapter =
-    options.adapterFactory?.(pi) ??
-    new TmuxAdapter(
-      (command, args, execOptions) => pi.exec(command, args, execOptions),
-      process.cwd(),
-    );
+  const adapter = options.adapterFactory?.(pi) ?? createDefaultMuxAdapter(pi);
   return (
     options.sdkFactory?.({ pi, adapter }) ??
     createSubagentSDK(pi, {

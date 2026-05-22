@@ -1,6 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
-import { buildLaunchCommand, createSubagentSDK, TmuxAdapter } from "../../../subagent-sdk/index.js";
+import {
+  buildLaunchCommand,
+  createDefaultMuxAdapter,
+  createSubagentSDK,
+} from "../../../subagent-sdk/index.js";
 import type { SubagentHandle } from "../../../subagent-sdk/sdk-types.js";
 import type { RuntimeSubagent, TSchemaBase } from "../../../subagent-sdk/types.js";
 import { getReviewSettings } from "../../review/state.js";
@@ -60,10 +64,7 @@ type ReviewLaunchArgs = {
 
 function createReviewSubagentSdk(pi: ExtensionAPI) {
   return createSubagentSDK(pi, {
-    adapter: new TmuxAdapter(
-      (command, args, execOptions) => pi.exec(command, args, execOptions),
-      process.cwd(),
-    ),
+    adapter: createDefaultMuxAdapter(pi),
     buildLaunchCommand,
   });
 }

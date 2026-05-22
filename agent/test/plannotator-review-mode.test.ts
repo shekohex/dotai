@@ -7,6 +7,7 @@ const disposeMock = vi.fn();
 
 vi.mock("../src/subagent-sdk/index.js", () => ({
   buildLaunchCommand: vi.fn(),
+  createDefaultMuxAdapter: vi.fn(() => ({})),
   TmuxAdapter: class {},
   createSubagentSDK: vi.fn(() => ({
     spawn: spawnMock,

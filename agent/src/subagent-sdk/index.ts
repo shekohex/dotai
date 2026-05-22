@@ -1,6 +1,7 @@
 export { isChildSession } from "./bootstrap.js";
 export { buildLaunchCommand, readChildState } from "./launch.js";
 export { createDefaultSubagentRuntimeHooks } from "./runtime-hooks.js";
+export { createDefaultMuxAdapter } from "./default-mux.js";
 export { createSubagentSDK } from "./sdk.js";
 export { FallbackMuxAdapter } from "./fallback-mux.js";
 export { PtyAdapter } from "./pty.js";

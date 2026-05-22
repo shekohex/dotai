@@ -28,6 +28,7 @@ class FakePi implements Partial<ExtensionAPI> {
   readonly registeredTools = new Map<string, ToolDefinition<any, any>>();
   readonly registerToolCalls: string[] = [];
   readonly handlers = new Map<string, Array<(...args: any[]) => any>>();
+  readonly activeTools: string[] = [];
   readonly events = {
     emit: () => {},
   };
@@ -38,6 +39,16 @@ class FakePi implements Partial<ExtensionAPI> {
   }
 
   registerCommand(): void {}
+
+  appendEntry(): void {}
+
+  getActiveTools(): string[] {
+    return this.activeTools;
+  }
+
+  setActiveTools(toolNames: string[]): void {
+    this.activeTools.splice(0, this.activeTools.length, ...toolNames);
+  }
 
   on(eventName: string, handler: (...args: any[]) => any): void {
     const handlers = this.handlers.get(eventName) ?? [];
@@ -63,6 +74,15 @@ function createFakeContext(): ExtensionContext {
     hasUI: false,
     ui: {
       notify: () => {},
+    },
+    sessionManager: {
+      getBranch: () => [
+        {
+          type: "custom",
+          customType: "tool-state",
+          data: { version: 1, key: "executor", enabled: true },
+        },
+      ],
     },
   } as unknown as ExtensionContext;
 }

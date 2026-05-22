@@ -1495,7 +1495,7 @@ timedTest("executor command autocompletes subcommands with fuzzy search", async 
     });
 
     const rootCompletions = await getCommandArgumentCompletions(session, "executor", "");
-    expect(rootCompletions?.map((item) => item.label)).toEqual(["status", "web"]);
+    expect(rootCompletions?.map((item) => item.label)).toEqual(["on", "off", "status", "web"]);
 
     const fuzzyCompletions = await getCommandArgumentCompletions(session, "executor", "w");
     expect(fuzzyCompletions?.[0]?.label).toBe("web");

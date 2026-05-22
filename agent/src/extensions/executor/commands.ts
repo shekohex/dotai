@@ -6,9 +6,17 @@ import { ExecutorUnavailableError } from "./connection.js";
 import { connectExecutor } from "./status.js";
 import { showExecutorStatusView, showExecutorWebView } from "./ui.js";
 
-type ExecutorSubcommand = "status" | "web";
+type ExecutorSubcommand = "on" | "off" | "status" | "web";
+
+export interface ExecutorCommandHost {
+  isEnabled(): boolean;
+  enable(ctx: ExtensionCommandContext): Promise<void>;
+  disable(ctx: ExtensionCommandContext): void;
+}
 
 const EXECUTOR_SUBCOMMANDS: Array<{ value: ExecutorSubcommand; description: string }> = [
+  { value: "on", description: "Enable Executor execute tool for agent turns" },
+  { value: "off", description: "Disable Executor execute tool for agent turns" },
   { value: "status", description: "Show active Executor status and built-in endpoints" },
   { value: "web", description: "Open the active Executor web UI" },
 ];
@@ -89,22 +97,34 @@ function parseSubcommand(args: string): ExecutorSubcommand {
   }
 
   if (tokens.length > 1) {
-    throw new Error("Usage: /executor [status|web]");
+    throw new Error("Usage: /executor [on|off|status|web]");
   }
 
-  if (token === "status" || token === "web") {
+  if (token === "on" || token === "off" || token === "status" || token === "web") {
     return token;
   }
 
-  throw new Error("Usage: /executor [status|web]");
+  throw new Error("Usage: /executor [on|off|status|web]");
 }
 
-export const registerExecutorCommands = (pi: ExtensionAPI): void => {
+export const registerExecutorCommands = (pi: ExtensionAPI, host: ExecutorCommandHost): void => {
   pi.registerCommand("executor", {
-    description: "Manage built-in Executor integration: /executor [status|web]",
+    description: "Manage built-in Executor integration: /executor [on|off|status|web]",
     getArgumentCompletions: (prefix) => getExecutorArgumentCompletions(prefix),
     handler: async (args, ctx) => {
       const subcommand = parseSubcommand(args);
+
+      if (subcommand === "on") {
+        await host.enable(ctx);
+        ctx.ui.notify("Executor tool enabled.");
+        return;
+      }
+
+      if (subcommand === "off") {
+        host.disable(ctx);
+        ctx.ui.notify("Executor tool disabled.");
+        return;
+      }
 
       if (subcommand === "status") {
         await handleExecutorStatus(pi, ctx);

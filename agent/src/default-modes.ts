@@ -65,7 +65,7 @@ export const defaultModes = {
       description:
         "Use me when you want a focused code review that looks for bugs, regressions, security issues, and correctness problems.",
       systemPrompt: modeSystemPrompt("review"),
-      systemPromptMode: "append",
+      systemPromptMode: "replace",
     },
     commiter: {
       provider: "openai-codex",

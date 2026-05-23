@@ -26,8 +26,9 @@ class ShortcutsOverviewInstrumentedTest {
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
         resetShortcutOverviewPrefs(context)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -48,8 +49,9 @@ class ShortcutsOverviewInstrumentedTest {
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
         resetShortcutOverviewPrefs(context)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -72,8 +74,9 @@ class ShortcutsOverviewInstrumentedTest {
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
         resetShortcutOverviewPrefs(context)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -98,8 +101,9 @@ class ShortcutsOverviewInstrumentedTest {
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
         resetShortcutOverviewPrefs(context)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -128,8 +132,9 @@ class ShortcutsOverviewInstrumentedTest {
             putBoolean(shortcutTabPreferenceKey("tmux"), false)
             putString("toolbar.shortcuts", "demo\t/gsd:progress")
         }
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -149,8 +154,9 @@ class ShortcutsOverviewInstrumentedTest {
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
         resetShortcutOverviewPrefs(context)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -179,8 +185,9 @@ class ShortcutsOverviewInstrumentedTest {
                 putBoolean("shortcuts.uploads_panel", true)
                 putBoolean("shortcuts.hide_tab_titles", false)
             }
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            val intent =
+                Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts"), context, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
             context.startActivity(intent)
             instrumentation.waitForIdleSync()
@@ -193,7 +200,10 @@ class ShortcutsOverviewInstrumentedTest {
         }
     }
 
-    private fun captureDeviceScreenshot(device: UiDevice, name: String) {
+    private fun captureDeviceScreenshot(
+        device: UiDevice,
+        name: String,
+    ) {
         val directory = File("/data/local/tmp/pi-test-screenshots")
         device.executeShellCommand("mkdir -p ${directory.absolutePath}")
         device.takeScreenshot(File(directory, name))

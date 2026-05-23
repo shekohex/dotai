@@ -1,6 +1,8 @@
 package com.coder.pi
 
-class TerminalEndpointProxy(initialEndpoint: CoderTerminalEndpoint) : CoderTerminalEndpoint {
+class TerminalEndpointProxy(
+    initialEndpoint: CoderTerminalEndpoint,
+) : CoderTerminalEndpoint {
     private val lock = Any()
     private var endpoint = initialEndpoint
     private var remoteInput: ((ByteArray) -> Unit)? = null
@@ -13,11 +15,12 @@ class TerminalEndpointProxy(initialEndpoint: CoderTerminalEndpoint) : CoderTermi
         }
 
     fun attachEndpoint(nextEndpoint: CoderTerminalEndpoint): CoderTerminalEndpoint {
-        val previous = synchronized(lock) {
-            val previous = endpoint
-            endpoint = nextEndpoint
-            previous
-        }
+        val previous =
+            synchronized(lock) {
+                val previous = endpoint
+                endpoint = nextEndpoint
+                previous
+            }
         previous.detachRemote()
         previous.onTerminalSizeChanged = null
         nextEndpoint.attachRemote { bytes -> synchronized(lock) { remoteInput }?.invoke(bytes) }
@@ -39,18 +42,20 @@ class TerminalEndpointProxy(initialEndpoint: CoderTerminalEndpoint) : CoderTermi
     override fun terminalRows(): Int = synchronized(lock) { endpoint }.terminalRows()
 
     override fun attachRemote(input: (ByteArray) -> Unit) {
-        val currentEndpoint = synchronized(lock) {
-            remoteInput = input
-            endpoint
-        }
+        val currentEndpoint =
+            synchronized(lock) {
+                remoteInput = input
+                endpoint
+            }
         currentEndpoint.attachRemote { bytes -> synchronized(lock) { remoteInput }?.invoke(bytes) }
     }
 
     override fun detachRemote() {
-        val currentEndpoint = synchronized(lock) {
-            remoteInput = null
-            endpoint
-        }
+        val currentEndpoint =
+            synchronized(lock) {
+                remoteInput = null
+                endpoint
+            }
         currentEndpoint.detachRemote()
     }
 

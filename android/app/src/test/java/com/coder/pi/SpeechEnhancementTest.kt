@@ -64,32 +64,42 @@ class SpeechEnhancementTest {
     }
 
     @Test
-    fun enhancerRetriesOnceAndReturnsEnhancedText() = runBlocking {
-        var calls = 0
-        val enhancer = SpeechEnhancer(OpenAiCompatibleSpeechEnhancementClient {
-            calls++
-            if (calls == 1) error("transient") else "enhanced text"
-        })
+    fun enhancerRetriesOnceAndReturnsEnhancedText() =
+        runBlocking {
+            var calls = 0
+            val enhancer =
+                SpeechEnhancer(
+                    OpenAiCompatibleSpeechEnhancementClient {
+                        calls++
+                        if (calls == 1) error("transient") else "enhanced text"
+                    },
+                )
 
-        val result = enhancer.enhanceOrRaw(SpeechEnhancementRequest("prompt", "raw text", "context"))
+            val result = enhancer.enhanceOrRaw(SpeechEnhancementRequest("prompt", "raw text", "context"))
 
-        assertEquals("enhanced text", result.text)
-        assertTrue(result.enhanced)
-        assertEquals(2, calls)
-    }
+            assertEquals("enhanced text", result.text)
+            assertTrue(result.enhanced)
+            assertEquals(2, calls)
+        }
 
     @Test
-    fun enhancerFailsOpenToRawTranscriptOnTimeout() = runBlocking {
-        val enhancer = SpeechEnhancer(GeminiSpeechEnhancementClient {
-            delay(100)
-            "late"
-        }, timeoutMillis = 1, retries = 0)
+    fun enhancerFailsOpenToRawTranscriptOnTimeout() =
+        runBlocking {
+            val enhancer =
+                SpeechEnhancer(
+                    GeminiSpeechEnhancementClient {
+                        delay(100)
+                        "late"
+                    },
+                    timeoutMillis = 1,
+                    retries = 0,
+                )
 
-        val result = enhancer.enhanceOrRaw(SpeechEnhancementRequest("prompt", "raw text", "context"))
+            val result = enhancer.enhanceOrRaw(SpeechEnhancementRequest("prompt", "raw text", "context"))
 
-        assertEquals("raw text", result.text)
-        assertFalse(result.enhanced)
-        assertTrue(result.failedOpen)
-        assertTrue(result.timedOut)
-    }
+            assertEquals("raw text", result.text)
+            assertFalse(result.enhanced)
+            assertTrue(result.failedOpen)
+            assertTrue(result.timedOut)
+        }
 }

@@ -58,19 +58,29 @@ data class SpeechAudioFrame(
 
 sealed interface SpeechAudioCaptureFailure {
     data object PermissionDenied : SpeechAudioCaptureFailure
+
     data object InitializationFailed : SpeechAudioCaptureFailure
+
     data object SilencedBySystem : SpeechAudioCaptureFailure
-    data class ReadFailed(val code: Int) : SpeechAudioCaptureFailure
+
+    data class ReadFailed(
+        val code: Int,
+    ) : SpeechAudioCaptureFailure
 }
 
-class SpeechVadSegmenter(private val config: SpeechAudioCaptureConfig) {
+class SpeechVadSegmenter(
+    private val config: SpeechAudioCaptureConfig,
+) {
     private var speechFrames = 0
     private var silenceFrames = 0
     private var meter = 0f
     private var speechStarted = false
     private var totalFrames = 0L
 
-    fun accept(samples: FloatArray, silenced: Boolean = false): SpeechAudioFrame {
+    fun accept(
+        samples: FloatArray,
+        silenced: Boolean = false,
+    ): SpeechAudioFrame {
         totalFrames++
         val metrics = samples.metrics()
         meter = meter * 0.78f + metrics.magnitude * 0.22f
@@ -94,10 +104,14 @@ class SpeechVadSegmenter(private val config: SpeechAudioCaptureConfig) {
     }
 }
 
-class SpeechAudioCapture(private val context: Context, private val config: SpeechAudioCaptureConfig = SpeechAudioCaptureConfig()) {
+class SpeechAudioCapture(
+    private val context: Context,
+    private val config: SpeechAudioCaptureConfig = SpeechAudioCaptureConfig(),
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var job: Job? = null
     private var audioRecord: AudioRecord? = null
+
     @Volatile private var silenced = false
 
     val sampleRate: Int get() = config.sampleRate
@@ -105,7 +119,10 @@ class SpeechAudioCapture(private val context: Context, private val config: Speec
     fun hasRecordPermission(): Boolean = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission")
-    fun start(onFrame: (SpeechAudioFrame) -> Unit, onFailure: (SpeechAudioCaptureFailure) -> Unit) {
+    fun start(
+        onFrame: (SpeechAudioFrame) -> Unit,
+        onFailure: (SpeechAudioCaptureFailure) -> Unit,
+    ) {
         if (!hasRecordPermission()) {
             onFailure(SpeechAudioCaptureFailure.PermissionDenied)
             return
@@ -125,27 +142,28 @@ class SpeechAudioCapture(private val context: Context, private val config: Speec
         audioRecord = recorder
         registerRecordingCallback(recorder)
         val segmenter = SpeechVadSegmenter(config)
-        job = scope.launch {
-            val shorts = ShortArray(config.frameSamples)
-            try {
-                recorder.startRecording()
-                while (isActive) {
-                    val read = recorder.read(shorts, 0, shorts.size)
-                    if (read == AudioRecord.ERROR_DEAD_OBJECT || read == AudioRecord.ERROR_INVALID_OPERATION) {
-                        onFailure(SpeechAudioCaptureFailure.ReadFailed(read))
-                        break
+        job =
+            scope.launch {
+                val shorts = ShortArray(config.frameSamples)
+                try {
+                    recorder.startRecording()
+                    while (isActive) {
+                        val read = recorder.read(shorts, 0, shorts.size)
+                        if (read == AudioRecord.ERROR_DEAD_OBJECT || read == AudioRecord.ERROR_INVALID_OPERATION) {
+                            onFailure(SpeechAudioCaptureFailure.ReadFailed(read))
+                            break
+                        }
+                        if (read <= 0) continue
+                        val frame = FloatArray(read) { index -> shorts[index] / 32768f }
+                        val audioFrame = segmenter.accept(frame, silenced)
+                        onFrame(audioFrame)
+                        if (audioFrame.silenced) onFailure(SpeechAudioCaptureFailure.SilencedBySystem)
                     }
-                    if (read <= 0) continue
-                    val frame = FloatArray(read) { index -> shorts[index] / 32768f }
-                    val audioFrame = segmenter.accept(frame, silenced)
-                    onFrame(audioFrame)
-                    if (audioFrame.silenced) onFailure(SpeechAudioCaptureFailure.SilencedBySystem)
+                } finally {
+                    releaseRecorder(recorder)
+                    if (audioRecord === recorder) audioRecord = null
                 }
-            } finally {
-                releaseRecorder(recorder)
-                if (audioRecord === recorder) audioRecord = null
             }
-        }
     }
 
     suspend fun stop() {
@@ -167,12 +185,15 @@ class SpeechAudioCapture(private val context: Context, private val config: Speec
     private fun registerRecordingCallback(recorder: AudioRecord) {
         if (Build.VERSION.SDK_INT < 29) return
         val audioManager = context.getSystemService(AudioManager::class.java) ?: return
-        recorder.registerAudioRecordingCallback(context.mainExecutor, object : AudioManager.AudioRecordingCallback() {
-            override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
-                val activeConfig = configs.orEmpty().firstOrNull { it.clientAudioSessionId == recorder.audioSessionId }
-                silenced = activeConfig?.isClientSilenced == true
-            }
-        })
+        recorder.registerAudioRecordingCallback(
+            context.mainExecutor,
+            object : AudioManager.AudioRecordingCallback() {
+                override fun onRecordingConfigChanged(configs: MutableList<android.media.AudioRecordingConfiguration>?) {
+                    val activeConfig = configs.orEmpty().firstOrNull { it.clientAudioSessionId == recorder.audioSessionId }
+                    silenced = activeConfig?.isClientSilenced == true
+                }
+            },
+        )
     }
 
     private fun releaseRecorder(recorder: AudioRecord) {
@@ -181,7 +202,11 @@ class SpeechAudioCapture(private val context: Context, private val config: Speec
     }
 }
 
-private data class SpeechSampleMetrics(val rms: Float, val peak: Float, val magnitude: Float)
+private data class SpeechSampleMetrics(
+    val rms: Float,
+    val peak: Float,
+    val magnitude: Float,
+)
 
 private fun FloatArray.metrics(): SpeechSampleMetrics {
     if (isEmpty()) return SpeechSampleMetrics(0f, 0f, 0f)

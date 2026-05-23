@@ -45,52 +45,71 @@ data class CoderTheme(
 }
 
 object CoderThemes {
-    val darkOptions = listOf(
-        CoderThemeOption("Dracula", CoderThemeMode.DARK, R.raw.dracula, listOf(0x282a36, 0xf8f8f2, 0xff5555, 0x50fa7b, 0xbd93f9)),
-        CoderThemeOption("Nord", CoderThemeMode.DARK, R.raw.nord, listOf(0x2e3440, 0xd8dee9, 0xbf616a, 0xa3be8c, 0x81a1c1)),
-        CoderThemeOption("Solarized Dark", CoderThemeMode.DARK, R.raw.solarized_dark, listOf(0x002b36, 0x839496, 0xdc322f, 0x859900, 0x268bd2)),
-        CoderThemeOption("Gruvbox", CoderThemeMode.DARK, R.raw.gruvbox_dark, listOf(0x282828, 0xebdbb2, 0xcc241d, 0xd79921, 0x689d6a)),
-        CoderThemeOption("Catppuccin Mocha", CoderThemeMode.DARK, R.raw.catppuccin_mocha, listOf(0x1e1e2e, 0xcdd6f4, 0xf38ba8, 0xa6e3a1, 0x89b4fa)),
-    )
+    val darkOptions =
+        listOf(
+            CoderThemeOption("Dracula", CoderThemeMode.DARK, R.raw.dracula, listOf(0x282a36, 0xf8f8f2, 0xff5555, 0x50fa7b, 0xbd93f9)),
+            CoderThemeOption("Nord", CoderThemeMode.DARK, R.raw.nord, listOf(0x2e3440, 0xd8dee9, 0xbf616a, 0xa3be8c, 0x81a1c1)),
+            CoderThemeOption("Solarized Dark", CoderThemeMode.DARK, R.raw.solarized_dark, listOf(0x002b36, 0x839496, 0xdc322f, 0x859900, 0x268bd2)),
+            CoderThemeOption("Gruvbox", CoderThemeMode.DARK, R.raw.gruvbox_dark, listOf(0x282828, 0xebdbb2, 0xcc241d, 0xd79921, 0x689d6a)),
+            CoderThemeOption("Catppuccin Mocha", CoderThemeMode.DARK, R.raw.catppuccin_mocha, listOf(0x1e1e2e, 0xcdd6f4, 0xf38ba8, 0xa6e3a1, 0x89b4fa)),
+        )
 
-    val lightOptions = listOf(
-        CoderThemeOption("Solarized Light", CoderThemeMode.LIGHT, R.raw.solarized_light, listOf(0xfdf6e3, 0x586e75, 0xdc322f, 0x859900, 0x268bd2)),
-        CoderThemeOption("Catppuccin Latte", CoderThemeMode.LIGHT, R.raw.catppuccin_latte, listOf(0xeff1f5, 0x4c4f69, 0xd20f39, 0x40a02b, 0x1e66f5)),
-        CoderThemeOption("GitHub Light", CoderThemeMode.LIGHT, R.raw.github_light, listOf(0xffffff, 0x24292f, 0xcf222e, 0x116329, 0x0969da)),
-        CoderThemeOption("Rosé Pine Dawn", CoderThemeMode.LIGHT, R.raw.rose_pine_dawn, listOf(0xfffaf3, 0x575279, 0xb4637a, 0x286983, 0x56949f)),
-    )
+    val lightOptions =
+        listOf(
+            CoderThemeOption("Solarized Light", CoderThemeMode.LIGHT, R.raw.solarized_light, listOf(0xfdf6e3, 0x586e75, 0xdc322f, 0x859900, 0x268bd2)),
+            CoderThemeOption("Catppuccin Latte", CoderThemeMode.LIGHT, R.raw.catppuccin_latte, listOf(0xeff1f5, 0x4c4f69, 0xd20f39, 0x40a02b, 0x1e66f5)),
+            CoderThemeOption("GitHub Light", CoderThemeMode.LIGHT, R.raw.github_light, listOf(0xffffff, 0x24292f, 0xcf222e, 0x116329, 0x0969da)),
+            CoderThemeOption("Rosé Pine Dawn", CoderThemeMode.LIGHT, R.raw.rose_pine_dawn, listOf(0xfffaf3, 0x575279, 0xb4637a, 0x286983, 0x56949f)),
+        )
 
     val allOptions = darkOptions + lightOptions
 
-    private val defaultPalette = intArrayOf(
-        0x000000, 0xcc0403, 0x19cb00, 0xcecb00, 0x0d73cc, 0xcb1ed1, 0x0dcdcd, 0xdddddd,
-        0x767676, 0xf2201f, 0x23fd00, 0xfffd00, 0x1a8fff, 0xfd28ff, 0x14ffff, 0xffffff,
-    )
+    private val defaultPalette =
+        intArrayOf(
+            0x000000,
+            0xcc0403,
+            0x19cb00,
+            0xcecb00,
+            0x0d73cc,
+            0xcb1ed1,
+            0x0dcdcd,
+            0xdddddd,
+            0x767676,
+            0xf2201f,
+            0x23fd00,
+            0xfffd00,
+            0x1a8fff,
+            0xfd28ff,
+            0x14ffff,
+            0xffffff,
+        )
 
-    fun mode(context: Context): CoderThemeMode {
-        return when (context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("themeMode", "system")) {
+    fun mode(context: Context): CoderThemeMode =
+        when (context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("themeMode", "system")) {
             "light" -> CoderThemeMode.LIGHT
             "dark" -> CoderThemeMode.DARK
             else -> CoderThemeMode.SYSTEM
         }
-    }
 
-    fun setMode(context: Context, mode: CoderThemeMode) {
-        val value = when (mode) {
-            CoderThemeMode.SYSTEM -> "system"
-            CoderThemeMode.LIGHT -> "light"
-            CoderThemeMode.DARK -> "dark"
-        }
+    fun setMode(
+        context: Context,
+        mode: CoderThemeMode,
+    ) {
+        val value =
+            when (mode) {
+                CoderThemeMode.SYSTEM -> "system"
+                CoderThemeMode.LIGHT -> "light"
+                CoderThemeMode.DARK -> "dark"
+            }
         context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putString("themeMode", value) }
     }
 
-    fun selectedThemeName(context: Context): String {
-        return context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("themeName", null) ?: when (resolvedMode(context)) {
+    fun selectedThemeName(context: Context): String =
+        context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("themeName", null) ?: when (resolvedMode(context)) {
             CoderThemeMode.LIGHT -> "Solarized Light"
             CoderThemeMode.DARK -> "Dracula"
             CoderThemeMode.SYSTEM -> "Dracula"
         }
-    }
 
     fun selectedOption(context: Context): CoderThemeOption {
         val selectedName = selectedThemeName(context)
@@ -101,17 +120,21 @@ object CoderThemes {
         }
     }
 
-    fun setSelectedTheme(context: Context, option: CoderThemeOption) {
+    fun setSelectedTheme(
+        context: Context,
+        option: CoderThemeOption,
+    ) {
         setMode(context, option.mode)
         context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putString("themeName", option.name) }
     }
 
     fun nextMode(context: Context): CoderThemeMode {
-        val next = when (mode(context)) {
-            CoderThemeMode.SYSTEM -> CoderThemeMode.LIGHT
-            CoderThemeMode.LIGHT -> CoderThemeMode.DARK
-            CoderThemeMode.DARK -> CoderThemeMode.SYSTEM
-        }
+        val next =
+            when (mode(context)) {
+                CoderThemeMode.SYSTEM -> CoderThemeMode.LIGHT
+                CoderThemeMode.LIGHT -> CoderThemeMode.DARK
+                CoderThemeMode.DARK -> CoderThemeMode.SYSTEM
+            }
         setMode(context, next)
         return next
     }
@@ -121,13 +144,12 @@ object CoderThemes {
         return load(context, option.resourceId, option.name)
     }
 
-    fun modeLabel(context: Context): String {
-        return when (mode(context)) {
+    fun modeLabel(context: Context): String =
+        when (mode(context)) {
             CoderThemeMode.SYSTEM -> "SYS"
             CoderThemeMode.LIGHT -> "LGT"
             CoderThemeMode.DARK -> "DRK"
         }
-    }
 
     private fun resolvedMode(context: Context): CoderThemeMode {
         val selectedMode = mode(context)
@@ -136,7 +158,11 @@ object CoderThemes {
         return if (night == Configuration.UI_MODE_NIGHT_YES) CoderThemeMode.DARK else CoderThemeMode.LIGHT
     }
 
-    private fun load(context: Context, @RawRes resourceId: Int, name: String): CoderTheme {
+    private fun load(
+        context: Context,
+        @RawRes resourceId: Int,
+        name: String,
+    ): CoderTheme {
         var foreground = 0xd0d0d0
         var background = 0x101014
         var cursor = 0xe5e5e5
@@ -167,7 +193,10 @@ object CoderThemes {
         return CoderTheme(name, foreground, background, cursor, cursorText, selectionForeground, selectionBackground, palette)
     }
 
-    private fun parsePalette(value: String, palette: IntArray) {
+    private fun parsePalette(
+        value: String,
+        palette: IntArray,
+    ) {
         val parts = value.split("=", limit = 2)
         if (parts.size != 2) return
         val index = parts[0].trim().toIntOrNull() ?: return
@@ -175,7 +204,10 @@ object CoderThemes {
         palette[index] = parseColor(parts[1].trim(), palette[index])
     }
 
-    private fun parseColor(value: String, fallback: Int): Int {
+    private fun parseColor(
+        value: String,
+        fallback: Int,
+    ): Int {
         val normalized = value.removePrefix("#")
         if (normalized.length != 6) return fallback
         return normalized.toIntOrNull(16) ?: fallback
@@ -196,7 +228,5 @@ object CoderThemes {
         return Color.BLACK
     }
 
-    private fun cubeColor(value: Int): Int {
-        return if (value == 0) 0 else 55 + value * 40
-    }
+    private fun cubeColor(value: Int): Int = if (value == 0) 0 else 55 + value * 40
 }

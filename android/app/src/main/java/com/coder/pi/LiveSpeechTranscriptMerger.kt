@@ -60,7 +60,10 @@ class LiveSpeechTranscriptMerger(
 
 private fun String.splitWords(): List<String> = trim().split(Regex("\\s+")).filter { it.isNotBlank() }
 
-private fun bestReplacementStart(previous: List<String>, next: List<String>): Int? {
+private fun bestReplacementStart(
+    previous: List<String>,
+    next: List<String>,
+): Int? {
     val normalizedPrevious = previous.map { it.normalizedForOverlap() }
     val normalizedNext = next.map { it.normalizedForOverlap() }
     val minOverlap = minOf(2, normalizedNext.size, normalizedPrevious.size)
@@ -76,7 +79,10 @@ private fun bestReplacementStart(previous: List<String>, next: List<String>): In
     return null
 }
 
-private fun commonPrefixLength(left: List<String>, right: List<String>): Int {
+private fun commonPrefixLength(
+    left: List<String>,
+    right: List<String>,
+): Int {
     val max = minOf(left.size, right.size)
     var count = 0
     while (count < max && left[count].normalizedForOverlap().matchesLiveWord(right[count].normalizedForOverlap())) count++

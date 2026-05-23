@@ -15,7 +15,11 @@ object TerminalWindowLauncher {
     const val ReconnectId = "reconnect_id"
     const val WorkspaceIconUrl = "workspace_icon_url"
 
-    fun open(context: Context, launch: TerminalLaunchRequest, identity: TerminalIdentity) {
+    fun open(
+        context: Context,
+        launch: TerminalLaunchRequest,
+        identity: TerminalIdentity,
+    ) {
         context.startActivity(
             Intent(context, TerminalActivity::class.java)
                 .setData(sessionUri(identity))
@@ -28,12 +32,13 @@ object TerminalWindowLauncher {
                 .putExtra(AgentName, launch.badge)
                 .putExtra(Command, launch.command)
                 .putExtra(ReconnectId, launch.reconnectId)
-                .putExtra(WorkspaceIconUrl, launch.workspaceIconUrl)
+                .putExtra(WorkspaceIconUrl, launch.workspaceIconUrl),
         )
     }
 
-    fun sessionUri(identity: TerminalIdentity): Uri {
-        return Uri.Builder()
+    fun sessionUri(identity: TerminalIdentity): Uri =
+        Uri
+            .Builder()
             .scheme("pi")
             .authority("terminal")
             .appendPath(identity.userId)
@@ -41,5 +46,4 @@ object TerminalWindowLauncher {
             .appendPath(identity.agentId)
             .appendQueryParameter(Command, identity.command)
             .build()
-    }
 }

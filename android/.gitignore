@@ -8,6 +8,7 @@
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 .DS_Store
+/.kotlin
 /build
 /captures
 .externalNativeBuild
@@ -16,3 +17,6 @@ local.properties
 app/src/main/fontArchives/
 app/src/main/busybox/
 app/src/main/bash/
+
+# Gradle buildSrc outputs
+buildSrc/build/

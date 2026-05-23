@@ -26,97 +26,110 @@ object CoderFonts {
     private const val defaultFontKey = "jetbrains"
     private const val defaultUiFontKey = "jetbrains"
 
-    fun builtInOptions(): List<CoderFontOption> {
-        return listOf(
+    fun builtInOptions(): List<CoderFontOption> =
+        listOf(
             CoderFontOption("jetbrains", "JetBrains Mono", "Ghostty embedded default", resourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_regular, boldResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_bold, semiBoldResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_semi_bold, italicResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_italic, boldItalicResourceId = R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_bold_italic),
             CoderFontOption("ibm_plex", "IBM Plex Mono", "Blex Nerd Font Mono", resourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_regular, boldResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_bold, semiBoldResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_semi_bold, italicResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_italic, boldItalicResourceId = R.font.ibmplex_mono_blex_mono_nerd_font_mono_bold_italic),
             CoderFontOption("iosevka", "Iosevka", "Nerd Font Mono", resourceId = R.font.iosevka_iosevka_nerd_font_mono_regular, boldResourceId = R.font.iosevka_iosevka_nerd_font_mono_bold, semiBoldResourceId = R.font.iosevka_iosevka_nerd_font_mono_semi_bold, italicResourceId = R.font.iosevka_iosevka_nerd_font_mono_italic, boldItalicResourceId = R.font.iosevka_iosevka_nerd_font_mono_bold_italic),
             CoderFontOption("maple", "Maple Mono", "Nerd Font", resourceId = R.font.maple_mono_normal_maple_mono_normal_nf_regular, boldResourceId = R.font.maple_mono_normal_maple_mono_normal_nf_bold, semiBoldResourceId = R.font.maple_mono_normal_maple_mono_normal_nf_semi_bold, italicResourceId = R.font.maple_mono_normal_maple_mono_normal_nf_italic, boldItalicResourceId = R.font.maple_mono_normal_maple_mono_normal_nf_bold_italic),
         )
-    }
 
-    fun curatedOptions(): List<CoderFontOption> {
-        return listOf(
+    fun curatedOptions(): List<CoderFontOption> =
+        listOf(
             CoderFontOption("ioskeley", "Ioskeley", "Curated font · v2.0.0-beta.1", pro = true),
             CoderFontOption("dejavu", "DejaVu Sans Mono", "Curated font · v2.37", pro = true),
             CoderFontOption("noto_jp", "Noto Sans JP", "CJK fallback · v2.004", pro = true),
             CoderFontOption("noto_sc", "Noto Sans SC", "CJK fallback · v2.004", pro = true),
             CoderFontOption("noto_tc", "Noto Sans TC", "CJK fallback · v2.004", pro = true),
         )
-    }
 
     fun importedOptions(context: Context): List<CoderFontOption> {
         val directory = importDirectory(context)
-        return directory.listFiles()
+        return directory
+            .listFiles()
             ?.filter { it.isFile && supportedExtension(it.name) }
             ?.sortedBy { it.name.lowercase() }
             ?.map { file -> CoderFontOption("imported:${file.name}", file.nameWithoutExtension, "Imported from Files", file = file) }
             ?: emptyList()
     }
 
-    fun allOptions(context: Context): List<CoderFontOption> {
-        return builtInOptions() + importedOptions(context) + curatedOptions()
-    }
+    fun allOptions(context: Context): List<CoderFontOption> = builtInOptions() + importedOptions(context) + curatedOptions()
 
-    fun selectedKey(context: Context): String {
-        return context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("fontFamily", defaultFontKey) ?: defaultFontKey
-    }
+    fun selectedKey(context: Context): String = context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("fontFamily", defaultFontKey) ?: defaultFontKey
 
     fun selectedName(context: Context): String {
         val key = selectedKey(context)
         return allOptions(context).firstOrNull { it.key == key }?.name ?: "JetBrains Mono"
     }
 
-    fun setSelected(context: Context, key: String) {
+    fun setSelected(
+        context: Context,
+        key: String,
+    ) {
         context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putString("fontFamily", key) }
         if (uiMatchesTerminal(context)) setSelectedUi(context, key)
     }
 
-    fun selectedUiKey(context: Context): String {
-        return context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("uiFontFamily", defaultUiFontKey) ?: defaultUiFontKey
-    }
+    fun selectedUiKey(context: Context): String = context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getString("uiFontFamily", defaultUiFontKey) ?: defaultUiFontKey
 
     fun selectedUiName(context: Context): String {
         val key = selectedUiKey(context)
         return builtInOptions().firstOrNull { it.key == key }?.name ?: "JetBrains Mono"
     }
 
-    fun setSelectedUi(context: Context, key: String) {
+    fun setSelectedUi(
+        context: Context,
+        key: String,
+    ) {
         context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putString("uiFontFamily", key) }
     }
 
     fun uiMatchesTerminal(context: Context): Boolean = context.getSharedPreferences("terminal", Context.MODE_PRIVATE).getBoolean("matchUiTerminalFont", true)
 
-    fun setUiMatchesTerminal(context: Context, enabled: Boolean) {
+    fun setUiMatchesTerminal(
+        context: Context,
+        enabled: Boolean,
+    ) {
         context.getSharedPreferences("terminal", Context.MODE_PRIVATE).edit { putBoolean("matchUiTerminalFont", enabled) }
         if (enabled) setSelectedUi(context, selectedKey(context))
     }
 
-    fun uiFontFamily(context: Context, key: String = selectedUiKey(context)): FontFamily {
+    fun uiFontFamily(
+        context: Context,
+        key: String = selectedUiKey(context),
+    ): FontFamily {
         val option = builtInOptions().firstOrNull { it.key == key } ?: builtInOptions().first()
         return fontFamily(option)
     }
 
     private fun fontFamily(option: CoderFontOption): FontFamily {
-        val fonts = buildList {
-            option.resourceId?.let { add(Font(it, FontWeight.Normal, FontStyle.Normal)) }
-            option.boldResourceId?.let { add(Font(it, FontWeight.Bold, FontStyle.Normal)) }
-            option.semiBoldResourceId?.let { add(Font(it, FontWeight.SemiBold, FontStyle.Normal)) }
-            option.italicResourceId?.let { add(Font(it, FontWeight.Normal, FontStyle.Italic)) }
-            option.boldItalicResourceId?.let { add(Font(it, FontWeight.Bold, FontStyle.Italic)) }
-        }
+        val fonts =
+            buildList {
+                option.resourceId?.let { add(Font(it, FontWeight.Normal, FontStyle.Normal)) }
+                option.boldResourceId?.let { add(Font(it, FontWeight.Bold, FontStyle.Normal)) }
+                option.semiBoldResourceId?.let { add(Font(it, FontWeight.SemiBold, FontStyle.Normal)) }
+                option.italicResourceId?.let { add(Font(it, FontWeight.Normal, FontStyle.Italic)) }
+                option.boldItalicResourceId?.let { add(Font(it, FontWeight.Bold, FontStyle.Italic)) }
+            }
         return if (fonts.isEmpty()) FontFamily.Monospace else FontFamily(fonts)
     }
 
-    fun bytes(context: Context, key: String = selectedKey(context)): ByteArray {
+    fun bytes(
+        context: Context,
+        key: String = selectedKey(context),
+    ): ByteArray {
         val option = allOptions(context).firstOrNull { it.key == key } ?: builtInOptions().first()
         option.file?.let { return it.readBytes() }
         val resourceId = option.resourceId ?: R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_regular
         return context.resources.openRawResource(resourceId).use { it.readBytes() }
     }
 
-    fun styleBytes(context: Context, key: String = selectedKey(context)): CoderFontBytes {
+    fun styleBytes(
+        context: Context,
+        key: String = selectedKey(context),
+    ): CoderFontBytes {
         val option = allOptions(context).firstOrNull { it.key == key } ?: builtInOptions().first()
+
         fun readResource(resourceId: Int?): ByteArray? = resourceId?.let { context.resources.openRawResource(it).use { input -> input.readBytes() } }
         val fallback = readResource(R.font.jet_brains_mono_jet_brains_mono_nerd_font_mono_regular)
         option.file?.let { bytes -> return CoderFontBytes(bytes.readBytes(), null, null, null, fallback) }
@@ -124,11 +137,15 @@ object CoderFonts {
         return CoderFontBytes(regular, readResource(option.boldResourceId ?: option.semiBoldResourceId), readResource(option.italicResourceId), readResource(option.boldItalicResourceId), fallback)
     }
 
-    fun importFont(context: Context, uri: Uri): CoderFontOption? {
-        val name = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-            if (cursor.moveToFirst() && index >= 0) cursor.getString(index) else null
-        } ?: "imported-font.ttf"
+    fun importFont(
+        context: Context,
+        uri: Uri,
+    ): CoderFontOption? {
+        val name =
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && index >= 0) cursor.getString(index) else null
+            } ?: "imported-font.ttf"
         if (!supportedExtension(name)) return null
         val safeName = name.replace(Regex("[^A-Za-z0-9._-]+"), "_")
         val output = importDirectory(context).resolve(safeName)
@@ -140,9 +157,7 @@ object CoderFonts {
         return option
     }
 
-    private fun importDirectory(context: Context): File {
-        return File(context.filesDir, "fonts").apply { mkdirs() }
-    }
+    private fun importDirectory(context: Context): File = File(context.filesDir, "fonts").apply { mkdirs() }
 
     private fun supportedExtension(name: String): Boolean {
         val ext = name.substringAfterLast('.', "").lowercase()
@@ -150,4 +165,10 @@ object CoderFonts {
     }
 }
 
-data class CoderFontBytes(val regular: ByteArray, val bold: ByteArray?, val italic: ByteArray?, val boldItalic: ByteArray?, val fallback: ByteArray?)
+data class CoderFontBytes(
+    val regular: ByteArray,
+    val bold: ByteArray?,
+    val italic: ByteArray?,
+    val boldItalic: ByteArray?,
+    val fallback: ByteArray?,
+)

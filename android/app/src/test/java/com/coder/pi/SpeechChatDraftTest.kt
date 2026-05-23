@@ -16,30 +16,6 @@ class SpeechChatDraftTest {
     }
 
     @Test
-    fun finalSpeechChunksStayWithinFiveSecondModelWindow() {
-        val chunks = finalSpeechChunks(FloatArray(16_000 * 8), 16_000)
-
-        assertEquals(3, chunks.size)
-        chunks.forEach { chunk -> assertTrue(chunk.size <= 16_000 * 5) }
-    }
-
-    @Test
-    fun liveSpeechWindowUsesFourSecondsPlusOneSecondSilence() {
-        assertEquals(16_000 * 4, liveSpeechWindowSamples(16_000))
-        assertEquals(16_000, liveSpeechTrailingSilenceSamples(16_000))
-    }
-
-    @Test
-    fun liveSpeechPassAdvancesByHalfSecond() {
-        assertEquals(16_000 + 8_000, nextLiveSpeechPassSample(16_000, 16_000))
-    }
-
-    @Test
-    fun earlyLiveSpeechWindowPreservesPrePadding() {
-        assertEquals(-48_000, liveSpeechWindowStartSample(16_000, 16_000))
-    }
-
-    @Test
     fun finalSpeechFallsBackToLivePartialWhenFinalIsBlank() {
         assertEquals("Open settings and line", selectFinalSpeechTranscript("  ", " Open settings and line "))
     }

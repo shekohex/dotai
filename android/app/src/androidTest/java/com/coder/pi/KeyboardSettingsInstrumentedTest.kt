@@ -9,10 +9,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
-import java.io.File
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class KeyboardSettingsInstrumentedTest {
@@ -26,8 +26,9 @@ class KeyboardSettingsInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/keyboard"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/keyboard"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -55,7 +56,10 @@ class KeyboardSettingsInstrumentedTest {
         val context = instrumentation.targetContext
         val terminalView = CoderTerminalView(context)
         var triggeredShortcut: String? = null
-        terminalView.onApplicationShortcut = { shortcutId -> triggeredShortcut = shortcutId; true }
+        terminalView.onApplicationShortcut = { shortcutId ->
+            triggeredShortcut = shortcutId
+            true
+        }
 
         val handled = terminalView.onKeyDown(KeyEvent.KEYCODE_K, KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_K, 0, KeyEvent.META_META_ON))
 
@@ -69,7 +73,10 @@ class KeyboardSettingsInstrumentedTest {
         val context = instrumentation.targetContext
         val terminalView = CoderTerminalView(context)
         var triggeredShortcut: String? = null
-        terminalView.onApplicationShortcut = { shortcutId -> triggeredShortcut = shortcutId; true }
+        terminalView.onApplicationShortcut = { shortcutId ->
+            triggeredShortcut = shortcutId
+            true
+        }
 
         val handled = terminalView.onKeyDown(KeyEvent.KEYCODE_K, KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_K, 0, KeyEvent.META_CTRL_ON))
 
@@ -111,7 +118,10 @@ class KeyboardSettingsInstrumentedTest {
         val terminalView = CoderTerminalView(context)
         val imageUri = Uri.parse("content://com.coder.pi.test/image.png")
         var pastedImageUri: Uri? = null
-        terminalView.onClipboardImagePaste = { uri -> pastedImageUri = uri; true }
+        terminalView.onClipboardImagePaste = { uri ->
+            pastedImageUri = uri
+            true
+        }
 
         val handled = terminalView.pasteClip(ClipData("Image", arrayOf("image/png"), ClipData.Item(imageUri)))
 
@@ -141,7 +151,10 @@ class KeyboardSettingsInstrumentedTest {
         val sent = mutableListOf<ByteArray>()
         var triggeredShortcut: String? = null
         terminalView.attachRemote { sent.add(it) }
-        terminalView.onApplicationShortcut = { shortcutId -> triggeredShortcut = shortcutId; true }
+        terminalView.onApplicationShortcut = { shortcutId ->
+            triggeredShortcut = shortcutId
+            true
+        }
 
         val handled = terminalView.onKeyDown(KeyEvent.KEYCODE_O, KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_O, 0, KeyEvent.META_META_ON))
 
@@ -150,7 +163,10 @@ class KeyboardSettingsInstrumentedTest {
         check(sent.isEmpty()) { "App action shortcut sent terminal bytes" }
     }
 
-    private fun captureDeviceScreenshot(device: UiDevice, name: String) {
+    private fun captureDeviceScreenshot(
+        device: UiDevice,
+        name: String,
+    ) {
         val directory = File("/data/local/tmp/pi-test-screenshots")
         device.executeShellCommand("mkdir -p ${directory.absolutePath}")
         device.takeScreenshot(File(directory, name))

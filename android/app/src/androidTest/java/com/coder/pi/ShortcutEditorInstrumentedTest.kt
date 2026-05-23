@@ -23,10 +23,15 @@ class ShortcutEditorInstrumentedTest {
     fun newShortcutSaveIsDisabledUntilShortcutIsValid() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        context.getSharedPreferences("terminal", 0).edit().remove("toolbar.shortcuts").apply()
+        context
+            .getSharedPreferences("terminal", 0)
+            .edit()
+            .remove("toolbar.shortcuts")
+            .apply()
         val device = UiDevice.getInstance(instrumentation)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -55,8 +60,9 @@ class ShortcutEditorInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -79,10 +85,15 @@ class ShortcutEditorInstrumentedTest {
     fun visualModifierAndSpecialKeySelectionCanCreateShortcut() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        context.getSharedPreferences("terminal", 0).edit().remove("toolbar.shortcuts").apply()
+        context
+            .getSharedPreferences("terminal", 0)
+            .edit()
+            .remove("toolbar.shortcuts")
+            .apply()
         val device = UiDevice.getInstance(instrumentation)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -107,10 +118,15 @@ class ShortcutEditorInstrumentedTest {
     fun customTextCanBeEnteredManually() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        context.getSharedPreferences("terminal", 0).edit().remove("toolbar.shortcuts").apply()
+        context
+            .getSharedPreferences("terminal", 0)
+            .edit()
+            .remove("toolbar.shortcuts")
+            .apply()
         val device = UiDevice.getInstance(instrumentation)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -136,10 +152,15 @@ class ShortcutEditorInstrumentedTest {
     fun optionalHintLabelsSavedShortcut() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        context.getSharedPreferences("terminal", 0).edit().remove("toolbar.shortcuts").apply()
+        context
+            .getSharedPreferences("terminal", 0)
+            .edit()
+            .remove("toolbar.shortcuts")
+            .apply()
         val device = UiDevice.getInstance(instrumentation)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://settings/shortcuts/add"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -166,7 +187,10 @@ class ShortcutEditorInstrumentedTest {
         check(saved.contains("submit\techo hi")) { "Hint label did not persist for shortcut" }
     }
 
-    private fun typeShortcutCommand(device: UiDevice, text: String) {
+    private fun typeShortcutCommand(
+        device: UiDevice,
+        text: String,
+    ) {
         text.forEach { char ->
             when (char) {
                 ' ' -> device.pressKeyCode(KeyEvent.KEYCODE_SPACE)
@@ -176,7 +200,10 @@ class ShortcutEditorInstrumentedTest {
         }
     }
 
-    private fun captureDeviceScreenshot(device: UiDevice, name: String) {
+    private fun captureDeviceScreenshot(
+        device: UiDevice,
+        name: String,
+    ) {
         val directory = java.io.File("/data/local/tmp/pi-test-screenshots")
         device.executeShellCommand("mkdir -p ${directory.absolutePath}")
         device.takeScreenshot(java.io.File(directory, name))

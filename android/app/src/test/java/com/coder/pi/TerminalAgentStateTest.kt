@@ -81,16 +81,20 @@ class TerminalAgentStateTest {
         assertNull(second.snapshot().run)
     }
 
-    private fun piEvent(eventName: String, data: String): TerminalOscEvent.Pi {
-        val envelope = PiOscEnvelope(
-            id = "evt-$eventName",
-            ts = 1779200000000L,
-            source = "agent",
-            sessionId = "session-1",
-            cwd = "/workspace",
-            seq = 1,
-            data = Json.parseToJsonElement(data).jsonObject,
-        )
+    private fun piEvent(
+        eventName: String,
+        data: String,
+    ): TerminalOscEvent.Pi {
+        val envelope =
+            PiOscEnvelope(
+                id = "evt-$eventName",
+                ts = 1779200000000L,
+                source = "agent",
+                sessionId = "session-1",
+                cwd = "/workspace",
+                seq = 1,
+                data = Json.parseToJsonElement(data).jsonObject,
+            )
         return TerminalOscEvent.Pi(1, eventName, envelope)
     }
 }

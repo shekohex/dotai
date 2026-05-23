@@ -18,15 +18,22 @@ class CoderTerminalSession(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     @Volatile private var socket: CoderTerminalSocket? = null
+
     @Volatile private var stopped = false
     private var reconnectAttempts = 0
+
     @Volatile private var reconnectScheduled = false
+
     @Volatile private var networkUnavailable = false
 
     private val maxReconnectAttempts = Int.MAX_VALUE
 
-    fun updateCallbacks(onStatusChanged: (String) -> Unit, onErrorChanged: (String?) -> Unit) {
+    fun updateCallbacks(
+        onStatusChanged: (String) -> Unit,
+        onErrorChanged: (String?) -> Unit,
+    ) {
         this.onStatusChanged = onStatusChanged
         this.onErrorChanged = onErrorChanged
     }
@@ -148,11 +155,13 @@ class CoderTerminalSession(
 
     companion object {
         fun safeTerminalError(error: Throwable): String {
-            val message = error.message.orEmpty()
-                .replace(Regex("Coder-Session-Token=[^\\s&]+", RegexOption.IGNORE_CASE), "Coder-Session-Token=<hidden>")
-                .replace(Regex("(token|reconnect|command)=([^\\s&]+)", RegexOption.IGNORE_CASE), "$1=<hidden>")
-                .replace(Regex("https?://[^\\s]+"), "<url>")
-                .replace(Regex("wss?://[^\\s]+"), "<url>")
+            val message =
+                error.message
+                    .orEmpty()
+                    .replace(Regex("Coder-Session-Token=[^\\s&]+", RegexOption.IGNORE_CASE), "Coder-Session-Token=<hidden>")
+                    .replace(Regex("(token|reconnect|command)=([^\\s&]+)", RegexOption.IGNORE_CASE), "$1=<hidden>")
+                    .replace(Regex("https?://[^\\s]+"), "<url>")
+                    .replace(Regex("wss?://[^\\s]+"), "<url>")
             return message.ifBlank { error::class.simpleName ?: "unknown error" }.take(160)
         }
     }

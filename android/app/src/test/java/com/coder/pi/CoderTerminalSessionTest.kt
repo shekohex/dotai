@@ -1,7 +1,7 @@
 package com.coder.pi
 
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
@@ -9,9 +9,10 @@ import java.util.concurrent.atomic.AtomicInteger
 class CoderTerminalSessionTest {
     @Test
     fun safeTerminalErrorHidesSensitiveConnectionData() {
-        val error = CoderTerminalSession.safeTerminalError(
-            IllegalStateException("failed https://coder.example?token=abc&reconnect=def&command=bash Coder-Session-Token=secret"),
-        )
+        val error =
+            CoderTerminalSession.safeTerminalError(
+                IllegalStateException("failed https://coder.example?token=abc&reconnect=def&command=bash Coder-Session-Token=secret"),
+            )
 
         assertFalse(error.contains("abc"))
         assertFalse(error.contains("def"))

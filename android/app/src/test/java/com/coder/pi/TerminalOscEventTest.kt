@@ -57,7 +57,12 @@ class TerminalOscEventTest {
 
         assertTrue(event is TerminalOscEvent.Pi)
         val pi = event as TerminalOscEvent.Pi
-        assertEquals("active", pi.envelope.data["state"]?.toString()?.trim('"'))
+        assertEquals(
+            "active",
+            pi.envelope.data["state"]
+                ?.toString()
+                ?.trim('"'),
+        )
         assertEquals("65", pi.envelope.data["elapsedSeconds"].toString())
     }
 

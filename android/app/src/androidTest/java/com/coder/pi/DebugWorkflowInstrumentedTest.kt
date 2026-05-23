@@ -27,8 +27,9 @@ class DebugWorkflowInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/render"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/render"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         context.startActivity(intent)
         instrumentation.waitForIdleSync()
@@ -46,8 +47,9 @@ class DebugWorkflowInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/render"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/render"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         instrumentation.uiAutomation.executeShellCommand("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS").close()
         instrumentation.uiAutomation.executeShellCommand("cmd notification cancel-all ${context.packageName}").close()
@@ -111,8 +113,9 @@ class DebugWorkflowInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/render"), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("pi://debug/render"), context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
 
         dismissClipboardEditor(device)
         context.startActivity(intent)
@@ -148,11 +151,11 @@ class DebugWorkflowInstrumentedTest {
         check(!afterShortcutTapHierarchy.contains("new win")) { "Runtime shortcuts panel did not hide after shortcut tap" }
     }
 
-    private fun shell(command: String): String {
-        return ParcelFileDescriptor.AutoCloseInputStream(InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command))
+    private fun shell(command: String): String =
+        ParcelFileDescriptor
+            .AutoCloseInputStream(InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command))
             .bufferedReader()
             .use { it.readText() }
-    }
 
     private fun dismissClipboardEditor(device: UiDevice) {
         repeat(3) {

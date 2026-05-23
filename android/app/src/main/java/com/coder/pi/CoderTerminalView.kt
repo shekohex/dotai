@@ -179,7 +179,7 @@ class CoderTerminalView
         var onNotificationPermissionNeeded: (() -> Unit)? = null
         var onAgentStateChanged: ((TerminalAgentStateSnapshot) -> Unit)? = null
         var onAgentInputSubmitted: (() -> Unit)? = null
-        var onAgentEventObserved: ((Long?) -> Unit)? = null
+        var onAgentEventObserved: ((String, Long?) -> Unit)? = null
 
         override fun onResume() {
             super.onResume()
@@ -1511,7 +1511,7 @@ class CoderTerminalView
         private fun handlePiOscEvent(event: TerminalOscEvent.Pi) {
             val snapshot = agentState.apply(event)
             onAgentStateChanged?.invoke(snapshot)
-            onAgentEventObserved?.invoke(event.envelope.seq)
+            onAgentEventObserved?.invoke(event.eventName, event.envelope.seq)
             when (event.eventName) {
                 "agent.alert" ->
                     snapshot.alerts

@@ -319,12 +319,11 @@ enum class SpeechEnhancementProvider(
     val label: String,
 ) {
     OpenAiCompatible("openai", "OpenAI Compatible"),
-    Gemini("gemini", "Gemini"),
     Disabled("disabled", "Disabled"),
     ;
 
     companion object {
-        val all = listOf(OpenAiCompatible, Gemini, Disabled)
+        val all = listOf(OpenAiCompatible, Disabled)
 
         fun byId(id: String): SpeechEnhancementProvider = all.firstOrNull { it.id == id } ?: OpenAiCompatible
     }

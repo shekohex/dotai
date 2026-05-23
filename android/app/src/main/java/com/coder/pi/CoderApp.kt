@@ -2419,7 +2419,6 @@ fun TerminalAccessory(
                     if (!latestSettings.enhancementEnabled || apiKey.isBlank()) return ""
                     return when (SpeechEnhancementProvider.byId(latestSettings.enhancementProvider)) {
                         SpeechEnhancementProvider.OpenAiCompatible -> OpenAiHttpSpeechEnhancementClient(enhancementHttpClient, latestSettings.enhancementBaseUrl, apiKey, latestSettings.enhancementModel).enhance(request)
-                        SpeechEnhancementProvider.Gemini -> GeminiHttpSpeechEnhancementClient(enhancementHttpClient, apiKey, latestSettings.enhancementModel).enhance(request)
                         SpeechEnhancementProvider.Disabled -> ""
                     }
                 }

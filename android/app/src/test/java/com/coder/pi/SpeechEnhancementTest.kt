@@ -87,7 +87,7 @@ class SpeechEnhancementTest {
         runBlocking {
             val enhancer =
                 SpeechEnhancer(
-                    GeminiSpeechEnhancementClient {
+                    OpenAiCompatibleSpeechEnhancementClient {
                         delay(100)
                         "late"
                     },

@@ -116,12 +116,6 @@ class OpenAiCompatibleSpeechEnhancementClient(
     override suspend fun enhance(request: SpeechEnhancementRequest): String = complete(request.prompt)
 }
 
-class GeminiSpeechEnhancementClient(
-    private val complete: suspend (String) -> String,
-) : SpeechEnhancementClient {
-    override suspend fun enhance(request: SpeechEnhancementRequest): String = complete(request.prompt)
-}
-
 private val speechEnhancementJson =
     Json {
         ignoreUnknownKeys = true
@@ -165,30 +159,6 @@ object OpenAiProviderEndpointRuntime {
     fun apiKeyForEndpoint(endpoint: String): String = apiKeyLookup(endpoint)
 }
 
-class GeminiHttpSpeechEnhancementClient(
-    private val httpClient: HttpClient,
-    private val apiKey: String,
-    private val model: String,
-) : SpeechEnhancementClient {
-    override suspend fun enhance(request: SpeechEnhancementRequest): String {
-        val response: HttpResponse =
-            httpClient.post("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions") {
-                bearerAuth(apiKey)
-                contentType(ContentType.Application.Json)
-                setBody(ChatCompletionRequest(model, listOf(ChatMessage("system", request.systemPrompt), ChatMessage("user", request.userPrompt)), enhancementTemperature(model), enhancementReasoningEffort(model)))
-            }
-        val body = response.body<String>()
-        if (!response.status.isSuccess()) throw SpeechEnhancementHttpException(response.status.value, enhancementErrorMessage(body).ifBlank { response.status.description })
-        return speechEnhancementJson
-            .decodeFromString<ChatCompletionResponse>(body)
-            .choices
-            .firstOrNull()
-            ?.message
-            ?.content
-            .orEmpty()
-    }
-}
-
 @Serializable
 private data class ChatCompletionRequest(
     val model: String,
@@ -217,9 +187,6 @@ private fun enhancementTemperature(model: String): Double = if (model.lowercase(
 
 private fun enhancementReasoningEffort(model: String): String? =
     when (model) {
-        "gemini-2.5-flash", "gemini-2.5-flash-lite" -> "none"
-        "gemini-3.1-pro-preview" -> "low"
-        "gemini-2.5-pro", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview" -> "minimal"
         "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.2" -> "none"
         else -> null
     }

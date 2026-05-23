@@ -178,8 +178,6 @@ class CoderTerminalView
         var onClipboardImagePaste: ((Uri) -> Boolean)? = null
         var onNotificationPermissionNeeded: (() -> Unit)? = null
         var onAgentStateChanged: ((TerminalAgentStateSnapshot) -> Unit)? = null
-        var onAgentInputSubmitted: (() -> Unit)? = null
-        var onAgentEventObserved: ((String, Long?) -> Unit)? = null
 
         override fun onResume() {
             super.onResume()
@@ -1511,7 +1509,6 @@ class CoderTerminalView
         private fun handlePiOscEvent(event: TerminalOscEvent.Pi) {
             val snapshot = agentState.apply(event)
             onAgentStateChanged?.invoke(snapshot)
-            onAgentEventObserved?.invoke(event.eventName, event.envelope.seq)
             when (event.eventName) {
                 "agent.alert" ->
                     snapshot.alerts
@@ -1585,7 +1582,6 @@ class CoderTerminalView
         }
 
         private fun handlePiAgentInputSubmitted() {
-            onAgentInputSubmitted?.invoke()
             if (!oscNotificationsEnabled() || !oscNotificationAlertsEnabled()) return
             postOscNotification("π", "Message submitted", false, -1, false, feedbackState = TerminalAlertFeedbackState.SUBMIT)
         }

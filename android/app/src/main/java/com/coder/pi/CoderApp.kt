@@ -2301,8 +2301,6 @@ fun TerminalAccessory(
     var chatDraft by chatDraftState
     var chatAttachments by chatAttachmentsState
     var startDictationRequest by remember { mutableIntStateOf(0) }
-    val pendingChatSubmitStashState = remember { mutableStateOf<PendingChatSubmitStash?>(null) }
-    val pendingChatTimeoutJobState = remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var replacingAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     var shortcuts by remember { mutableStateOf(terminalView.customShortcuts()) }
     var toolbarOrder by remember { mutableStateOf(terminalView.toolbarOrder()) }
@@ -2371,26 +2369,6 @@ fun TerminalAccessory(
         }
     }
     DisposableEffect(terminalView) {
-        fun clearPendingChatSubmit() {
-            pendingChatTimeoutJobState.value?.cancel()
-            pendingChatTimeoutJobState.value = null
-            if (pendingChatSubmitStashState.value != null) {
-                pendingChatSubmitStashState.value = null
-                chatAttachmentsState.value = emptyList()
-            }
-        }
-        terminalView.onAgentInputSubmitted = { clearPendingChatSubmit() }
-        terminalView.onAgentEventObserved = { eventName, eventSeq ->
-            pendingChatSubmitStashState.value?.let { pending ->
-                if (observedAgentEventAcceptsPendingSubmit(pending, eventName, eventSeq)) clearPendingChatSubmit()
-            }
-        }
-        onDispose {
-            terminalView.onAgentInputSubmitted = null
-            terminalView.onAgentEventObserved = null
-        }
-    }
-    DisposableEffect(terminalView) {
         terminalView.onClipboardImagePaste = { uri ->
             chatAttachments = chatAttachments + ChatImageAttachment(uri)
             chatMode = true
@@ -2440,27 +2418,14 @@ fun TerminalAccessory(
             onCaptionAttachment = { index, caption -> chatAttachments = chatAttachments.mapIndexed { currentIndex, attachment -> if (currentIndex == index) attachment.copy(caption = caption) else attachment } },
             visibleTerminalLines = { terminalView.snapshotText() },
             speechEnhancementClient = speechEnhancementClient,
-            submitLocked = pendingChatSubmitStashState.value != null,
             onClear = {
                 chatDraft = ""
                 chatAttachments = emptyList()
             },
             onSubmit = {
-                pendingChatTimeoutJobState.value?.cancel()
-                pendingChatSubmitStashState.value = PendingChatSubmitStash(it, terminalView.agentStateSnapshot().latestAgentSeq())
                 terminalView.pasteText(it)
                 terminalView.playAlertFeedback(TerminalAlertFeedbackState.SUBMIT)
                 if (terminalView.chatAutoSendEnabled()) terminalView.sendKey(KeyEvent.KEYCODE_ENTER)
-                pendingChatTimeoutJobState.value =
-                    scope.launch {
-                        delay(2500)
-                        val pending = pendingChatSubmitStashState.value
-                        if (pending?.text == it) {
-                            pendingChatSubmitStashState.value = null
-                            chatDraftState.value = appendRestoredChatDraft(chatDraftState.value, it)
-                            Toast.makeText(context, "Message not confirmed. Terminal may be in tmux copy-mode.", Toast.LENGTH_LONG).show()
-                        }
-                    }
                 true
             },
             onReturn = {

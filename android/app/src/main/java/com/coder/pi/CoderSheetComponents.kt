@@ -10,6 +10,7 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -108,6 +109,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.pow
+
+private const val SpeechEnhancementLogTag = "SpeechEnhancement"
 
 data class ChatImageAttachment(
     val uri: Uri,
@@ -238,11 +241,13 @@ fun ChatInputBar(
                         enhancementHapticJob?.cancel()
                         enhancementHapticJob = null
                         if (result.timedOut) {
+                            Log.e(SpeechEnhancementLogTag, "enhancement timed out: ${result.errorMessage.orEmpty()}")
                             Toast.makeText(context, "Enhancement timed out: ${result.errorMessage.orEmpty()}", Toast.LENGTH_LONG).show()
                             dictationTranscript = transcript
                             dictationState = SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT
                         } else {
                             if (result.failedOpen) {
+                                Log.e(SpeechEnhancementLogTag, "enhancement failed: ${result.errorMessage ?: "Empty response"}")
                                 Toast.makeText(context, "Enhancement failed: ${result.errorMessage ?: "Empty response"}", Toast.LENGTH_LONG).show()
                                 dictationTranscript = transcript
                                 dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
@@ -264,6 +269,7 @@ fun ChatInputBar(
                         if (sessionId != dictationSessionId) return@fold
                         enhancementHapticJob?.cancel()
                         enhancementHapticJob = null
+                        Log.e(SpeechEnhancementLogTag, "enhancement exception", it)
                         Toast.makeText(context, "Enhancement failed: ${it.message ?: it::class.java.simpleName}", Toast.LENGTH_LONG).show()
                         acceptDictationTranscript(transcript)
                     },

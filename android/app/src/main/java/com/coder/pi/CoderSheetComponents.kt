@@ -133,6 +133,7 @@ fun ChatInputBar(
     onReturn: () -> Unit,
     onClose: () -> Unit,
     startDictationRequest: Int = 0,
+    onStartDictationRequestConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -402,7 +403,10 @@ fun ChatInputBar(
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startDictationCapture() else audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
     LaunchedEffect(startDictationRequest) {
-        if (startDictationRequest > 0 && !dictating) requestDictationCapture()
+        if (startDictationRequest > 0 && !dictating) {
+            requestDictationCapture()
+            onStartDictationRequestConsumed()
+        }
     }
     DisposableEffect(speechAudioCapture) {
         onDispose {

@@ -40,9 +40,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,6 +58,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -102,6 +106,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.key.KeyEventType
@@ -149,6 +154,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -2208,6 +2214,7 @@ fun TerminalSurface(
                     it.post { it.forceRefreshSurface() }
                 },
             )
+            TerminalCutoutFade(theme)
             TerminalPinchFontOverlay(terminalView)
             if (showMetadataOverlay && (oscMetadata.title.isNotBlank() || oscMetadata.pwd.isNotBlank())) {
                 Column(
@@ -2469,6 +2476,7 @@ fun TerminalAccessory(
                 }
             },
             startDictationRequest = startDictationRequest,
+            onStartDictationRequestConsumed = { startDictationRequest = 0 },
         )
         return
     }
@@ -2509,14 +2517,14 @@ fun TerminalAccessory(
                                 "esc" -> ToolbarTextButton("esc", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_ESCAPE) }
                                 "tab" -> ToolbarTextButton("tab", text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_TAB) }
                                 "copy" -> ToolbarTextButton("copy", text, uiTokens(theme).surface) { onCopyModeChanged(true) }
-                                "dpad" -> ToolbarTextButton("✣", text, if (dpadExpanded) active else uiTokens(theme).surface) { dpadExpanded = !dpadExpanded }
+                                "dpad" -> ToolbarDPadButton(text, if (dpadExpanded) active else uiTokens(theme).surface, terminalView) { dpadExpanded = !dpadExpanded }
                                 "empty" -> Unit
                                 "paste" -> if (showPaste) ToolbarIconButton(R.drawable.ic_feather_clipboard, text, uiTokens(theme).surface) { terminalView.pasteFromClipboard() } else EmptyToolbarSlot(uiTokens(theme).surface)
                                 "undo" -> ToolbarIconButton(R.drawable.ic_feather_rotate_ccw, text, uiTokens(theme).surface) { terminalView.sendKey(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON) }
                             }
                         }
                     }
-                    if (!selectionActive && "dpad" !in toolbarOrder) ToolbarTextButton("✣", text, if (dpadExpanded) active else uiTokens(theme).surface) { dpadExpanded = !dpadExpanded }
+                    if (!selectionActive && "dpad" !in toolbarOrder) ToolbarDPadButton(text, if (dpadExpanded) active else uiTokens(theme).surface, terminalView) { dpadExpanded = !dpadExpanded }
                     if (!selectionActive) shortcuts.forEach { shortcut -> ToolbarTextButton(shortcut.label, text, uiTokens(theme).surface) { terminalView.executeTerminalShortcut(shortcut.sequence) } }
                 }
                 Spacer(Modifier.width(5.dp))
@@ -2537,6 +2545,107 @@ fun TerminalAccessory(
             }
             if (shortcutsPanelExpanded && selectedPanelTab != null) TerminalShortcutPanel(selectedPanelTab, shortcutPanelTabs, terminalView, text, uiTokens(theme), { selectedShortcutPanelTab = it }) { shortcutsPanelExpanded = false }
         }
+    }
+}
+
+@Composable
+private fun TerminalCutoutFade(theme: CoderTheme) {
+    val cutoutTopPadding = WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
+    if (cutoutTopPadding <= 0.dp) return
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(cutoutTopPadding + 56.dp)
+            .background(
+                Brush.verticalGradient(
+                    0f to theme.background.toComposeColor().copy(alpha = 0.94f),
+                    0.42f to theme.background.toComposeColor().copy(alpha = 0.62f),
+                    1f to theme.background.toComposeColor().copy(alpha = 0f),
+                ),
+            ),
+    )
+}
+
+private enum class DPadDirection(val keyCode: Int) {
+    UP(KeyEvent.KEYCODE_DPAD_UP),
+    DOWN(KeyEvent.KEYCODE_DPAD_DOWN),
+    LEFT(KeyEvent.KEYCODE_DPAD_LEFT),
+    RIGHT(KeyEvent.KEYCODE_DPAD_RIGHT),
+}
+
+private fun dpadDirectionForOffset(
+    offsetX: Float,
+    offsetY: Float,
+    threshold: Float,
+): DPadDirection? {
+    val horizontal = abs(offsetX)
+    val vertical = abs(offsetY)
+    if (horizontal < threshold && vertical < threshold) return null
+    return if (horizontal > vertical) {
+        if (offsetX < 0f) DPadDirection.LEFT else DPadDirection.RIGHT
+    } else {
+        if (offsetY < 0f) DPadDirection.UP else DPadDirection.DOWN
+    }
+}
+
+fun dpadRepeatDelayMillis(distancePx: Float): Long = (190f - distancePx * 0.55f).toLong().coerceIn(42L, 190L)
+
+@Composable
+private fun RowScope.ToolbarDPadButton(
+    color: Color,
+    background: Color,
+    terminalView: CoderTerminalView,
+    onClick: () -> Unit,
+) {
+    val density = LocalDensity.current
+    var gestureDirection by remember { mutableStateOf<DPadDirection?>(null) }
+    var gestureDistance by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(gestureDirection, gestureDistance) {
+        val direction = gestureDirection ?: return@LaunchedEffect
+        while (gestureDirection == direction) {
+            hapticClick()
+            terminalView.sendKey(direction.keyCode)
+            delay(dpadRepeatDelayMillis(gestureDistance))
+        }
+    }
+    Box(
+        Modifier
+            .padding(end = 4.dp)
+            .height(32.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(background)
+            .pointerInput(terminalView) {
+                val threshold = with(density) { 18.dp.toPx() }
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val upBeforeLongPress = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { waitForUpOrCancellation() }
+                    if (upBeforeLongPress != null) {
+                        hapticClick()
+                        onClick()
+                        return@awaitEachGesture
+                    }
+                    hapticClick()
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.firstOrNull()
+                        if (change == null || !change.pressed) break
+                        val offsetX = change.position.x - down.position.x
+                        val offsetY = change.position.y - down.position.y
+                        val direction = dpadDirectionForOffset(offsetX, offsetY, threshold)
+                        val distance = kotlin.math.sqrt(offsetX * offsetX + offsetY * offsetY).toFloat()
+                        if (direction != gestureDirection && direction != null) hapticClick()
+                        gestureDirection = direction
+                        gestureDistance = distance
+                        change.consume()
+                    }
+                    gestureDirection = null
+                    gestureDistance = 0f
+                    hapticClick()
+                }
+            }.padding(horizontal = 7.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("✣", color = color, fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
     }
 }
 

@@ -10,7 +10,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.roundToInt
 
 @Composable
@@ -73,12 +77,12 @@ private fun TerminalDPad(
     val topRightAction = terminalView.selectedGestureAction("dpad_top_right", "ctrl_c")
     Column(modifier.width(212.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (topLeftAction != "hide") AcceleratingDPadButton(R.drawable.ic_feather_delete, tokens.text, destructive) { terminalView.performGestureAction(topLeftAction) }
-            DPadIconButton(R.drawable.ic_feather_chevron_up, tokens.text, tokens.surfaceHigh) { terminalView.sendKey(KeyEvent.KEYCODE_DPAD_UP) }
-            if (topRightAction != "hide") DPadIconButton(R.drawable.ic_feather_trash_2, tokens.text, destructive) { terminalView.performGestureAction(topRightAction) }
+            if (topLeftAction != "hide") RepeatingDPadButton(R.drawable.ic_feather_delete, tokens.text, destructive) { terminalView.performGestureAction(topLeftAction) }
+            RepeatingDPadButton(R.drawable.ic_feather_chevron_up, tokens.text, tokens.surfaceHigh) { terminalView.sendKey(KeyEvent.KEYCODE_DPAD_UP) }
+            if (topRightAction != "hide") RepeatingDPadButton(R.drawable.ic_feather_trash_2, tokens.text, destructive) { terminalView.performGestureAction(topRightAction) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            DPadIconButton(R.drawable.ic_feather_chevron_left, tokens.text, tokens.surfaceHigh) { terminalView.sendKey(KeyEvent.KEYCODE_DPAD_LEFT) }
+            RepeatingDPadButton(R.drawable.ic_feather_chevron_left, tokens.text, tokens.surfaceHigh) { terminalView.sendKey(KeyEvent.KEYCODE_DPAD_LEFT) }
             DPadIconButton(
                 R.drawable.ic_feather_corner_down_left,
                 tokens.text,
@@ -100,9 +104,9 @@ private fun TerminalDPad(
                     }
                 },
             ) { terminalView.sendKey(KeyEvent.KEYCODE_ENTER) }
-            DPadIconButton(R.drawable.ic_feather_chevron_right, tokens.text, tokens.surfaceHigh) { terminalView.sendKey(KeyEvent.KEYCODE_DPAD_RIGHT) }
+            RepeatingDPadButton(R.drawable.ic_feather_chevron_right, tokens.text, tokens.surfaceHigh) { terminalView.sendKey(KeyEvent.KEYCODE_DPAD_RIGHT) }
         }
-        DPadIconButton(R.drawable.ic_feather_chevron_down, tokens.text, tokens.surfaceHigh) { terminalView.sendKey(KeyEvent.KEYCODE_DPAD_DOWN) }
+        RepeatingDPadButton(R.drawable.ic_feather_chevron_down, tokens.text, tokens.surfaceHigh) { terminalView.sendKey(KeyEvent.KEYCODE_DPAD_DOWN) }
     }
 }
 
@@ -126,7 +130,7 @@ private fun DPadIconButton(
 }
 
 @Composable
-private fun AcceleratingDPadButton(
+private fun RepeatingDPadButton(
     icon: Int,
     color: Color,
     background: Color,
@@ -137,6 +141,7 @@ private fun AcceleratingDPadButton(
         if (!repeating) return@LaunchedEffect
         var delayMillis = 320L
         while (repeating) {
+            hapticClick()
             onClick()
             delay(delayMillis)
             delayMillis = (delayMillis * 0.78f).toLong().coerceAtLeast(42L)
@@ -149,17 +154,19 @@ private fun AcceleratingDPadButton(
             .background(background)
             .border(BorderStroke(1.dp, color.copy(alpha = 0.18f)), RoundedCornerShape(13.dp))
             .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        awaitPointerEvent().changes.firstOrNull { it.pressed } ?: continue
+                awaitEachGesture {
+                    awaitFirstDown()
+                    val upBeforeLongPress = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { waitForUpOrCancellation() }
+                    if (upBeforeLongPress != null) {
                         hapticClick()
-                        repeating = true
-                        do {
-                            val event = awaitPointerEvent()
-                        } while (event.changes.any { it.pressed })
-                        repeating = false
-                        hapticClick()
+                        onClick()
+                        return@awaitEachGesture
                     }
+                    hapticClick()
+                    repeating = true
+                    waitForUpOrCancellation()
+                    repeating = false
+                    hapticClick()
                 }
             },
         contentAlignment = Alignment.Center,

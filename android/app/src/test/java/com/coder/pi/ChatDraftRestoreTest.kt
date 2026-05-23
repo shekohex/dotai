@@ -21,16 +21,21 @@ class ChatDraftRestoreTest {
 
     @Test
     fun newAgentEventAcceptsPendingSubmit() {
-        assertEquals(true, observedAgentEventAcceptsPendingSubmit(PendingChatSubmitStash("hello", 4), 5))
+        assertEquals(true, observedAgentEventAcceptsPendingSubmit(PendingChatSubmitStash("hello", 4), "agent.progress", 5))
     }
 
     @Test
     fun oldAgentEventDoesNotAcceptPendingSubmit() {
-        assertEquals(false, observedAgentEventAcceptsPendingSubmit(PendingChatSubmitStash("hello", 4), 4))
+        assertEquals(false, observedAgentEventAcceptsPendingSubmit(PendingChatSubmitStash("hello", 4), "agent.progress", 4))
     }
 
     @Test
     fun missingSequenceAcceptsPendingSubmit() {
-        assertEquals(true, observedAgentEventAcceptsPendingSubmit(PendingChatSubmitStash("hello", 4), null))
+        assertEquals(true, observedAgentEventAcceptsPendingSubmit(PendingChatSubmitStash("hello", 4), "agent.progress", null))
+    }
+
+    @Test
+    fun inputEventAcceptsPendingSubmitWithoutNewSequence() {
+        assertEquals(true, observedAgentEventAcceptsPendingSubmit(PendingChatSubmitStash("hello", 4), "agent.input", 4))
     }
 }

@@ -28,8 +28,10 @@ fun TerminalAgentStateSnapshot.latestAgentSeq(): Long? =
 
 fun observedAgentEventAcceptsPendingSubmit(
     pending: PendingChatSubmitStash,
+    eventName: String,
     eventSeq: Long?,
 ): Boolean {
+    if (eventName == "agent.input") return true
     val baseline = pending.baselineSeq ?: return true
     return eventSeq == null || eventSeq > baseline
 }

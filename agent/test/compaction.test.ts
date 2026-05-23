@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildSummaryMessages } from "../src/extensions/compaction.js";
+import { buildSummaryMessages, isAbortSignalAborted } from "../src/extensions/compaction.js";
 
 describe("compaction extension", () => {
   test("adds custom instructions as additional constraints", () => {
@@ -20,5 +20,9 @@ describe("compaction extension", () => {
     const text = messages[0]?.content[0]?.text ?? "";
 
     expect(text).not.toContain("# Additional Constraints And Instructions");
+  });
+
+  test("treats missing auto-compaction signal as not aborted", () => {
+    expect(isAbortSignalAborted(undefined)).toBe(false);
   });
 });

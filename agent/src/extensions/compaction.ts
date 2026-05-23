@@ -33,6 +33,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_before_compact", async (event, ctx) => {
     ctx.ui.notify("Compaction extension triggered", "info");
     const preparation = event.preparation;
+    const signal = event.signal;
     const sanitizedPreparation = sanitizePreparationForCompaction(ctx, preparation);
     const allMessages = [
       ...sanitizedPreparation.messagesToSummarize,
@@ -60,10 +61,10 @@ export default function (pi: ExtensionAPI) {
           allMessages,
           preparation.previousSummary,
           event.customInstructions,
-          event.signal,
+          signal,
         );
         if (!summary.trim()) {
-          if (!event.signal.aborted) {
+          if (!isAbortSignalAborted(signal)) {
             ctx.ui.notify(
               `Compaction summary was empty for ${modelAuth.model.id}, trying next fallback`,
               "warning",
@@ -88,7 +89,7 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    if (!event.signal.aborted) {
+    if (!isAbortSignalAborted(signal)) {
       ctx.ui.notify("Compaction fallback list exhausted, using default compaction", "warning");
     }
 
@@ -148,7 +149,7 @@ async function summarizeCompaction(
   allMessages: Parameters<typeof convertToLlm>[0],
   previousSummary: string | undefined,
   customInstructions: string | undefined,
-  signal: AbortSignal,
+  signal: AbortSignal | undefined,
 ): Promise<string> {
   const response = await complete(
     modelAuth.model,
@@ -165,6 +166,10 @@ async function summarizeCompaction(
     .filter((item): item is { type: "text"; text: string } => item.type === "text")
     .map((item) => item.text)
     .join("\n");
+}
+
+export function isAbortSignalAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
 }
 
 export function buildSummaryMessages(

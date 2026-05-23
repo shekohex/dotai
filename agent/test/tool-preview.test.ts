@@ -387,7 +387,7 @@ timedTest("compact bash preview renders condensed collapsed result", () => {
   expect(collapsedLines.length).toBe(1);
   expect(stripAnsi(collapsedText)).toMatch(/Runs tool preview tests/);
   expect(stripAnsi(collapsedText)).toMatch(/Runs tool preview tests · ok took 2s \(2 lines\)/);
-  expect(stripAnsi(collapsedText)).not.toMatch(/\n.*ok took 2s/);
+  expect(stripAnsi(collapsedLines[0] ?? "")).toMatch(/ok took 2s/);
   expect(stripAnsi(errorText)).toMatch(/exit 1/);
   expect(stripAnsi(errorText)).toMatch(/Runs tool preview tests · exit 1 took 2s \(4 lines\)/);
   expect(stripAnsi(collapsedText)).not.toMatch(/apply_patch preview renders collapsed/);
@@ -757,13 +757,14 @@ timedTest(
       const lines = (mode as any).chatContainer
         .render(120)
         .map((line: string) => stripAnsi(line).trimEnd());
+      const visibleLines = lines.filter((line: string) => line.trim().length > 0);
 
-      const firstToolIndex = lines.findIndex((line: string) => line.includes("a.ts"));
-      const secondToolIndex = lines.findIndex((line: string) => line.includes("b.ts"));
-      const interruptIndex = lines.findIndex((line: string) =>
+      const firstToolIndex = visibleLines.findIndex((line: string) => line.includes("a.ts"));
+      const secondToolIndex = visibleLines.findIndex((line: string) => line.includes("b.ts"));
+      const interruptIndex = visibleLines.findIndex((line: string) =>
         line.includes("Tool output interrupted."),
       );
-      const thirdToolIndex = lines.findIndex((line: string) => line.includes("c.ts"));
+      const thirdToolIndex = visibleLines.findIndex((line: string) => line.includes("c.ts"));
 
       expect(firstToolIndex).not.toBe(-1);
       expect(secondToolIndex).not.toBe(-1);

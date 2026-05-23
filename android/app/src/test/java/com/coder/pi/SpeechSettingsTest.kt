@@ -11,10 +11,9 @@ class SpeechSettingsTest {
     fun defaultsUseRealtimeTranscriptionAndVisibleContext() {
         val values = SpeechSettingsValues()
 
-        assertTrue(values.realtimeTranscriptionEnabled)
         assertFalse(values.enhancementEnabled)
+        assertFalse(values.autoSubmitAfterEnhancement)
         assertTrue(values.includeVisibleTerminalContext)
-        assertTrue(values.soundFeedbackEnabled)
         assertEquals(2, values.vadSensitivity)
         assertEquals("Improve me", values.resolvedPrompt("Improve me"))
     }

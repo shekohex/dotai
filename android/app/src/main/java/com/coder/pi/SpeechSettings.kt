@@ -13,12 +13,10 @@ import java.security.GeneralSecurityException
 import java.security.MessageDigest
 
 data class SpeechSettingsValues(
-    val realtimeTranscriptionEnabled: Boolean = true,
     val enhancementEnabled: Boolean = false,
+    val autoSubmitAfterEnhancement: Boolean = false,
     val includeVisibleTerminalContext: Boolean = true,
     val vadSensitivity: Int = 2,
-    val soundFeedbackEnabled: Boolean = true,
-    val soundFeedbackSoundId: String = TerminalNotificationSounds.defaultSoundId,
     val promptOverride: String = "",
     val enhancementProvider: String = SpeechEnhancementProvider.OpenAiCompatible.id,
     val enhancementBaseUrl: String = defaultOpenAiCompatibleEndpoints(),
@@ -44,12 +42,10 @@ object SpeechSettingsStore {
             encodeDefaults = true
         }
     private const val speechProvidersKey = "speech.providers"
-    private const val realtimeTranscriptionEnabledKey = "speech.realtime_transcription_enabled"
     private const val enhancementKey = "speech.enhancement_enabled"
+    private const val autoSubmitAfterEnhancementKey = "speech.auto_submit_after_enhancement"
     private const val includeContextKey = "speech.include_visible_terminal_context"
     private const val vadSensitivityKey = "speech.vad_sensitivity"
-    private const val soundFeedbackEnabledKey = "speech.sound_feedback_enabled"
-    private const val soundFeedbackSoundKey = "speech.sound_feedback_sound"
     private const val promptOverrideKey = "speech.prompt_override"
     private const val enhancementProviderKey = "speech.enhancement_provider"
     private const val enhancementBaseUrlKey = "speech.enhancement_base_url"
@@ -65,17 +61,14 @@ object SpeechSettingsStore {
     private const val customVocabularyKey = "speech.custom_vocabulary"
     private const val securePreferencesName = "speech_secure"
     private const val enhancementApiKeyKey = "speech.enhancement_api_key"
-    private const val realtimeTranscriptionApiKeyKey = "speech.realtime_transcription_api_key"
 
     fun values(context: Context): SpeechSettingsValues {
         val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
         return SpeechSettingsValues(
-            realtimeTranscriptionEnabled = preferences.getBoolean(realtimeTranscriptionEnabledKey, true),
             enhancementEnabled = preferences.getBoolean(enhancementKey, false),
+            autoSubmitAfterEnhancement = preferences.getBoolean(autoSubmitAfterEnhancementKey, false),
             includeVisibleTerminalContext = preferences.getBoolean(includeContextKey, true),
             vadSensitivity = preferences.getInt(vadSensitivityKey, 2).coerceIn(0, 4),
-            soundFeedbackEnabled = preferences.getBoolean(soundFeedbackEnabledKey, true),
-            soundFeedbackSoundId = TerminalNotificationSounds.option(preferences.getString(soundFeedbackSoundKey, TerminalNotificationSounds.defaultSoundId).orEmpty()).id,
             promptOverride = preferences.getString(promptOverrideKey, "").orEmpty(),
             enhancementProvider = preferences.getString(enhancementProviderKey, SpeechEnhancementProvider.OpenAiCompatible.id).orEmpty().ifBlank { SpeechEnhancementProvider.OpenAiCompatible.id },
             enhancementBaseUrl = preferences.getString(enhancementBaseUrlKey, defaultOpenAiCompatibleEndpoints()).orEmpty().ifBlank { defaultOpenAiCompatibleEndpoints() },
@@ -101,15 +94,15 @@ object SpeechSettingsStore {
         return preferences
     }
 
-    fun setRealtimeTranscriptionEnabled(
-        context: Context,
-        enabled: Boolean,
-    ) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putBoolean(realtimeTranscriptionEnabledKey, enabled) }
-
     fun setEnhancementEnabled(
         context: Context,
         enabled: Boolean,
     ) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putBoolean(enhancementKey, enabled) }
+
+    fun setAutoSubmitAfterEnhancement(
+        context: Context,
+        enabled: Boolean,
+    ) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putBoolean(autoSubmitAfterEnhancementKey, enabled) }
 
     fun setIncludeVisibleTerminalContext(
         context: Context,
@@ -120,16 +113,6 @@ object SpeechSettingsStore {
         context: Context,
         sensitivity: Int,
     ) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putInt(vadSensitivityKey, sensitivity.coerceIn(0, 4)) }
-
-    fun setSoundFeedbackEnabled(
-        context: Context,
-        enabled: Boolean,
-    ) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putBoolean(soundFeedbackEnabledKey, enabled) }
-
-    fun setSoundFeedbackSoundId(
-        context: Context,
-        soundId: String,
-    ) = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit { putString(soundFeedbackSoundKey, TerminalNotificationSounds.option(soundId).id) }
 
     fun setPromptOverride(
         context: Context,
@@ -235,13 +218,6 @@ object SpeechSettingsStore {
         apiKey: String,
     ) = securePreferences(context).edit { putString(enhancementApiKeyKey, apiKey.trim()) }
 
-    fun realtimeTranscriptionApiKey(context: Context): String = securePreferences(context).getString(realtimeTranscriptionApiKeyKey, "").orEmpty()
-
-    fun setRealtimeTranscriptionApiKey(
-        context: Context,
-        apiKey: String,
-    ) = securePreferences(context).edit { putString(realtimeTranscriptionApiKeyKey, apiKey.trim()) }
-
     fun apiKeyForEndpoint(
         context: Context,
         endpoint: String,
@@ -250,9 +226,7 @@ object SpeechSettingsStore {
             val providerKey = apiKeyForProvider(context, provider.id)
             if (providerKey.isNotBlank()) return providerKey
         }
-        val key = securePreferences(context).getString(endpointApiKeyKey(endpoint), "").orEmpty()
-        if (key.isNotBlank()) return key
-        return if (endpoint in values(context).realtimeTranscriptionBaseUrl.openAiBaseUrlAliases()) realtimeTranscriptionApiKey(context) else enhancementApiKey(context)
+        return enhancementApiKey(context)
     }
 
     fun apiKeyForProvider(
@@ -270,19 +244,6 @@ object SpeechSettingsStore {
         context: Context,
         providerId: String,
     ): Boolean = apiKeyForProvider(context, providerId).isNotBlank()
-
-    fun setApiKeyForEndpoint(
-        context: Context,
-        endpoint: String,
-        apiKey: String,
-    ) = securePreferences(context).edit { putString(endpointApiKeyKey(endpoint), apiKey.trim()) }
-
-    fun hasApiKeyForEndpoint(
-        context: Context,
-        endpoint: String,
-    ): Boolean = apiKeyForEndpoint(context, endpoint).isNotBlank()
-
-    private fun endpointApiKeyKey(endpoint: String): String = "speech.provider_endpoint_api_key." + endpoint.sha256Hex()
 
     private fun providerApiKeyKey(providerId: String): String = "speech.provider_api_key." + providerId.sha256Hex()
 

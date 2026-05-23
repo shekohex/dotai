@@ -15,6 +15,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -26,6 +27,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,15 +65,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -124,6 +132,7 @@ fun ChatInputBar(
     onSubmit: (String) -> Boolean,
     onReturn: () -> Unit,
     onClose: () -> Unit,
+    startDictationRequest: Int = 0,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -136,7 +145,7 @@ fun ChatInputBar(
         val preferences = SpeechSettingsStore.registerChangeListener(context, listener)
         onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    val speechAudioCapture = remember(context, speechSettings.vadSensitivity, speechSettings.realtimeTranscriptionEnabled) { SpeechAudioCapture(context, speechSettings.toAudioCaptureConfig()) }
+    val speechAudioCapture = remember(context, speechSettings.vadSensitivity) { SpeechAudioCapture(context, speechSettings.toAudioCaptureConfig()) }
     val speechPromptRenderer = remember { SpeechEnhancementPromptRenderer() }
     val speechSoundFeedback = remember(context) { SpeechSoundFeedback(context) }
     var dictating by remember { mutableStateOf(false) }
@@ -144,6 +153,7 @@ fun ChatInputBar(
     var dictationTranscript by remember { mutableStateOf("") }
     var dictationRawTranscript by remember { mutableStateOf("") }
     var dictationMeter by remember { mutableStateOf(0f) }
+    var dictationPaused by remember { mutableStateOf(false) }
     var dictationWaveformLevels by remember { mutableStateOf(List(15) { 0f }) }
     var finalTranscriptionJob by remember { mutableStateOf<Job?>(null) }
     var enhancementJob by remember { mutableStateOf<Job?>(null) }
@@ -152,6 +162,7 @@ fun ChatInputBar(
     var dictationStartedAt by remember { mutableStateOf(0L) }
     var firstPartialAt by remember { mutableStateOf<Long?>(null) }
     var realtimeTranscriptionSession by remember { mutableStateOf<RealtimeSpeechTranscriptionSession?>(null) }
+    var realtimeTranscriptionSessionKey by remember { mutableStateOf("") }
     var expandedEditor by remember { mutableStateOf(false) }
     var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
     val attachmentVisible = attachments.isNotEmpty()
@@ -178,9 +189,8 @@ fun ChatInputBar(
         enhancementHapticJob?.cancel()
         enhancementJob = null
         enhancementHapticJob = null
-        realtimeTranscriptionSession?.let { session -> scope.launch { session.close() } }
-        realtimeTranscriptionSession = null
         dictating = false
+        dictationPaused = false
         dictationState = SpeechDictationDisplayState.IDLE
         dictationTranscript = ""
         dictationRawTranscript = ""
@@ -190,7 +200,7 @@ fun ChatInputBar(
     fun acceptDictationTranscript(transcript: String = dictationTranscript) {
         val mergedDraft = mergeSpeechTranscriptIntoDraft(text, transcript)
         if (mergedDraft.isNotBlank()) onTextChanged(mergedDraft)
-        if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playStop()
+        speechSoundFeedback.playStop()
         stopDictationCapture()
         clearDictationSession()
     }
@@ -231,8 +241,22 @@ fun ChatInputBar(
                             dictationTranscript = transcript
                             dictationState = SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT
                         } else {
-                            if (result.failedOpen && result.errorMessage != null) Toast.makeText(context, "Enhancement failed: ${result.errorMessage}", Toast.LENGTH_LONG).show()
-                            acceptDictationTranscript(result.text)
+                            if (result.failedOpen) {
+                                Toast.makeText(context, "Enhancement failed: ${result.errorMessage ?: "Empty response"}", Toast.LENGTH_LONG).show()
+                                dictationTranscript = transcript
+                                dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
+                            } else if (speechSettings.autoSubmitAfterEnhancement) {
+                                val cleanText = result.text.trim()
+                                if (cleanText.isNotBlank() && onSubmit(cleanText)) {
+                                    speechSoundFeedback.playStop()
+                                    stopDictationCapture()
+                                    clearDictationSession()
+                                } else {
+                                    acceptDictationTranscript(result.text)
+                                }
+                            } else {
+                                acceptDictationTranscript(result.text)
+                            }
                         }
                     },
                     onFailure = {
@@ -259,8 +283,6 @@ fun ChatInputBar(
                     return@launch
                 }
                 val transcript = runCatching { realtimeSession.finish() }.getOrDefault("").trim()
-                realtimeSession.close()
-                realtimeTranscriptionSession = null
                 if (sessionId != dictationSessionId) return@launch
                 if (transcript.isBlank()) {
                     val error = realtimeSession.lastError()
@@ -278,12 +300,12 @@ fun ChatInputBar(
         speechAudioCapture.start(
             onFrame = { frame ->
                 if (sessionId != dictationSessionId) return@start
-                realtimeTranscriptionSession?.append(frame.samples, speechAudioCapture.sampleRate)
+                if (!dictationPaused) realtimeTranscriptionSession?.append(frame.samples, speechAudioCapture.sampleRate)
                 scope.launch {
                     val visualMeter = speechWaveformVisualLevel(frame.meter)
-                    dictationMeter = visualMeter
-                    dictationWaveformLevels = dictationWaveformLevels.drop(1) + visualMeter
-                    if (frame.speechDetected && dictationState == SpeechDictationDisplayState.RECORDING_EMPTY) dictationState = SpeechDictationDisplayState.RECORDING_WITH_SPEECH
+                    dictationMeter = if (dictationPaused) 0f else visualMeter
+                    dictationWaveformLevels = dictationWaveformLevels.drop(1) + if (dictationPaused) 0f else visualMeter
+                    if (!dictationPaused && frame.speechDetected && dictationState == SpeechDictationDisplayState.RECORDING_EMPTY) dictationState = SpeechDictationDisplayState.RECORDING_WITH_SPEECH
                 }
             },
             onFailure = { failure ->
@@ -296,7 +318,7 @@ fun ChatInputBar(
                             is SpeechAudioCaptureFailure.ReadFailed -> "Microphone capture failed."
                         }
                     dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
-                    if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playFailure()
+                    speechSoundFeedback.playFailure()
                     stopDictationCapture()
                 }
             },
@@ -304,22 +326,15 @@ fun ChatInputBar(
     }
 
     fun startDictationCapture() {
-        if (!speechSettings.realtimeTranscriptionEnabled) {
-            dictating = true
-            dictationTranscript = "Realtime transcription is disabled."
-            dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
-            if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playFailure()
-            return
-        }
         val transcriptionEndpoints = SpeechSettingsStore.providers(context).endpointsForSelected(OpenAiProviderTask.Transcription, speechSettings.realtimeTranscriptionProviderId).ifEmpty { speechSettings.realtimeTranscriptionBaseUrl.openAiBaseUrlAliases() }
         if (transcriptionEndpoints.isEmpty()) {
             dictating = true
             dictationTranscript = "Configure realtime transcription endpoint first."
             dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
-            if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playFailure()
+            speechSoundFeedback.playFailure()
             return
         }
-        if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playStart()
+        speechSoundFeedback.playStart()
         dictationSessionId++
         dictationStartedAt = SystemClock.elapsedRealtime()
         firstPartialAt = null
@@ -327,6 +342,7 @@ fun ChatInputBar(
         dictationTranscript = ""
         dictationRawTranscript = ""
         dictationMeter = 0f
+        dictationPaused = false
         finalTranscriptionJob?.cancel()
         finalTranscriptionJob = null
         enhancementJob?.cancel()
@@ -336,29 +352,36 @@ fun ChatInputBar(
         val sessionId = dictationSessionId
         val endpoint = OpenAiProviderEndpointResolver.activeBaseUrl(OpenAiProviderTask.Transcription, transcriptionEndpoints.joinToString("\n"))
         val apiKey = SpeechSettingsStore.apiKeyForEndpoint(context, endpoint)
+        val sessionKey = "$endpoint\n$apiKey"
+        val existingSession = realtimeTranscriptionSession
         val session =
-            RealtimeSpeechTranscriptionSession(speechSettings, apiKey) { transcript ->
-                scope.launch {
-                    if (sessionId == dictationSessionId && transcript.isNotBlank()) {
-                        if (firstPartialAt == null) firstPartialAt = SystemClock.elapsedRealtime()
-                        dictationTranscript = transcript
+            if (existingSession != null && realtimeTranscriptionSessionKey == sessionKey) {
+                existingSession
+            } else {
+                existingSession?.let { oldSession -> scope.launch { oldSession.close() } }
+                RealtimeSpeechTranscriptionSession(speechSettings, apiKey) { transcript ->
+                    scope.launch {
+                        if (dictating && transcript.isNotBlank()) {
+                            if (firstPartialAt == null) firstPartialAt = SystemClock.elapsedRealtime()
+                            dictationTranscript = transcript
+                        }
                     }
+                }.also {
+                    realtimeTranscriptionSession = it
+                    realtimeTranscriptionSessionKey = sessionKey
                 }
             }
+        session.beginUtterance()
         scope.launch {
             runCatching { session.start() }
                 .onSuccess {
-                    if (sessionId != dictationSessionId) {
-                        session.close()
-                        return@onSuccess
-                    }
-                    realtimeTranscriptionSession = session
+                    if (sessionId != dictationSessionId) return@onSuccess
                     startAudioCapture(sessionId)
                 }.onFailure {
                     if (sessionId == dictationSessionId) {
                         dictationTranscript = "Realtime transcription unavailable."
                         dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
-                        if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playFailure()
+                        speechSoundFeedback.playFailure()
                         stopDictationCapture()
                     }
                 }
@@ -374,12 +397,21 @@ fun ChatInputBar(
                 dictating = true
             }
         }
+
+    fun requestDictationCapture() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startDictationCapture() else audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+    LaunchedEffect(startDictationRequest) {
+        if (startDictationRequest > 0 && !dictating) requestDictationCapture()
+    }
     DisposableEffect(speechAudioCapture) {
         onDispose {
             finalTranscriptionJob?.cancel()
             enhancementJob?.cancel()
             enhancementHapticJob?.cancel()
             realtimeTranscriptionSession?.let { scope.launch { it.close() } }
+            realtimeTranscriptionSession = null
+            realtimeTranscriptionSessionKey = ""
             speechAudioCapture.stopAsync()
         }
     }
@@ -390,6 +422,8 @@ fun ChatInputBar(
             transcript = dictationTranscript,
             meter = dictationMeter,
             waveformLevels = dictationWaveformLevels,
+            recordingStartedAt = dictationStartedAt,
+            paused = dictationPaused,
             modifier = modifier,
             onAction = { action ->
                 val nextState = SpeechDictationUxContract.transition(dictationState, action)
@@ -403,17 +437,26 @@ fun ChatInputBar(
                     SpeechDictationAction.SEND_RAW -> acceptDictationTranscript(dictationRawTranscript.ifBlank { dictationTranscript })
                     SpeechDictationAction.SEND_ENHANCED -> acceptDictationTranscript(dictationTranscript)
                     SpeechDictationAction.CANCEL, SpeechDictationAction.RESET -> {
-                        if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playCancel()
+                        speechSoundFeedback.playCancel()
                         stopDictationCapture()
                         clearDictationSession()
                     }
                     SpeechDictationAction.STOP_RECORDING -> {
+                        dictationPaused = false
                         dictationState = SpeechDictationDisplayState.TRANSCRIBING
-                        if (speechSettings.soundFeedbackEnabled) speechSoundFeedback.playStop()
+                        speechSoundFeedback.playStop()
                         scope.launch {
                             stopDictationCaptureAndDrainFrames()
                             transcribeDictationAudio()
                         }
+                    }
+                    SpeechDictationAction.PAUSE_RECORDING -> {
+                        dictationPaused = true
+                        speechSoundFeedback.playStop()
+                    }
+                    SpeechDictationAction.RESUME_RECORDING -> {
+                        dictationPaused = false
+                        speechSoundFeedback.playStart()
                     }
                     else -> Unit
                 }
@@ -444,7 +487,7 @@ fun ChatInputBar(
             canClear = text.isNotBlank() || attachments.isNotEmpty(),
             onMic = {
                 hapticClick()
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startDictationCapture() else audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                requestDictationCapture()
             },
             sendIcon = if (text.isBlank()) R.drawable.ic_feather_corner_down_left else R.drawable.ic_feather_arrow_up,
             sendAccent = text.isNotBlank(),
@@ -479,7 +522,7 @@ private fun Context.currentClipboardText(): String =
 fun speechEnhancementHapticRepeatDelayMillis(patternId: String): Long = TerminalHapticPatterns.option(patternId).timings.sum() + 900L
 
 @Suppress("DEPRECATION")
-private fun Context.performSpeechEnhancementHaptic(patternId: String) {
+internal fun Context.performSpeechEnhancementHaptic(patternId: String) {
     val enabled = getSharedPreferences("app", Context.MODE_PRIVATE).getBoolean("haptic_feedback", true)
     if (!enabled) return
     val pattern = TerminalHapticPatterns.option(patternId)
@@ -873,6 +916,8 @@ fun DictationInputSurface(
     modifier: Modifier = Modifier,
     meter: Float = 0f,
     waveformLevels: List<Float> = List(15) { 0f },
+    recordingStartedAt: Long = 0L,
+    paused: Boolean = false,
     onAction: (SpeechDictationAction) -> Unit,
 ) {
     val contract = SpeechDictationUxContract.contractFor(displayState)
@@ -882,50 +927,294 @@ fun DictationInputSurface(
     val processingState = displayState in setOf(SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationDisplayState.ENHANCING_COLLAPSED)
     val showTranscript = hasTranscript && !processingState
     val visibleActions = SpeechDictationUxContract.visibleActionsFor(displayState)
+    val recording = displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)
+    var dragX by remember { mutableStateOf(0f) }
+    var dragY by remember { mutableStateOf(0f) }
+    val swipeThreshold = with(androidx.compose.ui.platform.LocalDensity.current) { 86.dp.toPx() }
+    val dragModifier =
+        if (recording) {
+            Modifier.pointerInput(displayState) {
+                detectDragGestures(
+                    onDragStart = {
+                        dragX = 0f
+                        dragY = 0f
+                    },
+                    onDragEnd = {
+                        val cancelProgress = (-dragX / swipeThreshold).coerceIn(0f, 1f)
+                        val finishProgress = (-dragY / swipeThreshold).coerceIn(0f, 1f)
+                        when {
+                            cancelProgress >= 1f && cancelProgress >= finishProgress -> onAction(SpeechDictationAction.CANCEL)
+                            finishProgress >= 1f -> onAction(SpeechDictationAction.STOP_RECORDING)
+                        }
+                        dragX = 0f
+                        dragY = 0f
+                    },
+                    onDragCancel = {
+                        dragX = 0f
+                        dragY = 0f
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        dragX += dragAmount.x
+                        dragY += dragAmount.y
+                    },
+                )
+            }
+        } else {
+            Modifier
+        }
+    val cancelProgress = (-dragX / swipeThreshold).coerceIn(0f, 1f)
+    val finishProgress = (-dragY / swipeThreshold).coerceIn(0f, 1f)
     Column(
         modifier
             .fillMaxWidth()
             .imePadding()
             .wrapContentHeight()
-            .padding(horizontal = 28.dp, vertical = 12.dp),
+            .padding(horizontal = 8.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(
-            Modifier
-                .width(if (showTranscript) 300.dp else 184.dp)
-                .clip(RoundedCornerShape(if (showTranscript) 14.dp else 20.dp))
-                .background(tokens.surfaceHigh)
-                .border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(if (showTranscript) 14.dp else 20.dp))
-                .animateContentSize(),
-        ) {
-            if (showTranscript) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(74.dp)
-                        .padding(horizontal = 14.dp, vertical = 9.dp)
-                        .verticalScroll(scrollState),
-                ) {
-                    Text(transcript, color = tokens.text.copy(alpha = 0.88f), fontSize = 13.sp, lineHeight = 18.sp)
-                }
-                Box(Modifier.fillMaxWidth().height(0.7.dp).background(tokens.separator.copy(alpha = 0.55f)))
-            }
-            Row(Modifier.fillMaxWidth().height(40.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                DictationMiniSideButton(visibleActions.secondary.firstOrNull { it == SpeechDictationAction.START_ENHANCEMENT || it == SpeechDictationAction.RETRY_ENHANCEMENT }, tokens, onAction)
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    if (processingState) {
-                        DictationProcessingStatus(if (displayState == SpeechDictationDisplayState.TRANSCRIBING) "Transcribing" else "Enhancing", tokens)
-                    } else if (displayState in setOf(SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationDisplayState.RECORDING_WITH_SPEECH)) {
-                        DictationWaveform(active = true, meter = meter, levels = waveformLevels, color = tokens.accent)
-                    } else {
-                        DictationStaticWaveform(tokens)
-                    }
-                }
-                DictationPrimaryAction(visibleActions.primary, tokens, onAction)
+        if (showTranscript) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(tokens.surfaceHigh)
+                    .border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(18.dp))
+                    .height(82.dp)
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .verticalScroll(scrollState),
+            ) {
+                Text(transcript, color = tokens.text.copy(alpha = 0.88f), fontSize = 13.sp, lineHeight = 18.sp)
             }
         }
-        DictationSecondaryActions(visibleActions.secondary.filterNot { it == SpeechDictationAction.START_ENHANCEMENT || it == SpeechDictationAction.RETRY_ENHANCEMENT }, tokens, onAction)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(72.dp)
+                .shadow(8.dp, RoundedCornerShape(36.dp), ambientColor = Color.Black.copy(alpha = 0.16f), spotColor = Color.Black.copy(alpha = 0.16f))
+                .clip(RoundedCornerShape(36.dp))
+                .background(tokens.surfaceHigh)
+                .border(BorderStroke(0.7.dp, tokens.separator), RoundedCornerShape(36.dp))
+                .animateContentSize()
+                .then(dragModifier)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.width(92.dp), contentAlignment = Alignment.CenterStart) {
+                if (recording && cancelProgress > 0.08f) {
+                    DictationTrashProgress(cancelProgress, tokens)
+                } else if (recording) {
+                    RecordingTimerCompact(recordingStartedAt, paused, tokens)
+                } else {
+                    DictationMiniSideButton(visibleActions.secondary.firstOrNull { it == SpeechDictationAction.START_ENHANCEMENT || it == SpeechDictationAction.RETRY_ENHANCEMENT }, tokens, onAction)
+                }
+            }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                when {
+                    recording && cancelProgress > 0.08f -> ShimmerHintText("Swipe to discard", cancelProgress, tokens)
+                    recording && finishProgress > 0.08f -> ShimmerHintText("Release to finish", finishProgress, tokens)
+                    displayState == SpeechDictationDisplayState.TRANSCRIBING -> TranscribingStatus(tokens)
+                    displayState == SpeechDictationDisplayState.ENHANCING_COLLAPSED -> WhimsicalStatus(tokens)
+                    recording && paused -> PausedStatus(recordingStartedAt, tokens)
+                    recording -> DictationWaveform(active = true, meter = meter, levels = waveformLevels.takeLast(5), color = tokens.accent)
+                    else -> DictationStaticWaveform(tokens)
+                }
+            }
+            Row(Modifier.width(74.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                if (recording) {
+                    DictationMiniSideButton(if (paused) SpeechDictationAction.RESUME_RECORDING else SpeechDictationAction.PAUSE_RECORDING, tokens, onAction)
+                } else {
+                    DictationPrimaryAction(visibleActions.primary, tokens, onAction)
+                }
+            }
+        }
+        if (recording) DictationSwipeHints(tokens)
+        DictationSecondaryActions(visibleActions.secondary.filterNot { it == SpeechDictationAction.START_ENHANCEMENT || it == SpeechDictationAction.RETRY_ENHANCEMENT || it == SpeechDictationAction.CANCEL || it == SpeechDictationAction.PAUSE_RECORDING || it == SpeechDictationAction.RESUME_RECORDING }, tokens, onAction)
     }
+}
+
+@Composable
+private fun RecordingTimerCompact(
+    recordingStartedAt: Long,
+    paused: Boolean,
+    tokens: UiTokens,
+) {
+    var now by remember { mutableStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(recordingStartedAt) {
+        while (recordingStartedAt > 0L) {
+            now = SystemClock.elapsedRealtime()
+            delay(200)
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically, modifier = if (paused) Modifier.animateAlphaLoop() else Modifier) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xffff4f5f)))
+        Text(formatDictationElapsed(now - recordingStartedAt), color = Color(0xffff4f5f), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+@Composable
+private fun PausedStatus(
+    recordingStartedAt: Long,
+    tokens: UiTokens,
+) {
+    var now by remember { mutableStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(recordingStartedAt) {
+        while (recordingStartedAt > 0L) {
+            now = SystemClock.elapsedRealtime()
+            delay(250)
+        }
+    }
+    Text(formatDictationElapsed(now - recordingStartedAt), color = Color(0xffffd600), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.animateAlphaLoop())
+}
+
+@Composable
+private fun DictationTrashProgress(
+    progress: Float,
+    tokens: UiTokens,
+) {
+    val scale = 1f + progress.coerceIn(0f, 1f) * 0.28f
+    Icon(
+        painterResource(R.drawable.ic_feather_trash_2),
+        null,
+        tint = Color(0xffff5c7a),
+        modifier =
+            Modifier.size(25.dp).graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+    )
+}
+
+@Composable
+private fun ShimmerHintText(
+    text: String,
+    progress: Float,
+    tokens: UiTokens,
+) {
+    ShimmerText(text, tokens.accent, progress, 13)
+}
+
+@Composable
+private fun TranscribingStatus(tokens: UiTokens) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DictationAsciiSpinner(tokens.accent)
+        ShimmerText("Transcribing...", tokens.accent, 1f, 13)
+    }
+}
+
+@Composable
+private fun WhimsicalStatus(tokens: UiTokens) {
+    val words =
+        remember {
+            listOf(
+                "Polishing",
+                "Refining",
+                "Synthesizing",
+                "De-umm-ing",
+                "Structuring",
+                "Articulating",
+                "Grammarizing",
+                "Decrypting",
+                "Unscrambling",
+                "Enhancing",
+                "Harmonizing",
+                "Orchestrating",
+                "Decoding",
+                "Calibrating",
+                "Clarifying",
+                "Perfecting",
+                "Stylizing",
+                "Distilling",
+                "Untangling",
+                "Crystallizing",
+                "Brewing",
+                "Curating",
+                "Deciphering",
+                "Elevating",
+                "Forging",
+                "Marinating",
+                "Percolating",
+                "Sculpting",
+                "Whispering",
+                "Thinking",
+            )
+        }
+    var word by remember { mutableStateOf(words.random()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(2500)
+            word = words.random()
+        }
+    }
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(word) { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DictationAsciiSpinner(tokens.accent)
+        ShimmerText(word, tokens.accent, 1f, 13)
+    }
+}
+
+@Composable
+private fun DictationAsciiSpinner(color: Color) {
+    val glyphs = remember { listOf("·", "✻", "✽", "✶", "✳", "✢") }
+    var index by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(200)
+            index = (index + 1) % glyphs.size
+        }
+    }
+    Text(glyphs[index], color = color, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+}
+
+@Composable
+private fun ShimmerText(
+    text: String,
+    color: Color,
+    progress: Float,
+    fontSizeSp: Int,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "DictationShimmer")
+    val shimmerOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(1000, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+        label = "DictationShimmerOffset",
+    )
+    val brush =
+        Brush.linearGradient(
+            colors = listOf(color.copy(alpha = 0.55f), color, color.copy(alpha = 0.55f)),
+            start = Offset(shimmerOffset * 500f - 100f, 0f),
+            end = Offset(shimmerOffset * 500f + 100f, 0f),
+        )
+    Text(text, style = TextStyle(brush = brush, fontSize = fontSizeSp.sp, fontWeight = FontWeight.Bold), maxLines = 1, modifier = Modifier.graphicsLayer { alpha = 0.7f + progress.coerceIn(0f, 1f) * 0.3f })
+}
+
+private fun Modifier.animateAlphaLoop(): Modifier =
+    composed {
+        val infiniteTransition = rememberInfiniteTransition(label = "DictationAlphaLoop")
+        val alpha by infiniteTransition.animateFloat(
+            initialValue = 0.3f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(animation = tween(800, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
+            label = "DictationAlpha",
+        )
+        graphicsLayer { this.alpha = alpha }
+    }
+
+@Composable
+private fun DictationSwipeHints(tokens: UiTokens) {
+    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("← cancel", color = tokens.secondary.copy(alpha = 0.72f), fontSize = 11.sp)
+        Text("↑ finish", color = tokens.secondary.copy(alpha = 0.72f), fontSize = 11.sp)
+    }
+}
+
+private fun formatDictationElapsed(elapsedMillis: Long): String {
+    val safeMillis = elapsedMillis.coerceAtLeast(0L)
+    val totalSeconds = safeMillis / 1_000L
+    return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
 }
 
 @Composable
@@ -1062,6 +1351,8 @@ private fun SpeechDictationAction.secondaryIcon(): Int =
         SpeechDictationAction.RETRY_ENHANCEMENT -> R.drawable.ic_feather_rotate_ccw
         SpeechDictationAction.SEND_RAW -> R.drawable.ic_feather_arrow_up
         SpeechDictationAction.CANCEL -> R.drawable.ic_feather_x
+        SpeechDictationAction.PAUSE_RECORDING -> R.drawable.ic_feather_pause
+        SpeechDictationAction.RESUME_RECORDING -> R.drawable.ic_feather_play
         else -> R.drawable.ic_feather_circle
     }
 

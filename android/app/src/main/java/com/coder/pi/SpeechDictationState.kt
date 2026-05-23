@@ -30,6 +30,8 @@ enum class SpeechDictationAction {
     START_RECORDING,
     DETECT_SPEECH,
     STOP_RECORDING,
+    PAUSE_RECORDING,
+    RESUME_RECORDING,
     COMPLETE_TRANSCRIPTION,
     COMPLETE_NO_SPEECH,
     START_ENHANCEMENT,
@@ -95,8 +97,8 @@ object SpeechDictationUxContract {
     private val visibleActions =
         mapOf(
             SpeechDictationDisplayState.IDLE to SpeechDictationVisibleActions(null, emptyList()),
-            SpeechDictationDisplayState.RECORDING_EMPTY to SpeechDictationVisibleActions(SpeechDictationAction.STOP_RECORDING, listOf(SpeechDictationAction.CANCEL)),
-            SpeechDictationDisplayState.RECORDING_WITH_SPEECH to SpeechDictationVisibleActions(SpeechDictationAction.STOP_RECORDING, listOf(SpeechDictationAction.CANCEL)),
+            SpeechDictationDisplayState.RECORDING_EMPTY to SpeechDictationVisibleActions(SpeechDictationAction.STOP_RECORDING, listOf(SpeechDictationAction.PAUSE_RECORDING)),
+            SpeechDictationDisplayState.RECORDING_WITH_SPEECH to SpeechDictationVisibleActions(SpeechDictationAction.STOP_RECORDING, listOf(SpeechDictationAction.PAUSE_RECORDING)),
             SpeechDictationDisplayState.TRANSCRIBING to SpeechDictationVisibleActions(null, listOf(SpeechDictationAction.CANCEL)),
             SpeechDictationDisplayState.TRANSCRIPT_READY to SpeechDictationVisibleActions(SpeechDictationAction.SEND_RAW, listOf(SpeechDictationAction.START_ENHANCEMENT, SpeechDictationAction.CANCEL)),
             SpeechDictationDisplayState.ENHANCING_COLLAPSED to SpeechDictationVisibleActions(null, listOf(SpeechDictationAction.SEND_RAW, SpeechDictationAction.CANCEL)),
@@ -111,8 +113,8 @@ object SpeechDictationUxContract {
     private val transitions =
         mapOf(
             SpeechDictationDisplayState.IDLE to mapOf(SpeechDictationAction.REQUEST_PERMISSION to SpeechDictationDisplayState.IDLE, SpeechDictationAction.START_RECORDING to SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-            SpeechDictationDisplayState.RECORDING_EMPTY to mapOf(SpeechDictationAction.DETECT_SPEECH to SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationAction.STOP_RECORDING to SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
-            SpeechDictationDisplayState.RECORDING_WITH_SPEECH to mapOf(SpeechDictationAction.STOP_RECORDING to SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.RECORDING_EMPTY to mapOf(SpeechDictationAction.DETECT_SPEECH to SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationAction.STOP_RECORDING to SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationAction.PAUSE_RECORDING to SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationAction.RESUME_RECORDING to SpeechDictationDisplayState.RECORDING_EMPTY, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
+            SpeechDictationDisplayState.RECORDING_WITH_SPEECH to mapOf(SpeechDictationAction.STOP_RECORDING to SpeechDictationDisplayState.TRANSCRIBING, SpeechDictationAction.PAUSE_RECORDING to SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationAction.RESUME_RECORDING to SpeechDictationDisplayState.RECORDING_WITH_SPEECH, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
             SpeechDictationDisplayState.TRANSCRIBING to mapOf(SpeechDictationAction.COMPLETE_TRANSCRIPTION to SpeechDictationDisplayState.TRANSCRIPT_READY, SpeechDictationAction.COMPLETE_NO_SPEECH to SpeechDictationDisplayState.NO_SPEECH, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
             SpeechDictationDisplayState.TRANSCRIPT_READY to mapOf(SpeechDictationAction.START_ENHANCEMENT to SpeechDictationDisplayState.ENHANCING_COLLAPSED, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),
             SpeechDictationDisplayState.ENHANCING_COLLAPSED to mapOf(SpeechDictationAction.TIME_OUT_ENHANCEMENT to SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT, SpeechDictationAction.FAIL_ENHANCEMENT to SpeechDictationDisplayState.ENHANCEMENT_FAILED, SpeechDictationAction.COMPLETE_ENHANCEMENT to SpeechDictationDisplayState.ENHANCED_READY, SpeechDictationAction.SEND_RAW to SpeechDictationDisplayState.SUBMITTED, SpeechDictationAction.CANCEL to SpeechDictationDisplayState.CANCELED),

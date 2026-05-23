@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+const subagentMock = vi.hoisted(() => ({
+  isChildSession: vi.fn(() => false),
+  readChildState: vi.fn(() => undefined),
+}));
+
 vi.mock("../src/subagent-sdk/index.js", () => ({
-  isChildSession: () => false,
-  readChildState: () => undefined,
+  isChildSession: subagentMock.isChildSession,
+  readChildState: subagentMock.readChildState,
 }));
 
 import piOscExtension, { piOscRuntime } from "../src/extensions/pi-osc/extension.js";
@@ -55,6 +60,26 @@ const createContext = () => ({
   },
 });
 
+const setupSubagentSession = () => {
+  subagentMock.readChildState.mockReturnValue({
+    sessionId: "session-1",
+    parentSessionId: "parent-session",
+    name: "child",
+    prompt: "work",
+    autoExit: false,
+    handoff: false,
+    tools: [],
+    startedAt: 1,
+  });
+  subagentMock.isChildSession.mockReturnValue(true);
+};
+
+const expectNoAnimatedTitles = (ctx: ReturnType<typeof createContext>) => {
+  for (const [title] of ctx.ui.setTitle.mock.calls) {
+    expect(title).toBe("π - workspace");
+  }
+};
+
 const decodeSequence = (sequence: string) => {
   const frame = sequence.startsWith("\u001bPtmux;")
     ? sequence.slice("\u001bPtmux;".length, -2).replaceAll("\u001b\u001b", "\u001b")
@@ -79,6 +104,10 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  subagentMock.isChildSession.mockReset();
+  subagentMock.isChildSession.mockReturnValue(false);
+  subagentMock.readChildState.mockReset();
+  subagentMock.readChildState.mockReturnValue(undefined);
   if (originalTmux === undefined) delete process.env.TMUX;
   else process.env.TMUX = originalTmux;
   if (originalSshConnection === undefined) delete process.env.SSH_CONNECTION;
@@ -87,6 +116,123 @@ afterEach(() => {
   else process.env.SSH_CLIENT = originalSshClient;
   if (originalSshTty === undefined) delete process.env.SSH_TTY;
   else process.env.SSH_TTY = originalSshTty;
+});
+
+test("subagent sessions do not animate terminal title", () => {
+  vi.useFakeTimers();
+  const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+  setupSubagentSession();
+  const pi = createPi();
+  vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  piOscExtension(pi);
+  const ctx = createContext();
+
+  pi.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+  pi.emit("agent_start", { type: "agent_start" }, ctx);
+  pi.emit(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "tool-read",
+      toolName: "read",
+      input: { file_path: "/workspace/src/foo.ts" },
+    },
+    ctx,
+  );
+  vi.advanceTimersByTime(100);
+  pi.emit("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+  expect(ctx.ui.setTitle).toHaveBeenCalledWith("π - workspace");
+  expectNoAnimatedTitles(ctx);
+  expect(setIntervalSpy).not.toHaveBeenCalled();
+});
+
+test("subagent message updates do not animate terminal title", () => {
+  setupSubagentSession();
+  const pi = createPi();
+  vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1_000);
+  piOscExtension(pi);
+  const ctx = createContext();
+
+  pi.emit(
+    "message_update",
+    {
+      type: "message_update",
+      message: {},
+      assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "a", partial: {} },
+    },
+    ctx,
+  );
+  pi.emit(
+    "message_update",
+    {
+      type: "message_update",
+      message: {},
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "b", partial: {} },
+    },
+    ctx,
+  );
+  pi.emit(
+    "message_update",
+    {
+      type: "message_update",
+      message: {},
+      assistantMessageEvent: { type: "toolcall_delta", contentIndex: 0, delta: "{}", partial: {} },
+    },
+    ctx,
+  );
+
+  expect(ctx.ui.setTitle).toHaveBeenCalledWith("π - workspace");
+  expectNoAnimatedTitles(ctx);
+});
+
+test("subagent compact lifecycle keeps base title without animation", () => {
+  setupSubagentSession();
+  const pi = createPi();
+  vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  piOscExtension(pi);
+  const ctx = createContext();
+
+  pi.emit("session_before_compact", { type: "session_before_compact" }, ctx);
+  pi.emit("session_compact", { type: "session_compact", fromExtension: false }, ctx);
+
+  expect(ctx.ui.setTitle).toHaveBeenCalledWith("π - workspace");
+  expectNoAnimatedTitles(ctx);
+});
+
+test("subagent tool completion reset keeps base title without animation", () => {
+  setupSubagentSession();
+  const pi = createPi();
+  vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  piOscExtension(pi);
+  const ctx = createContext();
+
+  pi.emit("agent_start", { type: "agent_start" }, ctx);
+  pi.emit(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "tool-1",
+      toolName: "edit",
+      input: { file_path: "/workspace/src/foo.ts" },
+    },
+    ctx,
+  );
+  pi.emit(
+    "tool_execution_end",
+    {
+      type: "tool_execution_end",
+      toolCallId: "tool-1",
+      toolName: "edit",
+      result: "ok",
+      isError: false,
+    },
+    ctx,
+  );
+
+  expect(ctx.ui.setTitle).toHaveBeenCalledWith("π - workspace");
+  expectNoAnimatedTitles(ctx);
 });
 
 test("session_start emits hello and session events to stdout", () => {

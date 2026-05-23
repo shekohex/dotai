@@ -1,5 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { basename } from "node:path";
+import { isChildSession } from "../../subagent-sdk/index.js";
+import type { ChildBootstrapState } from "../../subagent-sdk/types.js";
 import type { ToolTitleActivity } from "./tool-presentations.js";
 
 const TITLE_SPINNER_INTERVAL_MS = 100;
@@ -36,9 +38,14 @@ const titleBase = (pi: ExtensionAPI, ctx: ExtensionContext): string => {
     : `π - ${sessionName} - ${cwd}`;
 };
 
-const setTitle = (pi: ExtensionAPI, ctx: ExtensionContext, prefix?: string): boolean => {
+const setTitle = (
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  childState: ChildBootstrapState | undefined,
+  prefix?: string,
+): boolean => {
   try {
-    if (!ctx.hasUI) return false;
+    if (!ctx.hasUI || (prefix !== undefined && isChildSession(childState, ctx))) return false;
     ctx.ui.setTitle(prefix === undefined ? titleBase(pi, ctx) : `${prefix} ${titleBase(pi, ctx)}`);
     return true;
   } catch {
@@ -46,7 +53,10 @@ const setTitle = (pi: ExtensionAPI, ctx: ExtensionContext, prefix?: string): boo
   }
 };
 
-export const createTitleSpinnerController = (pi: ExtensionAPI) => {
+export const createTitleSpinnerController = (
+  pi: ExtensionAPI,
+  childState?: ChildBootstrapState,
+) => {
   let timer: ReturnType<typeof setInterval> | undefined;
   let frameIndex = 0;
   let activity: TitleActivity = "running";
@@ -60,13 +70,13 @@ export const createTitleSpinnerController = (pi: ExtensionAPI) => {
   const stop = (ctx: ExtensionContext): void => {
     clearTimer();
     frameIndex = 0;
-    setTitle(pi, ctx);
+    setTitle(pi, ctx, childState);
   };
 
   const render = (ctx: ExtensionContext): void => {
     const profile = TITLE_SPINNER_PROFILES[activity];
     const frame = profile.frames[frameIndex % profile.frames.length];
-    if (!setTitle(pi, ctx, frame)) {
+    if (!setTitle(pi, ctx, childState, frame)) {
       clearTimer();
       return;
     }
@@ -75,6 +85,7 @@ export const createTitleSpinnerController = (pi: ExtensionAPI) => {
 
   const start = (ctx: ExtensionContext, nextActivity: TitleActivity): void => {
     stop(ctx);
+    if (isChildSession(childState, ctx)) return;
     activity = nextActivity;
     if (!ctx.hasUI) return;
     render(ctx);

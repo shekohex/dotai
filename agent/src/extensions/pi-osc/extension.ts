@@ -314,7 +314,7 @@ export default function piOscExtension(pi: ExtensionAPI): void {
   let goalProgressActive = false;
   let lastThinkingEmittedAt = 0;
   let abortAlertEmitted = false;
-  const titleSpinner = createTitleSpinnerController(pi);
+  const titleSpinner = createTitleSpinnerController(pi, childState);
   const notifiedInterviewUrls = new Set<string>();
   const activeToolArgs = new Map<string, unknown>();
   const emit = (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload): void => {

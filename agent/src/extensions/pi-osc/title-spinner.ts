@@ -89,7 +89,7 @@ const setTitle = (
   prefix?: string,
 ): boolean => {
   try {
-    if (!ctx.hasUI || (prefix !== undefined && isChildSession(childState, ctx))) return false;
+    if (!ctx.hasUI || isChildSession(childState, ctx)) return false;
     ctx.ui.setTitle(prefix === undefined ? titleBase(pi, ctx) : `${prefix} ${titleBase(pi, ctx)}`);
     return true;
   } catch {

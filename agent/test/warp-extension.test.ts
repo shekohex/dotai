@@ -13,6 +13,7 @@ import type { WarpCliAgentPayload } from "../src/extensions/warp/types.js";
 type Handler = (event: Record<string, unknown>, ctx: ReturnType<typeof createContext>) => unknown;
 
 const originalTmux = process.env.TMUX;
+const originalChildState = process.env.PI_SUBAGENT_CHILD_STATE;
 const createWarpRuntime = (protocolVersion: string | undefined) => {
   const payloads: WarpCliAgentPayload[] = [];
   const runtime: WarpExtensionRuntime = {
@@ -77,6 +78,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   if (originalTmux === undefined) delete process.env.TMUX;
   else process.env.TMUX = originalTmux;
+  if (originalChildState === undefined) delete process.env.PI_SUBAGENT_CHILD_STATE;
+  else process.env.PI_SUBAGENT_CHILD_STATE = originalChildState;
 });
 
 test("negotiateWarpCliAgentProtocolVersion clamps to supported version", () => {
@@ -166,6 +169,37 @@ test("warp extension maps Pi events to Warp events", () => {
     summary:
       "Goal blocked: Need user feedback on whether Warp renders question_asked notifications for blocked goals before continuing.",
   });
+});
+
+test("warp extension is silent for subagent sessions", () => {
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "session-1",
+    parentSessionId: "parent-session",
+    name: "worker",
+    prompt: "do work",
+    autoExit: true,
+    handoff: false,
+    tools: [],
+    startedAt: 1,
+  });
+  const { runtime, payloads } = createWarpRuntime("1");
+  const pi = createPi();
+  createWarpExtension(runtime)(pi as unknown as ExtensionAPI);
+
+  pi.emit("session_start", {});
+  pi.emit("input", { text: "hello warp" });
+  pi.emit("agent_end", { messages: [{ role: "assistant", content: "done" }] });
+  pi.emit("tool_execution_end", { toolName: "bash" });
+  pi.emit("tool_execution_update", { toolName: "interview" });
+  pi.events.emit("goal:blocked", {
+    sessionId: "session-1",
+    cwd: "/workspace/project",
+    goalId: "goal-1",
+    objective: "Ship Warp integration",
+    blockedReason: "Need user feedback.",
+  });
+
+  expect(payloads).toEqual([]);
 });
 
 test("warp extension wraps OSC for tmux fallback", () => {

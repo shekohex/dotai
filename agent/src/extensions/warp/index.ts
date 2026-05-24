@@ -8,6 +8,7 @@ import {
 } from "./encoder.js";
 import { warpRuntime, writeWarpCliAgentSequence } from "./runtime.js";
 import { extractLastAssistantText, formatNotification } from "../terminal-notify.js";
+import { isChildSession, readChildState } from "../../subagent-sdk/index.js";
 import type {
   WarpCliAgentEvent,
   WarpCliAgentPayload,
@@ -51,36 +52,42 @@ const emitWarpEvent = (
 
 export const createWarpExtension = (runtime: WarpExtensionRuntime = defaultWarpExtensionRuntime) =>
   function warpExtension(pi: ExtensionAPI): void {
+    const childState = readChildState();
     let currentContext: ExtensionContext | null = null;
 
-    pi.on("session_start", (_event, ctx) => {
+    const emitIfParentSession = (
+      event: WarpCliAgentEvent,
+      ctx: ExtensionContext,
+      options: WarpCliAgentPayloadOptions = {},
+    ): void => {
+      if (isChildSession(childState, ctx)) return;
       currentContext = ctx;
-      emitWarpEvent(runtime, "session_start", ctx, { plugin_version: "builtin" });
+      emitWarpEvent(runtime, event, ctx, options);
+    };
+
+    pi.on("session_start", (_event, ctx) => {
+      emitIfParentSession("session_start", ctx, { plugin_version: "builtin" });
     });
 
     pi.on("input", (event, ctx) => {
-      currentContext = ctx;
-      emitWarpEvent(runtime, "prompt_submit", ctx, { query: truncateWarpText(event.text) });
+      emitIfParentSession("prompt_submit", ctx, { query: truncateWarpText(event.text) });
       return { action: "continue" };
     });
 
     pi.on("agent_end", (event, ctx) => {
-      currentContext = ctx;
-      emitWarpEvent(runtime, "stop", ctx, {
+      emitIfParentSession("stop", ctx, {
         query: pi.getSessionName() ?? undefined,
         response: formatAssistantSummary(event.messages),
       });
     });
 
     pi.on("tool_execution_end", (event, ctx) => {
-      currentContext = ctx;
-      emitWarpEvent(runtime, "tool_complete", ctx, { tool_name: event.toolName });
+      emitIfParentSession("tool_complete", ctx, { tool_name: event.toolName });
     });
 
     pi.on("tool_execution_update", (event, ctx) => {
-      currentContext = ctx;
       if (event.toolName !== "interview") return;
-      emitWarpEvent(runtime, "question_asked", ctx, { summary: "Question asked" });
+      emitIfParentSession("question_asked", ctx, { summary: "Question asked" });
     });
 
     pi.events.on(GOAL_BLOCKED_EVENT, (data) => {

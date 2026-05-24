@@ -105,12 +105,6 @@ const setupSubagentSession = () => {
   subagentMock.isChildSession.mockReturnValue(true);
 };
 
-const expectNoAnimatedTitles = (ctx: ReturnType<typeof createContext>) => {
-  for (const [title] of ctx.ui.setTitle.mock.calls) {
-    expect(title).toBe("π - workspace");
-  }
-};
-
 const decodeSequence = (sequence: string) => {
   const frame = sequence.startsWith("\u001bPtmux;")
     ? sequence.slice("\u001bPtmux;".length, -2).replaceAll("\u001b\u001b", "\u001b")
@@ -152,7 +146,7 @@ afterEach(() => {
   else process.env.SSH_TTY = originalSshTty;
 });
 
-test("subagent sessions do not animate terminal title", () => {
+test("subagent sessions do not change terminal title", () => {
   vi.useFakeTimers();
   const cwd = createEphemeralTitleSpinnerCwd();
   const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
@@ -177,12 +171,11 @@ test("subagent sessions do not animate terminal title", () => {
   vi.advanceTimersByTime(100);
   pi.emit("agent_end", { type: "agent_end", messages: [] }, ctx);
 
-  expect(ctx.ui.setTitle).toHaveBeenCalledWith("π - workspace");
-  expectNoAnimatedTitles(ctx);
+  expect(ctx.ui.setTitle).not.toHaveBeenCalled();
   expect(setIntervalSpy).not.toHaveBeenCalled();
 });
 
-test("subagent message updates do not animate terminal title", () => {
+test("subagent message updates do not change terminal title", () => {
   const cwd = createEphemeralTitleSpinnerCwd();
   setupSubagentSession();
   const pi = createPi();
@@ -219,11 +212,10 @@ test("subagent message updates do not animate terminal title", () => {
     ctx,
   );
 
-  expect(ctx.ui.setTitle).toHaveBeenCalledWith("π - workspace");
-  expectNoAnimatedTitles(ctx);
+  expect(ctx.ui.setTitle).not.toHaveBeenCalled();
 });
 
-test("subagent compact lifecycle keeps base title without animation", () => {
+test("subagent compact lifecycle does not change terminal title", () => {
   const cwd = createEphemeralTitleSpinnerCwd();
   setupSubagentSession();
   const pi = createPi();
@@ -234,11 +226,10 @@ test("subagent compact lifecycle keeps base title without animation", () => {
   pi.emit("session_before_compact", { type: "session_before_compact" }, ctx);
   pi.emit("session_compact", { type: "session_compact", fromExtension: false }, ctx);
 
-  expect(ctx.ui.setTitle).toHaveBeenCalledWith("π - workspace");
-  expectNoAnimatedTitles(ctx);
+  expect(ctx.ui.setTitle).not.toHaveBeenCalled();
 });
 
-test("subagent tool completion reset keeps base title without animation", () => {
+test("subagent tool completion reset does not change terminal title", () => {
   const cwd = createEphemeralTitleSpinnerCwd();
   setupSubagentSession();
   const pi = createPi();
@@ -269,8 +260,7 @@ test("subagent tool completion reset keeps base title without animation", () => 
     ctx,
   );
 
-  expect(ctx.ui.setTitle).toHaveBeenCalledWith("π - workspace");
-  expectNoAnimatedTitles(ctx);
+  expect(ctx.ui.setTitle).not.toHaveBeenCalled();
 });
 
 test("session_start emits hello and session events to stdout", () => {

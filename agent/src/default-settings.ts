@@ -54,7 +54,7 @@ export const defaultSettings = {
     showImages: true,
     clearOnShrink: false,
     showTerminalProgress: true,
-    titleSpinner: false,
+    titleSpinner: true,
   },
   contextPrune: defaultContextPruneSettings,
   interview: defaultInterviewSettings,

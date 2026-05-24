@@ -7,7 +7,6 @@ import {
   MAX_SOURCES,
   MAX_TIMEOUT_MS,
   MIN_TIMEOUT_MS,
-  THINKING_BUDGET,
   WEBSEARCH_MODELS,
   WEBSEARCH_PROVIDER,
   asRecord,
@@ -66,9 +65,14 @@ async function executeWebSearchRequest(
   if (auth.apiKey === undefined || auth.apiKey.length === 0) {
     throw new Error(`No API key for ${model.provider}/${model.id}`);
   }
-  const endpoint = `${model.baseUrl.replace(/\/$/, "")}/models/${model.id}:streamGenerateContent?alt=sse`;
+  const baseUrl =
+    model.baseUrl
+      .replace(/\/v1beta\/?$/, "")
+      .replace(/\/v1\/?$/, "")
+      .replace(/\/+$/, "") + "/v1";
+  const endpoint = `${baseUrl}/responses`;
   const searchStream = stream(
-    model,
+    { ...model, api: "openai-responses" as const, baseUrl, reasoning: false },
     {
       systemPrompt: buildSystemInstruction(),
       messages: [{ role: "user", content: buildUserPrompt(request.query), timestamp: Date.now() }],
@@ -76,7 +80,7 @@ async function executeWebSearchRequest(
     {
       apiKey: auth.apiKey,
       headers: auth.headers,
-      onPayload: (payload) => configureGroundedSearchPayload(payload, model.reasoning),
+      onPayload: (payload) => configureGroundedSearchPayload(payload),
     },
   );
   await emitWebSearchPartials(searchStream, request, endpoint, onUpdate);
@@ -170,20 +174,11 @@ function resolveTimeoutMs(timeoutMs: number | undefined): number {
   return Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, Math.trunc(timeoutMs)));
 }
 
-function configureGroundedSearchPayload(payload: unknown, includeThinking: boolean): unknown {
+function configureGroundedSearchPayload(payload: unknown): unknown {
   const request = asRecord(payload);
-  if (!request) {
-    return payload;
-  }
-  const config = asRecord(request.config) ?? {};
-  config.tools = [{ googleSearch: {} }];
-  if (includeThinking) {
-    config.thinkingConfig = {
-      thinkingBudget: THINKING_BUDGET,
-      includeThoughts: false,
-    };
-  }
-  request.config = config;
+  if (!request) return payload;
+  request.tools = [{ googleSearch: {} }];
+  // LiteLLM's Responses API path rejects thinkingConfig on grounded searches
   return request;
 }
 

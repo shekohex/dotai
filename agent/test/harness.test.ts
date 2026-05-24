@@ -1035,54 +1035,90 @@ timedTest("websearch emits streaming updates before the final result", async () 
       return new Response("ok", { status: 200 });
     }
 
-    if (url.includes(":streamGenerateContent")) {
-      expect(getHeader("x-goog-api-key").length > 0).toBeTruthy();
+    if (url.includes("/responses")) {
+      expect(getHeader("authorization").length > 0).toBeTruthy();
+      const text1 = JSON.stringify({ answer: "Next.js 16 released in October 2025." });
+      const text2 = JSON.stringify({
+        answer: [
+          "Next.js 16 released in October 2025.",
+          "Turbopack stabilization and caching changes were part of the release.",
+          "Teams should re-run production build verification after upgrading.",
+        ].join("\n"),
+        sources: [
+          { title: "Next.js 16", url: "https://nextjs.org/blog/next-16" },
+          {
+            title: "Version 16 Upgrade Guide",
+            url: "https://nextjs.org/docs/app/guides/upgrading/version-16",
+          },
+        ],
+        searchQueries: ["next.js 16 release date official", "next.js 16 upgrade guide"],
+      });
+      const events = [
+        {
+          type: "response.created",
+          response: {
+            id: "resp-test",
+            created_at: Date.now(),
+            status: "in_progress",
+            model: "gemini-2.5-flash",
+          },
+        },
+        {
+          type: "response.output_item.added",
+          item: {
+            type: "message",
+            id: "msg-test",
+            role: "assistant",
+            content: [],
+            status: "in_progress",
+          },
+          output_index: 0,
+        },
+        {
+          type: "response.content_part.added",
+          part: { type: "output_text", text: "" },
+          item_id: "msg-test",
+          output_index: 0,
+          content_index: 0,
+        },
+        {
+          type: "response.output_text.delta",
+          delta: text1,
+          item_id: "msg-test",
+          output_index: 0,
+          content_index: 0,
+        },
+        {
+          type: "response.output_text.delta",
+          delta: "\n\n" + text2,
+          item_id: "msg-test",
+          output_index: 0,
+          content_index: 0,
+        },
+        {
+          type: "response.completed",
+          response: {
+            id: "resp-test",
+            object: "response",
+            created_at: Date.now(),
+            status: "completed",
+            model: "gemini-2.5-flash",
+            output: [
+              {
+                type: "message",
+                id: "msg-test",
+                role: "assistant",
+                content: [{ type: "output_text", text: text1 + "\n\n" + text2, annotations: [] }],
+                status: "completed",
+              },
+            ],
+            usage: { input_tokens: 10, output_tokens: 50, total_tokens: 60 },
+          },
+        },
+      ];
+
       const stream = new ReadableStream({
         start(controller) {
-          const events = [
-            {
-              candidates: [
-                {
-                  content: {
-                    parts: [
-                      { text: JSON.stringify({ answer: "Next.js 16 released in October 2025." }) },
-                    ],
-                  },
-                },
-              ],
-            },
-            {
-              candidates: [
-                {
-                  content: {
-                    parts: [
-                      {
-                        text: JSON.stringify({
-                          answer: [
-                            "Next.js 16 released in October 2025.",
-                            "Turbopack stabilization and caching changes were part of the release.",
-                            "Teams should re-run production build verification after upgrading.",
-                          ].join("\n"),
-                          sources: [
-                            { title: "Next.js 16", url: "https://nextjs.org/blog/next-16" },
-                            {
-                              title: "Version 16 Upgrade Guide",
-                              url: "https://nextjs.org/docs/app/guides/upgrading/version-16",
-                            },
-                          ],
-                          searchQueries: [
-                            "next.js 16 release date official",
-                            "next.js 16 upgrade guide",
-                          ],
-                        }),
-                      },
-                    ],
-                  },
-                },
-              ],
-            },
-          ];
-
           for (const event of events) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
           }
@@ -1094,10 +1130,6 @@ timedTest("websearch emits streaming updates before the final result", async () 
         status: 200,
         headers: { "content-type": "text/event-stream" },
       });
-    }
-
-    if (url.includes(":generateContent")) {
-      throw new Error("generateContent fallback should not be used in streaming test");
     }
 
     return originalFetch(input as Parameters<typeof fetch>[0], init);

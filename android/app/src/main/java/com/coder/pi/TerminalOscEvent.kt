@@ -57,17 +57,29 @@ private val piOscJson =
     }
 private val piOscPayloadPattern = Regex("^[A-Za-z0-9_-]+$")
 private val piOscEvents = setOf("hello", "agent.session", "agent.run", "agent.turn", "agent.progress", "agent.input", "agent.tool", "agent.alert", "agent.aborted", "agent.compaction")
+private const val warpCliAgentNotificationTitle = "warp://cli-agent"
 
 fun parseTerminalOscEvent(raw: String): TerminalOscEvent {
     val parts = raw.split("\t", limit = if (raw.startsWith("pi\t")) 4 else 3)
     return when (parts.getOrNull(0)) {
         "clipboard" -> TerminalOscEvent.Clipboard(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
-        "notification" -> TerminalOscEvent.Notification(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
+        "notification" -> parseNotificationEvent(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
         "progress" -> TerminalOscEvent.Progress(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty())
         "pi" -> parsePiOscEvent(parts.getOrNull(1).orEmpty(), parts.getOrNull(2).orEmpty(), parts.getOrNull(3).orEmpty())
         else -> TerminalOscEvent.Ignored
     }
 }
+
+private fun parseNotificationEvent(
+    title: String,
+    body: String,
+): TerminalOscEvent =
+    if (title == warpCliAgentNotificationTitle) {
+        // Warp uses OSC 777 notifications with this scheme for its own agent protocol; do not surface them as Android notifications.
+        TerminalOscEvent.Ignored
+    } else {
+        TerminalOscEvent.Notification(title, body)
+    }
 
 fun Array<String>.toTerminalOscEvents(): List<TerminalOscEvent> = map(::parseTerminalOscEvent).filterNot { it is TerminalOscEvent.Ignored }
 

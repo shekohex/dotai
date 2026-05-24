@@ -16,6 +16,11 @@ class TerminalOscEventTest {
     }
 
     @Test
+    fun ignoresWarpCliAgentNotification() {
+        assertEquals(TerminalOscEvent.Ignored, parseTerminalOscEvent("notification\twarp://cli-agent\t{\"agent\":\"pi\"}"))
+    }
+
+    @Test
     fun parsesProgressEvent() {
         assertEquals(TerminalOscEvent.Progress("1", "42"), parseTerminalOscEvent("progress\t1\t42"))
     }

@@ -9,10 +9,11 @@ import {
   type GoalEntrySource,
   type GoalResult,
   type GoalSnapshot,
-  type GoalStatus,
   type SessionEntryLike,
   type ThreadGoal,
 } from "./types.js";
+
+type DirectGoalStatusUpdate = Exclude<ThreadGoal["status"], "blocked">;
 
 export interface ApplyUsageOptions {
   expectedGoalId?: string | null;
@@ -156,12 +157,23 @@ export function replaceGoal(objective: string): GoalResult {
   };
 }
 
-export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus): GoalResult {
+export function updateGoalStatus(
+  current: ThreadGoal | null,
+  status: DirectGoalStatusUpdate,
+): GoalResult {
   if (!current) {
     return {
       ok: false,
       message: "No active goal exists.",
       goal: null,
+    };
+  }
+
+  if (current.status === "blocked") {
+    return {
+      ok: false,
+      message: "Blocked goals must be unblocked before changing status.",
+      goal: current,
     };
   }
 
@@ -172,6 +184,108 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus)
   return {
     ok: true,
     message: `Goal marked ${goal.status}.`,
+    goal,
+  };
+}
+
+export function validateBlockReason(reason: string): string | null {
+  const trimmedReason = reason.trim();
+  if (trimmedReason.length === 0) {
+    return "Reason must not be empty.";
+  }
+
+  if (trimmedReason.length < 50) {
+    return "Reason must describe the concrete blocker and needed unblock action.";
+  }
+
+  return null;
+}
+
+export function validateUnblockReason(reason: string): string | null {
+  if (reason.trim().length === 0) {
+    return "Reason must not be empty.";
+  }
+
+  return null;
+}
+
+export function blockGoal(current: ThreadGoal | null, reason: string): GoalResult {
+  const reasonError = validateBlockReason(reason);
+  if (reasonError !== null) {
+    return { ok: false, message: reasonError, goal: current };
+  }
+
+  if (!current) {
+    return {
+      ok: false,
+      message: "No active goal exists.",
+      goal: null,
+    };
+  }
+
+  if (current.status !== "active") {
+    return {
+      ok: false,
+      message: "Only active goals can be blocked.",
+      goal: current,
+    };
+  }
+
+  const now = unixSeconds();
+  const goal: ThreadGoal = {
+    ...cloneGoal(current),
+    status: "blocked",
+    blockedReason: reason.trim(),
+    blockedAt: now,
+    updatedAt: now,
+  };
+
+  return {
+    ok: true,
+    message: "Goal blocked.",
+    goal,
+  };
+}
+
+export function unblockGoal(current: ThreadGoal | null, reason: string): GoalResult {
+  const reasonError = validateUnblockReason(reason);
+  if (reasonError !== null) {
+    return { ok: false, message: reasonError, goal: current };
+  }
+
+  if (!current) {
+    return {
+      ok: false,
+      message: "No active goal exists.",
+      goal: null,
+    };
+  }
+
+  if (current.status !== "blocked") {
+    return {
+      ok: false,
+      message: "Only blocked goals can be unblocked.",
+      goal: current,
+    };
+  }
+
+  const now = unixSeconds();
+  const {
+    blockedAt: _blockedAt,
+    blockedReason: _blockedReason,
+    ...goalWithoutBlockedMetadata
+  } = current;
+  const goal: ThreadGoal = {
+    ...goalWithoutBlockedMetadata,
+    status: "active",
+    resumedReason: reason.trim(),
+    resumedAt: now,
+    updatedAt: now,
+  };
+
+  return {
+    ok: true,
+    message: "Goal resumed.",
     goal,
   };
 }

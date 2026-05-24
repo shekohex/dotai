@@ -8,6 +8,7 @@ export const GOAL_PROGRESS_EVENT = "goal:progress";
 export const GoalStatusSchema = Type.Union([
   Type.Literal("active"),
   Type.Literal("paused"),
+  Type.Literal("blocked"),
   Type.Literal("budgetLimited"),
   Type.Literal("complete"),
 ]);
@@ -20,18 +21,41 @@ export const GoalUsageSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ThreadGoalSchema = Type.Object(
+const ThreadGoalBaseProperties = {
+  goalId: Type.String(),
+  objective: Type.String(),
+  tokenBudget: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+  usage: GoalUsageSchema,
+  resumedReason: Type.Optional(Type.String()),
+  resumedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  createdAt: Type.Integer({ minimum: 0 }),
+  updatedAt: Type.Integer({ minimum: 0 }),
+};
+
+const NonBlockedThreadGoalSchema = Type.Object(
   {
-    goalId: Type.String(),
-    objective: Type.String(),
-    status: GoalStatusSchema,
-    tokenBudget: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
-    usage: GoalUsageSchema,
-    createdAt: Type.Integer({ minimum: 0 }),
-    updatedAt: Type.Integer({ minimum: 0 }),
+    ...ThreadGoalBaseProperties,
+    status: Type.Union([
+      Type.Literal("active"),
+      Type.Literal("paused"),
+      Type.Literal("budgetLimited"),
+      Type.Literal("complete"),
+    ]),
   },
   { additionalProperties: false },
 );
+
+const BlockedThreadGoalSchema = Type.Object(
+  {
+    ...ThreadGoalBaseProperties,
+    status: Type.Literal("blocked"),
+    blockedReason: Type.String({ pattern: ".*\\S.*" }),
+    blockedAt: Type.Integer({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+
+export const ThreadGoalSchema = Type.Union([NonBlockedThreadGoalSchema, BlockedThreadGoalSchema]);
 
 export const GoalEntrySourceSchema = Type.Union([
   Type.Literal("command"),

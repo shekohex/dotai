@@ -11,6 +11,10 @@ function styleGoalStatus(theme: Theme, goalStatus: string): string {
     return theme.italic(theme.fg("warning", goalStatus));
   }
 
+  if (goalStatus.startsWith("Goal blocked")) {
+    return theme.italic(theme.fg("error", goalStatus));
+  }
+
   if (goalStatus.startsWith("Goal unmet") || goalStatus.startsWith("Goal abandoned")) {
     return theme.italic(theme.fg("warning", goalStatus));
   }

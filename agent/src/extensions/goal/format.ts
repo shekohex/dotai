@@ -13,6 +13,8 @@ export interface GoalToolRecord {
   status: GoalStatus;
   tokensUsed: number;
   timeUsedSeconds: number;
+  blockedReason?: string;
+  blockedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -101,6 +103,10 @@ function commandHint(status: GoalStatus): string {
     return "/goal resume, /goal clear";
   }
 
+  if (status === "blocked") {
+    return "/goal unblock <reason>, /goal clear";
+  }
+
   return "/goal clear";
 }
 
@@ -134,11 +140,15 @@ export function formatFooterStatus(goal: ThreadGoal | null): string | undefined 
   }
 
   if (goal.status === "paused") {
-    return "Goal paused (/goal resume)";
+    return "Goal paused";
+  }
+
+  if (goal.status === "blocked") {
+    return "Goal blocked";
   }
 
   if (goal.status === "budgetLimited") {
-    return "Goal paused (/goal resume)";
+    return "Goal paused";
   }
 
   if (goal.usage.activeSeconds > 0) {
@@ -149,7 +159,7 @@ export function formatFooterStatus(goal: ThreadGoal | null): string | undefined 
 }
 
 export function toToolGoal(goal: ThreadGoal): GoalToolRecord {
-  return {
+  const record: GoalToolRecord = {
     goalId: goal.goalId,
     objective: goal.objective,
     status: goal.status,
@@ -158,6 +168,13 @@ export function toToolGoal(goal: ThreadGoal): GoalToolRecord {
     createdAt: goal.createdAt,
     updatedAt: goal.updatedAt,
   };
+
+  if (goal.status === "blocked") {
+    record.blockedReason = goal.blockedReason;
+    record.blockedAt = goal.blockedAt;
+  }
+
+  return record;
 }
 
 export function completionUsageReport(goal: ThreadGoal | null): string | null {

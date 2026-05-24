@@ -300,7 +300,11 @@ class GoalRuntime {
       this.clearStoppedRuntimeState();
     }
 
-    if (nextGoal.status === "paused" || nextGoal.status === "complete") {
+    if (
+      nextGoal.status === "paused" ||
+      nextGoal.status === "blocked" ||
+      nextGoal.status === "complete"
+    ) {
       this.clearStoppedRuntimeState();
     } else if (nextGoal.status === "budgetLimited") {
       this.clearContinuationState();

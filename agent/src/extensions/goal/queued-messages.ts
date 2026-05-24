@@ -27,6 +27,7 @@ const QueuedGoalMessageDetailsSchema = Type.Object(
       Type.Union([
         Type.Literal("active"),
         Type.Literal("paused"),
+        Type.Literal("blocked"),
         Type.Literal("budgetLimited"),
         Type.Literal("complete"),
         Type.Null(),

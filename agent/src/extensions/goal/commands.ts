@@ -5,7 +5,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { formatGoalSummary } from "./format.js";
 import { continuationPrompt } from "./prompts.js";
-import { replaceGoal, updateGoalStatus } from "./state.js";
+import { blockGoal, replaceGoal, unblockGoal, updateGoalStatus } from "./state.js";
 import {
   GOAL_EXTENSION_ENTRY_TYPE,
   GOAL_MAX_OBJECTIVE_CHARS,
@@ -34,6 +34,16 @@ const GOAL_COMMAND_AUTOCOMPLETE_ITEMS: AutocompleteItem[] = [
     description: "Resume paused goal and queue follow-up work",
   },
   {
+    value: "block",
+    label: "block",
+    description: "Block active goal with reason",
+  },
+  {
+    value: "unblock",
+    label: "unblock",
+    description: "Unblock blocked goal and queue follow-up work",
+  },
+  {
     value: "clear",
     label: "clear",
     description: "Clear current goal from session state",
@@ -49,7 +59,7 @@ export interface GoalCommandContext {
     ExtensionCommandContext["sessionManager"],
     "getBranch" | "getLeafId" | "getSessionId"
   >;
-  ui: Pick<ExtensionCommandContext["ui"], "confirm" | "notify" | "setStatus">;
+  ui: Pick<ExtensionCommandContext["ui"], "confirm" | "input" | "notify" | "setStatus">;
 }
 
 type GoalCommandObjective =
@@ -72,16 +82,36 @@ function queueGoalTurn(
   pi: GoalCommandPi,
   goal: ThreadGoal,
   kind: "command_start" | "command_resume",
+  resumedReason?: string,
 ): void {
   pi.sendMessage(
     {
       customType: GOAL_EXTENSION_ENTRY_TYPE,
-      content: continuationPrompt(goal),
+      content: continuationPrompt(goal, resumedReason),
       display: false,
       details: { kind, goalId: goal.goalId },
     },
     { triggerTurn: true, deliverAs: "followUp" },
   );
+}
+
+async function resolveInlineOrPromptedReason(
+  inlineReason: string,
+  title: string,
+  placeholder: string,
+  ctx: GoalCommandContext,
+): Promise<string | null> {
+  const trimmedReason = inlineReason.trim();
+  if (trimmedReason.length > 0) {
+    return trimmedReason;
+  }
+
+  if (!ctx.hasUI) {
+    return null;
+  }
+
+  const promptedReason = await ctx.ui.input(title, placeholder);
+  return promptedReason?.trim() ?? null;
 }
 
 function stripWrappingQuotes(value: string): string {
@@ -182,6 +212,16 @@ export async function handleGoalCommand(
 
   if (trimmed === "pause" || trimmed === "resume") {
     const current = host.getGoal();
+    if (trimmed === "pause" && current?.status === "blocked") {
+      ctx.ui.notify("Goal is already blocked. Use /goal unblock <reason> to resume.", "warning");
+      return;
+    }
+
+    if (trimmed === "resume" && current?.status === "blocked") {
+      ctx.ui.notify("Use /goal unblock <reason> to resume blocked goals.", "warning");
+      return;
+    }
+
     const status = trimmed === "pause" ? "paused" : "active";
     const result = updateGoalStatus(current, status);
     if (!result.ok || !result.goal) {
@@ -194,6 +234,43 @@ export async function handleGoalCommand(
     if (trimmed === "resume" && result.goal.status === "active") {
       queueGoalTurn(pi, result.goal, "command_resume");
     }
+    return;
+  }
+
+  if (trimmed === "block" || trimmed.startsWith("block ")) {
+    const reason = trimmed.slice("block".length).trim();
+    const result = blockGoal(host.getGoal(), reason);
+    if (!result.ok || !result.goal) {
+      ctx.ui.notify(result.message, "warning");
+      return;
+    }
+
+    host.setGoal(result.goal, "command", ctx);
+    ctx.ui.notify(result.message);
+    return;
+  }
+
+  if (trimmed === "unblock" || trimmed.startsWith("unblock ")) {
+    const reason = await resolveInlineOrPromptedReason(
+      trimmed.slice("unblock".length),
+      "Unblock goal",
+      "What changed?",
+      ctx,
+    );
+    if (reason === null || reason.length === 0) {
+      ctx.ui.notify("Unblock reason is required.", "warning");
+      return;
+    }
+
+    const result = unblockGoal(host.getGoal(), reason);
+    if (!result.ok || !result.goal) {
+      ctx.ui.notify(result.message, "warning");
+      return;
+    }
+
+    host.setGoal(result.goal, "command", ctx);
+    ctx.ui.notify(result.message);
+    queueGoalTurn(pi, result.goal, "command_resume", reason);
     return;
   }
 

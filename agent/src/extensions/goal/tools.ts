@@ -21,7 +21,7 @@ import {
   type GoalToolRecord,
 } from "./format.js";
 import { GOAL_TOOL_PROMPT_GUIDELINES } from "./prompts.js";
-import { createGoal } from "./state.js";
+import { blockGoal, createGoal, unblockGoal } from "./state.js";
 import {
   GOAL_MAX_OBJECTIVE_CHARS,
   type GoalEntrySource,
@@ -33,6 +33,8 @@ const GoalToolActionSchema = Type.Union([
   Type.Literal("get"),
   Type.Literal("create"),
   Type.Literal("update"),
+  Type.Literal("block"),
+  Type.Literal("resume"),
 ]);
 
 const GoalGetActionObjectSchema = Type.Object(
@@ -68,6 +70,22 @@ const GoalUpdateActionObjectSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const GoalBlockActionObjectSchema = Type.Object(
+  {
+    action: Type.Literal("block"),
+    reason: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
+const GoalResumeActionObjectSchema = Type.Object(
+  {
+    action: Type.Literal("resume"),
+    reason: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
 const GoalToolParams = Type.Object(
   {
     action: GoalToolActionSchema,
@@ -88,6 +106,12 @@ const GoalToolParams = Type.Object(
         description: "Only complete is accepted. Do not call this until no required work remains.",
       }),
     ),
+    reason: Type.Optional(
+      Type.String({
+        description:
+          "Required for block and resume. Explain exact blocker or unblock reason with evidence and next action.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -96,6 +120,8 @@ type GoalGetActionParams = Static<typeof GoalGetActionObjectSchema>;
 type GoalCreateActionParams = Static<typeof GoalCreateActionObjectSchema>;
 type GoalCreateFromFileActionParams = Static<typeof GoalCreateFromFileActionObjectSchema>;
 type GoalUpdateActionParams = Static<typeof GoalUpdateActionObjectSchema>;
+type GoalBlockActionParams = Static<typeof GoalBlockActionObjectSchema>;
+type GoalResumeActionParams = Static<typeof GoalResumeActionObjectSchema>;
 type GoalToolParamsInput = Static<typeof GoalToolParams>;
 
 const GoalToolRecordSchema = Type.Object(
@@ -105,11 +131,14 @@ const GoalToolRecordSchema = Type.Object(
     status: Type.Union([
       Type.Literal("active"),
       Type.Literal("paused"),
+      Type.Literal("blocked"),
       Type.Literal("budgetLimited"),
       Type.Literal("complete"),
     ]),
     tokensUsed: Type.Integer({ minimum: 0 }),
     timeUsedSeconds: Type.Integer({ minimum: 0 }),
+    blockedReason: Type.Optional(Type.String()),
+    blockedAt: Type.Optional(Type.Integer({ minimum: 0 })),
     createdAt: Type.Integer({ minimum: 0 }),
     updatedAt: Type.Integer({ minimum: 0 }),
   },
@@ -195,6 +224,14 @@ function isGoalUpdateActionParams(params: GoalToolParamsInput): params is GoalUp
   return Value.Check(GoalUpdateActionObjectSchema, params);
 }
 
+function isGoalBlockActionParams(params: GoalToolParamsInput): params is GoalBlockActionParams {
+  return Value.Check(GoalBlockActionObjectSchema, params);
+}
+
+function isGoalResumeActionParams(params: GoalToolParamsInput): params is GoalResumeActionParams {
+  return Value.Check(GoalResumeActionObjectSchema, params);
+}
+
 function invalidCreateObjectiveSourceMessage(params: GoalToolParamsInput): string | null {
   if (params.action !== "create") {
     return null;
@@ -218,6 +255,8 @@ function getGoalStatusTone(
       return theme.bold(theme.fg("success", "completed"));
     case "paused":
       return theme.bold(theme.fg("warning", "paused"));
+    case "blocked":
+      return theme.bold(theme.fg("error", "blocked"));
     case "budgetLimited":
       return theme.bold(theme.fg("warning", "paused"));
     case "active":
@@ -344,9 +383,10 @@ export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
     name: "goal",
     label: "Goal",
     renderShell: "self",
-    description: "Inspect, create, or update the current goal and usage for this pi session.",
+    description:
+      "Inspect, create, block, resume, or update the current goal and usage for this pi session.",
     promptSnippet:
-      "Use action get to inspect goal, action create to start one active goal, and action update only to mark completed goal complete.",
+      "Use action get to inspect goal, action create to start one active goal, action block only for true external blockers with reason, action resume when blocker is resolved with reason, and action update only to mark completed goal complete.",
     promptGuidelines: [...GOAL_TOOL_PROMPT_GUIDELINES],
     parameters: GoalToolParams,
     renderCall(args, theme, context) {
@@ -422,6 +462,34 @@ export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
 
         host.setGoal(result.goal, "tool", ctx);
         return textResult("create", result.goal, null);
+      }
+
+      if (isGoalBlockActionParams(actionParams)) {
+        const result = blockGoal(host.getGoal(), actionParams.reason);
+        if (!result.ok || result.goal === null) {
+          return textResult("block", result.goal, result.message);
+        }
+
+        host.setGoal(result.goal, "tool", ctx);
+        return textResult("block", result.goal, null);
+      }
+
+      if (actionParams.action === "block") {
+        return textResult("block", host.getGoal(), "Reason must not be empty.");
+      }
+
+      if (isGoalResumeActionParams(actionParams)) {
+        const result = unblockGoal(host.getGoal(), actionParams.reason);
+        if (!result.ok || result.goal === null) {
+          return textResult("resume", result.goal, result.message);
+        }
+
+        host.setGoal(result.goal, "tool", ctx);
+        return textResult("resume", result.goal, null);
+      }
+
+      if (actionParams.action === "resume") {
+        return textResult("resume", host.getGoal(), "Reason must not be empty.");
       }
 
       if (!isGoalUpdateActionParams(actionParams)) {

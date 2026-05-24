@@ -4,6 +4,7 @@ export const GOAL_EXTENSION_ENTRY_TYPE = "goal";
 export const GOAL_STATUS_KEY = "goal";
 export const GOAL_MAX_OBJECTIVE_CHARS = 8000;
 export const GOAL_PROGRESS_EVENT = "goal:progress";
+export const GOAL_BLOCKED_EVENT = "goal:blocked";
 
 export const GoalStatusSchema = Type.Union([
   Type.Literal("active"),
@@ -97,12 +98,24 @@ export const GoalProgressEventSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const GoalBlockedEventSchema = Type.Object(
+  {
+    sessionId: Type.String(),
+    cwd: Type.String(),
+    goalId: Type.String(),
+    objective: Type.String(),
+    blockedReason: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
 export type GoalStatus = Static<typeof GoalStatusSchema>;
 export type GoalUsage = Static<typeof GoalUsageSchema>;
 export type ThreadGoal = Static<typeof ThreadGoalSchema>;
 export type GoalEntrySource = Static<typeof GoalEntrySourceSchema>;
 export type GoalCustomEntry = Static<typeof GoalCustomEntrySchema>;
 export type GoalProgressEvent = Static<typeof GoalProgressEventSchema>;
+export type GoalBlockedEvent = Static<typeof GoalBlockedEventSchema>;
 
 export interface GoalResult {
   ok: boolean;

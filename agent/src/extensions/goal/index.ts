@@ -39,8 +39,10 @@ import {
 import { registerGoalTools } from "./tools.js";
 import {
   GOAL_EXTENSION_ENTRY_TYPE,
+  GOAL_BLOCKED_EVENT,
   GOAL_PROGRESS_EVENT,
   GOAL_STATUS_KEY,
+  type GoalBlockedEvent,
   type GoalEntrySource,
   type GoalProgressEvent,
   type GoalResult,
@@ -272,6 +274,10 @@ class GoalRuntime {
     this.statusContext = ctx;
     ctx.ui.setStatus(GOAL_STATUS_KEY, formatFooterStatus(this.goalForDisplay()));
     this.emitGoalProgress(ctx);
+    const goal = this.goalForDisplay();
+    if (goal?.status === "blocked") {
+      this.emitGoalBlocked(goal, ctx);
+    }
     this.syncStatusRefresh();
   }
 
@@ -291,6 +297,18 @@ class GoalRuntime {
             cwd: ctx.cwd,
           };
     this.pi.events.emit(GOAL_PROGRESS_EVENT, event);
+  }
+
+  private emitGoalBlocked(goal: ThreadGoal, ctx: GoalStatusContext): void {
+    if (goal.status !== "blocked") return;
+    const event: GoalBlockedEvent = {
+      sessionId: ctx.sessionManager.getSessionId(),
+      cwd: ctx.cwd,
+      goalId: goal.goalId,
+      objective: goal.objective,
+      blockedReason: goal.blockedReason,
+    };
+    this.pi.events.emit(GOAL_BLOCKED_EVENT, event);
   }
 
   private persistGoal(nextGoal: ThreadGoal, source: GoalEntrySource): void {

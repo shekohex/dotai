@@ -1,0 +1,100 @@
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { Value } from "typebox/value";
+import { GOAL_BLOCKED_EVENT, GoalBlockedEventSchema } from "../goal/types.js";
+import {
+  createWarpCliAgentPayload,
+  createWarpCliAgentSequence,
+  negotiateWarpCliAgentProtocolVersion,
+} from "./encoder.js";
+import { warpRuntime, writeWarpCliAgentSequence } from "./runtime.js";
+import type { WarpCliAgentEvent, WarpCliAgentPayloadOptions } from "./types.js";
+
+const truncateWarpText = (text: string, maxLength = 200): string => {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 3)}...`;
+};
+
+const createGoalBlockedSummary = (blockedReason: string): string =>
+  truncateWarpText(`Goal blocked: ${blockedReason}`);
+
+const isTextPart = (part: unknown): part is { type: "text"; text: string } =>
+  typeof part === "object" &&
+  part !== null &&
+  "type" in part &&
+  part.type === "text" &&
+  "text" in part &&
+  typeof part.text === "string";
+
+const extractMessageText = (message: AgentMessage): string => {
+  if (!("content" in message)) return "";
+  if (typeof message.content === "string") return message.content;
+  return message.content
+    .filter(isTextPart)
+    .map((part) => part.text)
+    .join(" ");
+};
+
+const getLastMessageText = (
+  messages: AgentMessage[],
+  role: "assistant" | "user",
+): string | undefined => {
+  const message = messages.findLast((candidate) => candidate.role === role);
+  if (message === undefined) return undefined;
+  const text = extractMessageText(message);
+  if (text.length === 0) return undefined;
+  return truncateWarpText(text);
+};
+
+const emitWarpEvent = (
+  event: WarpCliAgentEvent,
+  ctx: ExtensionContext,
+  options: WarpCliAgentPayloadOptions = {},
+): void => {
+  const protocolVersion = negotiateWarpCliAgentProtocolVersion(warpRuntime.readProtocolVersion());
+  if (protocolVersion === null) return;
+  writeWarpCliAgentSequence(
+    createWarpCliAgentSequence(createWarpCliAgentPayload(event, ctx, protocolVersion, options)),
+  );
+};
+
+export default function warpExtension(pi: ExtensionAPI): void {
+  let currentContext: ExtensionContext | null = null;
+
+  pi.on("session_start", (_event, ctx) => {
+    currentContext = ctx;
+    emitWarpEvent("session_start", ctx, { plugin_version: "builtin" });
+  });
+
+  pi.on("input", (event, ctx) => {
+    currentContext = ctx;
+    emitWarpEvent("prompt_submit", ctx, { query: truncateWarpText(event.text) });
+    return { action: "continue" };
+  });
+
+  pi.on("agent_end", (event, ctx) => {
+    currentContext = ctx;
+    emitWarpEvent("stop", ctx, {
+      query: getLastMessageText(event.messages, "user"),
+      response: getLastMessageText(event.messages, "assistant"),
+    });
+  });
+
+  pi.on("tool_execution_end", (event, ctx) => {
+    currentContext = ctx;
+    emitWarpEvent("tool_complete", ctx, { tool_name: event.toolName });
+  });
+
+  pi.on("tool_execution_update", (event, ctx) => {
+    currentContext = ctx;
+    if (event.toolName !== "interview") return;
+    emitWarpEvent("question_asked", ctx, { summary: "Question asked" });
+  });
+
+  pi.events.on(GOAL_BLOCKED_EVENT, (data) => {
+    if (currentContext === null || !Value.Check(GoalBlockedEventSchema, data)) return;
+    emitWarpEvent("question_asked", currentContext, {
+      summary: createGoalBlockedSummary(data.blockedReason),
+    });
+  });
+}

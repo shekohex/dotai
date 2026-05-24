@@ -11,6 +11,7 @@ import piOscExtension from "./pi-osc/extension.js";
 import plannotatorExtension from "./plannotator.js";
 import promptStashExtension from "./prompt-stash.js";
 import terminalTmuxUiExtension from "./terminal-tmux-ui.js";
+import warpExtension from "./warp/index.js";
 import type { GroupedExtensionDefinition } from "./definitions.js";
 
 export const groupedExtensionsC: GroupedExtensionDefinition[] = [
@@ -27,5 +28,6 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   // { id: "gsd", factory: gsdExtension },
   { id: "terminal-tmux-ui", factory: terminalTmuxUiExtension },
   { id: "pi-osc", factory: piOscExtension },
+  { id: "warp", factory: warpExtension },
   { id: "executor", factory: executorExtension },
 ];

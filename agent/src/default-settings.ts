@@ -10,6 +10,7 @@ import { defaultOpenAIBetterSettings } from "./extensions/openai-better/settings
 import { DEFAULT_CONFIG as defaultContextPruneSettings } from "./extensions/context-prune/types.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
+type TerminalSettings = NonNullable<AgentSettings["terminal"]> & { titleSpinner: boolean };
 const PackageJsonSchema = Type.Object({
   version: Type.String(),
 });
@@ -23,7 +24,8 @@ const packageJson = Value.Parse(
 export type AvailableModes = keyof (typeof defaultModes)["modes"];
 export type DefaultModesSettings = { current: AvailableModes };
 
-export type DefaultSettings = AgentSettings & {
+export type DefaultSettings = Omit<AgentSettings, "terminal"> & {
+  terminal: TerminalSettings;
   interview: typeof defaultInterviewSettings;
   contextPrune: typeof defaultContextPruneSettings;
   modes: DefaultModesSettings;
@@ -52,6 +54,7 @@ export const defaultSettings = {
     showImages: true,
     clearOnShrink: false,
     showTerminalProgress: true,
+    titleSpinner: false,
   },
   contextPrune: defaultContextPruneSettings,
   interview: defaultInterviewSettings,

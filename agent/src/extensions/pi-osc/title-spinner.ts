@@ -1,10 +1,30 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
+import { join } from "node:path";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 import { isChildSession } from "../../subagent-sdk/index.js";
 import type { ChildBootstrapState } from "../../subagent-sdk/types.js";
 import type { ToolTitleActivity } from "./tool-presentations.js";
 
 const TITLE_SPINNER_INTERVAL_MS = 100;
+const CONFIG_DIR_NAME = ".pi";
+
+const TitleSpinnerSettingsSchema = Type.Object({
+  terminal: Type.Optional(
+    Type.Object({
+      titleSpinner: Type.Optional(Type.Boolean()),
+    }),
+  ),
+});
+
+export const titleSpinnerRuntime = {
+  getAgentDir,
+  existsSync,
+  readFileSync,
+};
 
 export type TitleActivity =
   | ToolTitleActivity
@@ -14,6 +34,8 @@ export type TitleActivity =
   | "toolcall";
 
 type TitleSpinnerProfile = { frames: readonly string[] };
+
+type TitleSpinnerSettings = Static<typeof TitleSpinnerSettingsSchema>;
 
 const TITLE_SPINNER_PROFILES: Record<TitleActivity, TitleSpinnerProfile> = {
   thinking: { frames: ["·", "✻", "✽", "✶", "✳", "✢"] },
@@ -40,6 +62,26 @@ const titleBase = (pi: ExtensionAPI, ctx: ExtensionContext): string => {
     : `π - ${sessionName} - ${cwd}`;
 };
 
+const readTitleSpinnerSettings = (filePath: string): TitleSpinnerSettings => {
+  try {
+    if (!titleSpinnerRuntime.existsSync(filePath)) return {};
+    const parsed: unknown = JSON.parse(
+      titleSpinnerRuntime.readFileSync(filePath, { encoding: "utf8" }),
+    );
+    return Value.Check(TitleSpinnerSettingsSchema, parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const getTitleSpinnerEnabled = (ctx: ExtensionContext): boolean => {
+  const globalSettings = readTitleSpinnerSettings(
+    join(titleSpinnerRuntime.getAgentDir(), "settings.json"),
+  );
+  const projectSettings = readTitleSpinnerSettings(join(ctx.cwd, CONFIG_DIR_NAME, "settings.json"));
+  return projectSettings.terminal?.titleSpinner ?? globalSettings.terminal?.titleSpinner ?? false;
+};
+
 const setTitle = (
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -62,6 +104,7 @@ export const createTitleSpinnerController = (
   let timer: ReturnType<typeof setInterval> | undefined;
   let frameIndex = 0;
   let activity: TitleActivity = "running";
+  let renderedSpinner = false;
 
   const clearTimer = (): void => {
     if (timer === undefined) return;
@@ -70,8 +113,11 @@ export const createTitleSpinnerController = (
   };
 
   const stop = (ctx: ExtensionContext): void => {
+    const shouldRestoreTitle = renderedSpinner || getTitleSpinnerEnabled(ctx);
     clearTimer();
     frameIndex = 0;
+    renderedSpinner = false;
+    if (!shouldRestoreTitle) return;
     setTitle(pi, ctx, childState);
   };
 
@@ -82,11 +128,13 @@ export const createTitleSpinnerController = (
       clearTimer();
       return;
     }
+    renderedSpinner = true;
     frameIndex += 1;
   };
 
   const start = (ctx: ExtensionContext, nextActivity: TitleActivity): void => {
     stop(ctx);
+    if (!getTitleSpinnerEnabled(ctx)) return;
     if (isChildSession(childState, ctx)) return;
     activity = nextActivity;
     if (!ctx.hasUI) return;

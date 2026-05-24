@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const subagentMock = vi.hoisted(() => ({
   isChildSession: vi.fn(() => false),
@@ -11,6 +14,7 @@ vi.mock("../src/subagent-sdk/index.js", () => ({
 }));
 
 import piOscExtension, { piOscRuntime } from "../src/extensions/pi-osc/extension.js";
+import { titleSpinnerRuntime } from "../src/extensions/pi-osc/title-spinner.js";
 import { terminalNotifyRuntime } from "../src/extensions/terminal-notify.js";
 
 const originalTmux = process.env.TMUX;
@@ -60,6 +64,33 @@ const createContext = () => ({
   },
 });
 
+const createContextWithCwd = (cwd: string) => ({
+  ...createContext(),
+  cwd,
+});
+
+const writeEphemeralTitleSpinnerSetting = (cwd: string, enabled: boolean): void => {
+  const settingsDir = join(cwd, ".pi");
+  mkdirSync(settingsDir, { recursive: true });
+  writeFileSync(
+    join(settingsDir, "settings.json"),
+    `${JSON.stringify({ terminal: { titleSpinner: enabled } })}\n`,
+    "utf8",
+  );
+};
+
+const writeInvalidEphemeralTitleSpinnerSetting = (cwd: string): void => {
+  const settingsDir = join(cwd, ".pi");
+  mkdirSync(settingsDir, { recursive: true });
+  writeFileSync(join(settingsDir, "settings.json"), "{", "utf8");
+};
+
+const createEphemeralTitleSpinnerCwd = (): string => {
+  const cwd = join(mkdtempSync(join(tmpdir(), "pi-agent-title-spinner-")), "workspace");
+  writeEphemeralTitleSpinnerSetting(cwd, true);
+  return cwd;
+};
+
 const setupSubagentSession = () => {
   subagentMock.readChildState.mockReturnValue({
     sessionId: "session-1",
@@ -96,6 +127,9 @@ const decodeSequence = (sequence: string) => {
 };
 
 beforeEach(() => {
+  vi.spyOn(titleSpinnerRuntime, "getAgentDir").mockReturnValue(
+    mkdtempSync(join(tmpdir(), "pi-agent-")),
+  );
   vi.spyOn(terminalNotifyRuntime, "execFileSync").mockImplementation(() => {
     throw new Error("tmux not available");
   });
@@ -120,12 +154,13 @@ afterEach(() => {
 
 test("subagent sessions do not animate terminal title", () => {
   vi.useFakeTimers();
+  const cwd = createEphemeralTitleSpinnerCwd();
   const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
   setupSubagentSession();
   const pi = createPi();
   vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
   piOscExtension(pi);
-  const ctx = createContext();
+  const ctx = createContextWithCwd(cwd);
 
   pi.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
   pi.emit("agent_start", { type: "agent_start" }, ctx);
@@ -148,12 +183,13 @@ test("subagent sessions do not animate terminal title", () => {
 });
 
 test("subagent message updates do not animate terminal title", () => {
+  const cwd = createEphemeralTitleSpinnerCwd();
   setupSubagentSession();
   const pi = createPi();
   vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
   vi.spyOn(piOscRuntime, "now").mockReturnValue(1_000);
   piOscExtension(pi);
-  const ctx = createContext();
+  const ctx = createContextWithCwd(cwd);
 
   pi.emit(
     "message_update",
@@ -188,11 +224,12 @@ test("subagent message updates do not animate terminal title", () => {
 });
 
 test("subagent compact lifecycle keeps base title without animation", () => {
+  const cwd = createEphemeralTitleSpinnerCwd();
   setupSubagentSession();
   const pi = createPi();
   vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
   piOscExtension(pi);
-  const ctx = createContext();
+  const ctx = createContextWithCwd(cwd);
 
   pi.emit("session_before_compact", { type: "session_before_compact" }, ctx);
   pi.emit("session_compact", { type: "session_compact", fromExtension: false }, ctx);
@@ -202,11 +239,12 @@ test("subagent compact lifecycle keeps base title without animation", () => {
 });
 
 test("subagent tool completion reset keeps base title without animation", () => {
+  const cwd = createEphemeralTitleSpinnerCwd();
   setupSubagentSession();
   const pi = createPi();
   vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
   piOscExtension(pi);
-  const ctx = createContext();
+  const ctx = createContextWithCwd(cwd);
 
   pi.emit("agent_start", { type: "agent_start" }, ctx);
   pi.emit(
@@ -253,12 +291,50 @@ test("session_start emits hello and session events to stdout", () => {
   expect(session.envelope.data).toEqual({ state: "started", reason: "startup" });
 });
 
-test("agent lifecycle animates terminal title spinner", () => {
+test("title spinner is disabled by default", () => {
   vi.useFakeTimers();
+  const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
   const pi = createPi();
   vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
   piOscExtension(pi);
   const ctx = createContext();
+
+  pi.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+  pi.emit("agent_start", { type: "agent_start" }, ctx);
+  vi.advanceTimersByTime(100);
+  pi.emit("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+  expect(ctx.ui.setTitle).not.toHaveBeenCalled();
+  expect(setIntervalSpy).not.toHaveBeenCalled();
+});
+
+test("title spinner ignores invalid ephemeral settings", () => {
+  vi.useFakeTimers();
+  const cwd = join(mkdtempSync(join(tmpdir(), "pi-agent-title-spinner-invalid-")), "workspace");
+  writeInvalidEphemeralTitleSpinnerSetting(cwd);
+  const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  piOscExtension(pi);
+  const ctx = createContextWithCwd(cwd);
+
+  pi.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+  pi.emit("agent_start", { type: "agent_start" }, ctx);
+  vi.advanceTimersByTime(100);
+  pi.emit("agent_end", { type: "agent_end", messages: [] }, ctx);
+
+  expect(stdoutSpy).toHaveBeenCalled();
+  expect(ctx.ui.setTitle).not.toHaveBeenCalled();
+  expect(setIntervalSpy).not.toHaveBeenCalled();
+});
+
+test("agent lifecycle animates terminal title spinner", () => {
+  vi.useFakeTimers();
+  const cwd = createEphemeralTitleSpinnerCwd();
+  const pi = createPi();
+  vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  piOscExtension(pi);
+  const ctx = createContextWithCwd(cwd);
 
   pi.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
   pi.emit("agent_start", { type: "agent_start" }, ctx);
@@ -344,6 +420,23 @@ test("agent lifecycle animates terminal title spinner", () => {
   expect(ctx.ui.setTitle).toHaveBeenCalledWith("⠋ π - workspace");
   expect(ctx.ui.setTitle).toHaveBeenCalledWith("- π - workspace");
   expect(ctx.ui.setTitle).toHaveBeenCalledWith("✶ π - workspace");
+  expect(ctx.ui.setTitle).toHaveBeenLastCalledWith("π - workspace");
+});
+
+test("agent end restores base title when spinner config is disabled mid-run", () => {
+  vi.useFakeTimers();
+  const cwd = createEphemeralTitleSpinnerCwd();
+  const pi = createPi();
+  vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  piOscExtension(pi);
+  const ctx = createContextWithCwd(cwd);
+
+  pi.emit("agent_start", { type: "agent_start" }, ctx);
+  expect(ctx.ui.setTitle).toHaveBeenLastCalledWith("· π - workspace");
+
+  writeEphemeralTitleSpinnerSetting(cwd, false);
+  pi.emit("agent_end", { type: "agent_end", messages: [] }, ctx);
+
   expect(ctx.ui.setTitle).toHaveBeenLastCalledWith("π - workspace");
 });
 
@@ -540,12 +633,13 @@ test("tool execution start does not duplicate pre-execution tool call event", ()
 
 test("tool completion clears tool-specific title activity", () => {
   vi.useFakeTimers();
+  const cwd = createEphemeralTitleSpinnerCwd();
   const pi = createPi();
   vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
   vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
   vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
   piOscExtension(pi);
-  const ctx = createContext();
+  const ctx = createContextWithCwd(cwd);
 
   pi.emit("agent_start", { type: "agent_start" }, ctx);
   pi.emit(

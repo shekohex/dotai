@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { Value } from "typebox/value";
 import { GOAL_BLOCKED_EVENT, GoalBlockedEventSchema } from "../goal/types.js";
 import {
@@ -8,6 +7,7 @@ import {
   negotiateWarpCliAgentProtocolVersion,
 } from "./encoder.js";
 import { warpRuntime, writeWarpCliAgentSequence } from "./runtime.js";
+import { extractLastAssistantText, formatNotification } from "../terminal-notify.js";
 import type {
   WarpCliAgentEvent,
   WarpCliAgentPayload,
@@ -34,30 +34,9 @@ const truncateWarpText = (text: string, maxLength = 200): string => {
 const createGoalBlockedSummary = (blockedReason: string): string =>
   truncateWarpText(`Goal blocked: ${blockedReason}`);
 
-const isTextPart = (part: unknown): part is { type: "text"; text: string } =>
-  typeof part === "object" &&
-  part !== null &&
-  "type" in part &&
-  part.type === "text" &&
-  "text" in part &&
-  typeof part.text === "string";
-
-const extractMessageText = (message: AgentMessage): string => {
-  if (!("content" in message)) return "";
-  if (typeof message.content === "string") return message.content;
-  return message.content
-    .filter(isTextPart)
-    .map((part) => part.text)
-    .join(" ");
-};
-
-const getLastMessageText = (messages: AgentMessage[], role: "assistant"): string | undefined => {
-  const message = messages.findLast((candidate) => candidate.role === role);
-  if (message === undefined) return undefined;
-  const text = extractMessageText(message);
-  if (text.length === 0) return undefined;
-  return truncateWarpText(text);
-};
+const formatAssistantSummary = (
+  messages: Parameters<typeof extractLastAssistantText>[0],
+): string | undefined => formatNotification(extractLastAssistantText(messages))?.body;
 
 const emitWarpEvent = (
   runtime: WarpExtensionRuntime,
@@ -89,7 +68,7 @@ export const createWarpExtension = (runtime: WarpExtensionRuntime = defaultWarpE
       currentContext = ctx;
       emitWarpEvent(runtime, "stop", ctx, {
         query: pi.getSessionName() ?? undefined,
-        response: getLastMessageText(event.messages, "assistant"),
+        response: formatAssistantSummary(event.messages),
       });
     });
 

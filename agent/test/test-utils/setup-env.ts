@@ -59,6 +59,7 @@ if (
 }
 
 process.env.PI_TERMINAL_TMUX_UI = "0";
+delete process.env.WARP_CLI_AGENT_PROTOCOL_VERSION;
 
 afterEach(async () => {
   const agentDir = process.env.TEST_PI_CODING_AGENT_DIR?.trim();

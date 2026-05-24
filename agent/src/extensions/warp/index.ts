@@ -8,7 +8,23 @@ import {
   negotiateWarpCliAgentProtocolVersion,
 } from "./encoder.js";
 import { warpRuntime, writeWarpCliAgentSequence } from "./runtime.js";
-import type { WarpCliAgentEvent, WarpCliAgentPayloadOptions } from "./types.js";
+import type {
+  WarpCliAgentEvent,
+  WarpCliAgentPayload,
+  WarpCliAgentPayloadOptions,
+} from "./types.js";
+
+export interface WarpExtensionRuntime {
+  readProtocolVersion(): string | undefined;
+  emitPayload(payload: WarpCliAgentPayload): void;
+}
+
+export const defaultWarpExtensionRuntime: WarpExtensionRuntime = {
+  readProtocolVersion: () => warpRuntime.readProtocolVersion(),
+  emitPayload: (payload) => {
+    writeWarpCliAgentSequence(createWarpCliAgentSequence(payload));
+  },
+};
 
 const truncateWarpText = (text: string, maxLength = 200): string => {
   if (text.length <= maxLength) return text;
@@ -35,10 +51,7 @@ const extractMessageText = (message: AgentMessage): string => {
     .join(" ");
 };
 
-const getLastMessageText = (
-  messages: AgentMessage[],
-  role: "assistant" | "user",
-): string | undefined => {
+const getLastMessageText = (messages: AgentMessage[], role: "assistant"): string | undefined => {
   const message = messages.findLast((candidate) => candidate.role === role);
   if (message === undefined) return undefined;
   const text = extractMessageText(message);
@@ -47,54 +60,56 @@ const getLastMessageText = (
 };
 
 const emitWarpEvent = (
+  runtime: WarpExtensionRuntime,
   event: WarpCliAgentEvent,
   ctx: ExtensionContext,
   options: WarpCliAgentPayloadOptions = {},
 ): void => {
-  const protocolVersion = negotiateWarpCliAgentProtocolVersion(warpRuntime.readProtocolVersion());
+  const protocolVersion = negotiateWarpCliAgentProtocolVersion(runtime.readProtocolVersion());
   if (protocolVersion === null) return;
-  writeWarpCliAgentSequence(
-    createWarpCliAgentSequence(createWarpCliAgentPayload(event, ctx, protocolVersion, options)),
-  );
+  runtime.emitPayload(createWarpCliAgentPayload(event, ctx, protocolVersion, options));
 };
 
-export default function warpExtension(pi: ExtensionAPI): void {
-  let currentContext: ExtensionContext | null = null;
+export const createWarpExtension = (runtime: WarpExtensionRuntime = defaultWarpExtensionRuntime) =>
+  function warpExtension(pi: ExtensionAPI): void {
+    let currentContext: ExtensionContext | null = null;
 
-  pi.on("session_start", (_event, ctx) => {
-    currentContext = ctx;
-    emitWarpEvent("session_start", ctx, { plugin_version: "builtin" });
-  });
-
-  pi.on("input", (event, ctx) => {
-    currentContext = ctx;
-    emitWarpEvent("prompt_submit", ctx, { query: truncateWarpText(event.text) });
-    return { action: "continue" };
-  });
-
-  pi.on("agent_end", (event, ctx) => {
-    currentContext = ctx;
-    emitWarpEvent("stop", ctx, {
-      query: getLastMessageText(event.messages, "user"),
-      response: getLastMessageText(event.messages, "assistant"),
+    pi.on("session_start", (_event, ctx) => {
+      currentContext = ctx;
+      emitWarpEvent(runtime, "session_start", ctx, { plugin_version: "builtin" });
     });
-  });
 
-  pi.on("tool_execution_end", (event, ctx) => {
-    currentContext = ctx;
-    emitWarpEvent("tool_complete", ctx, { tool_name: event.toolName });
-  });
-
-  pi.on("tool_execution_update", (event, ctx) => {
-    currentContext = ctx;
-    if (event.toolName !== "interview") return;
-    emitWarpEvent("question_asked", ctx, { summary: "Question asked" });
-  });
-
-  pi.events.on(GOAL_BLOCKED_EVENT, (data) => {
-    if (currentContext === null || !Value.Check(GoalBlockedEventSchema, data)) return;
-    emitWarpEvent("question_asked", currentContext, {
-      summary: createGoalBlockedSummary(data.blockedReason),
+    pi.on("input", (event, ctx) => {
+      currentContext = ctx;
+      emitWarpEvent(runtime, "prompt_submit", ctx, { query: truncateWarpText(event.text) });
+      return { action: "continue" };
     });
-  });
-}
+
+    pi.on("agent_end", (event, ctx) => {
+      currentContext = ctx;
+      emitWarpEvent(runtime, "stop", ctx, {
+        query: pi.getSessionName() ?? undefined,
+        response: getLastMessageText(event.messages, "assistant"),
+      });
+    });
+
+    pi.on("tool_execution_end", (event, ctx) => {
+      currentContext = ctx;
+      emitWarpEvent(runtime, "tool_complete", ctx, { tool_name: event.toolName });
+    });
+
+    pi.on("tool_execution_update", (event, ctx) => {
+      currentContext = ctx;
+      if (event.toolName !== "interview") return;
+      emitWarpEvent(runtime, "question_asked", ctx, { summary: "Question asked" });
+    });
+
+    pi.events.on(GOAL_BLOCKED_EVENT, (data) => {
+      if (currentContext === null || !Value.Check(GoalBlockedEventSchema, data)) return;
+      emitWarpEvent(runtime, "question_asked", currentContext, {
+        summary: createGoalBlockedSummary(data.blockedReason),
+      });
+    });
+  };
+
+export default createWarpExtension();

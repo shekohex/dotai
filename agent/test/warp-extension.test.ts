@@ -1,15 +1,28 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   createWarpCliAgentPayload,
   createWarpCliAgentSequence,
   negotiateWarpCliAgentProtocolVersion,
 } from "../src/extensions/warp/encoder.js";
-import warpExtension from "../src/extensions/warp/index.js";
-import { warpRuntime } from "../src/extensions/warp/runtime.js";
+import { createWarpExtension, type WarpExtensionRuntime } from "../src/extensions/warp/index.js";
+import { writeWarpCliAgentSequence } from "../src/extensions/warp/runtime.js";
 import { terminalNotifyRuntime } from "../src/extensions/terminal-notify.js";
+import type { WarpCliAgentPayload } from "../src/extensions/warp/types.js";
 
 type Handler = (event: Record<string, unknown>, ctx: ReturnType<typeof createContext>) => unknown;
+
+const originalTmux = process.env.TMUX;
+const createWarpRuntime = (protocolVersion: string | undefined) => {
+  const payloads: WarpCliAgentPayload[] = [];
+  const runtime: WarpExtensionRuntime = {
+    readProtocolVersion: () => protocolVersion,
+    emitPayload: (payload) => {
+      payloads.push(payload);
+    },
+  };
+  return { runtime, payloads };
+};
 
 const createPi = () => {
   const handlers = new Map<string, Handler>();
@@ -24,6 +37,7 @@ const createPi = () => {
         eventHandlers.get(eventName)?.(data);
       },
     },
+    getSessionName: () => "Warp Integration",
     on: (eventName: string, handler: Handler) => {
       handlers.set(eventName, handler);
     },
@@ -53,9 +67,16 @@ const decodeSequence = (sequence: string) => {
   return { title, payload: JSON.parse(payload ?? "{}") };
 };
 
+beforeEach(() => {
+  vi.spyOn(terminalNotifyRuntime, "execFileSync").mockImplementation(() => {
+    throw new Error("tmux not available");
+  });
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
-  delete process.env.TMUX;
+  if (originalTmux === undefined) delete process.env.TMUX;
+  else process.env.TMUX = originalTmux;
 });
 
 test("negotiateWarpCliAgentProtocolVersion clamps to supported version", () => {
@@ -84,19 +105,17 @@ test("createWarpCliAgentSequence emits Warp OSC 777 payload with pi agent", () =
 });
 
 test("warp extension is silent outside Warp", () => {
-  vi.spyOn(warpRuntime, "readProtocolVersion").mockReturnValue(undefined);
-  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  const { runtime, payloads } = createWarpRuntime(undefined);
   const pi = createPi();
-  warpExtension(pi as unknown as ExtensionAPI);
+  createWarpExtension(runtime)(pi as unknown as ExtensionAPI);
   pi.emit("session_start", {});
-  expect(stdoutSpy).not.toHaveBeenCalled();
+  expect(payloads).toEqual([]);
 });
 
 test("warp extension maps Pi events to Warp events", () => {
-  vi.spyOn(warpRuntime, "readProtocolVersion").mockReturnValue("1");
-  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  const { runtime, payloads } = createWarpRuntime("1");
   const pi = createPi();
-  warpExtension(pi as unknown as ExtensionAPI);
+  createWarpExtension(runtime)(pi as unknown as ExtensionAPI);
   pi.emit("session_start", {});
   pi.emit("input", { text: "hello warp" });
   pi.emit("agent_end", {
@@ -131,7 +150,6 @@ test("warp extension maps Pi events to Warp events", () => {
     blockedReason:
       "Need user feedback on whether Warp renders question_asked notifications for blocked goals before continuing.",
   });
-  const payloads = stdoutSpy.mock.calls.map(([sequence]) => decodeSequence(sequence).payload);
   const events = payloads.map((payload) => payload.event);
   expect(events).toEqual([
     "session_start",
@@ -142,7 +160,7 @@ test("warp extension maps Pi events to Warp events", () => {
     "question_asked",
   ]);
   expect(payloads[1]).toMatchObject({ query: "hello warp" });
-  expect(payloads[2]).toMatchObject({ query: "hello warp", response: "done" });
+  expect(payloads[2]).toMatchObject({ query: "Warp Integration", response: "done" });
   expect(payloads[3]).toMatchObject({ tool_name: "bash" });
   expect(payloads[5]).toMatchObject({
     summary:
@@ -152,15 +170,15 @@ test("warp extension maps Pi events to Warp events", () => {
 
 test("warp extension wraps OSC for tmux fallback", () => {
   process.env.TMUX = "/tmp/tmux,1,0";
-  vi.spyOn(warpRuntime, "readProtocolVersion").mockReturnValue("1");
   vi.spyOn(terminalNotifyRuntime, "execFileSync").mockReturnValue("/dev/ttys009\n");
   const writeSpy = vi.spyOn(terminalNotifyRuntime, "writeFileSync").mockImplementation(() => {
     throw new Error("write failed");
   });
   const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
-  const pi = createPi();
-  warpExtension(pi as unknown as ExtensionAPI);
-  pi.emit("session_start", {});
+  const payload = createWarpCliAgentPayload("session_start", createContext(), 1, {
+    plugin_version: "builtin",
+  });
+  writeWarpCliAgentSequence(createWarpCliAgentSequence(payload));
   expect(writeSpy.mock.calls.some(([, sequence]) => sequence.includes("\u001bPtmux;"))).toBe(true);
   expect(decodeSequence(stdoutSpy.mock.calls[0]?.[0] ?? "").payload.agent).toBe("pi");
 });

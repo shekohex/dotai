@@ -179,7 +179,11 @@ export function isChildSession(
     return false;
   }
   if (childState.persisted === false) {
-    return true;
+    return (
+      ctx.sessionManager.getSessionId() === childState.sessionId ||
+      (ctx.sessionManager.getSessionId() !== childState.parentSessionId &&
+        ctx.sessionManager.getSessionFile() === undefined)
+    );
   }
   return (
     ctx.sessionManager.getSessionId() === childState.sessionId ||

@@ -78,11 +78,18 @@ test("shouldNotifyAgentEnd skips current subagent session", () => {
   expect(shouldNotifyAgentEnd(childState, ctx)).toBeFalsy();
 });
 
-test("shouldNotifyAgentEnd skips ephemeral subagent session", () => {
+test("shouldNotifyAgentEnd skips current ephemeral subagent session", () => {
   const childState = createChildState({ persisted: false, sessionPath: undefined });
   const ctx = createExtensionContext("different-session");
 
   expect(shouldNotifyAgentEnd(childState, ctx)).toBeFalsy();
+});
+
+test("shouldNotifyAgentEnd allows parent session with leaked ephemeral child state", () => {
+  const childState = createChildState({ persisted: false, sessionPath: undefined });
+  const ctx = createExtensionContext("parent-session");
+
+  expect(shouldNotifyAgentEnd(childState, ctx)).toBeTruthy();
 });
 
 test("shouldNotifyAgentEnd allows parent session", () => {

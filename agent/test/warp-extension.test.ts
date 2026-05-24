@@ -56,6 +56,15 @@ const createContext = () => ({
   cwd: "/workspace/project",
   sessionManager: {
     getSessionId: () => "session-1",
+    getSessionFile: () => "/workspace/.pi/session.jsonl",
+  },
+});
+
+const createEphemeralContext = () => ({
+  cwd: "/workspace/project",
+  sessionManager: {
+    getSessionId: () => "ephemeral-session",
+    getSessionFile: () => undefined,
   },
 });
 
@@ -179,6 +188,40 @@ test("warp extension is silent for subagent sessions", () => {
     prompt: "do work",
     autoExit: true,
     handoff: false,
+    persisted: false,
+    tools: [],
+    startedAt: 1,
+  });
+  const { runtime, payloads } = createWarpRuntime("1");
+  const pi = createPi();
+  createWarpExtension(runtime)(pi as unknown as ExtensionAPI);
+
+  const ctx = createEphemeralContext();
+  pi.emit("session_start", {}, ctx);
+  pi.emit("input", { text: "hello warp" }, ctx);
+  pi.emit("agent_end", { messages: [{ role: "assistant", content: "done" }] }, ctx);
+  pi.emit("tool_execution_end", { toolName: "bash" }, ctx);
+  pi.emit("tool_execution_update", { toolName: "interview" }, ctx);
+  pi.events.emit("goal:blocked", {
+    sessionId: "session-1",
+    cwd: "/workspace/project",
+    goalId: "goal-1",
+    objective: "Ship Warp integration",
+    blockedReason: "Need user feedback.",
+  });
+
+  expect(payloads).toEqual([]);
+});
+
+test("warp extension allows parent session with leaked ephemeral child state", () => {
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session",
+    parentSessionId: "parent-session",
+    name: "worker",
+    prompt: "do work",
+    autoExit: true,
+    handoff: false,
+    persisted: false,
     tools: [],
     startedAt: 1,
   });
@@ -189,17 +232,12 @@ test("warp extension is silent for subagent sessions", () => {
   pi.emit("session_start", {});
   pi.emit("input", { text: "hello warp" });
   pi.emit("agent_end", { messages: [{ role: "assistant", content: "done" }] });
-  pi.emit("tool_execution_end", { toolName: "bash" });
-  pi.emit("tool_execution_update", { toolName: "interview" });
-  pi.events.emit("goal:blocked", {
-    sessionId: "session-1",
-    cwd: "/workspace/project",
-    goalId: "goal-1",
-    objective: "Ship Warp integration",
-    blockedReason: "Need user feedback.",
-  });
 
-  expect(payloads).toEqual([]);
+  expect(payloads.map((payload) => payload.event)).toEqual([
+    "session_start",
+    "prompt_submit",
+    "stop",
+  ]);
 });
 
 test("warp extension wraps OSC for tmux fallback", () => {

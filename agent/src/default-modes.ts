@@ -15,8 +15,8 @@ export const defaultModes = {
   currentMode: "build",
   modes: {
     rush: {
-      provider: "openai-codex",
-      modelId: "gpt-5.4-mini",
+      provider: "opencode-go",
+      modelId: "deepseek-v4-flash",
       thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
@@ -37,7 +37,7 @@ export const defaultModes = {
     build: {
       provider: "openai-codex",
       modelId: "gpt-5.5",
-      thinkingLevel: "low",
+      thinkingLevel: "medium",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*", "!subagent"],
@@ -57,7 +57,7 @@ export const defaultModes = {
     review: {
       provider: "openai-codex",
       modelId: "gpt-5.5",
-      thinkingLevel: "medium",
+      thinkingLevel: "high",
       color: "muted",
       tmuxTarget: "window",
       tools: ["read", "bash", "websearch", "execute"],
@@ -102,8 +102,9 @@ export const defaultModes = {
         "Use me when you want frontend and UI work, UX exploration, or product-facing implementation that should look polished and feel good to use.",
     },
     ask: {
-      provider: "opencode-go",
-      modelId: "deepseek-v4-flash",
+      provider: "openai-codex",
+      modelId: "gpt-5.5",
+      thinkingLevel: "low",
       tmuxTarget: "window",
       tools: ["read", "bash", "websearch", "execute"],
       autoExit: true,

@@ -26,7 +26,9 @@ const TITLE_SPINNER_PROFILES: Record<TitleActivity, TitleSpinnerProfile> = {
   bash: { frames: ["-", "\\", "|", "/"] },
   searching: { frames: ["∙∙∙", "●∙∙", "∙●∙", "∙∙●", "∙∙∙"] },
   web: { frames: ["◜", "◠", "◝", "◞", "◡", "◟"] },
-  subagent: { frames: ["☱", "☲", "☴"] },
+  subagent: {
+    frames: ["✶", "✸", "✹", "✺", "✹", "✷"],
+  },
   running: { frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] },
 };
 

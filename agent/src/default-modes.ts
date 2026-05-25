@@ -37,7 +37,7 @@ export const defaultModes = {
     build: {
       provider: "openai-codex",
       modelId: "gpt-5.5",
-      thinkingLevel: "medium",
+      thinkingLevel: "low",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*", "!subagent"],

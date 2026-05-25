@@ -540,9 +540,10 @@
         }
       }
 
-      copyAll.addEventListener("click", () =>
-        copyText(copyAll, items.map(markdownText).join("\n")),
-      );
+      copyAll.addEventListener("click", () => {
+        const m = items.map(markdownText).join("\n"));
+        copyText(copyAll, `Please checkout the following screenshots files:\n\n${m}`);
+      });
 
       list.addEventListener("click", (event) => {
         const button = event.target.closest("button[data-copy]");
@@ -559,7 +560,7 @@
       }
 
       function markdownText(item) {
-        return `![${item.title.trim() || fallbackTitle(item)}](${item.image.path})`;
+        return `[${item.title.trim() || fallbackTitle(item)}](${item.image.path})`;
       }
       function fallbackTitle(item) {
         return item.image.originalName || item.file.name || `Image #${items.indexOf(item) + 1}`;

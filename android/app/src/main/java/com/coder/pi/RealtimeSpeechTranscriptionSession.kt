@@ -12,9 +12,11 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
@@ -46,7 +48,10 @@ class RealtimeSpeechTranscriptionSession(
             explicitNulls = false
         }
     private val client = HttpClient(OkHttp) { install(WebSockets) }
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val exceptionHandler = CoroutineExceptionHandler { _, failure ->
+        Log.e(RealtimeTranscriptionEventHandler.LogTag, "realtime session failed", failure)
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private val audioFrames = Channel<FloatArray>(capacity = 32, onBufferOverflow = BufferOverflow.DROP_LATEST)
     private var finalTranscript = CompletableDeferred<String>()
     private var receiveJob: Job? = null
@@ -60,7 +65,6 @@ class RealtimeSpeechTranscriptionSession(
     private val eventHandler = RealtimeTranscriptionEventHandler(onDelta)
 
     suspend fun start() {
-        ensureConnected()
         if (sendJob == null) sendJob = scope.launch { sendAudioFrames() }
     }
 

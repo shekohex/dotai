@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tmux share</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23cdd6f4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='4 17 10 11 4 5'/%3E%3Cline x1='12' y1='19' x2='20' y2='19'/%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      @import url("https://cdn.jsdelivr.net/npm/@catppuccin/palette/css/catppuccin.css");
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        background: var(--ctp-mocha-base);
+      }
+      #terminal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #terminal canvas {
+        display: block;
+      }
+      .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(var(--ctp-mocha-crust-rgb), 0.88);
+        z-index: 100;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        color: var(--ctp-mocha-text);
+        font-size: 14px;
+        pointer-events: none;
+      }
+      .overlay-inner {
+        text-align: center;
+        padding: 24px 32px;
+        border: 1px solid var(--ctp-mocha-surface1);
+        border-radius: 8px;
+        background: var(--ctp-mocha-surface0);
+      }
+      .overlay-inner h2 {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      .overlay-inner p {
+        color: var(--ctp-mocha-overlay0);
+        font-size: 13px;
+      }
+      #reconnect-status {
+        font-size: 12px;
+        color: var(--ctp-mocha-overlay1);
+        margin-top: 12px;
+      }
+      @keyframes fadeout {
+        0% {
+          opacity: 1;
+        }
+        80% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+        }
+      }
+      #connected-overlay {
+        animation: fadeout 1.5s ease-out forwards;
+        background: transparent;
+      }
+      #connected-overlay .overlay-inner {
+        background: rgba(var(--ctp-mocha-green-rgb), 0.15);
+        border-color: rgba(var(--ctp-mocha-green-rgb), 0.3);
+      }
+      #connected-overlay h2 {
+        color: var(--ctp-mocha-green);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="terminal"></div>
+
+    <div class="overlay" id="connecting-overlay">
+      <div class="overlay-inner">
+        <h2>connecting...</h2>
+        <p>waiting for tmux stream</p>
+      </div>
+    </div>
+
+    <div class="overlay" id="disconnected-overlay" style="display: none">
+      <div class="overlay-inner">
+        <h2>disconnected</h2>
+        <p>server stopped or connection lost</p>
+        <p id="reconnect-status"></p>
+      </div>
+    </div>
+
+    <div class="overlay" id="connected-overlay" style="display: none">
+      <div class="overlay-inner">
+        <h2>connected</h2>
+      </div>
+    </div>
+
+    <script type="module">
+      import { init, Terminal } from "https://esm.sh/ghostty-web@0.4.0";
+
+      await init();
+
+      const terminalEl = document.getElementById("terminal");
+      const connectingOverlay = document.getElementById("connecting-overlay");
+      const disconnectedOverlay = document.getElementById("disconnected-overlay");
+      const connectedOverlay = document.getElementById("connected-overlay");
+      const reconnectStatus = document.getElementById("reconnect-status");
+
+      let term = null;
+      let termOpened = false;
+      let ws = null;
+      let reconnectTimer = null;
+      let reconnectAttempts = 0;
+      let manualClose = false;
+      let resizeTimer = null;
+
+      let userScrolledUp = false;
+      let writeBuffer = [];
+      let newContentBadge = null;
+
+      function createNewContentBadge() {
+        if (newContentBadge) return;
+        newContentBadge = document.createElement("div");
+        newContentBadge.id = "new-content-badge";
+        newContentBadge.style.cssText =
+          "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);" +
+          "z-index:200;display:none;padding:6px 16px;border-radius:6px;" +
+          "background:var(--ctp-mocha-surface0);border:1px solid var(--ctp-mocha-blue);" +
+          "color:var(--ctp-mocha-blue);font-size:13px;cursor:pointer;" +
+          'font-family:"JetBrains Mono",ui-monospace,monospace;';
+        newContentBadge.textContent = "new output ↓";
+        newContentBadge.addEventListener("click", () => {
+          if (term && termOpened) term.scrollToBottom();
+        });
+        document.body.appendChild(newContentBadge);
+      }
+
+      function flushWriteBuffer() {
+        if (writeBuffer.length === 0) return;
+        const chunks = writeBuffer;
+        writeBuffer = [];
+        for (const chunk of chunks) {
+          term.write(chunk);
+        }
+      }
+
+      function showNewContentBadge() {
+        if (!newContentBadge) createNewContentBadge();
+        newContentBadge.style.display = "block";
+      }
+
+      function hideNewContentBadge() {
+        if (newContentBadge) newContentBadge.style.display = "none";
+      }
+
+      function hideAllOverlays() {
+        connectingOverlay.style.display = "none";
+        disconnectedOverlay.style.display = "none";
+        connectedOverlay.style.display = "none";
+      }
+
+      function showConnecting() {
+        hideAllOverlays();
+        connectingOverlay.style.display = "flex";
+      }
+
+      function showDisconnected() {
+        hideAllOverlays();
+        disconnectedOverlay.style.display = "flex";
+      }
+
+      function flashConnected() {
+        hideAllOverlays();
+        connectedOverlay.style.display = "flex";
+        connectedOverlay.style.animation = "none";
+        void connectedOverlay.offsetWidth;
+        connectedOverlay.style.animation = "fadeout 1.5s ease-out forwards";
+      }
+
+      function scheduleReconnect() {
+        if (manualClose) return;
+        if (reconnectTimer) return;
+        showDisconnected();
+        const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 8000);
+        reconnectStatus.textContent = `reconnecting in ${Math.round(delay / 1000)}s...`;
+        reconnectTimer = setTimeout(connect, delay);
+      }
+
+      function cancelReconnect() {
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        reconnectStatus.textContent = "";
+      }
+
+      function fitTerminal() {
+        if (!term || !termOpened) return;
+        const canvas = terminalEl.querySelector("canvas");
+        if (!canvas) return;
+        const containerW = window.innerWidth;
+        const containerH = window.innerHeight;
+        const canvasW = canvas.width / (window.devicePixelRatio || 1);
+        const canvasH = canvas.height / (window.devicePixelRatio || 1);
+        if (canvasW === 0 || canvasH === 0) return;
+        const scale = Math.min(containerW / canvasW, containerH / canvasH);
+        canvas.style.transformOrigin = "0 0";
+        canvas.style.transform = `scale(${scale})`;
+      }
+
+      function handleResize() {
+        if (resizeTimer) return;
+        resizeTimer = setTimeout(() => {
+          resizeTimer = null;
+          fitTerminal();
+        }, 150);
+      }
+
+      function connect() {
+        cancelReconnect();
+        showConnecting();
+
+        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        const url = `${protocol}//${location.host}/ws`;
+
+        try {
+          ws = new WebSocket(url);
+        } catch {
+          reconnectAttempts++;
+          scheduleReconnect();
+          return;
+        }
+
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = () => {
+          reconnectAttempts = 0;
+          connectingOverlay.querySelector("p").textContent = "initializing terminal...";
+        };
+
+        ws.onmessage = (event) => {
+          if (typeof event.data === "string") {
+            try {
+              const msg = JSON.parse(event.data);
+              if (msg.type === "init") {
+                try {
+                  if (term) {
+                    term.dispose();
+                    termOpened = false;
+                  }
+                  if (msg.sessionName) {
+                    document.title = `${msg.sessionName} — tmux share`;
+                  }
+                  term = new Terminal({
+                    cols: msg.cols ?? 120,
+                    rows: msg.rows ?? 40,
+                    fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                    scrollback: 10000,
+                    fontSize: 15,
+                    theme: {
+                      background: "#1e1e2e",
+                      foreground: "#cdd6f4",
+                      cursor: "#f5e0dc",
+                      cursorAccent: "#1e1e2e",
+                      selectionBackground: "#585b7080",
+                      selectionForeground: "#cdd6f4",
+                      black: "#45475a",
+                      red: "#f38ba8",
+                      green: "#a6e3a1",
+                      yellow: "#f9e2af",
+                      blue: "#89b4fa",
+                      magenta: "#f5c2e7",
+                      cyan: "#94e2d5",
+                      white: "#bac2de",
+                      brightBlack: "#585b70",
+                      brightRed: "#f38ba8",
+                      brightGreen: "#a6e3a1",
+                      brightYellow: "#f9e2af",
+                      brightBlue: "#89b4fa",
+                      brightMagenta: "#f5c2e7",
+                      brightCyan: "#94e2d5",
+                      brightWhite: "#a6adc8",
+                    },
+                  });
+                  term.open(terminalEl);
+                  term.onData(() => {});
+                  term.onScroll((viewportY) => {
+                    const wasScrolledUp = userScrolledUp;
+                    userScrolledUp = viewportY > 0;
+                    if (wasScrolledUp && !userScrolledUp) {
+                      hideNewContentBadge();
+                      flushWriteBuffer();
+                    }
+                  });
+                  termOpened = true;
+                  userScrolledUp = false;
+                  writeBuffer = [];
+                  hideNewContentBadge();
+                  hideAllOverlays();
+                  requestAnimationFrame(() => {
+                    fitTerminal();
+                    requestAnimationFrame(fitTerminal);
+                  });
+                  window.addEventListener("resize", handleResize);
+                  flashConnected();
+                } catch (initError) {
+                  console.error("terminal init failed", initError);
+                  showDisconnected();
+                  reconnectStatus.textContent = "terminal init error";
+                }
+                return;
+              }
+              if (msg.type === "server-shutdown") {
+                manualClose = true;
+                cancelReconnect();
+                showDisconnected();
+                reconnectStatus.textContent = "server stopped";
+                ws.close();
+                return;
+              }
+              if (msg.type === "tmux-exited") {
+                cancelReconnect();
+                showDisconnected();
+                reconnectStatus.textContent = "tmux session ended";
+                return;
+              }
+            } catch {
+              // binary-like data sneaking as text — pass through
+            }
+          }
+
+          if (!term || !termOpened) return;
+
+          const data = typeof event.data === "string" ? event.data : new Uint8Array(event.data);
+
+          if (userScrolledUp) {
+            writeBuffer.push(data);
+            showNewContentBadge();
+          } else {
+            term.write(data);
+          }
+        };
+
+        ws.onclose = () => {
+          ws = null;
+          window.removeEventListener("resize", handleResize);
+          userScrolledUp = false;
+          writeBuffer = [];
+          hideNewContentBadge();
+          if (!manualClose) {
+            reconnectAttempts++;
+            scheduleReconnect();
+          }
+        };
+
+        ws.onerror = () => {
+          ws?.close();
+        };
+      }
+
+      window.addEventListener("beforeunload", () => {
+        manualClose = true;
+        cancelReconnect();
+        window.removeEventListener("resize", handleResize);
+      });
+
+      connect();
+    </script>
+  </body>
+</html>

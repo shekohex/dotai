@@ -1,8 +1,11 @@
 import { Text } from "@earendil-works/pi-tui";
+import { stream } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   getContextPruneAPI,
   setContextPruneRuntime,
@@ -21,6 +24,12 @@ import {
   renderContextTreeQueryResult,
 } from "../src/extensions/context-prune/tool-render.js";
 import { DEFAULT_CONFIG } from "../src/extensions/context-prune/types.js";
+import { summarizeBatch, summarizeBatches } from "../src/extensions/context-prune/summarizer.js";
+
+vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
+  return { ...actual, stream: vi.fn() };
+});
 
 const theme = {
   fg: (_token: string, value: string) => value,
@@ -33,6 +42,95 @@ const renderContext = {
   isError: false,
   lastComponent: undefined,
 };
+
+const usage = {
+  input: 1,
+  output: 1,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 2,
+  cost: {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0,
+  },
+};
+
+function createModel(provider: string, id: string, api: Api, baseUrl = "https://example.com/v1") {
+  return {
+    id,
+    name: id,
+    api,
+    provider,
+    baseUrl,
+    reasoning: true,
+    input: ["text"],
+    cost: usage.cost,
+    contextWindow: 100000,
+    maxTokens: 4096,
+  } satisfies Model<Api>;
+}
+
+function createContext(models: Model<Api>[]): ExtensionContext {
+  return {
+    model: models[0],
+    modelRegistry: {
+      find(provider: string, id: string) {
+        return models.find((model) => model.provider === provider && model.id === id);
+      },
+      async getApiKeyAndHeaders() {
+        return { ok: true, apiKey: "key", headers: {} };
+      },
+    },
+    ui: { notify: vi.fn() },
+  } as never;
+}
+
+function createBatch(resultText = "x".repeat(1000)) {
+  return {
+    turnIndex: 1,
+    timestamp: 1,
+    assistantText: "",
+    toolCalls: [
+      {
+        toolCallId: "tool-1",
+        toolName: "bash",
+        args: {},
+        resultText,
+        isError: false,
+      },
+    ],
+  };
+}
+
+function createResponseStream(text: string) {
+  const message: AssistantMessage = {
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: "openai-responses",
+    provider: "test",
+    model: "test",
+    usage,
+    stopReason: "stop",
+    timestamp: Date.now(),
+  };
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield { type: "text_delta", contentIndex: 0, delta: text, partial: message };
+    },
+    result: async () => message,
+  };
+}
+
+function streamMock() {
+  return vi.mocked(stream);
+}
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 function renderText(component: Text): string {
   return component.render(120).join("\n");
@@ -131,6 +229,72 @@ describe("context-prune settings", () => {
     expect(settings.contextPrune).toMatchObject({ enabled: true, pruneOn: "on-demand" });
     await expect(loadConfig()).resolves.toMatchObject({ enabled: true, pruneOn: "on-demand" });
     delete process.env.PI_CODING_AGENT_DIR;
+  });
+});
+
+describe("context-prune summarizer", () => {
+  test("uses OpenAI Responses API for LiteLLM Gemini models", async () => {
+    const geminiModel = createModel(
+      "gemini",
+      "gemini-3.1-flash-lite-preview",
+      "google-generative-ai",
+      "https://gateway.example/v1beta",
+    );
+    const mock = streamMock();
+    mock.mockReturnValue(createResponseStream("summary") as never);
+
+    const result = await summarizeBatch(
+      createBatch(),
+      { ...DEFAULT_CONFIG, summarizerModels: ["gemini/gemini-3.1-flash-lite-preview"] },
+      createContext([geminiModel]),
+    );
+
+    expect(result?.summaryText).toBe("summary");
+    expect(mock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "gemini",
+        id: "gemini-3.1-flash-lite-preview",
+        api: "openai-responses",
+        baseUrl: "https://gateway.example/v1",
+        reasoning: false,
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  test("falls back immediately on rate limit and cools down model for parallel batches", async () => {
+    const geminiModel = createModel(
+      "gemini",
+      "gemini-3.1-flash-lite-preview",
+      "google-generative-ai",
+    );
+    const fallbackModel = createModel("opencode-go", "deepseek-v4-flash", "openai-completions");
+    const mock = streamMock();
+    mock.mockImplementation((model) => {
+      if (model.provider === "gemini") {
+        throw new Error(
+          '429 RESOURCE_EXHAUSTED RetryInfo retryDelay: "2.015665228s" quotaResetDelay: "2.015665228s"',
+        );
+      }
+      return createResponseStream(`summary from ${model.provider}`) as never;
+    });
+
+    const results = await summarizeBatches(
+      [createBatch("a".repeat(1000)), createBatch("b".repeat(1000))],
+      {
+        ...DEFAULT_CONFIG,
+        summarizerModels: ["gemini/gemini-3.1-flash-lite-preview", "opencode-go/deepseek-v4-flash"],
+      },
+      createContext([geminiModel, fallbackModel]),
+    );
+
+    expect(results.map((result) => result?.summaryText)).toEqual([
+      "summary from opencode-go",
+      "summary from opencode-go",
+    ]);
+    expect(mock.mock.calls.filter(([model]) => model.provider === "gemini")).toHaveLength(1);
+    expect(mock.mock.calls.filter(([model]) => model.provider === "opencode-go")).toHaveLength(2);
   });
 });
 

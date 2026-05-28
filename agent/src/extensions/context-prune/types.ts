@@ -380,6 +380,9 @@ export interface FlushOptions {
 export interface SummarizeBatchOptions {
   /** Receives the number of summary text characters streamed so far. */
   onTextProgress?: (receivedChars: number) => void;
+  cooldownState?: {
+    readonly modelCooldownUntilMs: Map<string, number>;
+  };
   /**
    * Abort signal — when fired the in-flight stream call is cancelled and the batch is treated as
    * aborted (not a summarizer failure).

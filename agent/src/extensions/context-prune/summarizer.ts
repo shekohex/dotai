@@ -12,6 +12,13 @@ import type {
 import { serializeBatchForSummarizer } from "./batch-capture.js";
 import { errorMessage, isTextContent } from "./guards.js";
 
+const RATE_LIMIT_FALLBACK_DELAY_MS = 2000;
+const MIN_RATE_LIMIT_DELAY_MS = 250;
+
+interface SummarizerCooldownState {
+  readonly modelCooldownUntilMs: Map<string, number>;
+}
+
 const SYSTEM_PROMPT = `You are summarizing a batch of tool calls made by an AI coding assistant.
 For each tool call provide:
 - Tool name and a one-sentence description of what it did
@@ -46,6 +53,90 @@ export function resolveModel(modelName: string, ctx: ExtensionContext): Model<Ap
   return ctx.modelRegistry.find(modelName.slice(0, slashIndex), modelName.slice(slashIndex + 1));
 }
 
+function createSummarizerCooldownState(): SummarizerCooldownState {
+  return { modelCooldownUntilMs: new Map() };
+}
+
+function modelCooldownKey(model: Model<Api>): string {
+  return `${model.provider}/${model.id}`;
+}
+
+function modelErrorLabel(modelName: string, model: Model<Api> | undefined): string {
+  return model === undefined ? modelName : modelCooldownKey(model);
+}
+
+function availableAfterMs(cooldownState: SummarizerCooldownState, model: Model<Api>): number {
+  const cooldownUntilMs = cooldownState.modelCooldownUntilMs.get(modelCooldownKey(model)) ?? 0;
+  return Math.max(0, cooldownUntilMs - Date.now());
+}
+
+function markRateLimited(
+  cooldownState: SummarizerCooldownState,
+  model: Model<Api>,
+  error: unknown,
+): number {
+  const delayMs = rateLimitDelayMs(error);
+  const cooldownUntilMs = Date.now() + delayMs;
+  const key = modelCooldownKey(model);
+  cooldownState.modelCooldownUntilMs.set(
+    key,
+    Math.max(cooldownState.modelCooldownUntilMs.get(key) ?? 0, cooldownUntilMs),
+  );
+  return delayMs;
+}
+
+function rateLimitDelayMs(error: unknown): number {
+  const message = errorMessage(error);
+  const parsedDelayMs = parseRateLimitDelayMs(message);
+  if (parsedDelayMs !== undefined) return Math.max(MIN_RATE_LIMIT_DELAY_MS, parsedDelayMs);
+  return RATE_LIMIT_FALLBACK_DELAY_MS;
+}
+
+function parseRateLimitDelayMs(message: string): number | undefined {
+  const durationMatch =
+    /(?:retryDelay|quotaResetDelay|retry after|quota will reset after)[^0-9]*(\d+(?:\.\d+)?)\s*(ms|s)?/i.exec(
+      message,
+    );
+  if (durationMatch !== null) {
+    const value = Number(durationMatch[1]);
+    const unit = durationMatch[2]?.toLowerCase();
+    if (Number.isFinite(value)) return unit === "ms" ? value : value * 1000;
+  }
+
+  const timestampMatch = /quotaResetTimeStamp[^0-9]*(\d{4}-\d{2}-\d{2}T[^\s"}]+)/i.exec(message);
+  if (timestampMatch !== null) {
+    const timestampMs = Date.parse(timestampMatch[1]);
+    if (Number.isFinite(timestampMs)) return Math.max(0, timestampMs - Date.now());
+  }
+
+  return undefined;
+}
+
+function isRateLimitError(error: unknown): boolean {
+  const message = errorMessage(error).toLowerCase();
+  return (
+    message.includes("429") ||
+    message.includes("rate_limit") ||
+    message.includes("ratelimit") ||
+    message.includes("resource_exhausted") ||
+    message.includes("throttling_error") ||
+    message.includes("quota will reset") ||
+    message.includes("retryinfo")
+  );
+}
+
+function modelForSummarizer(model: Model<Api>): Model<Api> {
+  if (model.provider !== "gemini") return model;
+
+  const baseUrl =
+    model.baseUrl
+      .replace(/\/v1beta\/?$/, "")
+      .replace(/\/v1\/?$/, "")
+      .replace(/\/+$/, "") + "/v1";
+
+  return { ...model, api: "openai-responses", baseUrl, reasoning: false };
+}
+
 function receivedTextChars(message: AssistantMessage): number {
   return message.content.reduce((sum, content) => {
     return isTextContent(content) ? sum + content.text.length : sum;
@@ -70,9 +161,17 @@ export async function summarizeBatch(
     const userMessage =
       SYSTEM_PROMPT + "\n\n<tool-call-batch>\n" + serialized + "\n</tool-call-batch>";
     const failures: string[] = [];
+    const cooldownState = options.cooldownState ?? createSummarizerCooldownState();
 
     for (const modelName of config.summarizerModels) {
-      const result = await trySummarizeWithModel(modelName, config, ctx, userMessage, options);
+      const result = await trySummarizeWithModel(
+        modelName,
+        config,
+        ctx,
+        userMessage,
+        options,
+        cooldownState,
+      );
       if (result.ok) return result.value;
       failures.push(result.error);
     }
@@ -92,11 +191,18 @@ async function trySummarizeWithModel(
   ctx: ExtensionContext,
   userMessage: string,
   options: SummarizeBatchOptions,
+  cooldownState: SummarizerCooldownState,
 ): Promise<{ ok: true; value: SummarizeResult } | { ok: false; error: string }> {
+  let model: Model<Api> | undefined;
   try {
-    const model = resolveModel(modelName, ctx);
+    model = resolveModel(modelName, ctx);
     if (model === undefined) {
       return { ok: false, error: `${modelName}: not found` };
+    }
+
+    const cooldownMs = availableAfterMs(cooldownState, model);
+    if (cooldownMs > 0) {
+      return { ok: false, error: `${modelCooldownKey(model)}: rate limited for ${cooldownMs}ms` };
     }
 
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
@@ -105,10 +211,19 @@ async function trySummarizeWithModel(
       return { ok: false, error: `${model.id}: ${authMessage}` };
     }
 
+    const postAuthCooldownMs = availableAfterMs(cooldownState, model);
+    if (postAuthCooldownMs > 0) {
+      return {
+        ok: false,
+        error: `${modelCooldownKey(model)}: rate limited for ${postAuthCooldownMs}ms`,
+      };
+    }
+
     // Pass the abort signal so the underlying fetch is cancelled immediately
     // when the user presses Esc while the tool is running.
+    const streamModel = modelForSummarizer(model);
     const responseStream = stream(
-      model,
+      streamModel,
       {
         messages: [
           {
@@ -166,12 +281,19 @@ async function trySummarizeWithModel(
       .join("\n");
 
     if (llmText.trim().length === 0) {
-      return { ok: false, error: `${model.id}: empty summary` };
+      return { ok: false, error: `${modelCooldownKey(model)}: empty summary` };
     }
     return { ok: true, value: { summaryText: llmText, usage: response.usage } };
   } catch (err: unknown) {
     if (isSignalAborted(options.signal)) throw err;
-    return { ok: false, error: `${modelName}: ${errorMessage(err)}` };
+    if (model !== undefined && isRateLimitError(err)) {
+      const delayMs = markRateLimited(cooldownState, model, err);
+      return {
+        ok: false,
+        error: `${modelCooldownKey(model)}: rate limited for ${delayMs}ms: ${errorMessage(err)}`,
+      };
+    }
+    return { ok: false, error: `${modelErrorLabel(modelName, model)}: ${errorMessage(err)}` };
   }
 }
 
@@ -182,12 +304,14 @@ export async function summarizeBatches(
   options: SummarizeBatchesOptions = {},
 ): Promise<Array<SummarizeResult | null>> {
   if (batches.length === 0) return [];
+  const cooldownState = createSummarizerCooldownState();
   // Single batch — delegate to the single-batch path (no extra overhead)
   if (batches.length === 1) {
     const batch = batches[0];
     if (batch === undefined) return [];
     return [
       await summarizeBatch(batch, config, ctx, {
+        cooldownState,
         signal: options.signal,
         onTextProgress: (receivedChars) => {
           options.onBatchTextProgress?.(0, 1, batch, receivedChars);
@@ -200,6 +324,7 @@ export async function summarizeBatches(
   return Promise.all(
     batches.map((batch, index) =>
       summarizeBatch(batch, config, ctx, {
+        cooldownState,
         signal: options.signal,
         onTextProgress: (receivedChars) => {
           options.onBatchTextProgress?.(index, batches.length, batch, receivedChars);

@@ -40,7 +40,7 @@ export const defaultModes = {
       thinkingLevel: "low",
       color: "warning",
       tmuxTarget: "window",
-      tools: ["*", "!subagent"],
+      tools: ["*"],
       description:
         "Use me when you want fast, capable model for day to day coding tasks, I'm the default mode.",
     },
@@ -57,7 +57,7 @@ export const defaultModes = {
     review: {
       provider: "openai-codex",
       modelId: "gpt-5.5",
-      thinkingLevel: "high",
+      thinkingLevel: "xhigh",
       color: "muted",
       tmuxTarget: "window",
       tools: ["read", "bash", "websearch", "execute"],

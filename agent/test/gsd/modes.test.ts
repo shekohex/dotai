@@ -16,6 +16,7 @@ describe("ensureBuiltInGsdModes", () => {
     const loaded = loadModeRegistrySync();
     expect(loaded.modes["gsd-planner"]).toBeDefined();
     expect(loaded.modes["gsd-executor"]).toBeDefined();
+    expect(loaded.currentMode).toBe("build");
   });
 
   it("exposes built-in GSD modes through canonical registry", () => {

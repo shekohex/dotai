@@ -16,7 +16,6 @@ export type ModeApplyDeps = {
   ensureRuntime: (ctx: ExtensionContext) => Promise<void>;
   syncErrorUI: (ctx: ExtensionContext) => void;
   ensureModesReady: (ctx: ExtensionContext) => Promise<boolean>;
-  saveRuntime: (ctx: ExtensionContext) => Promise<void>;
   getModeSpec: (data: ModesFile, modeName: string) => ModeSpec | undefined;
   inferActiveMode: (data: ModesFile, activeMode: string | undefined) => string | undefined;
   currentSelection: (

@@ -52,9 +52,15 @@ function getBuiltInModesData(): ModesFile | undefined {
   const modes = Object.fromEntries(
     orderedSources.flatMap(([, source]) => Object.entries(source.modes)),
   ) satisfies ModeMap;
+  const hasNonDefaultCurrentMode = orderedSources.some(
+    ([sourceName, source]) => sourceName !== "default" && source.currentMode !== undefined,
+  );
+  const currentMode = hasNonDefaultCurrentMode
+    ? undefined
+    : builtInModeSources.get("default")?.currentMode;
   return assertModesFileConsistency({
     version: 1,
-    currentMode: undefined,
+    currentMode,
     modes,
   });
 }

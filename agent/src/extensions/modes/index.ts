@@ -38,7 +38,6 @@ import {
   ensureModesReady as ensureModesReadyRuntime,
   ensureRuntime as ensureRuntimeState,
   notifyConfigError as notifyConfigErrorState,
-  saveRuntime as saveRuntimeState,
   syncErrorUI as syncErrorUIState,
 } from "./runtime.js";
 import { isEphemeralSession } from "./session.js";
@@ -164,6 +163,7 @@ function appendModeState(
       .filter((entry) => entry.type === "custom" && entry.customType === MODE_STATE_ENTRY)
       .at(-1),
   );
+  if (latestMode === undefined && activeMode === runtime.data.currentMode) return;
   if (latestMode === activeMode) return;
   pi.appendEntry(MODE_STATE_ENTRY, { activeMode });
 }
@@ -180,16 +180,11 @@ function notifyConfigError(ctx: ExtensionContext): void {
   notifyConfigErrorState(runtime, ctx, hasText);
 }
 
-async function saveRuntime(ctx: ExtensionContext): Promise<void> {
-  await saveRuntimeState(runtime, ctx);
-}
-
 const modeApplyActions = createModeApplyActions({
   runtime,
   ensureRuntime,
   syncErrorUI,
   ensureModesReady,
-  saveRuntime,
   getModeSpec,
   inferActiveMode,
   currentSelection,

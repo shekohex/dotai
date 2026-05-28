@@ -268,6 +268,25 @@ function createHandoffTestProviders(summaryText: string): {
       ],
     }),
     registerFauxProvider({
+      provider: "openai-codex",
+      models: [
+        {
+          id: "gpt-5.5",
+          reasoning: true,
+          input: ["text"],
+          contextWindow: 128_000,
+          maxTokens: 8_192,
+        },
+        {
+          id: "gpt-5.4-mini",
+          reasoning: true,
+          input: ["text"],
+          contextWindow: 128_000,
+          maxTokens: 8_192,
+        },
+      ],
+    }),
+    registerFauxProvider({
       provider: "mode-provider",
       models: [
         {
@@ -303,9 +322,12 @@ function createHandoffTestProviders(summaryText: string): {
   registrations[0].setResponses([fauxAssistantMessage(summaryText)]);
   registrations[1].setResponses([fauxAssistantMessage(summaryText)]);
   registrations[2].setResponses(
-    Array.from({ length: 8 }, () => fauxAssistantMessage("mode-provider response")),
+    Array.from({ length: 8 }, () => fauxAssistantMessage("openai-codex response")),
   );
   registrations[3].setResponses(
+    Array.from({ length: 8 }, () => fauxAssistantMessage("mode-provider response")),
+  );
+  registrations[4].setResponses(
     Array.from({ length: 8 }, () => fauxAssistantMessage("override-provider response")),
   );
   const modelById = new Map(
@@ -615,11 +637,6 @@ async function writeCliFlagModesFile(cwd: string): Promise<void> {
       },
     }),
   );
-}
-
-async function readPersistedModeSetting(): Promise<string | undefined> {
-  const raw = await readFile(getModesSettingsPath(), "utf8");
-  return (JSON.parse(raw) as { modes?: { current?: string } }).modes?.current;
 }
 
 function getLatestModeState(testSession: TestSession): string | undefined {
@@ -1922,54 +1939,47 @@ timedTest("modes extension skips mode-state persistence for ephemeral sessions",
   }
 });
 
-timedTest("mode command persists active mode into settings.json and restores it", async () => {
+timedTest("mode command restores active mode from session state only", async () => {
   const cwd = await createTempDir("agent-mode-settings-persist-");
   const agentDir = await createTempDir("agent-mode-settings-agent-");
-  let firstSession: TestSession | undefined;
-  let secondSession: TestSession | undefined;
+  let session: TestSession | undefined;
   const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
 
   await writeHandoffModesFile(cwd);
 
   try {
     await withTempAgentDir(agentDir, async () => {
-      firstSession = await createTestSession({
+      session = await createTestSession({
         cwd,
         extensionFactories: [modesExtension, providers.extensionFactory],
       });
-      setSessionPersistence(firstSession!, true);
+      setSessionPersistence(session!, true);
 
-      await firstSession.session.prompt("/mode docs");
-      await firstSession.session.agent.waitForIdle();
+      await session.session.prompt("/mode docs");
+      await session.session.agent.waitForIdle();
 
-      expect(await readPersistedModeSetting()).toBe("docs");
+      await expect(readFile(getModesSettingsPath(), "utf8")).rejects.toThrow();
 
-      secondSession = await createTestSession({
-        cwd,
-        extensionFactories: [modesExtension, providers.extensionFactory],
-      });
-      setSessionPersistence(secondSession, true);
-      await secondSession.session.reload();
+      await session.session.reload();
 
-      const model = secondSession.session as {
+      const model = session.session as {
         model: { provider: string; id: string };
         thinkingLevel: string;
       };
       expect(model.model.provider).toBe("mode-provider");
       expect(model.model.id).toBe("mode-model");
       expect(model.thinkingLevel).toBe("high");
-      expect(await readPersistedModeSetting()).toBe("docs");
+      expect(getLatestModeState(session)).toBe("docs");
     });
   } finally {
-    firstSession?.dispose();
-    secondSession?.dispose();
+    session?.dispose();
     providers.dispose();
     await rm(agentDir, { recursive: true, force: true });
     await rm(cwd, { recursive: true, force: true });
   }
 });
 
-timedTest("mode CLI flag overrides persisted settings mode on startup", async () => {
+timedTest("mode CLI flag ignores saved settings mode on startup", async () => {
   const cwd = await createTempDir("agent-mode-flag-overrides-settings-");
   const agentDir = await createTempDir("agent-mode-flag-overrides-settings-agent-");
   let session: TestSession | undefined;
@@ -2012,7 +2022,9 @@ timedTest("mode CLI flag overrides persisted settings mode on startup", async ()
         expect(model.model.provider).toBe("mode-provider");
         expect(model.model.id).toBe("mode-model");
         expect(model.thinkingLevel).toBe("high");
-        expect(await readPersistedModeSetting()).toBe("review");
+        expect(JSON.parse(await readFile(getModesSettingsPath(), "utf8"))).toEqual({
+          modes: { current: "deep" },
+        });
 
         const latestModeChange = observedModeChanges.at(-1);
         expect(latestModeChange?.mode).toBe("review");

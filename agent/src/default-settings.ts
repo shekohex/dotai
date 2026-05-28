@@ -22,17 +22,13 @@ const packageJson = Value.Parse(
 );
 
 export type AvailableModes = keyof (typeof defaultModes)["modes"];
-export type DefaultModesSettings = { current: AvailableModes };
 
 export type DefaultSettings = Omit<AgentSettings, "terminal"> & {
   terminal: TerminalSettings;
   interview: typeof defaultInterviewSettings;
   contextPrune: typeof defaultContextPruneSettings;
-  modes: DefaultModesSettings;
   openaiBetter: typeof defaultOpenAIBetterSettings;
 };
-
-export const defaultMode = "build" as const satisfies AvailableModes;
 
 export const defaultSettings = {
   defaultProvider: "openai-codex",
@@ -59,9 +55,6 @@ export const defaultSettings = {
   contextPrune: defaultContextPruneSettings,
   interview: defaultInterviewSettings,
   openaiBetter: defaultOpenAIBetterSettings,
-  modes: {
-    current: defaultMode,
-  },
 } as const satisfies DefaultSettings;
 
 export { defaultModes, defaultModesSchema };

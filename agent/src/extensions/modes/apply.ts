@@ -108,10 +108,6 @@ async function applyResolvedModeWithDeps(
 
   deps.syncModeTools(pi, ctx, data.spec);
   deps.runtime.activeMode = data.modeName;
-  deps.runtime.data.currentMode = data.modeName;
-  if (data.persist !== false) {
-    await deps.saveRuntime(ctx);
-  }
   finalizeAppliedMode(deps, pi, ctx, data);
   return true;
 }

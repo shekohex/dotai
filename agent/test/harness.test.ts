@@ -56,6 +56,7 @@ import {
 } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 
 process.env.OPENAI_API_KEY ??= "test-key";
+process.env.TEST_KEY ??= "test-key";
 
 const TEST_TIMEOUT_MS = 20_000;
 const GITHUB_ACTIONS_TEST_TIMEOUT_MS = 30_000;

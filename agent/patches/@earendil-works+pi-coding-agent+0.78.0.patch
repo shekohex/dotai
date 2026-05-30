@@ -1,5 +1,5 @@
 diff --git a/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js b/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
-index e099877..0c5c8e7 100644
+index e099877..6e1784a 100644
 --- a/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
 +++ b/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
 @@ -39,7 +39,6 @@ export class ToolExecutionComponent extends Container {

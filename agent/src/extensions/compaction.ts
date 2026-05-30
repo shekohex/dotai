@@ -17,7 +17,11 @@ type CompactionPreparation = Parameters<typeof compact>[0];
 
 const COMPACTION_MODEL_FALLBACKS = [
   { provider: "gemini", model: "gemini-3.1-flash-lite-preview" },
+  { provider: "gemini", model: "google-gemini-3.1-pro-preview" },
   { provider: "openai-codex", model: "gpt-5.4-mini" },
+  { provider: "zai", model: "glm-5.1" },
+  { provider: "zai-coding-plan", model: "glm-5.1" },
+  { provider: "gemini", model: "gemini-2.5-pro" },
   { provider: "opencode-go", model: "deepseek-v4-flash" },
 ] as const;
 const SUMMARY_PREFIX =

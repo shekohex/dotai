@@ -30,7 +30,7 @@ export const defaultModes = {
       thinkingLevel: "high",
       color: "success",
       tmuxTarget: "window",
-      tools: ["read", "bash", "edit", "write", "websearch"],
+      tools: ["*"],
       description:
         "Use me when you want a cheap, fast agent for technical writing, including docs, issues, PR descriptions, changelogs, and release notes.",
     },
@@ -50,7 +50,7 @@ export const defaultModes = {
       thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
-      tools: ["*", "!subagent"],
+      tools: ["*"],
       description:
         "Use me when you want the highest-quality help for complex implementation, debugging, and code review.",
     },
@@ -97,7 +97,7 @@ export const defaultModes = {
       thinkingLevel: "high",
       color: "bashMode",
       tmuxTarget: "window",
-      tools: ["read", "bash", "edit", "write", "websearch", "execute"],
+      tools: ["read", "bash", "edit", "write", "websearch", "execute", "subagent"],
       description:
         "Use me when you want frontend and UI work, UX exploration, or product-facing implementation that should look polished and feel good to use.",
     },
@@ -106,7 +106,7 @@ export const defaultModes = {
       modelId: "gpt-5.5",
       thinkingLevel: "low",
       tmuxTarget: "window",
-      tools: ["read", "bash", "websearch", "execute"],
+      tools: ["read", "bash", "websearch", "execute", "subagent"],
       autoExit: true,
       description: "Use me when you want to do QA and chat with your codebase, explore options",
     },
@@ -114,6 +114,7 @@ export const defaultModes = {
       tools: ["*", "!subagent"],
       autoExit: true,
       description: "Use me when you want a general-purpose worker for a focused task.",
+      tmuxTarget: "window",
     },
   },
 } as const satisfies DefaultModes;

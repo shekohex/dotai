@@ -26,6 +26,7 @@ export const SubagentActivityEntrySchema = Type.Object(
     label: Type.String(),
     detail: Type.Optional(Type.String()),
     toolName: Type.Optional(Type.String()),
+    providerStatusCode: Type.Optional(Type.Integer({ minimum: 100, maximum: 599 })),
     startedAt: Type.Number(),
     updatedAt: Type.Number(),
     done: Type.Boolean(),

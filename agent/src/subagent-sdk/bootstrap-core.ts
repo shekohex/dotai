@@ -45,6 +45,7 @@ export type ChildBootstrapRuntimeState = {
   lastTurnStructuredCaptured: boolean;
   lastTurnStructuredPayload: unknown;
   lastTurnStructuredValidationError: string | undefined;
+  latestProviderResponseStatus: number | undefined;
   pendingIdleShutdown: ReturnType<typeof setTimeout> | undefined;
 };
 
@@ -223,6 +224,7 @@ export function createChildBootstrapRuntimeState(
     lastTurnStructuredCaptured: false,
     lastTurnStructuredPayload: undefined,
     lastTurnStructuredValidationError: undefined,
+    latestProviderResponseStatus: undefined,
     pendingIdleShutdown: undefined,
   };
 }

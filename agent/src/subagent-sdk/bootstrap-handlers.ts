@@ -53,6 +53,7 @@ function persistActivity(
     label: string;
     detail?: string;
     toolName?: string;
+    providerStatusCode?: number;
     done: boolean;
   },
 ): void {
@@ -72,6 +73,7 @@ function persistActivity(
     label: activity.label,
     detail: activity.detail,
     toolName: activity.toolName,
+    providerStatusCode: activity.providerStatusCode,
     startedAt,
     updatedAt: now,
     done: activity.done,
@@ -226,6 +228,7 @@ function registerChildBeforeAgentStartHandler(
       label: "thinking",
       done: false,
     });
+    state.latestProviderResponseStatus = undefined;
     resetTurnStructuredState(state);
     resetLastTurnStructuredState(state);
     if (!isJsonSchemaOutputFormat(childState) || state.structuredState.completed) {
@@ -234,6 +237,25 @@ function registerChildBeforeAgentStartHandler(
     return {
       systemPrompt: `${event.systemPrompt}\n\n${structuredOutputSystemPrompt}`,
     };
+  });
+}
+
+function registerChildProviderRequestHandlers(
+  pi: ExtensionAPI,
+  childState: ChildBootstrapState,
+  state: ChildBootstrapRuntimeState,
+): void {
+  pi.on("before_provider_request", (_event, ctx) => {
+    if (!isChildSession(childState, ctx)) {
+      return;
+    }
+    state.latestProviderResponseStatus = undefined;
+  });
+  pi.on("after_provider_response", (event, ctx) => {
+    if (!isChildSession(childState, ctx)) {
+      return;
+    }
+    state.latestProviderResponseStatus = isHttpStatusCode(event.status) ? event.status : undefined;
   });
 }
 
@@ -346,6 +368,39 @@ function registerChildAgentEndHandler(
     if (!isChildSession(childState, ctx)) {
       return;
     }
+    const assistantError = getLatestAssistantError(
+      event.messages,
+      state.latestProviderResponseStatus,
+    );
+    if (assistantError !== undefined && assistantError.retryable) {
+      persistActivity(pi, childState, state, {
+        kind: "idle",
+        label: "retrying provider request",
+        detail: assistantError.message,
+        providerStatusCode: assistantError.statusCode,
+        done: false,
+      });
+      return;
+    }
+    if (assistantError !== undefined) {
+      persistActivity(pi, childState, state, {
+        kind: "failed",
+        label: "failed",
+        detail: assistantError.message,
+        providerStatusCode: assistantError.statusCode,
+        done: true,
+      });
+      if (childState.persisted === false) {
+        writeEphemeralChildSessionOutcome(childState.sessionId, {
+          summary: assistantError.message,
+          structured: state.structuredState.captured,
+          structuredError: undefined,
+          failed: true,
+        });
+      }
+      requestShutdown(state, ctx);
+      return;
+    }
     persistActivity(pi, childState, state, {
       kind: "completed",
       label: "done",
@@ -435,6 +490,76 @@ function getLatestAssistantSummary(
   return undefined;
 }
 
+function isNonRetryableProviderLimitError(errorMessage: string): boolean {
+  return /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|available balance|insufficient_quota|out of budget|quota exceeded|billing/i.test(
+    errorMessage,
+  );
+}
+
+function isRetryableStatusCode(statusCode: number): boolean {
+  return statusCode === 429 || (statusCode >= 500 && statusCode <= 599);
+}
+
+function isHttpStatusCode(statusCode: number): boolean {
+  return Number.isInteger(statusCode) && statusCode >= 100 && statusCode <= 599;
+}
+
+function isRetryableAssistantError(errorMessage: string, statusCode: number | undefined): boolean {
+  if (statusCode !== undefined) {
+    if (isRetryableStatusCode(statusCode)) {
+      return true;
+    }
+    if (statusCode >= 400 && statusCode <= 499) {
+      return false;
+    }
+  }
+  if (isNonRetryableProviderLimitError(errorMessage)) {
+    return false;
+  }
+  return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay/i.test(
+    errorMessage,
+  );
+}
+
+function getMessageStatusCode(errorMessage: string): number | undefined {
+  const statusMatch = errorMessage.match(/(?:status|error)\D+(\d{3})|\((\d{3})\)/i);
+  const statusCodeText = statusMatch?.[1] ?? statusMatch?.[2];
+  if (statusCodeText === undefined) {
+    return undefined;
+  }
+  const statusCode = Number(statusCodeText);
+  return isHttpStatusCode(statusCode) ? statusCode : undefined;
+}
+
+function getLatestAssistantError(
+  messages: Array<{ role?: string; stopReason?: string; errorMessage?: string }> | undefined,
+  latestProviderResponseStatus: number | undefined,
+): { message: string; retryable: boolean; statusCode?: number } | undefined {
+  if (!messages) {
+    return undefined;
+  }
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== "assistant" || message.stopReason !== "error") {
+      continue;
+    }
+    const errorMessage = message.errorMessage?.trim();
+    const resolvedMessage =
+      errorMessage !== undefined && errorMessage.length > 0
+        ? errorMessage
+        : "Provider request failed.";
+    const statusCode = latestProviderResponseStatus ?? getMessageStatusCode(resolvedMessage);
+    return {
+      message: resolvedMessage,
+      retryable: isRetryableAssistantError(resolvedMessage, statusCode),
+      statusCode,
+    };
+  }
+
+  return undefined;
+}
+
 function isTextContentArray(value: unknown): value is Array<{ type: string; text?: string }> {
   return Array.isArray(value);
 }
@@ -484,6 +609,7 @@ export function registerChildBootstrapHandlers(
 ): void {
   registerChildSessionStartHandler(pi, childState, state);
   registerChildBeforeAgentStartHandler(pi, childState, state, structuredOutputSystemPrompt);
+  registerChildProviderRequestHandlers(pi, childState, state);
   registerChildToolCallHandler(pi, childState, state);
   registerChildToolResultHandler(pi, childState, state);
   registerChildTurnHandlers(pi, childState, state);

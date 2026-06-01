@@ -59,9 +59,11 @@ afterEach(() => {
 });
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import { SubagentRuntime } from "../src/subagent-sdk/runtime.ts";
+import { SubagentRuntimeEventBus } from "../src/subagent-sdk/events.ts";
 import { formatSubagentFailureFallback } from "../src/subagent-sdk/runtime/base.ts";
 import {
   SUBAGENT_MESSAGE_ENTRY,
+  SUBAGENT_ACTIVITY_ENTRY,
   SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
   SUBAGENT_STATE_ENTRY,
   cloneRuntimeSubagent,
@@ -851,6 +853,595 @@ timedTest(
     }
   },
 );
+
+timedTest("child bootstrap keeps subagent alive after provider error so pi can retry", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await createTempDir("agent-subagent-child-provider-error-");
+  const sessionPath = path.join(cwd, "child.jsonl");
+  let shutdownCount = 0;
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Inspect failing tests",
+    autoExit: true,
+    autoExitTimeoutMs: 25,
+    handoff: false,
+    tools: ["read"],
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({
+      cwd,
+      sessionId: "child-session-id",
+      sessionFile: sessionPath,
+      shutdown: () => {
+        shutdownCount += 1;
+      },
+    });
+
+    await emitHandlers(
+      fakePi,
+      "agent_end",
+      {
+        messages: [
+          {
+            role: "assistant",
+            stopReason: "error",
+            errorMessage: "fetch failed: ECONNRESET",
+            content: [],
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      ctx,
+    );
+
+    expect(shutdownCount).toBe(0);
+    const activityEntry = fakePi.appendedEntries.find(
+      (entry) => entry.customType === SUBAGENT_ACTIVITY_ENTRY,
+    );
+    expect(activityEntry?.data).toMatchObject({
+      kind: "idle",
+      label: "retrying provider request",
+      detail: "fetch failed: ECONNRESET",
+      done: false,
+    });
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest(
+  "child bootstrap prefers provider response status for retryable provider error",
+  async () => {
+    const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+    const cwd = await createTempDir("agent-subagent-child-provider-status-retry-");
+    const sessionPath = path.join(cwd, "child.jsonl");
+    let shutdownCount = 0;
+
+    process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+      sessionId: "child-session-id",
+      sessionPath,
+      parentSessionId: "parent-session-id",
+      parentSessionPath: path.join(cwd, "parent.jsonl"),
+      name: "worker-one",
+      prompt: "Inspect failing tests",
+      autoExit: true,
+      autoExitTimeoutMs: 25,
+      handoff: false,
+      tools: ["read"],
+      startedAt: Date.now(),
+    });
+
+    try {
+      const fakePi = new FakePi();
+      createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+        fakePi as unknown as ExtensionAPI,
+      );
+      const ctx = createFakeContext({
+        cwd,
+        sessionId: "child-session-id",
+        sessionFile: sessionPath,
+        shutdown: () => {
+          shutdownCount += 1;
+        },
+      });
+
+      await emitHandlers(fakePi, "after_provider_response", { status: 503, headers: {} }, ctx);
+
+      await emitHandlers(
+        fakePi,
+        "agent_end",
+        {
+          messages: [
+            {
+              role: "assistant",
+              stopReason: "error",
+              errorMessage: "provider request failed",
+              content: [],
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        ctx,
+      );
+
+      expect(shutdownCount).toBe(0);
+      const activityEntry = fakePi.appendedEntries.find(
+        (entry) => entry.customType === SUBAGENT_ACTIVITY_ENTRY,
+      );
+      expect(activityEntry?.data).toMatchObject({
+        kind: "idle",
+        label: "retrying provider request",
+        detail: "provider request failed",
+        providerStatusCode: 503,
+        done: false,
+      });
+    } finally {
+      if (previousChildState === undefined) {
+        delete process.env.PI_SUBAGENT_CHILD_STATE;
+      } else {
+        process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      }
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
+
+timedTest("child bootstrap treats non-retryable provider response status as failure", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await createTempDir("agent-subagent-child-provider-status-fail-");
+  const sessionPath = path.join(cwd, "child.jsonl");
+  let shutdownCount = 0;
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Inspect failing tests",
+    autoExit: true,
+    autoExitTimeoutMs: 25,
+    handoff: false,
+    tools: ["read"],
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({
+      cwd,
+      sessionId: "child-session-id",
+      sessionFile: sessionPath,
+      shutdown: () => {
+        shutdownCount += 1;
+      },
+    });
+
+    await emitHandlers(fakePi, "after_provider_response", { status: 401, headers: {} }, ctx);
+
+    await emitHandlers(
+      fakePi,
+      "agent_end",
+      {
+        messages: [
+          {
+            role: "assistant",
+            stopReason: "error",
+            errorMessage: "rate limit configuration invalid",
+            content: [],
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      ctx,
+    );
+
+    expect(shutdownCount).toBe(1);
+    const activityEntry = fakePi.appendedEntries.find(
+      (entry) => entry.customType === SUBAGENT_ACTIVITY_ENTRY,
+    );
+    expect(activityEntry?.data).toMatchObject({
+      kind: "failed",
+      label: "failed",
+      detail: "rate limit configuration invalid",
+      providerStatusCode: 401,
+      done: true,
+    });
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("structured child does not spend validation retry budget on provider error", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await createTempDir("agent-subagent-child-structured-provider-error-");
+  const sessionPath = path.join(cwd, "child.jsonl");
+  let shutdownCount = 0;
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Return structured output",
+    autoExit: true,
+    autoExitTimeoutMs: 25,
+    handoff: false,
+    tools: ["read"],
+    outputFormat: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      },
+      retryCount: 3,
+    },
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({
+      cwd,
+      sessionId: "child-session-id",
+      sessionFile: sessionPath,
+      shutdown: () => {
+        shutdownCount += 1;
+      },
+    });
+
+    await emitHandlers(
+      fakePi,
+      "agent_end",
+      {
+        messages: [
+          {
+            role: "assistant",
+            stopReason: "error",
+            errorMessage: "overloaded, retrying request",
+            content: [],
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      ctx,
+    );
+
+    expect(shutdownCount).toBe(0);
+    expect(fakePi.sentUserMessages).toEqual([]);
+    expect(
+      fakePi.appendedEntries.filter(
+        (entry) => entry.customType === SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
+      ),
+    ).toEqual([]);
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest(
+  "child bootstrap retries transport failure after successful response status",
+  async () => {
+    const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+    const cwd = await createTempDir("agent-subagent-child-provider-stream-error-");
+    const sessionPath = path.join(cwd, "child.jsonl");
+    let shutdownCount = 0;
+
+    process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+      sessionId: "child-session-id",
+      sessionPath,
+      parentSessionId: "parent-session-id",
+      parentSessionPath: path.join(cwd, "parent.jsonl"),
+      name: "worker-one",
+      prompt: "Inspect failing tests",
+      autoExit: true,
+      autoExitTimeoutMs: 25,
+      handoff: false,
+      tools: ["read"],
+      startedAt: Date.now(),
+    });
+
+    try {
+      const fakePi = new FakePi();
+      createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+        fakePi as unknown as ExtensionAPI,
+      );
+      const ctx = createFakeContext({
+        cwd,
+        sessionId: "child-session-id",
+        sessionFile: sessionPath,
+        shutdown: () => {
+          shutdownCount += 1;
+        },
+      });
+
+      await emitHandlers(fakePi, "after_provider_response", { status: 200, headers: {} }, ctx);
+
+      await emitHandlers(
+        fakePi,
+        "agent_end",
+        {
+          messages: [
+            {
+              role: "assistant",
+              stopReason: "error",
+              errorMessage: "stream ended before message_stop",
+              content: [],
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        ctx,
+      );
+
+      expect(shutdownCount).toBe(0);
+      const activityEntry = fakePi.appendedEntries.find(
+        (entry) => entry.customType === SUBAGENT_ACTIVITY_ENTRY,
+      );
+      expect(activityEntry?.data).toMatchObject({
+        kind: "idle",
+        label: "retrying provider request",
+        detail: "stream ended before message_stop",
+        providerStatusCode: 200,
+        done: false,
+      });
+    } finally {
+      if (previousChildState === undefined) {
+        delete process.env.PI_SUBAGENT_CHILD_STATE;
+      } else {
+        process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      }
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
+
+timedTest("child bootstrap clears stale provider status before next request", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await createTempDir("agent-subagent-child-provider-status-reset-");
+  const sessionPath = path.join(cwd, "child.jsonl");
+  let shutdownCount = 0;
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Inspect failing tests",
+    autoExit: true,
+    autoExitTimeoutMs: 25,
+    handoff: false,
+    tools: ["read"],
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({
+      cwd,
+      sessionId: "child-session-id",
+      sessionFile: sessionPath,
+      shutdown: () => {
+        shutdownCount += 1;
+      },
+    });
+
+    await emitHandlers(fakePi, "after_provider_response", { status: 503, headers: {} }, ctx);
+    await emitHandlers(fakePi, "before_provider_request", { payload: {} }, ctx);
+
+    await emitHandlers(
+      fakePi,
+      "agent_end",
+      {
+        messages: [
+          {
+            role: "assistant",
+            stopReason: "error",
+            errorMessage: "insufficient_quota: billing required",
+            content: [],
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      ctx,
+    );
+
+    expect(shutdownCount).toBe(1);
+    const activityEntry = fakePi.appendedEntries.find(
+      (entry) => entry.customType === SUBAGENT_ACTIVITY_ENTRY,
+    );
+    expect(activityEntry?.data).toMatchObject({
+      kind: "failed",
+      label: "failed",
+      detail: "insufficient_quota: billing required",
+      done: true,
+    });
+    expect(
+      (activityEntry?.data as { providerStatusCode?: number } | undefined)?.providerStatusCode,
+    ).toBeUndefined();
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("child bootstrap shuts down after non-retryable provider error", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await createTempDir("agent-subagent-child-provider-limit-error-");
+  const sessionPath = path.join(cwd, "child.jsonl");
+  let shutdownCount = 0;
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Inspect failing tests",
+    autoExit: true,
+    autoExitTimeoutMs: 25,
+    handoff: false,
+    tools: ["read"],
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({
+      cwd,
+      sessionId: "child-session-id",
+      sessionFile: sessionPath,
+      shutdown: () => {
+        shutdownCount += 1;
+      },
+    });
+
+    await emitHandlers(
+      fakePi,
+      "agent_end",
+      {
+        messages: [
+          {
+            role: "assistant",
+            stopReason: "error",
+            errorMessage: "insufficient_quota: billing required",
+            content: [],
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      ctx,
+    );
+
+    expect(shutdownCount).toBe(1);
+    const activityEntry = fakePi.appendedEntries.find(
+      (entry) => entry.customType === SUBAGENT_ACTIVITY_ENTRY,
+    );
+    expect(activityEntry?.data).toMatchObject({
+      kind: "failed",
+      label: "failed",
+      detail: "insufficient_quota: billing required",
+      done: true,
+    });
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("ephemeral child writes failed outcome for non-retryable provider error", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const sessionId = "ephemeral-provider-limit-error";
+  let shutdownCount = 0;
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId,
+    parentSessionId: "parent-session-id",
+    name: "worker-one",
+    prompt: "Inspect failing tests",
+    autoExit: true,
+    autoExitTimeoutMs: 25,
+    handoff: false,
+    persisted: false,
+    tools: ["read"],
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({
+      cwd: process.cwd(),
+      sessionId: "runtime-ephemeral-session-id",
+      persisted: false,
+      shutdown: () => {
+        shutdownCount += 1;
+      },
+    });
+
+    await emitHandlers(
+      fakePi,
+      "agent_end",
+      {
+        messages: [
+          {
+            role: "assistant",
+            stopReason: "error",
+            errorMessage: "Monthly usage limit reached",
+            content: [],
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      ctx,
+    );
+
+    expect(shutdownCount).toBe(1);
+    const outcome = await readEphemeralChildSessionOutcomeBySessionId(sessionId);
+    expect(outcome).toMatchObject({
+      summary: "Monthly usage limit reached",
+      failed: true,
+    });
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(getEphemeralChildOutcomePath(sessionId), { force: true });
+  }
+});
 
 timedTest("child bootstrap ignores parent-injected input for timeout mode activation", async () => {
   const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
@@ -2022,6 +2613,48 @@ timedTest("reduceRuntimeSubagents restores latest child activity from session fi
   );
 
   expect(states.get("child-1")?.activity).toBeUndefined();
+});
+
+timedTest("SubagentSDK events expose provider status on activity", () => {
+  const eventBus = new SubagentRuntimeEventBus();
+  const providerStatusCodes: number[] = [];
+  const stopListening = eventBus.subscribe((event) => {
+    const providerStatusCode = event.state.activity?.providerStatusCode;
+    if (providerStatusCode !== undefined) {
+      providerStatusCodes.push(providerStatusCode);
+    }
+  });
+
+  eventBus.emitChangedStates([
+    {
+      event: "updated",
+      sessionId: "child-1",
+      parentSessionId: "parent-a",
+      name: "worker-a",
+      cwd: "/tmp/project",
+      paneId: "%1",
+      task: "task a",
+      handoff: false,
+      autoExit: true,
+      status: "running",
+      startedAt: 1,
+      updatedAt: 2,
+      modeLabel: "worker",
+      activity: {
+        sessionId: "child-1",
+        kind: "idle",
+        label: "retrying provider request",
+        detail: "provider request failed",
+        providerStatusCode: 503,
+        startedAt: 1,
+        updatedAt: 2,
+        done: false,
+      },
+    },
+  ]);
+
+  stopListening();
+  expect(providerStatusCodes).toEqual([503]);
 });
 
 timedTest("reduceRuntimeSubagents ignores malformed and unexpected state entries", () => {

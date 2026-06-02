@@ -1,0 +1,111 @@
+# Dynamic Workflows API Reference
+
+## `workflow` Tool
+
+The `workflow` tool executes a deterministic JavaScript script that orchestrates subagents.
+
+### Parameters
+
+```typescript
+{
+  script: string;        // Required. Raw JavaScript, no Markdown fences.
+  args?: unknown;        // Optional JSON value exposed as global `args`.
+  background?: boolean;  // Default: true. Run in background, deliver result later.
+  maxAgents?: number;    // Default: 1000. Hard cap on agents in this run.
+  agentTimeoutMs?: number; // Default: 1800000 (30 minutes).
+}
+```
+
+### Background vs Inline
+
+- **Background (default):** Tool returns immediately with a run ID. The turn ends so the user is not blocked. When the workflow finishes, the result is delivered back into the conversation automatically.
+- **Inline (`background: false`):** The call blocks until completion. Use only when the result is needed in the same turn.
+
+### `meta` Export
+
+The script's first statement must be:
+
+```javascript
+export const meta = {
+  name: "short_snake_case",
+  description: "non-empty human description",
+  phases: [{ title: "Phase Name", mode: "optional_mode" }],
+};
+```
+
+- `name` and `description` are required non-empty strings.
+- `phases` is optional. Each phase may have `title` and optionally `mode`.
+- `whenToUse` is an optional string.
+
+### Available Globals
+
+| Global        | Signature                                                         | Description                                                                                                                                                              |
+| ------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent`       | `(prompt: string, opts?: AgentOptions) => Promise<unknown>`       | Spawn a subagent with the given prompt. Returns its result or structured output.                                                                                         |
+| `parallel`    | `(thunks: Array<() => Promise<unknown>>) => Promise<unknown[]>`   | Execute functions concurrently. **Must pass functions, not promises.** Results are returned in input order. Failed branches return `null` and log the failure.           |
+| `pipeline`    | `(items: unknown[], ...stages: StageFn[]) => Promise<unknown[]>`  | Run each item through stages sequentially. Different items may run concurrently. Each stage receives `(previousValue, originalItem, index)`. Failed items return `null`. |
+| `phase`       | `(title: string) => void`                                         | Set the current phase for status display and mode routing.                                                                                                               |
+| `log`         | `(message: string) => void`                                       | Append a message to the workflow log.                                                                                                                                    |
+| `args`        | `unknown`                                                         | Optional JSON value passed to the tool call. Exposed inside the script as this global.                                                                                   |
+| `cwd`         | `string`                                                          | The current working directory.                                                                                                                                           |
+| `process.cwd` | `() => string`                                                    | Same as `cwd`.                                                                                                                                                           |
+| `budget`      | `{ total: number \| null, spent(): number, remaining(): number }` | Token budget tracking. `remaining()` returns `Infinity` when no budget is set.                                                                                           |
+| `workflow`    | `(nameOrScript: string, args?: unknown) => Promise<unknown>`      | Run a saved workflow inline by name, or pass a script string. Nesting is limited to **one level deep**. Global agent/total caps apply across nesting.                    |
+
+Standard utilities: `JSON`, `Math`, `Array`, `Object`, `String`, `Number`, `Boolean`, `Set`, `Map`, `Promise`.
+
+### AgentOptions
+
+```typescript
+{
+  label?: string;            // 2–5 word unique name for status display.
+  phase?: string;             // Override current phase for this agent.
+  schema?: JSONSchema;        // Plain JSON Schema (not TypeBox). Agent returns validated object.
+  mode?: string;              // Subagent mode (e.g. "review", "worker"). Omit for generic worker.
+  outputRetryCount?: number;  // Structured output retry count.
+  toolNames?: string[];       // Tools to expose to this agent.
+  isolation?: "worktree";     // Run in a throwaway git worktree.
+  agentType?: string;         // Persona hint injected into instructions.
+  timeoutMs?: number;         // Override default agent timeout.
+}
+```
+
+### Limits and Defaults
+
+| Limit                      | Value      |
+| -------------------------- | ---------- |
+| Max agents per run         | 1000       |
+| Max concurrency            | 16         |
+| Default agent timeout      | 30 minutes |
+| Default mode               | `worker`   |
+| Default output retry count | 3          |
+| Default background         | `true`     |
+| Workflow nesting depth     | 1 level    |
+
+### Saved Workflows
+
+Save a workflow by pressing `s` in the workflow menu, or store JavaScript files under `~/.pi/workflows/saved/`. Invoke a saved workflow inline with `await workflow('saved-name', argsObject)`.
+
+To share via a skill, put workflow JavaScript files in the skill folder and reference them in `SKILL.md`.
+
+### Commands
+
+| Command                     | Description                               |
+| --------------------------- | ----------------------------------------- |
+| `/workflow on`              | Enable the workflow tool for the session. |
+| `/workflow off`             | Disable the workflow tool.                |
+| `/workflows list`           | List active and completed workflow runs.  |
+| `/workflows status <runId>` | Inspect a specific run.                   |
+| `/workflows stop <runId>`   | Cancel a running workflow.                |
+
+### Determinism Requirements
+
+Workflow scripts must be deterministic. The following are blocked:
+
+- `Date.now()`
+- `Math.random()`
+- `new Date()`
+- Dynamic imports (`import()`, `require()`)
+- File system access (`fs`)
+
+Use `args` to pass external data into the script.

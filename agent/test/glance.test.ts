@@ -418,6 +418,7 @@ it("shuts down after all heartbeats expire", async () => {
 it("starts daemon when status is stale and no server is healthy", async () => {
   const agentDir = await createTempDir("glance-stale-status-");
   const paths = getGlancePaths(agentDir);
+  const port = await getFreePort();
   await mkdir(paths.runtimeDir, { recursive: true });
   await writeFile(
     paths.statusPath,
@@ -425,8 +426,8 @@ it("starts daemon when status is stale and no server is healthy", async () => {
       schemaVersion: 1,
       pid: 1,
       host: "127.0.0.1",
-      port: 39295,
-      baseUrl: "http://127.0.0.1:39295",
+      port,
+      baseUrl: `http://127.0.0.1:${port}`,
       publicBaseUrl: null,
       storageDir: paths.storageDir,
       startedAt: 1,
@@ -434,7 +435,7 @@ it("starts daemon when status is stale and no server is healthy", async () => {
     })}\n`,
   );
   const heartbeat = await startGlanceHeartbeat({ paths, cwd: agentDir });
-  const status = await ensureGlanceDaemon({ paths, port: 39295 });
+  const status = await ensureGlanceDaemon({ paths, port });
   daemonPids.add(status.pid);
   expect(status.pid).not.toBe(1);
   await heartbeat.stop();

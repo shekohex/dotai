@@ -206,6 +206,7 @@ export async function startGlanceHeartbeat(
   const clientId = randomUUID();
   const path = getClientHeartbeatPath(paths, clientId);
   const startedAt = Date.now();
+  let stopped = false;
 
   const writeHeartbeat = async (): Promise<void> => {
     const heartbeat = {
@@ -224,16 +225,27 @@ export async function startGlanceHeartbeat(
     await rename(tmpPath, path);
   };
 
-  await writeHeartbeat();
+  const writeHeartbeatIfRunning = async (): Promise<void> => {
+    if (stopped) {
+      return;
+    }
+    await writeHeartbeat();
+  };
+
+  let pendingWrite = writeHeartbeatIfRunning();
+  await pendingWrite;
   const timer = setInterval(() => {
-    void writeHeartbeat();
+    pendingWrite = pendingWrite.then(writeHeartbeatIfRunning, writeHeartbeatIfRunning);
+    void pendingWrite.catch(() => {});
   }, GLANCE_HEARTBEAT_INTERVAL_MS);
 
   return {
     clientId,
     path,
     stop: async () => {
+      stopped = true;
       clearInterval(timer);
+      await pendingWrite.catch(() => {});
       await rm(path, { force: true });
     },
   };

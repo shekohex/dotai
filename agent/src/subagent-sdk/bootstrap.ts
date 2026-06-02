@@ -1,4 +1,13 @@
-import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  defineTool,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+import type { Static, TSchema } from "typebox";
+
+import { createTextComponent } from "../extensions/coreui/tools-render.js";
+import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
+import { asRecord } from "../utils/unknown-data.js";
 import { readChildState } from "./launch.js";
 import { SUBAGENT_CHILD_WIDGET_KEY, type ChildBootstrapState } from "./types.js";
 import {
@@ -11,10 +20,7 @@ import {
 } from "./bootstrap-core.js";
 import { registerChildBootstrapHandlers } from "./bootstrap-handlers.js";
 import { registerChildIpcBridge } from "./bootstrap-ipc.js";
-import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
-import { createTextComponent } from "../extensions/coreui/tools-render.js";
 import { renderChildSessionWidget } from "./ui.js";
-import { asRecord } from "../utils/unknown-data.js";
 
 const bootstrapInstalledSymbol = Symbol.for("@shekohex/agent/subagent-sdk/bootstrap-installed");
 
@@ -27,9 +33,14 @@ type StructuredOutputToolDetails = {
   keys: string[];
 };
 
+export type StructuredOutputCaptureHandler<TSchemaValue extends TSchema> = (
+  params: Static<TSchemaValue>,
+  ctx: ExtensionContext,
+) => void;
+
 export { isChildSession };
 
-function listStructuredKeys(params: unknown): string[] {
+export function listStructuredKeys(params: unknown): string[] {
   if (params === null || typeof params !== "object" || Array.isArray(params)) {
     return [];
   }
@@ -113,6 +124,34 @@ function renderStructuredOutputResult(
   );
 }
 
+export function createStructuredOutputTool<TSchemaValue extends TSchema>(
+  schema: TSchemaValue,
+  onCapture: StructuredOutputCaptureHandler<TSchemaValue>,
+) {
+  if (!isTypeboxSchema(schema)) {
+    throw new Error("Structured output schema is not a valid TypeBox schema");
+  }
+
+  return defineTool<TSchemaValue, StructuredOutputToolDetails>({
+    name: STRUCTURED_OUTPUT_TOOL_NAME,
+    label: "SO",
+    renderShell: "self",
+    description:
+      "Submit the final structured JSON response. Use this tool exactly once as the final action.",
+    parameters: schema,
+    execute(_toolCallId, params: Static<TSchemaValue>, _signal, _onUpdate, ctx) {
+      onCapture(params, ctx);
+      return Promise.resolve({
+        content: [{ type: "text" as const, text: "Structured output captured." }],
+        details: { captured: true as const, keys: listStructuredKeys(params) },
+        terminate: true,
+      });
+    },
+    renderCall: renderStructuredOutputCall,
+    renderResult: renderStructuredOutputResult,
+  });
+}
+
 function registerStructuredOutputTool(
   pi: ExtensionAPI,
   childState: ChildBootstrapState,
@@ -124,14 +163,9 @@ function registerStructuredOutputTool(
   if (!isTypeboxSchema(childState.outputFormat.schema)) {
     throw new Error("Child outputFormat.schema is not a valid TypeBox schema");
   }
-  const structuredOutputTool = defineTool({
-    name: STRUCTURED_OUTPUT_TOOL_NAME,
-    label: "SO",
-    renderShell: "self",
-    description:
-      "Submit the final structured JSON response. Use this tool exactly once as the final action.",
-    parameters: childState.outputFormat.schema,
-    execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+  const structuredOutputTool = createStructuredOutputTool(
+    childState.outputFormat.schema,
+    (params, ctx) => {
       state.turnStructuredCaptured = true;
       state.turnStructuredPayload = params;
       state.capturedStructuredPayload = params;
@@ -139,7 +173,6 @@ function registerStructuredOutputTool(
       state.lastTurnStructuredCaptured = true;
       state.lastTurnStructuredPayload = params;
       state.lastTurnStructuredValidationError = undefined;
-      const keys = listStructuredKeys(params);
       state.shutdownRequested = true;
       try {
         ctx.shutdown();
@@ -148,15 +181,8 @@ function registerStructuredOutputTool(
           throw error;
         }
       }
-      return Promise.resolve({
-        content: [{ type: "text", text: "Structured output captured." }],
-        details: { captured: true, keys },
-        terminate: true,
-      });
     },
-    renderCall: renderStructuredOutputCall,
-    renderResult: renderStructuredOutputResult,
-  });
+  );
   pi.registerTool(structuredOutputTool);
 }
 

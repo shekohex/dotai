@@ -21,6 +21,7 @@ import {
   SubagentStatusSchema,
   SubagentStructuredOutputEntrySchema,
   SubagentToolParamsSchema,
+  TokenUsageSchema,
 } from "./schema-definitions.js";
 
 export {
@@ -52,6 +53,7 @@ export {
   SubagentStructuredOutputEntrySchema,
   SubagentStructuredOutputEntryStatusSchema,
   SubagentToolParamsSchema,
+  TokenUsageSchema,
 } from "./schema-definitions.js";
 
 export type SubagentAction = Static<typeof SubagentActionSchema>;
@@ -76,6 +78,7 @@ export type SubagentStructuredOutputEntry = Static<typeof SubagentStructuredOutp
 export type SubagentStateSessionEntry = CustomEntry<SubagentStateEntry>;
 export type SubagentMessageSessionEntry = CustomEntry<SubagentMessageEntry>;
 export type SubagentActivitySessionEntry = CustomEntry<SubagentActivityEntry>;
+export type TokenUsage = Static<typeof TokenUsageSchema>;
 
 export type RuntimeSubagent = SubagentStateEntry & {
   modeLabel: string;
@@ -219,7 +222,16 @@ export function cloneRuntimeSubagent(state: RuntimeSubagent): RuntimeSubagent {
     completion: cloneCompletion(state.completion),
     outputFormat: cloneOutputFormat(state.outputFormat),
     structuredError: cloneStructuredError(state.structuredError),
+    tokenUsage: cloneTokenUsage(state.tokenUsage),
   };
+}
+
+function cloneTokenUsage(tokenUsage: TokenUsage | undefined): TokenUsage | undefined {
+  if (!tokenUsage) {
+    return undefined;
+  }
+
+  return { ...tokenUsage };
 }
 
 function cloneActivity(

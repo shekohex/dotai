@@ -1,8 +1,8 @@
 import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Static } from "typebox";
 
-import type { SubagentRuntime } from "./runtime.js";
 import type {
+  StartSubagentResult,
   StartSubagentParams,
   StartSubagentParamsJsonSchema,
   StartSubagentParamsText,
@@ -96,7 +96,14 @@ async function resolveSpawnOutcome(
 }
 
 type SpawnFunctionFactoryInput = {
-  runtime: SubagentRuntime;
+  runtime: {
+    spawn(
+      params: StartSubagentParams,
+      ctx: ExtensionContext,
+      onUpdate?: AgentToolUpdateCallback,
+      signal?: AbortSignal,
+    ): Promise<StartSubagentResult>;
+  };
   emitChangedStates: () => void;
   toHandle: (sessionId: string) => SubagentHandle;
 };

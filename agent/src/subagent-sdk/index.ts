@@ -2,10 +2,16 @@ export { isChildSession } from "./bootstrap.js";
 export { buildLaunchCommand, readChildState } from "./launch.js";
 export { createDefaultSubagentRuntimeHooks } from "./runtime-hooks.js";
 export { createDefaultMuxAdapter } from "./default-mux.js";
-export { createSubagentSDK } from "./sdk.js";
+export { createSubagentSDK, isLiteSDK, isProcessSDK } from "./sdk.js";
 export { FallbackMuxAdapter } from "./fallback-mux.js";
 export { PtyAdapter } from "./pty.js";
 export { TmuxAdapter } from "./tmux.js";
 export { SUBAGENT_STATUS_MESSAGE } from "./types.js";
-export type { SubagentHandle, SubagentSDK } from "./sdk-types.js";
+export type {
+  SubagentHandle,
+  SubagentSDK,
+  SubagentSDKAny,
+  SubagentSDKLite,
+  SubagentSDKProcess,
+} from "./sdk-types.js";
 export type { RuntimeSubagent } from "./types.js";

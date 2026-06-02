@@ -65,6 +65,7 @@ export type StartSubagentSpawnOutcomeJsonSchema<TSchemaValue extends TSchemaBase
 >;
 
 export interface SubagentSDK {
+  readonly backend: "process" | "lite";
   restore(ctx: ExtensionContext): Promise<SubagentHandle[]>;
   start(
     params: StartSubagentParamsText,
@@ -112,3 +113,13 @@ export interface SubagentSDK {
   ): () => void;
   dispose(): void;
 }
+
+export interface SubagentSDKProcess extends SubagentSDK {
+  readonly backend: "process";
+}
+
+export interface SubagentSDKLite extends SubagentSDK {
+  readonly backend: "lite";
+}
+
+export type SubagentSDKAny = SubagentSDKProcess | SubagentSDKLite;

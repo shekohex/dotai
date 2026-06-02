@@ -158,6 +158,18 @@ export const StructuredOutputErrorSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const TokenUsageSchema = Type.Object(
+  {
+    input: Type.Integer({ minimum: 0 }),
+    output: Type.Integer({ minimum: 0 }),
+    cacheRead: Type.Integer({ minimum: 0 }),
+    cacheWrite: Type.Integer({ minimum: 0 }),
+    total: Type.Integer({ minimum: 0 }),
+    cost: Type.Number({ minimum: 0 }),
+  },
+  { additionalProperties: false },
+);
+
 export const SubagentStructuredOutputEntryStatusSchema = Type.Union([
   Type.Literal("retrying"),
   Type.Literal("captured"),
@@ -269,6 +281,7 @@ export const SubagentStateEntrySchema = Type.Object(
     structured: Type.Optional(Type.Unknown()),
     outputFormat: Type.Optional(OutputFormatSchema),
     structuredError: Type.Optional(StructuredOutputErrorSchema),
+    tokenUsage: Type.Optional(TokenUsageSchema),
     startedAt: Type.Number(),
     updatedAt: Type.Number(),
     completedAt: Type.Optional(Type.Number()),

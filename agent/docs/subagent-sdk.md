@@ -1,6 +1,11 @@
 # Subagent SDK Developer Guide
 
-The Subagent SDK provides a programmatic interface for spawning, managing, and orchestrating child pi sessions. It decouples the subagent runtime from the CLI tool, allowing extensions to consume lifecycle management, persistence, and tmux orchestration directly.
+The Subagent SDK provides a programmatic interface for spawning, managing, and orchestrating child pi sessions. It decouples the subagent runtime from the CLI tool, allowing extensions to consume lifecycle management, persistence, structured output, token usage, and live event streaming directly.
+
+The SDK supports two runtime backends behind the same public API:
+
+- **Process backend**: launches child Pi sessions through a mux adapter (`tmux`/PTY), with process isolation, persisted child sessions, and IPC event streaming.
+- **Lite backend**: runs child sessions in-process through `createAgentSession()`, with lower spawn overhead, real token/cost usage from `session.getSessionStats()`, and the same handle/event API.
 
 The SDK was developed through an iterative refactoring of the original `subagent` CLI tool into a robust, programmatic SDK. Key milestones included:
 
@@ -8,11 +13,14 @@ The SDK was developed through an iterative refactoring of the original `subagent
 - **State Protection**: Implemented cloned snapshots to prevent external mutation of internal state
 - **Event Deduplication**: Added signature-based deduplication to prevent noisy UI churn from poll-only `updatedAt` changes
 - **Child Event Streaming**: Added IPC streaming so child Pi events reach SDK consumers live without tmux scraping, polling, file watching, or JSONL tailing
+- **Backend Selection**: Added typed process/lite runtime selection while keeping one `SubagentSDK` surface
+- **Usage Tracking**: Added `tokenUsage` to runtime state so callers can read token and cost data when available
 - **Review Integration**: The `/review` extension served as the primary production-grade validation of the SDK
 
 ## Table of Contents
 
 - [Architecture Overview](#architecture-overview)
+- [Runtime Backends](#runtime-backends)
 - [SDK API Reference](#sdk-api-reference)
 - [Best Practices](#best-practices)
 - [Code Examples](#code-examples)
@@ -22,7 +30,7 @@ The SDK was developed through an iterative refactoring of the original `subagent
 
 ## Architecture Overview
 
-The SDK consists of three primary layers:
+The SDK consists of four primary layers:
 
 ### 1. SDK Layer (`sdk.ts`)
 
@@ -31,7 +39,7 @@ The public-facing API that extensions interact with. Key responsibilities:
 - **State Protection**: Returns cloned snapshots of internal state to prevent external mutation. This was a critical design decision made during SDK refactoring to prevent extensions from accidentally corrupting runtime state.
 - **Event Deduplication**: Uses `SubagentRuntimeEventBus` to emit events only when state actually changes. Signatures are computed from `{event, status, paneId, completedAt, autoExitDeadlineAt, autoExitTimeoutActive, activity, summary, structured, structuredError, exitCode}` to filter out poll-only `updatedAt` churn.
 - **Live Activity Snapshots**: Child sessions persist precise activity updates such as `thinking`, `reading`, `running bash`, `web searching`, and `waiting`, which are restored into parent-side runtime state for widgets and orchestration UIs.
-- **Child Event IPC**: Starts one SDK-owned IPC server and forwards live child Pi events to `handle.on(...)` and `sdk.onChildEvent(...)`. Transport details are hidden behind a shared module that uses Unix sockets on Unix-like systems and named pipes on Windows.
+- **Child Event Streaming**: For process sessions, starts one SDK-owned IPC server and forwards live child Pi events to `handle.on(...)` and `sdk.onChildEvent(...)`. For lite sessions, forwards `AgentSessionEvent` values from `session.subscribe(...)` through the same API.
 - **Handle Abstraction**: Provides `SubagentHandle` instances for ergonomic interaction with specific subagents, eliminating the need to pass `sessionId` manually for every operation
 
 ```
@@ -49,14 +57,25 @@ Extension Code
 
 ### 2. Runtime Layer (`runtime.ts`)
 
-The orchestration engine managing subagent lifecycles:
+The process orchestration engine managing mux-backed subagent lifecycles:
 
 - **Persistence Integration**: Persists state to the parent session file via hooks
 - **Pane Management**: Tracks tmux pane lifecycle, auto-detects pane death
 - **Polling**: Periodic sync of live subagent status (every 2s when active)
 - **State Machine**: Manages transitions between `running` -> `idle` -> `completed|failed|cancelled`
 
-### 3. Adapter Layer (`mux.ts`, `tmux.ts`)
+### 3. Lite Runtime Layer (`lite-runtime.ts`)
+
+The in-process orchestration engine for high-throughput subagents:
+
+- **In-Process Sessions**: Uses `createAgentSession()` with `SessionManager.inMemory()` instead of launching a child process
+- **Shared Resource Loading**: Installs bundled resource paths, loads bundled non-subagent extensions, and passes a `DefaultResourceLoader` into `createAgentSession()`
+- **Mode Parity**: Resolves mode tools/model/thinking/system prompt through `resolveSubagentMode()` and applies `systemPrompt` or `appendSystemPrompt` at resource-loader/system-prompt boundary
+- **Structured Output**: Reuses the same `StructuredOutput` tool factory as process child bootstrap and honors `retryCount`
+- **Usage Tracking**: Reads `session.getSessionStats()` before disposal and writes `tokenUsage` into `RuntimeSubagent`
+- **Terminal Notifications**: Emits the same completion/failure/cancel status messages as the process backend unless `completion: false`
+
+### 4. Adapter Layer (`mux.ts`, `tmux.ts`)
 
 Abstraction over terminal multiplexers:
 
@@ -64,7 +83,7 @@ Abstraction over terminal multiplexers:
 - `TmuxAdapter` implements pane creation, text injection, capture, and destruction
 - Handles `steer` and `followUp` delivery modes
 
-### Data Flow
+### Process Data Flow
 
 ```
 spawn(params)
@@ -91,11 +110,69 @@ SubagentRuntime.poll() -> monitors pane, syncs status
 finalizeInactiveSubagent() -> reads outcome, persists terminal state
 ```
 
+### Lite Data Flow
+
+```
+spawn(params)
+    |
+    v
+resolveSubagentMode() -> mode config (tools, model, systemPrompt, thinking)
+    |
+    v
+DefaultResourceLoader({ extensionFactories, systemPrompt/appendSystemPrompt })
+    |
+    v
+createAgentSession({ SessionManager.inMemory(), tools, customTools, resourceLoader })
+    |
+    v
+session.subscribe() -> forwards child events through sdk.onChildEvent()/handle.on()
+    |
+    v
+session.prompt(task) -> optional StructuredOutput retry prompts
+    |
+    v
+session.getSessionStats() -> tokenUsage
+    |
+    v
+persist terminal RuntimeSubagent -> emit completion status -> dispose session
+```
+
+---
+
+## Runtime Backends
+
+### Backend Comparison
+
+| Capability           | Process Backend                                                    | Lite Backend                                               |
+| -------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Runtime              | Child Pi process through mux adapter                               | In-process `createAgentSession()`                          |
+| Isolation            | Strong process-level isolation                                     | Shared Node process/event loop                             |
+| Spawn overhead       | Higher (`tmux`/PTY + child bootstrap)                              | Lower (no shell/process spawn)                             |
+| Persistence          | `persisted: true` child session files or ephemeral `--no-session`  | In-memory sessions only                                    |
+| Resume               | Supported for persisted children                                   | Not supported after completion/disposal                    |
+| Message live session | Sends text through mux pane                                        | Uses `session.steer()` / `session.followUp()`              |
+| Events               | IPC socket / named pipe from child                                 | `session.subscribe()` forwarded through same SDK event API |
+| Structured output    | Child bootstrap `StructuredOutput` tool + retry flow               | Same tool factory + retry prompts                          |
+| Token/cost usage     | Optional/best-effort when child reports it                         | Real usage from `session.getSessionStats()`                |
+| Best for             | Long-running isolated work, reviews, interactive background agents | High-fan-out workflows, short agents, cost accounting      |
+
+### Choosing a Backend
+
+Use process backend when child isolation, persisted child transcripts, manual inspection, or resume matter.
+
+Use lite backend when low spawn overhead, many parallel agents, or exact token/cost accounting matter more than process isolation.
+
+Both backends return the same `SubagentHandle` API. Consumers can branch through `sdk.backend`, `isProcessSDK(sdk)`, or `isLiteSDK(sdk)` when backend-specific behavior matters.
+
 ---
 
 ## SDK API Reference
 
 ### Creating the SDK
+
+#### Process Backend
+
+Process backend is the default integration for isolated background agents. It requires a `MuxAdapter` and `buildLaunchCommand`.
 
 ```typescript
 import { createSubagentSDK } from "./subagent-sdk/sdk.js";
@@ -107,6 +184,50 @@ const sdk = createSubagentSDK(pi, {
   buildLaunchCommand,
   hooks: customHooks, // optional
 });
+```
+
+Equivalent explicit backend form:
+
+```typescript
+const sdk = createSubagentSDK(pi, {
+  backend: {
+    kind: "process",
+    adapter: new TmuxAdapter((cmd, args, opts) => pi.exec(cmd, args, opts), process.cwd()),
+    buildLaunchCommand,
+    hooks: customHooks,
+  },
+});
+```
+
+#### Lite Backend
+
+Lite backend uses in-process `createAgentSession()` sessions. It has the same API but no process isolation and no persisted child resume.
+
+```typescript
+import { createSubagentSDK } from "./subagent-sdk/sdk.js";
+
+const sdk = createSubagentSDK(pi, {
+  backend: { kind: "lite" },
+});
+```
+
+Lite runtime installs bundled resource paths, loads bundled non-subagent extensions, uses `SessionManager.inMemory()`, and forwards `session.subscribe()` events through the same SDK event API.
+
+#### Typed Backend Guards
+
+`createSubagentSDK()` encodes the selected backend in the returned type.
+
+```typescript
+import { isLiteSDK, isProcessSDK } from "./subagent-sdk/sdk.js";
+
+if (isProcessSDK(sdk)) {
+  const output = await sdk.captureOutput({ sessionId, lines: 50 });
+}
+
+if (isLiteSDK(sdk)) {
+  const state = sdk.list()[0];
+  console.log(state.tokenUsage?.cost);
+}
 ```
 
 ### Core Methods
@@ -142,11 +263,12 @@ const { handle, prompt } = result.value;
 
 `persisted` rules:
 
-- Default: `true`
-- `persisted: false` launches child with `--no-session`
-- If parent session is ephemeral, child sessions are automatically forced to ephemeral too
-- Ephemeral children do not have `sessionPath`
-- Ephemeral children cannot be resumed after their tmux pane/window exits, because there is no persisted session file to reopen
+- Process backend default: `true`
+- Process backend `persisted: false` launches child with `--no-session`
+- Process backend forces child sessions to ephemeral when parent session is ephemeral
+- Process backend ephemeral children do not have `sessionPath`
+- Process backend ephemeral children cannot be resumed after their mux pane/window exits
+- Lite backend is always in-memory and cannot resume after terminal completion/disposal
 
 **Returns:**
 
@@ -155,7 +277,7 @@ const { handle, prompt } = result.value;
 
 ### Structured Results
 
-When `outputFormat.type` is `json_schema`, `spawn()` waits for terminal completion and returns structured output validated through the synthetic `StructuredOutput` tool flow.
+When `outputFormat.type` is `json_schema`, `spawn()` waits for terminal completion and returns structured output validated through the synthetic `StructuredOutput` tool flow. Both backends use the same `StructuredOutput` tool factory and honor `retryCount`.
 
 ```typescript
 const result = await sdk.spawn(
@@ -190,7 +312,9 @@ Structured-mode failures resolve as `ok: false` (no throw), using these error co
 - `retry_exhausted`
 - `aborted`
 
-Ephemeral note: structured output is supported for ephemeral children too. The child writes final outcome data through a temp-file side channel on `agent_end`, so the parent can still recover summary, structured payload, and structured error after the pane exits even though there is no persisted session transcript.
+Process ephemeral note: structured output is supported for ephemeral children too. The child writes final outcome data through a temp-file side channel on `agent_end`, so the parent can still recover summary, structured payload, and structured error after the pane exits even though there is no persisted session transcript.
+
+Lite note: structured output is captured in-process through the same tool factory. If the model finishes without calling `StructuredOutput`, lite sends retry prompts until `retryCount` is exhausted.
 
 ### Spawn Outcome Pattern
 
@@ -234,11 +358,13 @@ const { handle, result } = await sdk.message(
 
 #### `cancel(params)`
 
-Kills the tmux pane and marks subagent as cancelled.
+Cancels a live subagent.
 
 ```typescript
 const terminalState = await sdk.cancel({ sessionId: handle.sessionId });
 ```
+
+Process backend kills the mux pane. Lite backend aborts the in-process `AgentSession`. Lite cancellation refuses to rewrite terminal states.
 
 #### `restore(ctx)`
 
@@ -256,7 +382,7 @@ Returns all subagent states (cloned snapshots).
 ```typescript
 const states = sdk.list();
 // Array of RuntimeSubagent, sorted by startedAt
-// RuntimeSubagent now includes optional activity/structured/outputFormat/structuredError fields
+// RuntimeSubagent includes optional activity/structured/outputFormat/structuredError/tokenUsage fields
 ```
 
 ### RuntimeSubagent.activity
@@ -276,7 +402,24 @@ type SubagentActivityEntry = {
 };
 ```
 
-Activity snapshots are best-effort for parent UIs. For exact live child turns, messages, and tools, subscribe to child events through IPC.
+Activity snapshots are best-effort for parent UIs. For exact live child turns, messages, and tools, subscribe to child events through `handle.on(...)` or `sdk.onChildEvent(...)`.
+
+### RuntimeSubagent.tokenUsage
+
+Terminal states may include token/cost usage.
+
+```typescript
+type TokenUsage = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+  cost: number;
+};
+```
+
+Lite backend populates `tokenUsage` from `session.getSessionStats()` before disposing the in-process session. Process backend treats this field as optional because usage depends on what the child reports.
 
 #### `get(sessionId)`
 
@@ -307,7 +450,7 @@ const terminalState = await handle.cancel();
 const finalState = await handle.waitForCompletion({ signal: abortSignal });
 // finalState.structured is set when child captured structured output
 
-// Capture recent output from tmux pane
+// Capture recent output from tmux pane, or lite summary text
 const capture = await handle.captureOutput(100); // last 100 lines
 
 // Subscribe to events for this specific subagent
@@ -353,14 +496,20 @@ const stopChildEvents = sdk.onChildEvent(sessionId, "message_end", (event) => {
 stopChildEvents();
 ```
 
-Child event payloads are forwarded as-is from the child process. The SDK only validates the IPC envelope and routes by `sessionId`; it does not synthesize deltas, rename fields, filter tool events, or map session JSONL entries back into events.
+Child event payloads are forwarded through the same API for both backends. Process backend receives events over IPC from the child process. Lite backend forwards events from `AgentSession.subscribe(...)`. The SDK does not synthesize deltas, rename fields, filter tool events, or map session JSONL entries back into events.
 
-IPC lifecycle:
+Process IPC lifecycle:
 
-- One IPC server is created per `SubagentSDK` instance.
+- One IPC server is created per process-backend `SubagentSDK` instance.
 - Unix-like platforms use Unix domain sockets; Windows uses named pipes.
 - Persisted child session routes stay registered across terminal states so resumed sessions reconnect to the same SDK route.
 - All IPC routes and sockets close when `sdk.dispose()` runs.
+
+Lite event lifecycle:
+
+- No IPC server is created.
+- Event subscriptions are backed by the in-process `AgentSession.subscribe(...)` callback.
+- Terminal state disposes the in-process session but leaves the final runtime state available through `sdk.list()` until `sdk.dispose()`.
 
 ---
 

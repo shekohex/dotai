@@ -19,6 +19,7 @@ function getStateSignature(state: RuntimeSubagent): string {
     summary: state.summary,
     structured: state.structured,
     structuredError: state.structuredError,
+    tokenUsage: state.tokenUsage,
     exitCode: state.exitCode,
   });
 }

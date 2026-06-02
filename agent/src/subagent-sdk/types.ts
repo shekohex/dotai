@@ -226,6 +226,7 @@ export function cloneRuntimeSubagent(state: RuntimeSubagent): RuntimeSubagent {
     outputFormat: cloneOutputFormat(state.outputFormat),
     structuredError: cloneStructuredError(state.structuredError),
     tokenUsage: cloneTokenUsage(state.tokenUsage),
+    tools: state.tools?.slice(),
   };
 }
 

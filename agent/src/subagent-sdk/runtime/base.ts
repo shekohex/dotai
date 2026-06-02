@@ -229,6 +229,7 @@ export abstract class SubagentRuntimeBase {
       mode: params.mode,
       cwd: params.cwd,
       autoExit: params.autoExit,
+      model: params.model,
     });
     const spawnContext = this.createSpawnContext(ctx);
     const prompt = await this.buildSpawnPrompt(
@@ -306,7 +307,7 @@ export abstract class SubagentRuntimeBase {
   ): Promise<void>;
   protected abstract resolveModeValue(
     ctx: ExtensionContext,
-    input: { mode?: string; cwd?: string; autoExit?: boolean },
+    input: { mode?: string; cwd?: string; autoExit?: boolean; model?: string },
   ): Promise<ResolvedModeValue>;
   protected abstract buildSpawnPrompt(
     params: StartSubagentParams,

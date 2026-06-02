@@ -269,6 +269,7 @@ export const SubagentStateEntrySchema = Type.Object(
     paneId: Type.String(),
     muxBackend: Type.Optional(Type.String()),
     task: Type.String(),
+    tools: Type.Optional(Type.Array(Type.String())),
     handoff: Type.Boolean(),
     autoExit: Type.Boolean(),
     autoExitTimeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),

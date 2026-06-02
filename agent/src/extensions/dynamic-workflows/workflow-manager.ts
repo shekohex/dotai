@@ -190,6 +190,7 @@ export class WorkflowManager extends EventEmitter {
 
     // Run workflow asynchronously
     const promise = this.executeRun(managed, script, args);
+    promise.catch(() => {});
 
     return { runId, promise };
   }
@@ -360,19 +361,25 @@ export class WorkflowManager extends EventEmitter {
               recoverable: true,
             });
 
-      if (managed.controller.signal.aborted) {
+      const cancelledByControl = managed.status === "paused" || managed.status === "aborted";
+      if (!cancelledByControl && managed.controller.signal.aborted) {
         managed.status = "aborted";
-      } else {
+      } else if (!cancelledByControl) {
         managed.status = "failed";
       }
       managed.error = workflowError;
-      this.emit("error", { runId: managed.runId, error: workflowError });
+      if (!cancelledByControl) this.emitWorkflowError(managed.runId, workflowError);
 
       // Persist final state
       this.persistRun(managed);
 
       throw workflowError;
     }
+  }
+
+  private emitWorkflowError(runId: string, error: WorkflowError): void {
+    if (this.listenerCount("error") === 0) return;
+    this.emit("error", { runId, error });
   }
 
   private persistRun(managed: ManagedRun) {

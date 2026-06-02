@@ -50,6 +50,7 @@ const TEST_MODE_SOURCE_NAMES = [
   "test-subagent-child-timeout",
   "test-subagent-prompt-guidelines",
   "test-subagent-runtime-reviewer",
+  "test-subagent-explicit-tools",
 ] as const;
 
 afterEach(() => {
@@ -301,10 +302,10 @@ async function emitEventBus(fakePi: FakePi, eventName: string, event: unknown): 
   }
 }
 
-timedTest("resolveModeTools inherits parent tools and denies subagent", () => {
+timedTest("resolveModeTools expands star rules from default tools", () => {
   const resolved = resolveModeTools(
     undefined,
-    ["read", "bash", "subagent", "session_query"],
+    ["read", "bash", "session_query"],
     ["read", "bash", "subagent", "session_query"],
   );
   expect(resolved).toEqual(["bash", "read", "session_query"]);
@@ -313,10 +314,69 @@ timedTest("resolveModeTools inherits parent tools and denies subagent", () => {
 timedTest("resolveModeTools supports explicit allow and deny rules", () => {
   const resolved = resolveModeTools(
     ["*", "!bash", "session_query"],
-    ["read", "bash", "subagent"],
+    ["read", "bash"],
     ["read", "bash", "subagent", "session_query"],
   );
   expect(resolved).toEqual(["read", "session_query"]);
+});
+
+timedTest("resolveSubagentMode expands star rules from available mode defaults", async () => {
+  const fakePi = new FakePi();
+  fakePi.activeTools = ["workflow"];
+  fakePi.allTools = ["read", "bash", "edit", "write", "workflow", "subagent"].map((name) => ({
+    name,
+  }));
+  const ctx = createFakeContext({ cwd: process.cwd() });
+
+  const resolved = await resolveSubagentMode(fakePi as unknown as ExtensionAPI, ctx, {
+    mode: "worker",
+  });
+
+  expect(resolved.value?.tools).toEqual(["bash", "edit", "read", "workflow", "write"]);
+});
+
+timedTest("resolveSubagentMode keeps explicit mode tools narrow", async () => {
+  const fakePi = new FakePi();
+  fakePi.activeTools = ["workflow"];
+  fakePi.allTools = ["read", "bash", "edit", "write", "workflow", "subagent"].map((name) => ({
+    name,
+  }));
+  registerBuiltInModes(
+    "test-subagent-explicit-tools",
+    defineModesFile({
+      version: 1,
+      modes: {
+        narrow: { tools: ["read"], autoExit: true },
+      },
+    }),
+  );
+  const ctx = createFakeContext({ cwd: process.cwd() });
+
+  const resolved = await resolveSubagentMode(fakePi as unknown as ExtensionAPI, ctx, {
+    mode: "narrow",
+  });
+
+  expect(resolved.value?.tools).toEqual(["read"]);
+});
+
+timedTest("resolveSubagentMode normalizes star tools using requested model override", async () => {
+  const fakePi = new FakePi();
+  fakePi.allTools = ["read", "bash", "edit", "write", "apply_patch", "subagent"].map((name) => ({
+    name,
+  }));
+  const ctx = {
+    ...createFakeContext({ cwd: process.cwd() }),
+    model: { provider: "openai-codex", id: "gpt-5.5", api: "openai-responses" },
+  } as unknown as ExtensionContext;
+
+  const resolved = await resolveSubagentMode(fakePi as unknown as ExtensionAPI, ctx, {
+    mode: "worker",
+    model: "anthropic/claude-sonnet-4-5",
+  });
+
+  expect(resolved.value?.tools).toContain("edit");
+  expect(resolved.value?.tools).toContain("write");
+  expect(resolved.value?.tools).not.toContain("apply_patch");
 });
 
 timedTest("structured child failure fallback mentions StructuredOutput tool", () => {
@@ -2748,6 +2808,7 @@ timedTest("cloneRuntimeSubagent deep-clones nested structured fields", () => {
     handoff: false,
     autoExit: true,
     status: "running",
+    tools: ["read"],
     outputFormat: {
       type: "json_schema",
       schema: {
@@ -2774,6 +2835,7 @@ timedTest("cloneRuntimeSubagent deep-clones nested structured fields", () => {
     cloned.outputFormat as { schema: { properties: { result: { type: string } } } }
   ).schema.properties.result.type = "number";
   (cloned.structuredError as { message: string }).message = "mutated error";
+  cloned.tools?.push("write");
 
   expect((original.structured as { result: string }).result).toBe("ok");
   expect(
@@ -2781,6 +2843,7 @@ timedTest("cloneRuntimeSubagent deep-clones nested structured fields", () => {
       .properties.result.type,
   ).toBe("string");
   expect((original.structuredError as { message: string }).message).toBe("error");
+  expect(original.tools).toEqual(["read"]);
 });
 
 timedTest("createChildSessionFile bootstraps a persisted child session header", async () => {

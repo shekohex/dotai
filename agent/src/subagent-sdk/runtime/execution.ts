@@ -128,7 +128,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
 
   protected async resolveModeValue(
     ctx: ExtensionContext,
-    input: { mode?: string; cwd?: string; autoExit?: boolean },
+    input: { mode?: string; cwd?: string; autoExit?: boolean; model?: string },
   ): Promise<ResolvedModeValue> {
     const resolved = await resolveSubagentMode(this.pi, ctx, input);
     if (!resolved.value) {
@@ -230,6 +230,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
         cwd: mode.cwd,
         paneId: "",
         task: params.task,
+        tools: mode.tools,
         handoff: params.handoff ?? false,
         autoExit: mode.autoExit,
         autoExitTimeoutMs: mode.autoExitTimeoutMs,

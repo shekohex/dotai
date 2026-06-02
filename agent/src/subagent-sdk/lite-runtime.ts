@@ -26,6 +26,7 @@ import { STRUCTURED_OUTPUT_TOOL_NAME } from "./bootstrap-core.js";
 import { SubagentRuntimeEventBus } from "./events.js";
 import type { SubagentChildIpcEvent } from "./ipc.js";
 import { resolveSubagentMode, type ResolvedSubagentMode } from "./modes.js";
+import { createChildSessionFile } from "./persistence.js";
 import { createDefaultSubagentRuntimeHooks, type SubagentRuntimeHooks } from "./runtime-hooks.js";
 import {
   cloneRuntimeSubagent,
@@ -52,6 +53,7 @@ export type LiteRuntimeOptions = {
 
 type LiteSessionState = {
   session: LiteAgentSession;
+  sessionPath?: string;
   unsubscribe: () => void;
   structuredCapture: { value?: unknown };
   abortController: AbortController;
@@ -205,6 +207,7 @@ export class LiteRuntime {
       mode: params.mode,
       cwd: params.cwd,
       autoExit: params.autoExit,
+      model: params.model,
     });
     if (!resolved.value) {
       throw new Error(resolved.error);
@@ -212,7 +215,28 @@ export class LiteRuntime {
 
     const sessionId = randomUUID();
     const prompt = await this.buildPrompt(params, ctx, startedAt, onUpdate, signal);
-    const state = this.createInitialState(params, ctx, resolved.value, sessionId, startedAt);
+    const parentSessionPath = ctx.sessionManager.getSessionFile();
+    const parentSessionPersisted = parentSessionPath !== undefined && parentSessionPath.length > 0;
+    const persisted = parentSessionPersisted ? (params.persisted ?? true) : false;
+    const sessionPath = createChildSessionFile({
+      cwd: resolved.value.cwd,
+      sessionId,
+      parentSessionPath,
+      persisted,
+    });
+    const sessionManager =
+      sessionPath === undefined
+        ? SessionManager.inMemory(resolved.value.cwd)
+        : SessionManager.open(sessionPath, undefined, resolved.value.cwd);
+    const state = this.createInitialState(
+      params,
+      ctx,
+      resolved.value,
+      sessionId,
+      startedAt,
+      persisted,
+      sessionPath,
+    );
     const structuredCapture: { value?: unknown } = {};
     const customTools = [
       ...(params.customTools ?? []),
@@ -244,12 +268,13 @@ export class LiteRuntime {
     )
       .filter((toolName) => toolName !== "subagent")
       .toSorted((left, right) => left.localeCompare(right));
+    const stateWithTools = { ...state, tools: sessionTools };
     const { session } = await createAgentSession({
       cwd: resolved.value.cwd,
       agentDir,
       settingsManager,
       resourceLoader,
-      sessionManager: SessionManager.inMemory(),
+      sessionManager,
       tools: sessionTools,
       customTools,
       ...(model === undefined ? {} : { model }),
@@ -261,9 +286,15 @@ export class LiteRuntime {
     const unsubscribe = session.subscribe((event) => {
       this.handleSessionEvent(sessionId, event, onUpdate);
     });
-    this.sessions.set(sessionId, { session, unsubscribe, structuredCapture, abortController });
-    this.states.set(sessionId, state);
-    await this.hooks.persistState(state);
+    this.sessions.set(sessionId, {
+      session,
+      sessionPath,
+      unsubscribe,
+      structuredCapture,
+      abortController,
+    });
+    this.states.set(sessionId, stateWithTools);
+    await this.hooks.persistState(stateWithTools);
     this.emitChangedStates();
     signal?.addEventListener(
       "abort",
@@ -274,7 +305,7 @@ export class LiteRuntime {
     );
     void this.runSession(sessionId, prompt);
 
-    return { state: cloneRuntimeSubagent(state), prompt };
+    return { state: cloneRuntimeSubagent(stateWithTools), prompt };
   }
 
   resume(
@@ -452,11 +483,14 @@ export class LiteRuntime {
     mode: ResolvedSubagentMode,
     sessionId: string,
     startedAt: number,
+    persisted: boolean,
+    sessionPath: string | undefined,
   ): RuntimeSubagent {
     return {
       event: "started",
       sessionId,
-      persisted: false,
+      sessionPath,
+      persisted,
       parentSessionId: ctx.sessionManager.getSessionId(),
       parentSessionPath: ctx.sessionManager.getSessionFile(),
       name: params.name,
@@ -466,6 +500,7 @@ export class LiteRuntime {
       paneId: `lite:${sessionId}`,
       muxBackend: "lite",
       task: params.task,
+      tools: mode.tools,
       handoff: params.handoff ?? false,
       autoExit: true,
       completion: params.completion,

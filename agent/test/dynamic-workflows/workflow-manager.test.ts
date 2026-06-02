@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "vitest";
 import type { AgentUsage } from "../../src/extensions/dynamic-workflows/agent.js";
 import { WorkflowManager } from "../../src/extensions/dynamic-workflows/workflow-manager.js";
+import { WorkflowErrorCode } from "../../src/extensions/dynamic-workflows/errors.js";
 
 /** Agent runner that reports fixed usage so token accounting is exercised. */
 function fakeAgent(usage: Partial<AgentUsage> = {}, result: unknown = "ok") {
@@ -20,6 +21,26 @@ function fakeAgent(usage: Partial<AgentUsage> = {}, result: unknown = "ok") {
         ...usage,
       });
       return result;
+    },
+  };
+}
+
+function abortableAgent() {
+  return {
+    run(_prompt: string, options: { signal?: AbortSignal }) {
+      return new Promise<string>((resolve, reject) => {
+        if (options.signal?.aborted === true) {
+          reject(new Error("Cancelled"));
+          return;
+        }
+        options.signal?.addEventListener(
+          "abort",
+          () => {
+            reject(new Error("Cancelled"));
+          },
+          { once: true },
+        );
+      });
     },
   };
 }
@@ -108,5 +129,23 @@ return { a, b }`;
     const byLabel = Object.fromEntries((run?.agents ?? []).map((a) => [a.label, a.model]));
     assert.equal(byLabel.scan, "search", "explicit per-agent mode is recorded");
     assert.equal(byLabel.judge, "anthropic/claude-opus-4-8", "default agent shows the main model");
+  }),
+);
+
+test(
+  "stopping a background workflow does not emit uncaught EventEmitter error",
+  withTempCwd(async (cwd) => {
+    const manager = new WorkflowManager({ cwd, agent: abortableAgent() });
+    const { runId, promise } = manager.startInBackground(oneAgentScript);
+
+    assert.equal(manager.stop(runId), true);
+    await assert.rejects(promise, (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as { code?: unknown }).code, WorkflowErrorCode.WORKFLOW_ABORTED);
+      return true;
+    });
+
+    const run = manager.listRuns().find((entry) => entry.runId === runId);
+    assert.equal(run?.status, "aborted");
   }),
 );

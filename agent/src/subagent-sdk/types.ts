@@ -1,4 +1,4 @@
-import type { CustomEntry } from "@earendil-works/pi-coding-agent";
+import type { CustomEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ContextPruneConfig } from "../extensions/context-prune/types.js";
 import type { Static, TSchema } from "typebox";
 import { Value } from "typebox/value";
@@ -93,6 +93,9 @@ type StartSubagentBaseParams = {
   name: string;
   task: string;
   mode?: string;
+  model?: string;
+  toolNames?: string[];
+  customTools?: ToolDefinition[];
   handoff?: boolean;
   cwd?: string;
   autoExit?: boolean;

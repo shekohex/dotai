@@ -8,6 +8,7 @@ import { defaultModes, defaultModesSchema, type DefaultModes } from "./default-m
 import { defaultInterviewSettings } from "./extensions/interview/settings.js";
 import { defaultOpenAIBetterSettings } from "./extensions/openai-better/settings.js";
 import { DEFAULT_CONFIG as defaultContextPruneSettings } from "./extensions/context-prune/types.js";
+import { defaultDynamicWorkflowSettings } from "./extensions/dynamic-workflows/settings.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
 type TerminalSettings = NonNullable<AgentSettings["terminal"]> & { titleSpinner: boolean };
@@ -27,6 +28,7 @@ export type DefaultSettings = Omit<AgentSettings, "terminal"> & {
   terminal: TerminalSettings;
   interview: typeof defaultInterviewSettings;
   contextPrune: typeof defaultContextPruneSettings;
+  dynamic_workflows: typeof defaultDynamicWorkflowSettings;
   openaiBetter: typeof defaultOpenAIBetterSettings;
 };
 
@@ -52,6 +54,7 @@ export const defaultSettings = {
     showTerminalProgress: true,
     titleSpinner: true,
   },
+  dynamic_workflows: defaultDynamicWorkflowSettings,
   contextPrune: defaultContextPruneSettings,
   interview: defaultInterviewSettings,
   openaiBetter: defaultOpenAIBetterSettings,

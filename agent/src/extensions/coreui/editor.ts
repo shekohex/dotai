@@ -3,6 +3,15 @@ import type { ExtensionContext, KeybindingsManager, Theme } from "@earendil-work
 import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 import { CURSOR_MARKER, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
+  colorizeWorkflowLines,
+  disarmWorkflowMode,
+  getWorkflowModeState,
+  nextWorkflowAnimationTick,
+  shouldDisarmWorkflowModeOnInput,
+  syncWorkflowModeState,
+  updateWorkflowModeAfterTextChange,
+} from "../dynamic-workflows/workflow-editor.js";
+import {
   addVerticalPaddingLines,
   createPasteMarker,
   normalizePastedText,
@@ -57,6 +66,7 @@ class CorePromptEditor extends CustomEditor {
   private placeholderTimer: ReturnType<typeof setInterval> | undefined;
   private onSubmitHandler: ((text: string) => void) | undefined;
   private onChangeHandler: ((text: string) => void) | undefined;
+  private workflowAnimationTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     tui: TUI,
@@ -80,9 +90,28 @@ class CorePromptEditor extends CustomEditor {
 
   dispose(): void {
     this.stopPlaceholderRotation();
+    this.stopWorkflowAnimation();
   }
 
   override handleInput(data: string): void {
+    if (!data) {
+      return;
+    }
+
+    const workflowModeState = getWorkflowModeState();
+    syncWorkflowModeState(workflowModeState, this.getText());
+    if (shouldDisarmWorkflowModeOnInput(data, workflowModeState, this.getTextBeforeCursor())) {
+      disarmWorkflowMode(workflowModeState);
+      this.tui.requestRender();
+      return;
+    }
+
+    const before = this.getText();
+    this.handleCoreInput(data);
+    updateWorkflowModeAfterTextChange(workflowModeState, before, this.getText());
+  }
+
+  private handleCoreInput(data: string): void {
     if (!data) {
       return;
     }
@@ -107,7 +136,7 @@ class CorePromptEditor extends CustomEditor {
 
       const remaining = data.slice(endIndex + PASTE_END.length);
       if (remaining) {
-        this.handleInput(remaining);
+        this.handleCoreInput(remaining);
       }
       return;
     }
@@ -128,7 +157,7 @@ class CorePromptEditor extends CustomEditor {
 
     const remaining = data.slice(startIndex + PASTE_START.length);
     if (remaining) {
-      this.handleInput(remaining);
+      this.handleCoreInput(remaining);
     }
   }
 
@@ -147,13 +176,52 @@ class CorePromptEditor extends CustomEditor {
       this.applyPlaceholder(lines, width, paddingX);
     }
 
-    const renderedLines = lines.map((line) => this.applyBackground(line));
+    const workflowModeState = getWorkflowModeState();
+    syncWorkflowModeState(workflowModeState, this.getText());
+    this.reconcileWorkflowAnimation(workflowModeState.active);
+
+    const renderedLines = colorizeWorkflowLines(
+      lines.map((line) => this.applyBackground(line)),
+      workflowModeState,
+    );
 
     if (this.focused && renderedLines.length > 0) {
       renderedLines[0] = `${CURSOR_SHAPES[CORE_PROMPT_EDITOR_CONFIG.cursorShape]}${renderedLines[0]}`;
     }
 
     return renderedLines;
+  }
+
+  private getTextBeforeCursor(): string {
+    const lines = this.getLines();
+    const { line, col } = this.getCursor();
+    return (
+      lines.slice(0, line).join("\n") + (line > 0 ? "\n" : "") + (lines[line] ?? "").slice(0, col)
+    );
+  }
+
+  private reconcileWorkflowAnimation(active: boolean): void {
+    if (active && this.focused && this.workflowAnimationTimer === undefined) {
+      this.workflowAnimationTimer = setInterval(() => {
+        const state = getWorkflowModeState();
+        state.tick = nextWorkflowAnimationTick(state.tick);
+        this.tui.requestRender();
+      }, 90);
+      this.workflowAnimationTimer.unref?.();
+      return;
+    }
+
+    if ((!active || !this.focused) && this.workflowAnimationTimer !== undefined) {
+      this.stopWorkflowAnimation();
+    }
+  }
+
+  private stopWorkflowAnimation(): void {
+    if (this.workflowAnimationTimer === undefined) {
+      return;
+    }
+    clearInterval(this.workflowAnimationTimer);
+    this.workflowAnimationTimer = undefined;
   }
 
   private applyPlaceholder(lines: string[], width: number, paddingX: number): void {

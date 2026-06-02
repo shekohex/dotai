@@ -22,6 +22,7 @@ import { installBundledResourcePaths } from "../extensions/bundled-resources.js"
 import { getLiteBundledExtensionFactories } from "../extensions/lite-bundled-extensions.js";
 import { errorMessage } from "../utils/error-message.js";
 import { createStructuredOutputTool } from "./bootstrap.js";
+import { STRUCTURED_OUTPUT_TOOL_NAME } from "./bootstrap-core.js";
 import { SubagentRuntimeEventBus } from "./events.js";
 import type { SubagentChildIpcEvent } from "./ipc.js";
 import { resolveSubagentMode, type ResolvedSubagentMode } from "./modes.js";
@@ -73,17 +74,22 @@ function toTokenUsage(stats: ReturnType<LiteAgentSession["getSessionStats"]>): T
   };
 }
 
-function resolveModel(ctx: ExtensionContext, mode: ResolvedSubagentMode): Model<Api> | undefined {
-  if (mode.model === undefined) {
+function resolveModel(
+  ctx: ExtensionContext,
+  mode: ResolvedSubagentMode,
+  requestedModel: string | undefined,
+): Model<Api> | undefined {
+  const modelSpec = requestedModel ?? mode.model;
+  if (modelSpec === undefined) {
     return ctx.model;
   }
 
-  const slashIndex = mode.model.indexOf("/");
-  if (slashIndex <= 0 || slashIndex === mode.model.length - 1) {
+  const slashIndex = modelSpec.indexOf("/");
+  if (slashIndex <= 0 || slashIndex === modelSpec.length - 1) {
     return ctx.model;
   }
 
-  return ctx.modelRegistry.find(mode.model.slice(0, slashIndex), mode.model.slice(slashIndex + 1));
+  return ctx.modelRegistry.find(modelSpec.slice(0, slashIndex), modelSpec.slice(slashIndex + 1));
 }
 
 function getStructuredRetryCount(outputFormat: OutputFormat | undefined): number {
@@ -208,16 +214,18 @@ export class LiteRuntime {
     const prompt = await this.buildPrompt(params, ctx, startedAt, onUpdate, signal);
     const state = this.createInitialState(params, ctx, resolved.value, sessionId, startedAt);
     const structuredCapture: { value?: unknown } = {};
-    const customTools =
-      params.outputFormat?.type === "json_schema"
+    const customTools = [
+      ...(params.customTools ?? []),
+      ...(params.outputFormat?.type === "json_schema"
         ? [
             createStructuredOutputTool(params.outputFormat.schema, (structuredParams, toolCtx) => {
               structuredCapture.value = structuredParams;
               toolCtx.shutdown();
             }),
           ]
-        : [];
-    const model = resolveModel(ctx, resolved.value);
+        : []),
+    ];
+    const model = resolveModel(ctx, resolved.value, params.model);
     const agentDir = this.options.agentDir ?? getAgentDir();
     const settingsManager = SettingsManager.create(resolved.value.cwd, agentDir);
     installBundledResourcePaths();
@@ -229,13 +237,20 @@ export class LiteRuntime {
       ...buildModeResourceLoaderPromptOptions(resolved.value),
     });
     await resourceLoader.reload();
+    const structuredToolNames =
+      params.outputFormat?.type === "json_schema" ? [STRUCTURED_OUTPUT_TOOL_NAME] : [];
+    const sessionTools = Array.from(
+      new Set([...resolved.value.tools, ...(params.toolNames ?? []), ...structuredToolNames]),
+    )
+      .filter((toolName) => toolName !== "subagent")
+      .toSorted((left, right) => left.localeCompare(right));
     const { session } = await createAgentSession({
       cwd: resolved.value.cwd,
       agentDir,
       settingsManager,
       resourceLoader,
       sessionManager: SessionManager.inMemory(),
-      tools: resolved.value.tools,
+      tools: sessionTools,
       customTools,
       ...(model === undefined ? {} : { model }),
       ...(resolved.value.thinkingLevel === undefined

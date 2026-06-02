@@ -1,0 +1,383 @@
+/**
+ * `/workflows` slash command: list, inspect, and control background workflow runs. Shares the
+ * extension's single WorkflowManager so background runs are reachable.
+ */
+
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { recomputeWorkflowSnapshot, renderWorkflowText, type WorkflowSnapshot } from "./display.js";
+import type { PersistedRunState } from "./run-persistence.js";
+import { registerSavedWorkflow } from "./saved-commands.js";
+import type { WorkflowManager } from "./workflow-manager.js";
+import type { WorkflowStorage } from "./workflow-saved.js";
+import { openWorkflowNavigator } from "./workflow-ui.js";
+
+const STATUS_ICON: Record<string, string> = {
+  pending: "·",
+  running: "◆",
+  paused: "⏸",
+  completed: "✓",
+  failed: "✗",
+  aborted: "⊘",
+};
+
+const USAGE =
+  "Usage: /workflows [list] | status <id> | watch <id> | stop <id> | pause <id> | resume <id> | rm <id> | save <name> [runId]";
+
+const WORKFLOW_COMMANDS = [
+  { value: "ui", label: "ui", description: "Open workflow navigator" },
+  { value: "list", label: "list", description: "List workflow runs" },
+  { value: "status", label: "status", description: "Show or watch run status" },
+  { value: "watch", label: "watch", description: "Watch running workflow progress" },
+  { value: "stop", label: "stop", description: "Stop a running workflow" },
+  { value: "pause", label: "pause", description: "Pause a running workflow" },
+  { value: "resume", label: "resume", description: "Resume a persisted workflow" },
+  { value: "rm", label: "rm", description: "Remove a workflow run" },
+  { value: "save", label: "save", description: "Save a run as slash command" },
+];
+
+export function getWorkflowCommandCompletions(prefix: string, manager: WorkflowManager) {
+  const parts = prefix.trimStart().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1 && !prefix.endsWith(" ")) {
+    const token = parts[0] ?? "";
+    return WORKFLOW_COMMANDS.filter((item) => item.value.startsWith(token));
+  }
+  const sub = parts[0];
+  const token = parts.at(-1) ?? "";
+  if (
+    sub === "status" ||
+    sub === "watch" ||
+    sub === "stop" ||
+    sub === "pause" ||
+    sub === "resume" ||
+    sub === "rm"
+  ) {
+    return manager
+      .listRuns()
+      .map((run) => ({
+        value: run.runId,
+        label: run.runId,
+        description: `${run.workflowName} [${run.status}]`,
+      }))
+      .filter((item) => item.value.startsWith(token));
+  }
+  if (sub === "save" && parts.length > 2) {
+    return manager
+      .listRuns()
+      .map((run) => ({
+        value: run.runId,
+        label: run.runId,
+        description: `Save ${run.workflowName}`,
+      }))
+      .filter((item) => item.value.startsWith(token));
+  }
+  return null;
+}
+
+function summarizeRun(run: PersistedRunState): string {
+  const icon = STATUS_ICON[run.status] ?? "?";
+  const done = run.agents.filter((a) => a.status === "done").length;
+  const total = run.agents.length;
+  const tokens = run.tokenUsage ? ` · ${run.tokenUsage.total.toLocaleString()} tok` : "";
+  return `${icon} ${run.runId}  ${run.workflowName} [${run.status}] ${done}/${total} agents${tokens}`;
+}
+
+function oneLineProgress(snapshot: WorkflowSnapshot): string {
+  const total = snapshot.agents.length;
+  const done = snapshot.agents.filter((a) => a.status === "done").length;
+  const running = snapshot.agents.filter((a) => a.status === "running").length;
+  const errs = snapshot.agents.filter((a) => a.status === "error").length;
+  const phase =
+    snapshot.currentPhase !== undefined && snapshot.currentPhase.length > 0
+      ? ` · ${snapshot.currentPhase}`
+      : "";
+  return `◆ ${snapshot.name}: ${done}/${total} done${running ? `, ${running} running` : ""}${
+    errs ? `, ${errs} err` : ""
+  }${phase}`;
+}
+
+/*
+ * Subscribe to a running run's events and stream live progress to the status bar, printing the
+ * final snapshot when it finishes. Non-blocking: returns true if the run was active and is now
+ * being watched, false otherwise. Listeners clean up on completion so nothing leaks.
+ * @param manager Workflow manager.
+ * @param pi Extension API.
+ * @param ctx Command context.
+ * @param id Run ID.
+ * @returns Whether run is now watched.
+ */
+function watchRun(
+  manager: WorkflowManager,
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  id: string,
+): boolean {
+  const active = manager.getRun(id);
+  if (!active || active.status !== "running") return false;
+
+  const key = `wf:${id}`;
+  const update = () => {
+    const run = manager.getRun(id);
+    if (run) ctx.ui.setStatus(key, oneLineProgress(run.snapshot));
+  };
+  const onEvent = (e: { runId?: string }) => {
+    if (e.runId === id) update();
+  };
+  let settled = false;
+  const progressEvents = ["agentStart", "agentEnd", "phase", "log"];
+  const finalEvents = ["complete", "error", "stopped", "paused"];
+  const finish = (e: { runId?: string }) => {
+    if (e.runId !== id) return;
+    if (settled) return;
+    settled = true;
+    for (const ev of progressEvents) manager.off(ev, onEvent);
+    for (const ev of finalEvents) manager.off(ev, finish);
+    ctx.ui.setStatus(key, undefined);
+    const run = manager.getRun(id);
+    if (run) {
+      pi.sendMessage({
+        customType: "workflows",
+        content: renderWorkflowText(recomputeWorkflowSnapshot(run.snapshot), true),
+        display: true,
+      });
+    }
+  };
+  for (const ev of progressEvents) manager.on(ev, onEvent);
+  for (const ev of finalEvents) manager.on(ev, finish);
+  update();
+  return true;
+}
+
+function renderPersistedStatus(run: PersistedRunState): string {
+  const lines = [
+    `${STATUS_ICON[run.status] ?? "?"} ${run.workflowName} (${run.runId}) — ${run.status}`,
+  ];
+  if (run.currentPhase !== undefined && run.currentPhase.length > 0) {
+    lines.push(`  phase: ${run.currentPhase}`);
+  }
+  for (const agent of run.agents) {
+    const icon = agentStatusIcon(agent.status);
+    lines.push(`  ${icon} ${agent.label}`);
+  }
+  if (run.tokenUsage) lines.push(`  tokens: ${run.tokenUsage.total.toLocaleString()}`);
+  if (run.durationMs !== undefined)
+    lines.push(`  duration: ${(run.durationMs / 1000).toFixed(1)}s`);
+  return lines.join("\n");
+}
+
+function agentStatusIcon(status: string): string {
+  if (status === "done") return "✓";
+  if (status === "error") return "✗";
+  if (status === "running") return "◆";
+  return "·";
+}
+
+export interface WorkflowCommandOptions {
+  /** Saved-workflow storage, enabling `/workflows save`. */
+  storage?: WorkflowStorage;
+  /** Working directory for saved workflows registered via `save`. */
+  cwd?: string;
+}
+
+interface WorkflowHandlerOptions {
+  pi: ExtensionAPI;
+  manager: WorkflowManager;
+  opts: WorkflowCommandOptions;
+  parts: string[];
+  ctx: ExtensionCommandContext;
+}
+
+async function handleListCommand({
+  pi,
+  manager,
+  opts,
+  parts,
+  ctx,
+}: WorkflowHandlerOptions): Promise<void> {
+  const sub = (parts[0] ?? "list").toLowerCase();
+  const print = (text: string) => {
+    pi.sendMessage({ customType: "workflows", content: text, display: true });
+  };
+
+  if (sub !== "list" && ctx.hasUI) {
+    await openWorkflowNavigator(pi, manager, ctx.ui, {
+      storage: opts.storage,
+      cwd: opts.cwd,
+    });
+    return;
+  }
+  if (parts.length === 0 && ctx.hasUI) {
+    await openWorkflowNavigator(pi, manager, ctx.ui, {
+      storage: opts.storage,
+      cwd: opts.cwd,
+    });
+    return;
+  }
+  const runs = manager.listRuns();
+  if (runs.length === 0) {
+    print("No workflow runs yet. Start one with a background workflow (background: true).");
+    return;
+  }
+  print(["Workflow runs:", ...runs.map((run) => summarizeRun(run)), "", USAGE].join("\n"));
+}
+
+function handleStatusCommand({ pi, manager, ctx, parts }: WorkflowHandlerOptions): void {
+  const id = parts[1];
+  const print = (text: string) => {
+    pi.sendMessage({ customType: "workflows", content: text, display: true });
+  };
+
+  if (id === undefined || id.length === 0) {
+    ctx.ui.notify(USAGE, "warning");
+    return;
+  }
+  if (watchRun(manager, pi, ctx, id)) {
+    ctx.ui.notify(
+      `Watching ${id} — live progress in the status bar; result prints when it finishes.`,
+      "info",
+    );
+    return;
+  }
+  const live = manager.getSnapshot(id);
+  if (live) {
+    print(renderWorkflowText(recomputeWorkflowSnapshot(live), false));
+    return;
+  }
+  const run = manager.listRuns().find((r) => r.runId === id);
+  if (!run) {
+    ctx.ui.notify(`No workflow run "${id}"`, "error");
+    return;
+  }
+  print(renderPersistedStatus(run));
+}
+
+function notifyMissingId(ctx: ExtensionCommandContext): boolean {
+  ctx.ui.notify(USAGE, "warning");
+  return false;
+}
+
+function handleSaveCommand({ pi, manager, opts, ctx, parts }: WorkflowHandlerOptions): void {
+  const name = parts[1];
+  if (name === undefined || name.length === 0) {
+    ctx.ui.notify("Usage: /workflows save <name> [runId]", "warning");
+    return;
+  }
+  if (opts.storage === undefined) {
+    ctx.ui.notify("Saving is not available (no storage configured)", "error");
+    return;
+  }
+  const runs = manager.listRuns();
+  const runIdArg = parts[2];
+  const run =
+    runIdArg !== undefined && runIdArg.length > 0
+      ? runs.find((r) => r.runId === runIdArg)
+      : runs.find((r) => r.script !== undefined && r.script.length > 0);
+  if (run?.script === undefined || run.script.length === 0) {
+    ctx.ui.notify(runIdArg ? `No run ${runIdArg} with a script` : "No saved run to save", "error");
+    return;
+  }
+  const saved = opts.storage.save({
+    name,
+    description: run.workflowName,
+    script: run.script,
+    location: "project",
+  });
+  registerSavedWorkflow(pi, opts.cwd ?? process.cwd(), saved);
+  ctx.ui.notify(`Saved /${name} (from ${run.runId})`, "info");
+}
+
+export async function handleWorkflowCommand(options: WorkflowHandlerOptions): Promise<void> {
+  const { manager, ctx, parts } = options;
+  const sub = (parts[0] ?? "list").toLowerCase();
+  const id = parts[1];
+
+  switch (sub) {
+    case "ui":
+    case "list": {
+      await handleListCommand(options);
+      return;
+    }
+    case "watch":
+    case "status": {
+      handleStatusCommand(options);
+      return;
+    }
+    case "stop": {
+      if (id === undefined || id.length === 0) {
+        notifyMissingId(ctx);
+        return;
+      }
+      ctx.ui.notify(
+        manager.stop(id) ? `Stopped ${id}` : `Cannot stop ${id} (not running)`,
+        manager.getRun(id) ? "info" : "warning",
+      );
+      return;
+    }
+    case "pause": {
+      if (id === undefined || id.length === 0) {
+        notifyMissingId(ctx);
+        return;
+      }
+      ctx.ui.notify(
+        manager.pause(id) ? `Paused ${id}` : `Cannot pause ${id} (not running)`,
+        "info",
+      );
+      return;
+    }
+    case "resume": {
+      if (id === undefined || id.length === 0) {
+        notifyMissingId(ctx);
+        return;
+      }
+      const ok = manager.resume(id);
+      ctx.ui.notify(
+        ok ? `Resumed ${id}` : `Resume not available for ${id} yet`,
+        ok ? "info" : "warning",
+      );
+      return;
+    }
+    case "rm": {
+      if (id === undefined || id.length === 0) {
+        notifyMissingId(ctx);
+        return;
+      }
+      ctx.ui.notify(manager.deleteRun(id) ? `Removed ${id}` : `No run ${id}`, "info");
+      return;
+    }
+    case "save": {
+      handleSaveCommand(options);
+      return;
+    }
+    default:
+      ctx.ui.notify(`Unknown subcommand "${sub}". ${USAGE}`, "warning");
+  }
+}
+
+/*
+ * Register the `/workflows` command against the shared manager. Idempotent.
+ * @param pi Extension API.
+ * @param manager Workflow manager.
+ * @param opts Command options.
+ */
+export function registerWorkflowCommands(
+  pi: ExtensionAPI,
+  manager: WorkflowManager,
+  opts: WorkflowCommandOptions = {},
+): void {
+  try {
+    const taken = (pi.getCommands?.() ?? []).some((c: { name: string }) => c.name === "workflows");
+    if (taken) return;
+  } catch {
+    // getCommands may be unavailable in some hosts; fall through and try to register.
+  }
+
+  pi.registerCommand("workflows", {
+    description: "List and control background workflow runs",
+    getArgumentCompletions(prefix) {
+      return getWorkflowCommandCompletions(prefix, manager);
+    },
+    async handler(args: string, ctx: ExtensionCommandContext) {
+      const parts = args.trim().split(/\s+/).filter(Boolean);
+      await handleWorkflowCommand({ pi, manager, opts, parts, ctx });
+    },
+  });
+}

@@ -7,10 +7,9 @@ import type { AgentUsage } from "./agent.js";
 import { WorkflowAgent, type WorkflowAgentOptions } from "./agent.js";
 import { DEFAULT_AGENT_TIMEOUT_MS, MAX_AGENTS_PER_RUN, MAX_CONCURRENCY } from "./config.js";
 import type { WorkflowAgentActivityEvent } from "./display.js";
-import { isRetryableWorkflowError, WorkflowError, WorkflowErrorCode, wrapError } from "./errors.js";
+import { parseWorkflowErrorCode, WorkflowError, WorkflowErrorCode, wrapError } from "./errors.js";
 import {
   createCompletedJournalEntry,
-  createFailedJournalEntry,
   createStartedJournalEntry,
   type AgentJournalInput,
   type JournalEntry,
@@ -27,11 +26,18 @@ import {
   buildAgentInstructions,
   createParallelFunction,
   createPipelineFunction,
+  createResultSessionRef,
+  createWorkflowFailedJournalEntry,
   createLimiter,
   defaultAgentLabel,
   estimateTokens,
   hashAgentCall,
+  resolveAgentResumeSession,
+  toSubagentResumeSession,
+  unwrapWorkflowAgentResult,
+  unwrapWorkflowAgentResults,
   withTimeout,
+  attachWorkflowAgentSessionRef,
 } from "./workflow-utils.js";
 import { createWorktree, removeWorktree, type Worktree } from "./worktree.js";
 
@@ -119,6 +125,8 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
   isolation?: "worktree";
   agentType?: string;
   timeoutMs?: number;
+  /** Continue a previous workflow agent session using a prior agent result or explicit session ref. */
+  resume?: unknown;
 }
 
 interface RuntimeState {
@@ -165,35 +173,6 @@ interface LiveAgentCall {
 }
 
 const DETERMINISM_BLOCKLIST = /\bDate\s*\.\s*now\b|\bMath\s*\.\s*random\b|\bnew\s+Date\s*\(\s*\)/;
-
-function parseWorkflowErrorCode(value: string | undefined): WorkflowErrorCode {
-  if (value === WorkflowErrorCode.AGENT_TIMEOUT) return WorkflowErrorCode.AGENT_TIMEOUT;
-  if (value === WorkflowErrorCode.WORKFLOW_ABORTED) return WorkflowErrorCode.WORKFLOW_ABORTED;
-  if (value === WorkflowErrorCode.AGENT_LIMIT_EXCEEDED)
-    return WorkflowErrorCode.AGENT_LIMIT_EXCEEDED;
-  if (value === WorkflowErrorCode.TOKEN_BUDGET_EXHAUSTED)
-    return WorkflowErrorCode.TOKEN_BUDGET_EXHAUSTED;
-  if (value === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR)
-    return WorkflowErrorCode.SCRIPT_VALIDATION_ERROR;
-  if (value === WorkflowErrorCode.AGENT_EXECUTION_ERROR)
-    return WorkflowErrorCode.AGENT_EXECUTION_ERROR;
-  if (value === WorkflowErrorCode.PERSISTENCE_ERROR) return WorkflowErrorCode.PERSISTENCE_ERROR;
-  return WorkflowErrorCode.UNKNOWN;
-}
-
-function createWorkflowFailedJournalEntry(
-  journalInput: AgentJournalInput,
-  failedSession: { sessionId: string; sessionPath: string } | undefined,
-  workflowError: WorkflowError,
-): JournalEntry {
-  return createFailedJournalEntry(
-    { ...journalInput, ...failedSession },
-    workflowError.message,
-    isRetryableWorkflowError(workflowError),
-    workflowError.code,
-    workflowError.recoverable,
-  );
-}
 
 export function runWorkflow(
   script: string,
@@ -306,12 +285,14 @@ async function executeWorkflow(
   const parallel = createParallelFunction(execution, options);
   const pipeline = createPipelineFunction(execution, options);
   const workflowFn = createNestedWorkflowFunction(execution, options);
-  const result = await executeWorkflowBody(execution, options, {
-    agent,
-    parallel,
-    pipeline,
-    workflow: workflowFn,
-  });
+  const result = unwrapWorkflowAgentResults(
+    await executeWorkflowBody(execution, options, {
+      agent,
+      parallel,
+      pipeline,
+      workflow: workflowFn,
+    }),
+  );
 
   execution.logger.persist();
 
@@ -378,14 +359,24 @@ function createAgentFunction(execution: WorkflowExecution, options: WorkflowRunO
       execution.shared.agentCount++;
       options.onAgentStart?.({ label, phase: assignedPhase, prompt, model: displayModel });
       if (completedEntry === completedStartedEntry) options.onAgentJournal?.(completedEntry);
+      const cachedResult = attachWorkflowAgentSessionRef(
+        completedEntry.result,
+        completedEntry.sessionId !== undefined && completedEntry.sessionPath !== undefined
+          ? {
+              sessionId: completedEntry.sessionId,
+              sessionPath: completedEntry.sessionPath,
+              journalIndex: completedEntry.index,
+            }
+          : undefined,
+      );
       options.onAgentEnd?.({
         label,
         phase: assignedPhase,
-        result: completedEntry.result,
+        result: cachedResult,
         tokens: 0,
         model: displayModel,
       });
-      return completedEntry.result;
+      return cachedResult;
     }
     if (isCachedFailedAgent(cached, callHash) && !cached.retryable) {
       if (cached.recoverable === false) {
@@ -404,7 +395,8 @@ function createAgentFunction(execution: WorkflowExecution, options: WorkflowRunO
       });
       return null;
     }
-    const resumeSession = getResumeSession(cached, callHash);
+    const explicitResumeSession = resolveAgentResumeSession(agentOptions.resume);
+    const resumeSession = explicitResumeSession ?? getResumeSession(cached, callHash);
 
     return execution.shared.limiter(() =>
       runLiveAgentCall(execution, options, {
@@ -479,7 +471,9 @@ async function runLiveAgentCall(
   try {
     execution.throwIfAborted();
     const resumeSession =
-      call.agentOptions.isolation === "worktree" ? undefined : call.resumeSession;
+      call.agentOptions.isolation === "worktree"
+        ? undefined
+        : toSubagentResumeSession(call.resumeSession);
     const result = await withTimeout(
       runWorkflowAgent(execution.agentRunner, call.prompt, call.agentOptions, {
         label: call.label,
@@ -510,19 +504,22 @@ async function runLiveAgentCall(
       `Agent "${call.label}" timed out after ${timeout}ms`,
     );
     execution.throwIfAborted();
-    const tokens = recordTokens(result);
+    const resultSessionRef = createResultSessionRef(childSession, call.callIndex);
+    const wrappedResult = attachWorkflowAgentSessionRef(result, resultSessionRef);
+    const plainResult = unwrapWorkflowAgentResult(result);
+    const tokens = recordTokens(plainResult);
     options.onAgentJournal?.(
-      createCompletedJournalEntry({ ...journalInput, ...childSession }, result, tokens),
+      createCompletedJournalEntry({ ...journalInput, ...childSession }, plainResult, tokens),
     );
     options.onAgentEnd?.({
       label: call.label,
       phase: call.assignedPhase,
-      result,
+      result: wrappedResult,
       tokens,
       worktree: runCwd,
       model: displayModel,
     });
-    return result;
+    return wrappedResult;
   } catch (error) {
     if (options.signal?.aborted === true) throw error;
     const workflowError = wrapError(error, { agentLabel: call.label });

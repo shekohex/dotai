@@ -66,6 +66,21 @@ export function isRetryableWorkflowError(error: WorkflowError): boolean {
   return isRetryableErrorMessage(error.message);
 }
 
+export function parseWorkflowErrorCode(value: string | undefined): WorkflowErrorCode {
+  if (value === WorkflowErrorCode.AGENT_TIMEOUT) return WorkflowErrorCode.AGENT_TIMEOUT;
+  if (value === WorkflowErrorCode.WORKFLOW_ABORTED) return WorkflowErrorCode.WORKFLOW_ABORTED;
+  if (value === WorkflowErrorCode.AGENT_LIMIT_EXCEEDED)
+    return WorkflowErrorCode.AGENT_LIMIT_EXCEEDED;
+  if (value === WorkflowErrorCode.TOKEN_BUDGET_EXHAUSTED)
+    return WorkflowErrorCode.TOKEN_BUDGET_EXHAUSTED;
+  if (value === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR)
+    return WorkflowErrorCode.SCRIPT_VALIDATION_ERROR;
+  if (value === WorkflowErrorCode.AGENT_EXECUTION_ERROR)
+    return WorkflowErrorCode.AGENT_EXECUTION_ERROR;
+  if (value === WorkflowErrorCode.PERSISTENCE_ERROR) return WorkflowErrorCode.PERSISTENCE_ERROR;
+  return WorkflowErrorCode.UNKNOWN;
+}
+
 export function errorMessage(error: unknown, fallback?: string): string {
   if (error instanceof Error) return error.message;
   return fallback ?? String(error);

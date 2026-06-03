@@ -36,6 +36,30 @@ Instead of dividing the work, have agents compete on it. Spawn N agents that eac
 
 For tasks with an unknown amount of work, loop spawning agents until a stop condition is met (no new findings, no more errors in the logs) instead of a fixed number of passes.
 
+When the same implementer should keep context across passes, keep the first `agent()` result and pass it with `resume` on later fix turns:
+
+```javascript
+let build = await agent("Implement the requested change", { label: "build 1", mode: "build" });
+
+for (let iteration = 1; iteration <= 5; iteration++) {
+  const review = await agent("Review the current diff and return findings", {
+    label: "review " + iteration,
+    mode: "review",
+    schema: ReviewSchema,
+  });
+
+  if (review.findings.length === 0) break;
+
+  build = await agent("Fix findings:\n" + JSON.stringify(review.findings), {
+    label: "fix " + iteration,
+    mode: "build",
+    resume: build,
+  });
+}
+```
+
+Use fresh agents for independent reviewers and use `resume` only for stateful follow-up work. Do not resume one prior result in parallel branches.
+
 ## Use Cases
 
 ### Migrations and Refactors

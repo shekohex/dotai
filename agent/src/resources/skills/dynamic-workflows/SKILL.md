@@ -79,17 +79,49 @@ Rules:
 
 ## Agent Options
 
-| Option             | Description                                                            |
-| ------------------ | ---------------------------------------------------------------------- |
-| `label`            | Short unique name (2–5 words) for status display.                      |
-| `phase`            | Override current phase for this agent.                                 |
-| `schema`           | Plain JSON Schema. Agent returns validated object.                     |
-| `mode`             | Subagent mode name (e.g. `review`, `worker`). Omit for generic worker. |
-| `outputRetryCount` | Retries for structured output.                                         |
-| `toolNames`        | Tools to expose to this agent.                                         |
-| `isolation`        | `"worktree"` runs agent in a throwaway git worktree.                   |
-| `agentType`        | Persona hint injected into agent instructions.                         |
-| `timeoutMs`        | Override default agent timeout.                                        |
+| Option             | Description                                                                                                |
+| ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `label`            | Short unique name (2–5 words) for status display.                                                          |
+| `phase`            | Override current phase for this agent.                                                                     |
+| `schema`           | Plain JSON Schema. Agent returns validated object.                                                         |
+| `mode`             | Subagent mode name (e.g. `review`, `worker`). Omit for generic worker.                                     |
+| `outputRetryCount` | Retries for structured output.                                                                             |
+| `toolNames`        | Tools to expose to this agent.                                                                             |
+| `isolation`        | `"worktree"` runs agent in a throwaway git worktree.                                                       |
+| `agentType`        | Persona hint injected into agent instructions.                                                             |
+| `timeoutMs`        | Override default agent timeout.                                                                            |
+| `resume`           | Continue a prior agent session using a previous `agent()` result or explicit `{ sessionId, sessionPath }`. |
+
+## Resuming Agents
+
+Use `resume` when one logical subagent should keep context across multiple turns, such as build → review → fix loops.
+
+```javascript
+const build = await agent("Implement the requested change", {
+  label: "build pass",
+  mode: "build",
+});
+
+const review = await agent("Review the current diff and return findings", {
+  label: "review pass",
+  mode: "review",
+  schema: {
+    type: "object",
+    properties: {
+      findings: { type: "array", items: { type: "string" } },
+    },
+    required: ["findings"],
+  },
+});
+
+await agent("Fix these findings:\n" + JSON.stringify(review.findings), {
+  label: "fix pass",
+  mode: "build",
+  resume: build,
+});
+```
+
+See [references/API.md](references/API.md) for details and edge cases.
 
 ## Mode Routing
 

@@ -13,7 +13,10 @@ import {
   transformWorkflowTemplate,
 } from "../../src/extensions/dynamic-workflows/resource-workflows.js";
 import { generateSimplifyWorkflow } from "../../src/extensions/dynamic-workflows/simplify.js";
-import { parseWorkflowScript } from "../../src/extensions/dynamic-workflows/workflow.js";
+import {
+  parseWorkflowScript,
+  runWorkflow,
+} from "../../src/extensions/dynamic-workflows/workflow.js";
 
 test("generateDeepResearchWorkflow produces a valid, parseable script", () => {
   const { meta, body } = parseWorkflowScript(generateDeepResearchWorkflow());
@@ -65,6 +68,39 @@ test("simplify workflow produces a valid, parseable script", () => {
   assert.match(body, /quality-review/);
   assert.match(body, /efficiency-review/);
   assert.match(body, /simplify-fixer/);
+});
+
+test("existing simplify workflow remains compatible with session-backed text results", async () => {
+  const result = await runWorkflow(generateSimplifyWorkflow(), {
+    persistLogs: false,
+    args: {
+      diffCommand: "git diff --cached",
+      status: "M src/example.ts",
+      stat: "src/example.ts | 1 +",
+      context: "compatibility test",
+    },
+    agent: {
+      async run(
+        prompt: string,
+        options: { onStart?: (state: { sessionId: string; sessionPath: string }) => void },
+      ) {
+        const label = /Code Reuse Review/.test(prompt)
+          ? "reuse"
+          : /Code Quality Review/.test(prompt)
+            ? "quality"
+            : /Efficiency Review/.test(prompt)
+              ? "efficiency"
+              : "fix";
+        options.onStart?.({ sessionId: `session-${label}`, sessionPath: `/tmp/session-${label}` });
+        return `${label} result`;
+      },
+    },
+  });
+
+  assert.deepEqual(result.result, {
+    reviews: ["reuse result", "quality result", "efficiency result"],
+    fixes: "fix result",
+  });
 });
 
 test("workflow resources start with exported metadata", () => {

@@ -67,8 +67,40 @@ Standard utilities: `JSON`, `Math`, `Array`, `Object`, `String`, `Number`, `Bool
   isolation?: "worktree";     // Run in a throwaway git worktree.
   agentType?: string;         // Persona hint injected into instructions.
   timeoutMs?: number;         // Override default agent timeout.
+  resume?: AgentResult | { sessionId: string; sessionPath: string };
+                              // Continue a previous agent session.
 }
 ```
+
+### Resuming Agent Sessions
+
+`agent()` returns its normal text or structured result plus hidden resume metadata when the child session is persisted. Pass that prior result as `opts.resume` to continue the same child session with a follow-up prompt:
+
+```javascript
+const build = await agent("Implement the feature", {
+  label: "build 1",
+  mode: "build",
+});
+
+const fix = await agent("Fix these review findings:\n" + JSON.stringify(findings), {
+  label: "build 2",
+  mode: "build",
+  resume: build,
+});
+```
+
+`resume` works for text results and structured outputs. Structured outputs remain ordinary objects for JSON serialization and property access. Text results with hidden resume metadata behave like strings for `String(result)`, template strings, JSON serialization, and string methods, but `typeof result === "string"` is false during workflow execution. Use `String(result)` before strict string checks.
+
+Explicit session refs are supported for advanced cases:
+
+```javascript
+await agent("Continue existing work", {
+  label: "manual resume",
+  resume: { sessionId: "...", sessionPath: "..." },
+});
+```
+
+Avoid resuming the same prior result concurrently from multiple `parallel()` branches. Do not use `resume` with `isolation: "worktree"`; worktree sessions are intentionally throwaway.
 
 ### Limits and Defaults
 

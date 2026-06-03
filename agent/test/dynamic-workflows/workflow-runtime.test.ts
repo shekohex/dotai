@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Type } from "typebox";
 import { test } from "vitest";
 import type { AgentUsage } from "../../src/extensions/dynamic-workflows/agent.js";
+import { WORKFLOW_AGENT_SESSION_REF } from "../../src/extensions/dynamic-workflows/agent-result.js";
 import { WorkflowError, WorkflowErrorCode } from "../../src/extensions/dynamic-workflows/errors.js";
 import { type JournalEntry, runWorkflow } from "../../src/extensions/dynamic-workflows/workflow.js";
 import { SUBAGENT_STRUCTURED_OUTPUT_ENTRY } from "../../src/subagent-sdk/types.js";
@@ -150,6 +151,230 @@ test("resume re-runs only the changed call (hash mismatch)", async () => {
     resumeJournal: new Map(journal.map((e) => [e.index, e])),
   });
   assert.equal(second.state.calls, 1, "only the edited call re-runs");
+});
+
+test("agent resume option continues from prior agent result session", async () => {
+  const script = `export const meta = { name: 'agent_resume', description: 'agent resume' }
+const first = await agent('first', { label: 'first' })
+const second = await agent('second', { label: 'second', resume: first })
+return { first: String(first), second: String(second) }`;
+  const resumeSessions: Array<{ sessionId: string; sessionPath: string } | undefined> = [];
+
+  const result = await runWorkflow<{ first: string; second: string }>(script, {
+    persistLogs: false,
+    agent: {
+      async run(
+        prompt: string,
+        options: {
+          resumeSession?: { sessionId: string; sessionPath: string };
+          onStart?: (state: { sessionId: string; sessionPath: string }) => void;
+        },
+      ) {
+        resumeSessions.push(options.resumeSession);
+        const index = resumeSessions.length;
+        options.onStart?.({ sessionId: `session-${index}`, sessionPath: `/tmp/session-${index}` });
+        return `ran:${prompt}`;
+      },
+    },
+  });
+
+  assert.deepEqual(result.result, { first: "ran:first", second: "ran:second" });
+  assert.deepEqual(resumeSessions, [
+    undefined,
+    { sessionId: "session-1", sessionPath: "/tmp/session-1" },
+  ]);
+});
+
+test("agent resume option works when prior result is replayed from journal", async () => {
+  const originalScript = `export const meta = { name: 'agent_resume_replay', description: 'agent resume replay' }
+const first = await agent('first', { label: 'first' })
+const second = await agent('second', { label: 'second', resume: first })
+return { first: String(first), second: String(second) }`;
+  const journal: JournalEntry[] = [];
+  let runCount = 0;
+  await runWorkflow(originalScript, {
+    persistLogs: false,
+    onAgentJournal: (entry) => journal.push(entry),
+    agent: {
+      async run(
+        prompt: string,
+        options: { onStart?: (state: { sessionId: string; sessionPath: string }) => void },
+      ) {
+        runCount++;
+        options.onStart?.({
+          sessionId: `session-${runCount}`,
+          sessionPath: `/tmp/session-${runCount}`,
+        });
+        return `ran:${prompt}`;
+      },
+    },
+  });
+
+  const editedScript = originalScript.replace("'second'", "'second edited'");
+  const resumeSessions: Array<{ sessionId: string; sessionPath: string } | undefined> = [];
+  const result = await runWorkflow<{ first: string; second: string }>(editedScript, {
+    persistLogs: false,
+    resumeJournal: new Map(journal.map((entry) => [entry.index, entry])),
+    agent: {
+      async run(
+        prompt: string,
+        options: {
+          resumeSession?: { sessionId: string; sessionPath: string };
+          onStart?: (state: { sessionId: string; sessionPath: string }) => void;
+        },
+      ) {
+        resumeSessions.push(options.resumeSession);
+        options.onStart?.({ sessionId: "session-3", sessionPath: "/tmp/session-3" });
+        return `ran:${prompt}`;
+      },
+    },
+  });
+
+  assert.deepEqual(result.result, { first: "ran:first", second: "ran:second edited" });
+  assert.deepEqual(resumeSessions, [{ sessionId: "session-1", sessionPath: "/tmp/session-1" }]);
+});
+
+test("agent resume option continues from structured prior result session", async () => {
+  const schema = Type.Object({ answer: Type.String() });
+  const script = `export const meta = { name: 'agent_resume_structured', description: 'agent resume structured' }
+const first = await agent('first', { label: 'first', schema: args.schema })
+const serialized = JSON.stringify(first)
+const second = await agent('second', { label: 'second', resume: first })
+return { first, second, serialized, hasEnumerableSessionRef: Object.keys(first).includes('${String(WORKFLOW_AGENT_SESSION_REF)}') }`;
+  const resumeSessions: Array<{ sessionId: string; sessionPath: string } | undefined> = [];
+
+  const result = await runWorkflow<{
+    first: { answer: string };
+    second: string;
+    serialized: string;
+    hasEnumerableSessionRef: boolean;
+  }>(script, {
+    args: { schema },
+    persistLogs: false,
+    agent: {
+      async run(
+        prompt: string,
+        options: {
+          resumeSession?: { sessionId: string; sessionPath: string };
+          onStart?: (state: { sessionId: string; sessionPath: string }) => void;
+        },
+      ) {
+        resumeSessions.push(options.resumeSession);
+        const index = resumeSessions.length;
+        options.onStart?.({ sessionId: `session-${index}`, sessionPath: `/tmp/session-${index}` });
+        return prompt === "first" ? { answer: "structured" } : `ran:${prompt}`;
+      },
+    },
+  });
+
+  assert.deepEqual(result.result.first, { answer: "structured" });
+  assert.equal(result.result.second, "ran:second");
+  assert.equal(result.result.serialized, '{"answer":"structured"}');
+  assert.equal(result.result.hasEnumerableSessionRef, false);
+  assert.deepEqual(resumeSessions, [
+    undefined,
+    { sessionId: "session-1", sessionPath: "/tmp/session-1" },
+  ]);
+});
+
+test("agent resume option works when structured prior result is replayed from journal", async () => {
+  const schema = Type.Object({ answer: Type.String() });
+  const originalScript = `export const meta = { name: 'agent_resume_structured_replay', description: 'agent resume structured replay' }
+const first = await agent('first', { label: 'first', schema: args.schema })
+const second = await agent('second', { label: 'second', resume: first })
+return { first, second }`;
+  const journal: JournalEntry[] = [];
+  let runCount = 0;
+  await runWorkflow(originalScript, {
+    args: { schema },
+    persistLogs: false,
+    onAgentJournal: (entry) => journal.push(entry),
+    agent: {
+      async run(
+        prompt: string,
+        options: { onStart?: (state: { sessionId: string; sessionPath: string }) => void },
+      ) {
+        runCount++;
+        options.onStart?.({
+          sessionId: `session-${runCount}`,
+          sessionPath: `/tmp/session-${runCount}`,
+        });
+        return prompt === "first" ? { answer: "structured" } : `ran:${prompt}`;
+      },
+    },
+  });
+
+  const editedScript = originalScript.replace("'second'", "'second edited'");
+  const resumeSessions: Array<{ sessionId: string; sessionPath: string } | undefined> = [];
+  const result = await runWorkflow<{ first: { answer: string }; second: string }>(editedScript, {
+    args: { schema },
+    persistLogs: false,
+    resumeJournal: new Map(journal.map((entry) => [entry.index, entry])),
+    agent: {
+      async run(
+        prompt: string,
+        options: {
+          resumeSession?: { sessionId: string; sessionPath: string };
+          onStart?: (state: { sessionId: string; sessionPath: string }) => void;
+        },
+      ) {
+        resumeSessions.push(options.resumeSession);
+        options.onStart?.({ sessionId: "session-3", sessionPath: "/tmp/session-3" });
+        return `ran:${prompt}`;
+      },
+    },
+  });
+
+  assert.deepEqual(result.result.first, { answer: "structured" });
+  assert.equal(result.result.second, "ran:second edited");
+  assert.deepEqual(resumeSessions, [{ sessionId: "session-1", sessionPath: "/tmp/session-1" }]);
+});
+
+test("agent resume option accepts explicit session ref", async () => {
+  const script = `export const meta = { name: 'agent_resume_explicit', description: 'agent resume explicit' }
+const result = await agent('follow up', { label: 'follow', resume: { sessionId: 'session-explicit', sessionPath: '/tmp/session-explicit' } })
+return { result: String(result) }`;
+  let resumeSession: { sessionId: string; sessionPath: string } | undefined;
+
+  const result = await runWorkflow<{ result: string }>(script, {
+    persistLogs: false,
+    agent: {
+      async run(
+        prompt: string,
+        options: {
+          resumeSession?: { sessionId: string; sessionPath: string };
+          onStart?: (state: { sessionId: string; sessionPath: string }) => void;
+        },
+      ) {
+        resumeSession = options.resumeSession;
+        options.onStart?.({ sessionId: "session-new", sessionPath: "/tmp/session-new" });
+        return `ran:${prompt}`;
+      },
+    },
+  });
+
+  assert.deepEqual(resumeSession, {
+    sessionId: "session-explicit",
+    sessionPath: "/tmp/session-explicit",
+  });
+  assert.equal(result.result.result, "ran:follow up");
+});
+
+test("agent resume option rejects invalid explicit refs", async () => {
+  const script = `export const meta = { name: 'agent_resume_invalid', description: 'agent resume invalid' }
+return await agent('follow up', { label: 'follow', resume: { sessionId: 'missing-path' } })`;
+
+  await assert.rejects(
+    runWorkflow(script, {
+      persistLogs: false,
+      agent: {
+        async run() {
+          return "should not run";
+        },
+      },
+    }),
+    /agent resume requires a prior agent result or \{ sessionId, sessionPath \}/,
+  );
 });
 
 test("resume retries retryable failed agents using the persisted child session", async () => {

@@ -1,5 +1,19 @@
 import { createHash } from "node:crypto";
-import { WorkflowError, WorkflowErrorCode, wrapError } from "./errors.js";
+import {
+  createFailedJournalEntry,
+  type AgentJournalInput,
+  type JournalEntry,
+} from "./workflow-journal.js";
+import {
+  attachWorkflowAgentSessionRef,
+  getWorkflowAgentSessionRef,
+  normalizeWorkflowAgentResumeForHash,
+  parseWorkflowAgentSessionRef,
+  unwrapWorkflowAgentResult,
+  unwrapWorkflowAgentResults,
+  type WorkflowAgentSessionRef,
+} from "./agent-result.js";
+import { isRetryableWorkflowError, WorkflowError, WorkflowErrorCode, wrapError } from "./errors.js";
 import type { AgentOptions, WorkflowExecution, WorkflowRunOptions } from "./workflow.js";
 
 export function createLimiter(limit: number) {
@@ -41,6 +55,7 @@ export function hashAgentCall(
     outputRetryCount: options.outputRetryCount ?? null,
     toolNames: options.toolNames ?? null,
     schema: options.schema ?? null,
+    resume: normalizeWorkflowAgentResumeForHash(options.resume),
   });
   return createHash("sha256").update(identity).digest("hex");
 }
@@ -55,6 +70,50 @@ export function buildAgentInstructions(
     lines.push(`Act as workflow subagent type: ${options.agentType}`);
   if (options.isolation !== undefined) lines.push(`Requested isolation: ${options.isolation}`);
   return lines.length > 0 ? lines.join("\n") : undefined;
+}
+
+export { attachWorkflowAgentSessionRef, unwrapWorkflowAgentResult, unwrapWorkflowAgentResults };
+
+export function resolveAgentResumeSession(value: unknown): WorkflowAgentSessionRef | undefined {
+  if (value === undefined) return undefined;
+  const ref = getWorkflowAgentSessionRef(value) ?? parseWorkflowAgentSessionRef(value);
+  if (ref === undefined) {
+    throw new WorkflowError(
+      "agent resume requires a prior agent result or { sessionId, sessionPath }",
+      WorkflowErrorCode.SCRIPT_VALIDATION_ERROR,
+      { recoverable: false },
+    );
+  }
+  return ref;
+}
+
+export function createWorkflowFailedJournalEntry(
+  journalInput: AgentJournalInput,
+  failedSession: { sessionId: string; sessionPath: string } | undefined,
+  workflowError: WorkflowError,
+): JournalEntry {
+  return createFailedJournalEntry(
+    { ...journalInput, ...failedSession },
+    workflowError.message,
+    isRetryableWorkflowError(workflowError),
+    workflowError.code,
+    workflowError.recoverable,
+  );
+}
+
+export function createResultSessionRef(
+  session: { sessionId: string; sessionPath: string } | undefined,
+  journalIndex: number,
+): WorkflowAgentSessionRef | undefined {
+  if (session === undefined) return undefined;
+  return { ...session, journalIndex };
+}
+
+export function toSubagentResumeSession(
+  session: WorkflowAgentSessionRef | undefined,
+): { sessionId: string; sessionPath: string } | undefined {
+  if (session === undefined) return undefined;
+  return { sessionId: session.sessionId, sessionPath: session.sessionPath };
 }
 
 export function estimateTokens(value: unknown): number {

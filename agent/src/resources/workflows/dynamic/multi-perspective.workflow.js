@@ -16,7 +16,7 @@ const synthesis = await agent(
     "\n" +
     "Topic: " +
     topic,
-  { label: "synthesizer" },
+  { label: "synthesizer", mode: "deep" },
 );
 
 return { analyses, synthesis };

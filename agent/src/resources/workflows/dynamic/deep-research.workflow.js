@@ -17,6 +17,7 @@ const plan = await agent(
     " diverse, specific search queries that together cover the question from different angles.",
   {
     label: "plan queries",
+    mode: "ask",
     schema: {
       type: "object",
       properties: { queries: { type: "array", items: { type: "string" } } },
@@ -37,6 +38,7 @@ const gathered = await parallel(
           "each tagged with exact source URLs returned by websearch. Do NOT invent sources or claims.",
         {
           label: "research " + (i + 1),
+          mode: "websearch",
           schema: {
             type: "object",
             properties: {
@@ -70,6 +72,7 @@ const verdict = await agent(
     JSON.stringify(allSources),
   {
     label: "cross-check",
+    mode: "ask",
     schema: {
       type: "object",
       properties: {
@@ -99,7 +102,7 @@ const report = await agent(
     question +
     "\n\nSUPPORTED CLAIMS JSON:\n" +
     JSON.stringify((verdict && verdict.supported) || []),
-  { label: "write report" },
+  { label: "write report", mode: "docs" },
 );
 
 return { question, queries, supported: (verdict && verdict.supported) || [], report };

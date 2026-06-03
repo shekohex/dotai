@@ -5,7 +5,7 @@ export const meta = {
 };
 
 const task = (args && args.task) || "";
-const reviewers = (args && args.reviewers) || 2;
+const reviewers = (args && args.reviewers) || 4;
 const threshold = (args && args.threshold) || 0.5;
 
 phase("Investigate");
@@ -13,6 +13,7 @@ const investigation = await agent(
   "Investigate the following and list concrete, individually-checkable findings:\n" + task,
   {
     label: "investigate",
+    mode: "review",
     schema: {
       type: "object",
       properties: { findings: { type: "array", items: { type: "string" } } },
@@ -39,6 +40,7 @@ const judged = await parallel(
                 f,
               {
                 label: "refute " + (i + 1) + "." + (r + 1),
+                mode: "cheap-review",
                 schema: {
                   type: "object",
                   properties: { real: { type: "boolean" }, reason: { type: "string" } },
@@ -69,7 +71,7 @@ const report = await agent(
     "each with a short justification. Note how many were discarded.\n\n" +
     "SURVIVING FINDINGS JSON:\n" +
     JSON.stringify(survivors),
-  { label: "consensus" },
+  { label: "consensus", mode: "review" },
 );
 
 return { total: findings.length, survivors, report };

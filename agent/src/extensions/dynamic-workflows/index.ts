@@ -17,6 +17,7 @@ export {
   renderWorkflowResource,
   transformWorkflowTemplate,
 } from "./resource-workflows.js";
+export { collectSimplifyDiff, generateSimplifyWorkflow } from "./simplify.js";
 export type {
   WorkflowAgentSnapshot,
   WorkflowAgentStatus,

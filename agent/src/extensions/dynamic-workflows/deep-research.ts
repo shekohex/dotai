@@ -30,12 +30,13 @@ export function generateCodebaseAuditWorkflow(scope: string, checks: string[]): 
   const description = `Codebase audit: ${scope.slice(0, 60)}`;
   const checkAgents = `[
 ${checks
-  .map((check) => {
+  .map((check, index) => {
     const label = check
       .toLowerCase()
       .replaceAll(/[^a-z0-9]+/g, "-")
       .slice(0, 20);
-    return `  () => agent('Audit ' + ${jsString(check)} + ' across: ' + scope, { label: '${label}' }),`;
+    const mode = index % 2 === 0 ? "fast-review" : "cheap-review";
+    return `  () => agent('Audit ' + ${jsString(check)} + ' across: ' + scope, { label: '${label}', mode: '${mode}' }),`;
   })
   .join("\n")}
 ]`;

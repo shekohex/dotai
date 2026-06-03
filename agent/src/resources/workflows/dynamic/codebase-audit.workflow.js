@@ -12,13 +12,13 @@ phase("Cross-Validation");
 const validated = await agent(
   "Cross-validate these audit findings. Remove false positives and confirm real issues:\n" +
     JSON.stringify(findings),
-  { label: "validator" },
+  { label: "validator", mode: "review" },
 );
 
 phase("Report");
 const report = await agent(
   "Generate a prioritized audit report with actionable recommendations:\n" + validated,
-  { label: "report-writer" },
+  { label: "report-writer", mode: "docs" },
 );
 
 return { findings, validated, report };

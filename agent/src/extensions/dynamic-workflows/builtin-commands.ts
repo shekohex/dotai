@@ -7,6 +7,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { errorMessage } from "../../utils/error-message.js";
 import { generateAdversarialReviewWorkflow } from "./adversarial-review.js";
 import { generateDeepResearchWorkflow } from "./deep-research.js";
+import { collectSimplifyChangeContext, generateSimplifyWorkflow } from "./simplify.js";
 import { runWorkflow, type WorkflowRunResult } from "./workflow.js";
 
 function alreadyRegistered(pi: ExtensionAPI, name: string): boolean {
@@ -122,4 +123,49 @@ export function registerBuiltinWorkflows(pi: ExtensionAPI, opts: { cwd: string }
       },
     });
   }
+
+  registerSimplifyWorkflow(pi, cwd);
+}
+
+function registerSimplifyWorkflow(pi: ExtensionAPI, cwd: string): void {
+  if (alreadyRegistered(pi, "simplify")) return;
+  pi.registerCommand("simplify", {
+    description: "Review changed code for reuse, quality, and efficiency, then fix issues found",
+    getArgumentCompletions(argumentPrefix) {
+      return [
+        {
+          value: argumentPrefix,
+          label: "[context]",
+          description: "Optional fallback context when no git diff is available",
+        },
+      ];
+    },
+    async handler(args: string, ctx: ExtensionCommandContext) {
+      ctx.ui.notify(
+        "Simplifying — reviewing changed code across reuse, quality, efficiency…",
+        "info",
+      );
+      try {
+        const changeContext = await collectSimplifyChangeContext(cwd);
+        const result = await runWorkflow(generateSimplifyWorkflow(), {
+          cwd,
+          pi,
+          ctx,
+          args: { ...changeContext, context: args.trim() },
+          onPhase: (title) => {
+            ctx.ui.setStatus("simplify", `simplify: ${title}`);
+          },
+        });
+        ctx.ui.setStatus("simplify", undefined);
+        pi.sendMessage({
+          customType: "simplify",
+          content: reportText(result),
+          display: true,
+        });
+      } catch (error) {
+        ctx.ui.setStatus("simplify", undefined);
+        ctx.ui.notify(`simplify failed: ${errorMessage(error)}`, "error");
+      }
+    },
+  });
 }

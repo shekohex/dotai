@@ -35,7 +35,7 @@ ${perspectives
       .toLowerCase()
       .replaceAll(/[^a-z0-9]+/g, "-")
       .slice(0, 20);
-    return `  () => agent('Analyze from ' + ${jsString(perspective)} + ' perspective: ' + topic, { label: '${label}' }),`;
+    return `  () => agent('Analyze from ' + ${jsString(perspective)} + ' perspective: ' + topic, { label: '${label}', mode: 'ask' }),`;
   })
   .join("\n")}
 ]`;

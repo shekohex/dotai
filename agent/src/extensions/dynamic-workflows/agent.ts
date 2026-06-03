@@ -3,10 +3,11 @@ import {
   type ExtensionContext,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { accessSync } from "node:fs";
 import type { Static, TSchema } from "typebox";
 import { createSubagentSDK } from "../../subagent-sdk/sdk.js";
 import type { SubagentChildIpcEvent } from "../../subagent-sdk/ipc.js";
-import type { SubagentSDK } from "../../subagent-sdk/sdk-types.js";
+import type { SubagentHandle, SubagentSDK } from "../../subagent-sdk/sdk-types.js";
 import type { RuntimeSubagent } from "../../subagent-sdk/types.js";
 import type { WorkflowAgentActivityEvent } from "./display.js";
 import { getDynamicWorkflowSettings } from "./settings.js";
@@ -38,11 +39,13 @@ export interface AgentRunOptions<TSchemaDef extends TSchema | undefined = undefi
   customTools?: ToolDefinition[];
   instructions?: string;
   signal?: AbortSignal;
+  onStart?: (state: RuntimeSubagent) => void;
   onUsage?: (usage: AgentUsage) => void;
   onActivity?: (event: WorkflowAgentActivityEvent) => void;
   mode?: string;
   outputRetryCount?: number;
   cwd?: string;
+  resumeSession?: { sessionId: string; sessionPath: string };
 }
 
 export type AgentRunResult<TSchemaDef extends TSchema | undefined> = TSchemaDef extends TSchema
@@ -94,37 +97,28 @@ export class WorkflowAgent {
         mode: options.mode ?? this.mode,
         cwd: runCwd,
         autoExit: true,
-        persisted: false,
+        persisted: true,
         completion: false as const,
         ...(toolNames.length === 0 ? {} : { toolNames }),
         ...(customTools.length === 0 ? {} : { customTools }),
       };
       const started =
         options.schema === undefined
-          ? await sdk.start(
-              { ...baseParams, outputFormat: { type: "text" as const } },
+          ? await startOrResumeTextSubagent(sdk, this.ctx, baseParams, options)
+          : await startOrResumeStructuredSubagent(
+              sdk,
               this.ctx,
-              undefined,
-              options.signal,
-            )
-          : await sdk.start(
-              {
-                ...baseParams,
-                outputFormat: {
-                  type: "json_schema" as const,
-                  schema: options.schema,
-                  retryCount: options.outputRetryCount ?? this.outputRetryCount,
-                },
-              },
-              this.ctx,
-              undefined,
-              options.signal,
+              baseParams,
+              options,
+              options.schema,
+              options.outputRetryCount ?? this.outputRetryCount,
             );
       const unsubscribeActivity = subscribeWorkflowAgentActivity(
         sdk,
-        started.state.sessionId,
+        started.handle.sessionId,
         options.onActivity,
       );
+      options.onStart?.(started.handle.getState());
       try {
         const terminal = await started.handle.waitForCompletion({ signal: options.signal });
         emitUsage(options, terminal);
@@ -165,6 +159,94 @@ export class WorkflowAgent {
 
     return parts.join("\n\n");
   }
+}
+
+type WorkflowSubagentParams = {
+  name: string;
+  task: string;
+  mode?: string;
+  cwd: string;
+  autoExit: boolean;
+  persisted: boolean;
+  completion: false;
+  toolNames?: string[];
+  customTools?: ToolDefinition[];
+};
+
+async function startOrResumeTextSubagent(
+  sdk: SubagentSDK,
+  ctx: ExtensionContext,
+  baseParams: WorkflowSubagentParams,
+  options: AgentRunOptions<TSchema | undefined>,
+): Promise<{ handle: SubagentHandle }> {
+  const params = { ...baseParams, outputFormat: { type: "text" as const } };
+  if (options.resumeSession === undefined || !canAccessResumeSession(options.resumeSession)) {
+    return sdk.start(params, ctx, undefined, options.signal);
+  }
+  try {
+    return await sdk.resume(
+      {
+        ...params,
+        sessionId: options.resumeSession.sessionId,
+        sessionPath: options.resumeSession.sessionPath,
+      },
+      ctx,
+      undefined,
+      options.signal,
+    );
+  } catch (error) {
+    if (!isInaccessibleResumeSessionError(error)) throw error;
+    return sdk.start(params, ctx, undefined, options.signal);
+  }
+}
+
+async function startOrResumeStructuredSubagent(
+  sdk: SubagentSDK,
+  ctx: ExtensionContext,
+  baseParams: WorkflowSubagentParams,
+  options: AgentRunOptions<TSchema | undefined>,
+  schema: TSchema,
+  retryCount: number | undefined,
+): Promise<{ handle: SubagentHandle }> {
+  const params = {
+    ...baseParams,
+    outputFormat: {
+      type: "json_schema" as const,
+      schema,
+      retryCount,
+    },
+  };
+  if (options.resumeSession === undefined || !canAccessResumeSession(options.resumeSession)) {
+    return sdk.start(params, ctx, undefined, options.signal);
+  }
+  try {
+    return await sdk.resume(
+      {
+        ...params,
+        sessionId: options.resumeSession.sessionId,
+        sessionPath: options.resumeSession.sessionPath,
+      },
+      ctx,
+      undefined,
+      options.signal,
+    );
+  } catch (error) {
+    if (!isInaccessibleResumeSessionError(error)) throw error;
+    return sdk.start(params, ctx, undefined, options.signal);
+  }
+}
+
+function canAccessResumeSession(resumeSession: { sessionPath: string }): boolean {
+  try {
+    accessSync(resumeSession.sessionPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isInaccessibleResumeSessionError(error: unknown): boolean {
+  return error instanceof Error && /sessionPath is not accessible/u.test(error.message);
 }
 
 function subscribeWorkflowAgentActivity(

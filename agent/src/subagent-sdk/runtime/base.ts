@@ -68,6 +68,7 @@ export function formatSubagentFailureFallback(state: {
 export type ResumeExecutionOptions = {
   progressAction?: "message" | "start";
   errorAction?: "resume" | "message";
+  signal?: AbortSignal;
 };
 
 export type ResolvedModeValue = NonNullable<

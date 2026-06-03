@@ -2,10 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import {
   createAgentSession,
-  DefaultResourceLoader,
   getAgentDir,
   SessionManager,
-  SettingsManager,
   type AgentToolUpdateCallback,
   type CreateAgentSessionResult,
   type ExtensionAPI,
@@ -18,28 +16,33 @@ import {
   generateContextTransferSummary,
   getConversationMessages,
 } from "../extensions/session-launch-utils.js";
-import { installBundledResourcePaths } from "../extensions/bundled-resources.js";
-import { getLiteBundledExtensionFactories } from "../extensions/lite-bundled-extensions.js";
 import { errorMessage } from "../utils/error-message.js";
-import { createStructuredOutputTool } from "./bootstrap.js";
-import { STRUCTURED_OUTPUT_TOOL_NAME } from "./bootstrap-core.js";
 import { SubagentRuntimeEventBus } from "./events.js";
 import type { SubagentChildIpcEvent } from "./ipc.js";
 import { resolveSubagentMode, type ResolvedSubagentMode } from "./modes.js";
-import { createChildSessionFile } from "./persistence.js";
+import { createLiteSessionResources } from "./lite-session-resources.js";
+import { buildLiteResumePrompt } from "./lite-resume-prompt.js";
+import {
+  assertLiteSessionPathAccessible,
+  createLiteSessionManager,
+} from "./lite-session-manager.js";
+import {
+  buildStructuredError,
+  buildStructuredOutputRetryPrompt,
+  getStructuredRetryCount,
+} from "./lite-structured-output.js";
 import { createDefaultSubagentRuntimeHooks, type SubagentRuntimeHooks } from "./runtime-hooks.js";
+import type { ResumeExecutionOptions } from "./runtime/base.js";
 import {
   cloneRuntimeSubagent,
   type CancelSubagentParams,
   type MessageSubagentParams,
   type MessageSubagentResult,
-  type OutputFormat,
   type ResumeSubagentParams,
   type ResumeSubagentResult,
   type RuntimeSubagent,
   type StartSubagentParams,
   type StartSubagentResult,
-  type StructuredOutputError,
   type TokenUsage,
 } from "./types.js";
 
@@ -60,7 +63,6 @@ type LiteSessionState = {
 };
 
 const DEFAULT_LITE_RUNTIME_OPTIONS: LiteRuntimeOptions = { kind: "lite" };
-
 function isTerminalStatus(status: RuntimeSubagent["status"]): boolean {
   return status === "completed" || status === "cancelled" || status === "failed";
 }
@@ -94,61 +96,22 @@ function resolveModel(
   return ctx.modelRegistry.find(modelSpec.slice(0, slashIndex), modelSpec.slice(slashIndex + 1));
 }
 
-function getStructuredRetryCount(outputFormat: OutputFormat | undefined): number {
-  return outputFormat?.type === "json_schema" ? (outputFormat.retryCount ?? 3) : 0;
-}
-
-function buildStructuredError(
-  code: StructuredOutputError["code"],
-  message: string,
-  outputFormat: OutputFormat | undefined,
-  attempts = getStructuredRetryCount(outputFormat),
-): StructuredOutputError {
-  const retryCount = getStructuredRetryCount(outputFormat);
-  return { code, message, retryCount, attempts };
-}
-
-function buildStructuredOutputRetryPrompt(state: RuntimeSubagent, attempts: number): string {
-  const retryCount = getStructuredRetryCount(state.outputFormat);
-  const retriesLeft = Math.max(0, retryCount - attempts);
-  return `You must call the StructuredOutput tool with output that matches the schema exactly. Do not end with plain text. Retries left: ${retriesLeft}.`;
-}
-
-function resolveCompletionDelivery(state: RuntimeSubagent): {
-  enabled: boolean;
-  deliverAs: "steer" | "followUp";
-  triggerTurn: boolean;
-} {
-  if (state.completion === false) {
-    return { enabled: false, deliverAs: "steer", triggerTurn: false };
-  }
-
-  return {
-    enabled: true,
-    deliverAs: state.completion?.deliverAs ?? "steer",
-    triggerTurn: state.completion?.triggerTurn ?? true,
-  };
-}
-
-function buildModeResourceLoaderPromptOptions(
-  mode: ResolvedSubagentMode,
-): { systemPrompt: string } | { appendSystemPrompt: string[] } | Record<string, never> {
-  if (mode.systemPrompt === undefined) {
-    return {};
-  }
-  if (mode.systemPromptMode === "replace") {
-    return { systemPrompt: mode.systemPrompt };
-  }
-  return { appendSystemPrompt: [mode.systemPrompt] };
+function resolveCompletionDelivery(state: RuntimeSubagent) {
+  return state.completion === false
+    ? ({ enabled: false, deliverAs: "steer", triggerTurn: false } as const)
+    : {
+        enabled: true,
+        deliverAs: state.completion?.deliverAs ?? "steer",
+        triggerTurn: state.completion?.triggerTurn ?? true,
+      };
 }
 
 function buildCompletionStatusContent(state: RuntimeSubagent, suffix: string): string {
   if (state.status === "completed") {
     return `Subagent ${state.name} (${state.sessionId}) completed.\n\n${state.summary ?? "No summary available."}${suffix}`;
   }
-  if (state.status === "cancelled") {
+  if (state.status === "cancelled")
     return `Subagent ${state.name} (${state.sessionId}) was cancelled.`;
-  }
   return `Subagent ${state.name} (${state.sessionId}) failed.\n\n${state.structuredError?.message ?? state.summary ?? "No summary available."}${suffix}`;
 }
 
@@ -216,18 +179,12 @@ export class LiteRuntime {
     const sessionId = randomUUID();
     const prompt = await this.buildPrompt(params, ctx, startedAt, onUpdate, signal);
     const parentSessionPath = ctx.sessionManager.getSessionFile();
-    const parentSessionPersisted = parentSessionPath !== undefined && parentSessionPath.length > 0;
-    const persisted = parentSessionPersisted ? (params.persisted ?? true) : false;
-    const sessionPath = createChildSessionFile({
+    const { sessionManager, sessionPath, persisted } = createLiteSessionManager({
       cwd: resolved.value.cwd,
       sessionId,
       parentSessionPath,
-      persisted,
+      persisted: params.persisted,
     });
-    const sessionManager =
-      sessionPath === undefined
-        ? SessionManager.inMemory(resolved.value.cwd)
-        : SessionManager.open(sessionPath, undefined, resolved.value.cwd);
     const state = this.createInitialState(
       params,
       ctx,
@@ -238,36 +195,17 @@ export class LiteRuntime {
       sessionPath,
     );
     const structuredCapture: { value?: unknown } = {};
-    const customTools = [
-      ...(params.customTools ?? []),
-      ...(params.outputFormat?.type === "json_schema"
-        ? [
-            createStructuredOutputTool(params.outputFormat.schema, (structuredParams, toolCtx) => {
-              structuredCapture.value = structuredParams;
-              toolCtx.shutdown();
-            }),
-          ]
-        : []),
-    ];
     const model = resolveModel(ctx, resolved.value, params.model);
     const agentDir = this.options.agentDir ?? getAgentDir();
-    const settingsManager = SettingsManager.create(resolved.value.cwd, agentDir);
-    installBundledResourcePaths();
-    const resourceLoader = new DefaultResourceLoader({
-      cwd: resolved.value.cwd,
-      agentDir,
-      settingsManager,
-      extensionFactories: getLiteBundledExtensionFactories(),
-      ...buildModeResourceLoaderPromptOptions(resolved.value),
-    });
-    await resourceLoader.reload();
-    const structuredToolNames =
-      params.outputFormat?.type === "json_schema" ? [STRUCTURED_OUTPUT_TOOL_NAME] : [];
-    const sessionTools = Array.from(
-      new Set([...resolved.value.tools, ...(params.toolNames ?? []), ...structuredToolNames]),
-    )
-      .filter((toolName) => toolName !== "subagent")
-      .toSorted((left, right) => left.localeCompare(right));
+    const { customTools, resourceLoader, sessionTools, settingsManager } =
+      await createLiteSessionResources({
+        cwd: resolved.value.cwd,
+        mode: resolved.value,
+        params,
+        structuredCapture,
+        sessionManager,
+        agentDir,
+      });
     const stateWithTools = { ...state, tools: sessionTools };
     const { session } = await createAgentSession({
       cwd: resolved.value.cwd,
@@ -308,14 +246,88 @@ export class LiteRuntime {
     return { state: cloneRuntimeSubagent(stateWithTools), prompt };
   }
 
-  resume(
-    _params: ResumeSubagentParams,
-    _ctx: ExtensionContext,
-    _onUpdate?: AgentToolUpdateCallback,
+  async resume(
+    params: ResumeSubagentParams,
+    ctx: ExtensionContext,
+    onUpdate?: AgentToolUpdateCallback,
+    options: ResumeExecutionOptions = {},
   ): Promise<ResumeSubagentResult> {
-    return Promise.reject(
-      new Error("subagent resume failed: lite subagents are in-memory and cannot be resumed."),
+    if (params.sessionPath === undefined || params.sessionPath.length === 0) {
+      throw new Error("subagent resume failed: lite resume requires a persisted sessionPath.");
+    }
+    await assertLiteSessionPathAccessible(params.sessionPath);
+    this.disposed = false;
+    const startedAt = Date.now();
+    const resolved = await resolveSubagentMode(this.pi, ctx, {
+      mode: params.mode,
+      cwd: params.cwd,
+      autoExit: params.autoExit,
+      model: params.model,
+    });
+    if (!resolved.value) {
+      throw new Error(resolved.error);
+    }
+
+    const resumeStateParams = { ...params, name: params.name ?? params.sessionId };
+    const state = this.createInitialState(
+      resumeStateParams,
+      ctx,
+      resolved.value,
+      params.sessionId,
+      startedAt,
+      true,
+      params.sessionPath,
     );
+    const structuredCapture: { value?: unknown } = {};
+    const model = resolveModel(ctx, resolved.value, params.model);
+    const agentDir = this.options.agentDir ?? getAgentDir();
+    const sessionManager = SessionManager.open(params.sessionPath, undefined, resolved.value.cwd);
+    const { customTools, resourceLoader, sessionTools, settingsManager } =
+      await createLiteSessionResources({
+        cwd: resolved.value.cwd,
+        mode: resolved.value,
+        params,
+        structuredCapture,
+        sessionManager,
+        agentDir,
+      });
+    const stateWithTools = { ...state, tools: sessionTools };
+    const { session } = await createAgentSession({
+      cwd: resolved.value.cwd,
+      agentDir,
+      settingsManager,
+      resourceLoader,
+      sessionManager,
+      tools: sessionTools,
+      customTools,
+      ...(model === undefined ? {} : { model }),
+      ...(resolved.value.thinkingLevel === undefined
+        ? {}
+        : { thinkingLevel: resolved.value.thinkingLevel }),
+    });
+    const abortController = new AbortController();
+    const unsubscribe = session.subscribe((event) => {
+      this.handleSessionEvent(params.sessionId, event, onUpdate);
+    });
+    this.sessions.set(params.sessionId, {
+      session,
+      sessionPath: params.sessionPath,
+      unsubscribe,
+      structuredCapture,
+      abortController,
+    });
+    this.states.set(params.sessionId, stateWithTools);
+    await this.hooks.persistState(stateWithTools);
+    this.emitChangedStates();
+    options.signal?.addEventListener(
+      "abort",
+      () => {
+        void this.cancel({ sessionId: params.sessionId });
+      },
+      { once: true },
+    );
+    void this.continueSession(params.sessionId, buildLiteResumePrompt(params.task));
+    return { state: cloneRuntimeSubagent(stateWithTools), prompt: params.task };
   }
 
   async message(
@@ -415,18 +427,14 @@ export class LiteRuntime {
 
   captureOutput(sessionId: string): { text: string } {
     const state = this.states.get(sessionId);
-    if (!state) {
-      throw new Error(`Unknown subagent sessionId: ${sessionId}`);
-    }
+    if (!state) throw new Error(`Unknown subagent sessionId: ${sessionId}`);
 
     return { text: state.summary ?? "" };
   }
 
   dispose(): void {
     this.disposed = true;
-    for (const sessionId of this.sessions.keys()) {
-      this.disposeSession(sessionId);
-    }
+    for (const sessionId of this.sessions.keys()) this.disposeSession(sessionId);
   }
 
   private async buildPrompt(
@@ -621,6 +629,26 @@ export class LiteRuntime {
     }
   }
 
+  private async continueSession(sessionId: string, prompt: string): Promise<void> {
+    const live = this.sessions.get(sessionId);
+    if (!live) {
+      return;
+    }
+
+    try {
+      await this.runPromptWithStructuredRetries(sessionId, prompt, live);
+      if (this.disposed || live.abortController.signal.aborted) {
+        return;
+      }
+      await this.completeSession(sessionId, live);
+    } catch (error) {
+      if (this.disposed || live.abortController.signal.aborted) {
+        return;
+      }
+      await this.failSession(sessionId, error);
+    }
+  }
+
   private async runPromptWithStructuredRetries(
     sessionId: string,
     prompt: string,
@@ -741,9 +769,7 @@ export class LiteRuntime {
 
   private emitCompletionStatus(state: RuntimeSubagent): void {
     const delivery = resolveCompletionDelivery(state);
-    if (!delivery.enabled) {
-      return;
-    }
+    if (!delivery.enabled) return;
     const suffix =
       state.persisted === false
         ? "\n\nThis subagent was ephemeral (persisted: false) and cannot be messaged or resumed. Start a new subagent if you need to run it again."
@@ -758,9 +784,7 @@ export class LiteRuntime {
 
   private disposeSession(sessionId: string): void {
     const live = this.sessions.get(sessionId);
-    if (!live) {
-      return;
-    }
+    if (!live) return;
 
     live.unsubscribe();
     live.session.dispose();

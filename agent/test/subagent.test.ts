@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   ToolExecutionComponent,
   SessionManager,
+  createAgentSession,
   initTheme,
   type ExtensionAPI,
   type ExtensionContext,
@@ -25,6 +26,9 @@ import { createSubagentExtension } from "../src/extensions/subagent.ts";
 import { syncModeTools } from "../src/extensions/modes/tools.ts";
 import { formatAvailableModesXml } from "../src/extensions/available-modes.ts";
 import { resolveSubagentMode, resolveModeTools } from "../src/subagent-sdk/modes.ts";
+import { applyModeSystemPrompt } from "../src/mode-system-prompt.ts";
+import { createLiteSessionResources } from "../src/subagent-sdk/lite-session-resources.ts";
+import type { ResolvedSubagentMode } from "../src/subagent-sdk/modes.ts";
 import { FallbackMuxAdapter } from "../src/subagent-sdk/fallback-mux.ts";
 import { TmuxAdapter } from "../src/subagent-sdk/tmux.ts";
 import {
@@ -320,7 +324,7 @@ timedTest("resolveModeTools supports explicit allow and deny rules", () => {
   expect(resolved).toEqual(["read", "session_query"]);
 });
 
-timedTest("resolveSubagentMode expands star rules from available mode defaults", async () => {
+timedTest("resolveSubagentMode expands star rules from active mode defaults", async () => {
   const fakePi = new FakePi();
   fakePi.activeTools = ["workflow"];
   fakePi.allTools = ["read", "bash", "edit", "write", "workflow", "subagent"].map((name) => ({
@@ -332,7 +336,20 @@ timedTest("resolveSubagentMode expands star rules from available mode defaults",
     mode: "worker",
   });
 
-  expect(resolved.value?.tools).toEqual(["bash", "edit", "read", "workflow", "write"]);
+  expect(resolved.value?.tools).toEqual(["workflow"]);
+});
+
+timedTest("resolveSubagentMode does not restore disabled parent tools for star modes", async () => {
+  const fakePi = new FakePi();
+  fakePi.activeTools = ["workflow"];
+  fakePi.allTools = ["read", "bash", "edit", "write", "workflow", "subagent"].map((name) => ({
+    name,
+  }));
+  const ctx = createFakeContext({ cwd: process.cwd() });
+
+  const resolved = await resolveSubagentMode(fakePi as unknown as ExtensionAPI, ctx, {});
+
+  expect(resolved.value?.tools).toEqual(["workflow"]);
 });
 
 timedTest("resolveSubagentMode keeps explicit mode tools narrow", async () => {
@@ -361,6 +378,7 @@ timedTest("resolveSubagentMode keeps explicit mode tools narrow", async () => {
 
 timedTest("resolveSubagentMode normalizes star tools using requested model override", async () => {
   const fakePi = new FakePi();
+  fakePi.activeTools = ["read", "bash", "apply_patch", "subagent"];
   fakePi.allTools = ["read", "bash", "edit", "write", "apply_patch", "subagent"].map((name) => ({
     name,
   }));
@@ -379,6 +397,26 @@ timedTest("resolveSubagentMode normalizes star tools using requested model overr
   expect(resolved.value?.tools).not.toContain("apply_patch");
 });
 
+timedTest("resolveSubagentMode preserves exact active edit/write defaults", async () => {
+  const fakePi = new FakePi();
+  fakePi.activeTools = ["read", "edit", "subagent"];
+  fakePi.allTools = ["read", "edit", "write", "apply_patch", "subagent"].map((name) => ({
+    name,
+  }));
+  const ctx = {
+    ...createFakeContext({ cwd: process.cwd() }),
+    model: { provider: "anthropic", id: "claude-sonnet-4-5", api: "anthropic" },
+  } as unknown as ExtensionContext;
+
+  const resolved = await resolveSubagentMode(fakePi as unknown as ExtensionAPI, ctx, {
+    mode: "worker",
+  });
+
+  expect(resolved.value?.tools).toContain("edit");
+  expect(resolved.value?.tools).not.toContain("write");
+  expect(resolved.value?.tools).not.toContain("apply_patch");
+});
+
 timedTest("structured child failure fallback mentions StructuredOutput tool", () => {
   expect(
     formatSubagentFailureFallback({
@@ -388,6 +426,135 @@ timedTest("structured child failure fallback mentions StructuredOutput tool", ()
       },
     }),
   ).toMatch(/StructuredOutput tool/i);
+});
+
+timedTest("applyModeSystemPrompt preserves pi dynamic tail for replace modes", () => {
+  const basePrompt =
+    "Base instructions\n\nAvailable tools:\n- read: Read files\n\nCurrent date: 2026-06-03";
+
+  expect(
+    applyModeSystemPrompt(basePrompt, {
+      systemPrompt: "Review only",
+      systemPromptMode: "replace",
+    }),
+  ).toBe("Review only\n\nAvailable tools:\n- read: Read files\n\nCurrent date: 2026-06-03");
+});
+
+timedTest("lite subagent replace mode keeps generated tool prompt tail", async () => {
+  const cwd = await createTempDir("agent-lite-mode-cwd-");
+  const agentDir = await createTempDir("agent-lite-mode-agent-");
+  const mode: ResolvedSubagentMode = {
+    modeName: "reviewer",
+    spec: {
+      tools: ["read", "bash"],
+      systemPrompt: "Review only",
+      systemPromptMode: "replace",
+    },
+    tools: ["read", "bash"],
+    autoExit: true,
+    autoExitTimeoutMs: 30_000,
+    tmuxTarget: "pane",
+    cwd,
+    systemPrompt: "Review only",
+    systemPromptMode: "replace",
+  };
+  const structuredCapture: { value?: unknown } = {};
+
+  try {
+    const resources = await createLiteSessionResources({
+      cwd,
+      agentDir,
+      mode,
+      params: {},
+      structuredCapture,
+    });
+    expect(
+      resources.resourceLoader
+        .getExtensions()
+        .extensions.some((extension) => extension.path.includes("context-prune")),
+    ).toBe(false);
+    const { session } = await createAgentSession({
+      cwd,
+      agentDir,
+      settingsManager: resources.settingsManager,
+      resourceLoader: resources.resourceLoader,
+      sessionManager: SessionManager.inMemory(cwd),
+      tools: resources.sessionTools,
+      customTools: resources.customTools,
+    });
+
+    try {
+      const result = await session.extensionRunner.emitBeforeAgentStart(
+        "Inspect code",
+        undefined,
+        session.systemPrompt,
+        { cwd },
+      );
+
+      expect(result?.systemPrompt).toContain("Review only\n\nAvailable tools:\n");
+      expect(result?.systemPrompt).toContain("- read:");
+      expect(result?.systemPrompt).toContain("- bash:");
+      expect(result?.systemPrompt).toContain("Current working directory:");
+      expect(result?.systemPrompt?.match(/Review only/g)?.length).toBe(1);
+    } finally {
+      session.dispose();
+    }
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("lite subagent strips unavailable context prune tools from requested tools", async () => {
+  const cwd = await createTempDir("agent-lite-context-prune-cwd-");
+  const agentDir = await createTempDir("agent-lite-context-prune-agent-");
+  const mode: ResolvedSubagentMode = {
+    modeName: "reviewer",
+    spec: {
+      tools: ["read", "context_tree_query"],
+      systemPrompt: "Review only",
+      systemPromptMode: "append",
+    },
+    tools: ["read", "context_tree_query"],
+    autoExit: true,
+    autoExitTimeoutMs: 30_000,
+    tmuxTarget: "pane",
+    cwd,
+    systemPrompt: "Review only",
+    systemPromptMode: "append",
+  };
+  const structuredCapture: { value?: unknown } = {};
+
+  try {
+    const resources = await createLiteSessionResources({
+      cwd,
+      agentDir,
+      mode,
+      params: { toolNames: ["context_prune", "bash"] },
+      structuredCapture,
+    });
+    const { session } = await createAgentSession({
+      cwd,
+      agentDir,
+      settingsManager: resources.settingsManager,
+      resourceLoader: resources.resourceLoader,
+      sessionManager: SessionManager.inMemory(cwd),
+      tools: resources.sessionTools,
+      customTools: resources.customTools,
+    });
+
+    try {
+      const activeToolNames = session.agent.state.tools.map((tool) => tool.name).toSorted();
+
+      expect(resources.sessionTools).toEqual(activeToolNames);
+      expect(resources.sessionTools).toEqual(["bash", "read"]);
+    } finally {
+      session.dispose();
+    }
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
 });
 
 timedTest("resolveSubagentMode loads mode config from the child cwd", async () => {

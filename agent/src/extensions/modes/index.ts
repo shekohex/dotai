@@ -33,7 +33,7 @@ import {
   syncModeTools,
   toModeFlagName,
 } from "./orchestration.js";
-import { extractPiDynamicTail } from "../model-family-system-prompt.js";
+import { applyModeSystemPrompt } from "../../mode-system-prompt.js";
 import {
   ensureModesReady as ensureModesReadyRuntime,
   ensureRuntime as ensureRuntimeState,
@@ -132,22 +132,6 @@ function emitModeChanged(
   payload: ModeChangedEvent,
 ): void {
   pi.events.emit("modes:changed", payload);
-}
-
-function applyModeSystemPrompt(
-  systemPrompt: string,
-  spec: ModeSpec | undefined,
-): string | undefined {
-  if (spec?.systemPrompt === undefined || spec.systemPrompt.length === 0) {
-    return undefined;
-  }
-
-  if (spec.systemPromptMode === "replace") {
-    const tail = extractPiDynamicTail(systemPrompt).trimStart();
-    return tail.length > 0 ? `${spec.systemPrompt}\n\n${tail}` : spec.systemPrompt;
-  }
-
-  return `${systemPrompt}\n\n${spec.systemPrompt}`;
 }
 
 function appendModeState(

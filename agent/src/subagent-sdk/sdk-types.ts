@@ -95,6 +95,7 @@ export interface SubagentSDK {
     params: ResumeSubagentParams,
     ctx: ExtensionContext,
     onUpdate?: AgentToolUpdateCallback,
+    signal?: AbortSignal,
   ): Promise<{ handle: SubagentHandle; prompt: string }>;
   message(
     params: MessageSubagentParams,

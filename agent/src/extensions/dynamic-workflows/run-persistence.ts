@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { WORKFLOW_RUNS_DIR } from "./config.js";
+import { JournalEntrySchema, type JournalEntry } from "./workflow-journal.js";
 
 export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "aborted";
 
@@ -49,8 +50,8 @@ export interface PersistedRunState {
     output: number;
     total: number;
   };
-  /** Cached agent results for resume, keyed by deterministic call index. */
-  journal?: Array<{ index: number; hash: string; result: unknown }>;
+  /** Agent call lifecycle records for resume, keyed by deterministic call index. */
+  journal?: JournalEntry[];
 }
 
 export interface RunPersistence {
@@ -114,21 +115,18 @@ const PersistedRunStateSchema = Type.Object({
       total: Type.Number(),
     }),
   ),
-  journal: Type.Optional(
-    Type.Array(
-      Type.Object({
-        index: Type.Number(),
-        hash: Type.String(),
-        result: Type.Unknown(),
-      }),
-    ),
-  ),
+  journal: Type.Optional(Type.Unknown()),
 });
 
 function parsePersistedRunState(text: string): PersistedRunState | null {
   const parsed: unknown = JSON.parse(text);
   if (!Value.Check(PersistedRunStateSchema, parsed)) return null;
-  return Value.Parse(PersistedRunStateSchema, parsed);
+  const state = Value.Parse(PersistedRunStateSchema, parsed);
+  const journal = Array.isArray(state.journal)
+    ? state.journal.filter((entry): entry is JournalEntry => Value.Check(JournalEntrySchema, entry))
+    : undefined;
+  const { journal: _journal, ...stateWithoutJournal } = state;
+  return journal === undefined ? stateWithoutJournal : { ...stateWithoutJournal, journal };
 }
 
 export function createRunPersistence(cwd: string): RunPersistence {

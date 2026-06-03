@@ -118,12 +118,20 @@ export type StartSubagentParams<TSchemaValue extends TSchemaBase = TSchemaBase> 
     outputFormat?: OutputFormat<TSchemaValue>;
   };
 
-export type ResumeSubagentParams = {
+export type ResumeSubagentParams<TSchemaValue extends TSchemaBase = TSchemaBase> = {
   sessionId: string;
   task: string;
+  name?: string;
+  sessionPath?: string;
   mode?: string;
+  model?: string;
   cwd?: string;
   autoExit?: boolean;
+  persisted?: boolean;
+  toolNames?: string[];
+  customTools?: ToolDefinition[];
+  outputFormat?: OutputFormat<TSchemaValue>;
+  completion?: SubagentCompletion;
 };
 
 export type MessageSubagentParams = {

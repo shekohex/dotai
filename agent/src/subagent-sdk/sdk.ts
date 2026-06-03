@@ -8,6 +8,7 @@ import { LiteRuntime, type LiteRuntimeOptions } from "./lite-runtime.js";
 import { SubagentRuntime } from "./runtime.js";
 import { SDKSubagentHandle } from "./sdk-handle.js";
 import { createSpawnFunction } from "./sdk-spawn.js";
+import type { ResumeExecutionOptions } from "./runtime/base.js";
 import type { SubagentRuntimeHooks } from "./runtime-hooks.js";
 import type { RuntimeSubagent } from "./types.js";
 import type {
@@ -72,6 +73,7 @@ type SdkRuntimeBackend = {
     params: Parameters<SubagentSDK["resume"]>[0],
     ctx: ExtensionContext,
     onUpdate?: AgentToolUpdateCallback,
+    options?: ResumeExecutionOptions,
   ): Promise<{ state: RuntimeSubagent; prompt: string }>;
   message(
     params: Parameters<SubagentSDK["message"]>[0],
@@ -116,8 +118,8 @@ function createSubagentSdkObject(input: SubagentSdkObjectInput): SubagentSDK {
     },
     start: input.start,
     spawn: input.spawn,
-    async resume(params, ctx, onUpdate) {
-      const resumed = await input.runtime.resume(params, ctx, onUpdate);
+    async resume(params, ctx, onUpdate, signal) {
+      const resumed = await input.runtime.resume(params, ctx, onUpdate, { signal });
       input.emitChangedStates();
       return { handle: input.toHandle(resumed.state.sessionId), prompt: resumed.prompt };
     },

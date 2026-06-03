@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { WorkflowError, WorkflowErrorCode } from "./errors.js";
-import type { AgentOptions } from "./workflow.js";
+import { WorkflowError, WorkflowErrorCode, wrapError } from "./errors.js";
+import type { AgentOptions, WorkflowExecution, WorkflowRunOptions } from "./workflow.js";
 
 export function createLimiter(limit: number) {
   let active = 0;
@@ -73,4 +73,59 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, message: s
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
+}
+
+export function createParallelFunction(execution: WorkflowExecution, options: WorkflowRunOptions) {
+  return (thunks: Array<() => Promise<unknown>>) => {
+    execution.throwIfAborted();
+    if (thunks.some((thunk) => typeof thunk !== "function")) {
+      throw new TypeError(
+        "parallel() expects an array of functions, not promises. Wrap each call: () => agent(...)",
+      );
+    }
+    return Promise.all(
+      thunks.map(async (thunk, index) => {
+        try {
+          return await thunk();
+        } catch (error) {
+          if (options.signal?.aborted === true) throw error;
+          const workflowError = wrapError(error);
+          execution.log(`parallel[${index}] failed: ${workflowError.message}`);
+          return null;
+        }
+      }),
+    );
+  };
+}
+
+export function createPipelineFunction(execution: WorkflowExecution, options: WorkflowRunOptions) {
+  return (
+    items: unknown[],
+    ...stages: Array<(prev: unknown, original: unknown, index: number) => unknown>
+  ) => {
+    execution.throwIfAborted();
+    if (stages.some((stage) => typeof stage !== "function")) {
+      throw new TypeError(
+        "pipeline() stages must be functions: pipeline(items, item => ..., result => ...)",
+      );
+    }
+    return Promise.all(
+      items.map(async (item, index) => {
+        let value: unknown = item;
+        for (const stage of stages) {
+          try {
+            execution.throwIfAborted();
+            value = await stage(value, item, index);
+            execution.throwIfAborted();
+          } catch (error) {
+            if (options.signal?.aborted === true) throw error;
+            const workflowError = wrapError(error);
+            execution.log(`pipeline[${index}] failed: ${workflowError.message}`);
+            return null;
+          }
+        }
+        return value;
+      }),
+    );
+  };
 }

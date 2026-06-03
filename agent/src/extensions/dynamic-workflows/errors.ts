@@ -53,6 +53,19 @@ export function isTimeoutError(error: unknown): boolean {
   return /\btimeout\b/i.test(error.message) || error.name === "TimeoutError";
 }
 
+export function isRetryableErrorMessage(message: string): boolean {
+  return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay|\b(?:ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND)\b/i.test(
+    message,
+  );
+}
+
+export function isRetryableWorkflowError(error: WorkflowError): boolean {
+  if (error.code === WorkflowErrorCode.AGENT_TIMEOUT) return true;
+  if (error.code === WorkflowErrorCode.WORKFLOW_ABORTED) return false;
+  if (error.code !== WorkflowErrorCode.AGENT_EXECUTION_ERROR) return false;
+  return isRetryableErrorMessage(error.message);
+}
+
 export function errorMessage(error: unknown, fallback?: string): string {
   if (error instanceof Error) return error.message;
   return fallback ?? String(error);
@@ -72,7 +85,7 @@ export function wrapError(error: unknown, context?: { agentLabel?: string }): Wo
     return new WorkflowError(
       errorMessage(error, "Workflow was aborted"),
       WorkflowErrorCode.WORKFLOW_ABORTED,
-      { recoverable: true },
+      { recoverable: false },
     );
   }
 

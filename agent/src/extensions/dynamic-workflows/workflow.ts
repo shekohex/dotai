@@ -2,16 +2,31 @@ import vm from "node:vm";
 import type { Expression, Literal } from "acorn";
 import { parse } from "acorn";
 import type { TSchema } from "typebox";
+import type { RuntimeSubagent } from "../../subagent-sdk/types.js";
 import type { AgentUsage } from "./agent.js";
 import { WorkflowAgent, type WorkflowAgentOptions } from "./agent.js";
 import { DEFAULT_AGENT_TIMEOUT_MS, MAX_AGENTS_PER_RUN, MAX_CONCURRENCY } from "./config.js";
 import type { WorkflowAgentActivityEvent } from "./display.js";
-import { WorkflowError, WorkflowErrorCode, wrapError } from "./errors.js";
+import { isRetryableWorkflowError, WorkflowError, WorkflowErrorCode, wrapError } from "./errors.js";
+import {
+  createCompletedJournalEntry,
+  createFailedJournalEntry,
+  createStartedJournalEntry,
+  type AgentJournalInput,
+  type JournalEntry,
+} from "./workflow-journal.js";
 import { createWorkflowLogger } from "./logger.js";
 import { parseModeRoutingFromMeta, resolveModeForPhase } from "./mode-routing.js";
+import {
+  getResumeSession,
+  getStartedSessionCompletedEntry,
+  isCachedFailedAgent,
+} from "./workflow-resume.js";
 import { getDynamicWorkflowSettings } from "./settings.js";
 import {
   buildAgentInstructions,
+  createParallelFunction,
+  createPipelineFunction,
   createLimiter,
   defaultAgentLabel,
   estimateTokens,
@@ -33,11 +48,7 @@ export interface WorkflowMeta {
   phases?: WorkflowMetaPhase[];
 }
 
-export interface JournalEntry {
-  index: number;
-  hash: string;
-  result: unknown;
-}
+export type { JournalEntry } from "./workflow-journal.js";
 
 export interface SharedRuntime {
   limiter: <T>(fn: () => Promise<T>) => Promise<T>;
@@ -119,7 +130,7 @@ interface RuntimeState {
 
 type WorkflowLogger = ReturnType<typeof createWorkflowLogger>;
 
-interface WorkflowExecution {
+export interface WorkflowExecution {
   started: number;
   meta: WorkflowMeta;
   body: string;
@@ -150,9 +161,39 @@ interface LiveAgentCall {
   label: string;
   modeName: string | undefined;
   displayModel: string | undefined;
+  resumeSession?: { sessionId: string; sessionPath: string };
 }
 
 const DETERMINISM_BLOCKLIST = /\bDate\s*\.\s*now\b|\bMath\s*\.\s*random\b|\bnew\s+Date\s*\(\s*\)/;
+
+function parseWorkflowErrorCode(value: string | undefined): WorkflowErrorCode {
+  if (value === WorkflowErrorCode.AGENT_TIMEOUT) return WorkflowErrorCode.AGENT_TIMEOUT;
+  if (value === WorkflowErrorCode.WORKFLOW_ABORTED) return WorkflowErrorCode.WORKFLOW_ABORTED;
+  if (value === WorkflowErrorCode.AGENT_LIMIT_EXCEEDED)
+    return WorkflowErrorCode.AGENT_LIMIT_EXCEEDED;
+  if (value === WorkflowErrorCode.TOKEN_BUDGET_EXHAUSTED)
+    return WorkflowErrorCode.TOKEN_BUDGET_EXHAUSTED;
+  if (value === WorkflowErrorCode.SCRIPT_VALIDATION_ERROR)
+    return WorkflowErrorCode.SCRIPT_VALIDATION_ERROR;
+  if (value === WorkflowErrorCode.AGENT_EXECUTION_ERROR)
+    return WorkflowErrorCode.AGENT_EXECUTION_ERROR;
+  if (value === WorkflowErrorCode.PERSISTENCE_ERROR) return WorkflowErrorCode.PERSISTENCE_ERROR;
+  return WorkflowErrorCode.UNKNOWN;
+}
+
+function createWorkflowFailedJournalEntry(
+  journalInput: AgentJournalInput,
+  failedSession: { sessionId: string; sessionPath: string } | undefined,
+  workflowError: WorkflowError,
+): JournalEntry {
+  return createFailedJournalEntry(
+    { ...journalInput, ...failedSession },
+    workflowError.message,
+    isRetryableWorkflowError(workflowError),
+    workflowError.code,
+    workflowError.recoverable,
+  );
+}
 
 export function runWorkflow(
   script: string,
@@ -289,7 +330,7 @@ async function executeWorkflow(
 }
 
 function createAgentFunction(execution: WorkflowExecution, options: WorkflowRunOptions) {
-  return (prompt: string, agentOptions: AgentOptions = {}) => {
+  return async (prompt: string, agentOptions: AgentOptions = {}) => {
     execution.throwIfAborted();
 
     if (execution.shared.agentCount >= execution.maxAgents) {
@@ -316,22 +357,55 @@ function createAgentFunction(execution: WorkflowExecution, options: WorkflowRunO
     const callIndex = execution.state.callSeq++;
     const callHash = hashAgentCall(prompt, modeName, assignedPhase, agentOptions);
     const cached = options.resumeJournal?.get(callIndex);
-    if (cached && cached.hash === callHash) {
+    const label =
+      requestedLabel ?? defaultAgentLabel(assignedPhase, execution.shared.agentCount + 1);
+    const journalInput: AgentJournalInput = {
+      index: callIndex,
+      hash: callHash,
+      label,
+      phase: assignedPhase,
+      prompt,
+      mode: modeName,
+      model: displayModel,
+    };
+    const completedStartedEntry = await getStartedSessionCompletedEntry(cached, callHash, {
+      ...journalInput,
+      structured: agentOptions.schema !== undefined,
+    });
+    const completedEntry =
+      cached?.hash === callHash && cached.status === "completed" ? cached : completedStartedEntry;
+    if (completedEntry !== undefined) {
       execution.shared.agentCount++;
-      const label = requestedLabel ?? defaultAgentLabel(assignedPhase, execution.shared.agentCount);
+      options.onAgentStart?.({ label, phase: assignedPhase, prompt, model: displayModel });
+      if (completedEntry === completedStartedEntry) options.onAgentJournal?.(completedEntry);
+      options.onAgentEnd?.({
+        label,
+        phase: assignedPhase,
+        result: completedEntry.result,
+        tokens: 0,
+        model: displayModel,
+      });
+      return completedEntry.result;
+    }
+    if (isCachedFailedAgent(cached, callHash) && !cached.retryable) {
+      if (cached.recoverable === false) {
+        throw new WorkflowError(cached.error, parseWorkflowErrorCode(cached.code), {
+          recoverable: false,
+        });
+      }
+      execution.shared.agentCount++;
       options.onAgentStart?.({ label, phase: assignedPhase, prompt, model: displayModel });
       options.onAgentEnd?.({
         label,
         phase: assignedPhase,
-        result: cached.result,
+        result: null,
         tokens: 0,
         model: displayModel,
       });
-      return cached.result;
+      return null;
     }
+    const resumeSession = getResumeSession(cached, callHash);
 
-    const label =
-      requestedLabel ?? defaultAgentLabel(assignedPhase, execution.shared.agentCount + 1);
     return execution.shared.limiter(() =>
       runLiveAgentCall(execution, options, {
         prompt,
@@ -341,6 +415,7 @@ function createAgentFunction(execution: WorkflowExecution, options: WorkflowRunO
         label,
         modeName,
         displayModel,
+        resumeSession,
       }),
     );
   };
@@ -384,9 +459,27 @@ async function runLiveAgentCall(
     execution.shared.spent += tokens;
     return tokens;
   };
+  const journalHash = hashAgentCall(
+    call.prompt,
+    call.modeName,
+    call.assignedPhase,
+    call.agentOptions,
+  );
+  const journalInput: AgentJournalInput = {
+    index: call.callIndex,
+    hash: journalHash,
+    label: call.label,
+    phase: call.assignedPhase,
+    prompt: call.prompt,
+    mode: call.modeName,
+    model: displayModel,
+  };
+  let childSession: { sessionId: string; sessionPath: string } | undefined;
 
   try {
     execution.throwIfAborted();
+    const resumeSession =
+      call.agentOptions.isolation === "worktree" ? undefined : call.resumeSession;
     const result = await withTimeout(
       runWorkflowAgent(execution.agentRunner, call.prompt, call.agentOptions, {
         label: call.label,
@@ -396,6 +489,7 @@ async function runLiveAgentCall(
         outputRetryCount: call.agentOptions.outputRetryCount,
         toolNames: call.agentOptions.toolNames,
         cwd: runCwd,
+        resumeSession,
         onUsage: (u: AgentUsage) => {
           usage = u;
         },
@@ -406,17 +500,20 @@ async function runLiveAgentCall(
             activity,
           });
         },
+        onStart: (state: RuntimeSubagent) => {
+          if (state.sessionPath === undefined) return;
+          childSession = { sessionId: state.sessionId, sessionPath: state.sessionPath };
+          options.onAgentJournal?.(createStartedJournalEntry({ ...journalInput, ...childSession }));
+        },
       }),
       timeout,
       `Agent "${call.label}" timed out after ${timeout}ms`,
     );
     execution.throwIfAborted();
     const tokens = recordTokens(result);
-    options.onAgentJournal?.({
-      index: call.callIndex,
-      hash: hashAgentCall(call.prompt, call.modeName, call.assignedPhase, call.agentOptions),
-      result,
-    });
+    options.onAgentJournal?.(
+      createCompletedJournalEntry({ ...journalInput, ...childSession }, result, tokens),
+    );
     options.onAgentEnd?.({
       label: call.label,
       phase: call.assignedPhase,
@@ -429,6 +526,11 @@ async function runLiveAgentCall(
   } catch (error) {
     if (options.signal?.aborted === true) throw error;
     const workflowError = wrapError(error, { agentLabel: call.label });
+    const failedSession =
+      workflowError.code === WorkflowErrorCode.AGENT_TIMEOUT ? undefined : childSession;
+    options.onAgentJournal?.(
+      createWorkflowFailedJournalEntry(journalInput, failedSession, workflowError),
+    );
     execution.logger.error(`agent ${call.label} failed: ${workflowError.message}`);
     const tokens = recordTokens(null);
     options.onAgentEnd?.({
@@ -453,61 +555,6 @@ function runWorkflowAgent(
 ): Promise<unknown> {
   if (agentOptions.schema === undefined) return agentRunner.run(prompt, runOptions);
   return agentRunner.run(prompt, { ...runOptions, schema: agentOptions.schema });
-}
-
-function createParallelFunction(execution: WorkflowExecution, options: WorkflowRunOptions) {
-  return (thunks: Array<() => Promise<unknown>>) => {
-    execution.throwIfAborted();
-    if (thunks.some((thunk) => typeof thunk !== "function")) {
-      throw new TypeError(
-        "parallel() expects an array of functions, not promises. Wrap each call: () => agent(...)",
-      );
-    }
-    return Promise.all(
-      thunks.map(async (thunk, index) => {
-        try {
-          return await thunk();
-        } catch (error) {
-          if (options.signal?.aborted === true) throw error;
-          const workflowError = wrapError(error);
-          execution.log(`parallel[${index}] failed: ${workflowError.message}`);
-          return null;
-        }
-      }),
-    );
-  };
-}
-
-function createPipelineFunction(execution: WorkflowExecution, options: WorkflowRunOptions) {
-  return (
-    items: unknown[],
-    ...stages: Array<(prev: unknown, original: unknown, index: number) => unknown>
-  ) => {
-    execution.throwIfAborted();
-    if (stages.some((stage) => typeof stage !== "function")) {
-      throw new TypeError(
-        "pipeline() stages must be functions: pipeline(items, item => ..., result => ...)",
-      );
-    }
-    return Promise.all(
-      items.map(async (item, index) => {
-        let value: unknown = item;
-        for (const stage of stages) {
-          try {
-            execution.throwIfAborted();
-            value = await stage(value, item, index);
-            execution.throwIfAborted();
-          } catch (error) {
-            if (options.signal?.aborted === true) throw error;
-            const workflowError = wrapError(error);
-            execution.log(`pipeline[${index}] failed: ${workflowError.message}`);
-            return null;
-          }
-        }
-        return value;
-      }),
-    );
-  };
 }
 
 function createNestedWorkflowFunction(execution: WorkflowExecution, options: WorkflowRunOptions) {

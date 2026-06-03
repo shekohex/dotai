@@ -97,6 +97,31 @@ function mergeAgentActivityEvents(
   return activityEvents.slice(-30);
 }
 
+function createResumeJournalMap(journal: JournalEntry[]): Map<number, JournalEntry> {
+  const entries = new Map<number, JournalEntry>();
+  for (const entry of journal) {
+    const existing = entries.get(entry.index);
+    if (existing === undefined || existing.status !== "completed" || entry.status === "completed") {
+      entries.set(entry.index, mergeJournalEntry(existing, entry));
+    }
+  }
+  return entries;
+}
+
+export function mergeJournalEntry(
+  existing: JournalEntry | undefined,
+  entry: JournalEntry,
+): JournalEntry {
+  if (entry.status === "started") return entry;
+  const matchingExisting = existing?.hash === entry.hash ? existing : undefined;
+  if (entry.status === "completed") {
+    const sessionId = entry.sessionId ?? matchingExisting?.sessionId;
+    const sessionPath = entry.sessionPath ?? matchingExisting?.sessionPath;
+    return { ...entry, sessionId, sessionPath };
+  }
+  return entry;
+}
+
 // eslint-disable-next-line unicorn/prefer-event-target
 export class WorkflowManager extends EventEmitter {
   private runs = new Map<string, ManagedRun>();
@@ -281,9 +306,9 @@ export class WorkflowManager extends EventEmitter {
         resumeJournal,
         resumeFromRunId: resumeJournal ? managed.runId : undefined,
         onAgentJournal: (entry) => {
-          // Append (crash-safe-ish): keep the latest entry per index, then persist.
-          managed.journal = managed.journal.filter((e) => e.index !== entry.index);
-          managed.journal.push(entry);
+          const existing = managed.journal.find((candidate) => candidate.index === entry.index);
+          managed.journal = managed.journal.filter((candidate) => candidate.index !== entry.index);
+          managed.journal.push(mergeJournalEntry(existing, entry));
           this.persistRun(managed);
         },
         onLog: (message) => {
@@ -479,7 +504,7 @@ export class WorkflowManager extends EventEmitter {
     };
     this.runs.set(runId, managed);
 
-    const resumeJournal = new Map((persisted.journal ?? []).map((e) => [e.index, e] as const));
+    const resumeJournal = createResumeJournalMap(persisted.journal ?? []);
     this.emit("resumed", { runId });
     // Run in the background; executeRun records status/errors on the managed run.
     void this.executeRun(managed, persisted.script, persisted.args, { resumeJournal }).catch(

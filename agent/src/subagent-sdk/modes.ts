@@ -3,7 +3,7 @@ import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { resolveModeSpec, type ModeSpec } from "../mode-utils.js";
-import { normalizeToolNamesForModel, shouldUsePatch } from "../extensions/patch.js";
+import { shouldUsePatch } from "../extensions/patch.js";
 
 export type ResolvedSubagentMode = {
   modeName: string;
@@ -54,6 +54,7 @@ export async function resolveSubagentMode(
   options: { mode?: string; cwd?: string; autoExit?: boolean; model?: string },
 ): Promise<{ value?: ResolvedSubagentMode; error?: string }> {
   const availableToolNames = getAvailableToolNames(pi);
+  const activeToolNames = getActiveToolNames(pi, availableToolNames);
   const cwd = resolveModeCwd(ctx, options.cwd);
   const modeName = resolveRequestedModeName(options.mode);
   const spec = await resolveRequestedSpec(modeName, options.mode);
@@ -63,8 +64,8 @@ export async function resolveSubagentMode(
   }
 
   const modelId = extractRequestedModelId(options.model) ?? spec.modelId ?? ctx.model?.id;
-  const defaultToolNames = getDefaultToolNames(availableToolNames, modelId);
-  const tools = normalizeToolNamesForModel(
+  const defaultToolNames = getDefaultToolNames(activeToolNames, modelId, availableToolNames);
+  const tools = normalizeModeToolsForModel(
     resolveModeTools(spec.tools, defaultToolNames, availableToolNames),
     modelId,
     availableToolNames,
@@ -114,15 +115,55 @@ function getAvailableToolNames(pi: ExtensionAPI): string[] {
     .toSorted(compareToolNames);
 }
 
-function getDefaultToolNames(availableToolNames: string[], modelId: string | undefined): string[] {
-  const tools = new Set(availableToolNames);
+function getActiveToolNames(pi: ExtensionAPI, availableToolNames: string[]): string[] {
+  const available = new Set(availableToolNames);
+  return pi
+    .getActiveTools()
+    .filter((toolName) => available.has(toolName))
+    .toSorted(compareToolNames);
+}
+
+function getDefaultToolNames(
+  activeToolNames: string[],
+  modelId: string | undefined,
+  availableToolNames: string[],
+): string[] {
+  const available = new Set(availableToolNames);
+  const tools = new Set(activeToolNames);
+  const hasEditOrWrite = tools.has("edit") || tools.has("write");
+  const hasApplyPatch = tools.has("apply_patch");
+
   if (shouldUsePatch(modelId)) {
     tools.delete("edit");
     tools.delete("write");
-    if (tools.has("apply_patch")) tools.add("apply_patch");
-  } else {
-    tools.delete("apply_patch");
+    if ((hasEditOrWrite || hasApplyPatch) && available.has("apply_patch")) tools.add("apply_patch");
+    else tools.delete("apply_patch");
+  } else if (tools.delete("apply_patch")) {
+    if (available.has("edit")) tools.add("edit");
+    if (available.has("write")) tools.add("write");
   }
+  return Array.from(tools).toSorted(compareToolNames);
+}
+
+function normalizeModeToolsForModel(
+  toolNames: string[],
+  modelId: string | undefined,
+  availableToolNames: string[],
+): string[] {
+  const available = new Set(availableToolNames);
+  const tools = new Set(toolNames);
+  const hasMutationCapability = tools.has("edit") || tools.has("write") || tools.has("apply_patch");
+
+  if (shouldUsePatch(modelId)) {
+    tools.delete("edit");
+    tools.delete("write");
+    if (hasMutationCapability && available.has("apply_patch")) tools.add("apply_patch");
+    else tools.delete("apply_patch");
+  } else if (tools.delete("apply_patch")) {
+    if (available.has("edit")) tools.add("edit");
+    if (available.has("write")) tools.add("write");
+  }
+
   return Array.from(tools).toSorted(compareToolNames);
 }
 

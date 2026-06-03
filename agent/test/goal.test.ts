@@ -424,6 +424,9 @@ function createWorkflowRuntimeHarness(
   const ctx = {
     cwd: "/tmp",
     hasUI: true,
+    sessionManager: {
+      getSessionId: () => "session123456789",
+    },
     ui: {
       confirm: async () => true,
       notify: (message: string, level?: string) => notifications.push({ message, level }),
@@ -928,6 +931,65 @@ Ship it`);
     expect(notifications).toEqual([]);
   });
 
+  test("goal workflow file allows large frontmatter when parsed objective is within limit", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "agent-goal-workflow-objective-"));
+    const objectiveFile = join(directory, "objective.md");
+    writeFileSync(
+      objectiveFile,
+      ["---", "context: " + "x".repeat(8100), "---", "", "ship workflow from file"].join("\n"),
+    );
+    const started: Array<{ objective: string; source: string; objectiveFile?: string }> = [];
+    const notifications: Array<{ message: string; level?: string }> = [];
+    const host: GoalCommandHost = {
+      getGoal: () => null,
+      setGoal: () => {},
+      clearGoal: () => {},
+      enableTool: () => {},
+      disableTool: () => {},
+      async startWorkflowGoal(objective) {
+        started.push({
+          objective: objective.objective,
+          source: objective.source,
+          objectiveFile: objective.objectiveFile,
+        });
+      },
+      async resumeWorkflowGoal() {},
+    };
+    const pi = { sendMessage: () => {}, registerCommand: () => {} } as never;
+    const ctx = {
+      cwd: "/tmp",
+      hasUI: true,
+      sessionManager: {
+        getBranch: () => [],
+        getLeafId: () => null,
+        getSessionId: () => "session",
+      },
+      ui: {
+        confirm: async () => true,
+        input: async () => undefined,
+        notify: (message: string, level?: string) => notifications.push({ message, level }),
+        setStatus: () => {},
+      },
+    } as never;
+
+    await handleGoalCommand(pi, host, `workflow @${objectiveFile}`, ctx);
+
+    expect(started).toEqual([
+      {
+        objective: [
+          "---",
+          "context: " + "x".repeat(8100),
+          "---",
+          "",
+          "ship workflow from file",
+        ].join("\n"),
+        source: "file",
+        objectiveFile,
+      },
+    ]);
+    expect(notifications).toEqual([]);
+  });
+
   test("goal workflow runtime starts process-backed workflow with parsed file objective args", async () => {
     const harness = createWorkflowRuntimeHarness();
     const objective = [
@@ -956,7 +1018,10 @@ Ship it`);
     );
 
     expect(harness.starts).toHaveLength(1);
-    expect(harness.starts[0]?.exec).toMatchObject({ subagentBackend: "process" });
+    expect(harness.starts[0]?.exec).toMatchObject({
+      subagentBackend: "process",
+      displayName: "goal-objective",
+    });
     expect(harness.starts[0]?.args).toMatchObject({
       objective: "# Goal\nShip it",
       successCriteria: ["ship complete behavior"],
@@ -973,6 +1038,17 @@ Ship it`);
       objectiveFile: "/tmp/objective.md",
       startCommit: "abc123",
     });
+  });
+
+  test("goal workflow runtime names inline workflow from session id", async () => {
+    const harness = createWorkflowRuntimeHarness();
+
+    await harness.runtime.start(
+      { objective: "Ship it", label: "Ship it", source: "inline" },
+      harness.ctx,
+    );
+
+    expect(harness.starts[0]?.exec).toMatchObject({ displayName: "goal-session1" });
   });
 
   test("goal workflow runtime completes only explicit complete results", async () => {

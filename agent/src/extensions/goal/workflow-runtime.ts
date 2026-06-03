@@ -37,7 +37,7 @@ interface GoalWorkflowManager {
   startInBackground(
     script: string,
     args?: unknown,
-    exec?: { subagentBackend?: "process"; runId?: string },
+    exec?: { subagentBackend?: "process"; runId?: string; displayName?: string },
   ): { runId: string; promise: Promise<WorkflowRunResult> };
   resumeInBackground(runId: string): { runId: string; promise: Promise<WorkflowRunResult> } | false;
 }
@@ -96,7 +96,7 @@ export class GoalWorkflowRuntime {
     const workflow = this.createManager(ctx).startInBackground(
       generateGoalWorkflow(),
       { ...parsedObjective, startCommit, startedAt, runId },
-      { runId, subagentBackend: "process" },
+      { runId, subagentBackend: "process", displayName: goalWorkflowDisplayName(objective, ctx) },
     );
     ctx.ui.notify(`Goal workflow started. Run ID: ${workflow.runId}`);
     this.watch(workflow.runId, workflow.promise, ctx);
@@ -218,4 +218,21 @@ function workflowErrorReason(runId: string, error: unknown): string {
     "Inspect the workflow run, fix the cause, then resume the workflow when ready.",
     errorMessage(error),
   ].join("\n\n");
+}
+
+function goalWorkflowDisplayName(
+  objective: GoalWorkflowObjectiveInput,
+  ctx: ExtensionContext,
+): string {
+  if (objective.objectiveFile !== undefined) {
+    const base = objective.objectiveFile.split(/[\\/]/u).at(-1) ?? "goal";
+    const slug = base
+      .replace(/\.[^.]+$/u, "")
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9]+/gu, "-")
+      .replaceAll(/^-|-$/gu, "")
+      .slice(0, 48);
+    return slug.length > 0 ? `goal-${slug}` : "goal-file";
+  }
+  return `goal-${ctx.sessionManager.getSessionId().slice(0, 8)}`;
 }

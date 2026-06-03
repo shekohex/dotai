@@ -133,6 +133,7 @@ test("goal workflow produces a valid, parseable script", () => {
   assert.match(body, /confidence: \{/);
   assert.match(body, /maximum: 100/);
   assert.match(body, /toMarkdown\(/);
+  assert.match(body, /value instanceof String/);
   assert.match(body, /section\("objective"/);
   assert.match(body, /section\("goal_context"/);
   assert.match(body, /"review_findings"/);
@@ -373,6 +374,49 @@ test("goal workflow blocks instead of fixing when human review is required", asy
     "Need production credential from user",
     "User must approve production credential use.",
   ]);
+});
+
+test("goal workflow blocks when review consolidation lacks structured output", async () => {
+  const result = await runWorkflow(loadWorkflowResource("goal.workflow.js"), {
+    persistLogs: false,
+    args: { objective: "handle review failure" },
+    agent: {
+      async run(prompt: string) {
+        if (/Create a checkpoint commit/.test(prompt)) {
+          return { committed: true, commit: "jkl012", summary: "feat: checkpoint", blockers: [] };
+        }
+        if (/Strict review consolidator/.test(prompt)) return null;
+        if (/Deep goal judge/.test(prompt)) {
+          return {
+            complete: false,
+            confidence: 0,
+            coveredCriteria: [],
+            missingCriteria: [],
+            requiredWork: [],
+            evidence: [],
+            externalBlockers: [],
+            needsHumanReview: false,
+            humanReviewReason: "",
+          };
+        }
+        if (/final goal completion summary/.test(prompt)) {
+          return {
+            summary: "Blocked on review consolidation",
+            changedFiles: [],
+            commits: ["jkl012"],
+            validation: [],
+            evidence: [],
+            blockers: ["Review consolidation failed"],
+            nextAction: "human review required",
+          };
+        }
+        return "review draft";
+      },
+    },
+  });
+
+  assert.equal(result.result.status, "blocked");
+  assert.match(result.result.blockers.join("\n"), /Review consolidation failed/);
 });
 
 test("parameterized workflow resources inject placeholders before parsing", () => {

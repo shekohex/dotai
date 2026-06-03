@@ -161,6 +161,7 @@ function objectiveFilePath(rawPath: string, cwd: string): string {
 async function resolveGoalCommandObjective(
   trimmed: string,
   ctx: GoalCommandContext,
+  options: { enforceMaxObjectiveChars?: boolean } = {},
 ): Promise<GoalCommandObjective> {
   const rawObjectiveFile = parseGoalObjectiveFileReference(trimmed);
   if (rawObjectiveFile === null) {
@@ -179,7 +180,10 @@ async function resolveGoalCommandObjective(
     return { ok: false, message: `Failed to read objective file: ${errorMessage(error)}` };
   }
 
-  if (Array.from(objective.trim()).length > GOAL_MAX_OBJECTIVE_CHARS) {
+  if (
+    options.enforceMaxObjectiveChars !== false &&
+    Array.from(objective.trim()).length > GOAL_MAX_OBJECTIVE_CHARS
+  ) {
     return {
       ok: false,
       message: `Objective file content must be ${GOAL_MAX_OBJECTIVE_CHARS} characters or fewer.`,
@@ -231,7 +235,9 @@ async function handleGoalWorkflowCommand(
     await host.resumeWorkflowGoal(ctx, reason);
     return;
   }
-  const objectiveResult = await resolveGoalCommandObjective(workflowArgs, ctx);
+  const objectiveResult = await resolveGoalCommandObjective(workflowArgs, ctx, {
+    enforceMaxObjectiveChars: false,
+  });
   if (!objectiveResult.ok) {
     ctx.ui.notify(objectiveResult.message, "error");
     return;

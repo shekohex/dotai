@@ -54,6 +54,7 @@ export interface ExecOptions {
   /** Runtime backend for workflow subagents. */
   subagentBackend?: WorkflowSubagentBackend;
   runId?: string;
+  displayName?: string;
   /** Host signal (e.g. tool/Esc) that should abort this run when fired. */
   externalSignal?: AbortSignal;
   /** Called with the live snapshot on every progress event. */
@@ -179,17 +180,18 @@ export class WorkflowManager extends EventEmitter {
   startInBackground(
     script: string,
     args?: unknown,
-    exec: Pick<ExecOptions, "subagentBackend" | "runId"> = {},
+    exec: Pick<ExecOptions, "subagentBackend" | "runId" | "displayName"> = {},
   ): { runId: string; promise: Promise<WorkflowRunResult> } {
     const runId = exec.runId ?? generateRunId();
     const controller = new AbortController();
     const parsed = parseWorkflowScript(script);
+    const workflowName = exec.displayName ?? parsed.meta.name;
 
     const managed: ManagedRun = {
       runId,
       status: "running",
       snapshot: {
-        name: parsed.meta.name,
+        name: workflowName,
         description: parsed.meta.description,
         phases: parsed.meta.phases?.map((p) => p.title) ?? [],
         logs: [],
@@ -212,7 +214,7 @@ export class WorkflowManager extends EventEmitter {
     // Persist initial state
     this.persistence.save({
       runId,
-      workflowName: parsed.meta.name,
+      workflowName,
       script,
       args,
       status: "running",

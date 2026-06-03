@@ -23,7 +23,10 @@ const runId = (args && args.runId) || "";
 
 const toMarkdown = (schema, value, level = 0) => {
   if (value === null || value === undefined) return "None";
-  if (typeof value === "string") return value.length ? value : "None";
+  if (typeof value === "string" || value instanceof String) {
+    const text = String(value);
+    return text.length ? text : "None";
+  }
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   const indent = "  ".repeat(level);
   if (Array.isArray(value)) {
@@ -268,6 +271,35 @@ const summarySchema = {
   ],
 };
 
+const isStructuredResult = (value) =>
+  value !== null &&
+  value !== undefined &&
+  typeof value === "object" &&
+  !(value instanceof String) &&
+  !Array.isArray(value);
+
+const agentWithRetries = async (prompt, options, fallbackResult) => {
+  let resumeResult = null;
+  for (let attempt = 0; attempt < 3; attempt = attempt + 1) {
+    const taskPrompt = resumeResult
+      ? [
+          "Continue from your previous attempt and return the required structured output.",
+          "Do not redo side effects. Do not invent evidence. Convert only what you already verified or explicitly report why the result is blocked.",
+          "",
+          section("original_prompt", prompt),
+        ].join("\n")
+      : prompt;
+    const result = await agent(taskPrompt, {
+      ...options,
+      label: attempt === 0 ? options.label : options.label + " retry " + attempt,
+      resume: resumeResult || undefined,
+    });
+    if (isStructuredResult(result)) return result;
+    if (result) resumeResult = result;
+  }
+  return fallbackResult;
+};
+
 const reviewAgentPrompt = (focus, instructions, iteration, checkpoint, builderResult) =>
   [
     section("role", "Goal reviewer focused on " + focus + "."),
@@ -364,8 +396,31 @@ const finalJudgePrompt = (iteration, commits, reviewResult, builderResult, judge
     section("independent_judge_drafts", toMarkdown(null, judgeDrafts)),
   ].join("\n\n");
 
+const fallbackReviewResult = (reason) => ({
+  ok: false,
+  commands: [],
+  findings: [],
+  requiredFixes: [],
+  evidence: [],
+  externalBlockers: [reason],
+  needsHumanReview: true,
+  humanReviewReason: reason,
+});
+
+const fallbackJudgeResult = (reason) => ({
+  complete: false,
+  confidence: 0,
+  coveredCriteria: [],
+  missingCriteria: [],
+  requiredWork: [],
+  evidence: [],
+  externalBlockers: [reason],
+  needsHumanReview: true,
+  humanReviewReason: reason,
+});
+
 const commitCheckpoint = async (label, workResult, reviewResult, judgeResult) =>
-  agent(
+  agentWithRetries(
     [
       section(
         "role",
@@ -385,6 +440,12 @@ const commitCheckpoint = async (label, workResult, reviewResult, judgeResult) =>
       section("untrusted_judge_opinion", toMarkdown(judgeSchema, judgeResult || null)),
     ].join("\n\n"),
     { label: label, mode: "commiter", schema: commitSchema },
+    {
+      committed: false,
+      commit: "",
+      summary: "Commit checkpoint failed after 3 attempts.",
+      blockers: ["Commit checkpoint failed after 3 attempts and requires human review."],
+    },
   );
 
 phase("Build");
@@ -494,9 +555,12 @@ while (true) {
       ),
   ]);
   reviewDraftCount = reviewDraftCount + reviewDrafts.filter(Boolean).length;
-  reviewResult = await agent(
+  reviewResult = await agentWithRetries(
     consolidateReviewPrompt(iteration, checkpoint, builderResult, reviewDrafts),
     { label: "goal-review " + iteration, mode: "review", schema: reviewSchema },
+    fallbackReviewResult(
+      "Review consolidation failed to produce structured output after 3 attempts. Human review is required before continuing safely.",
+    ),
   );
   reviewCount = reviewCount + 1;
 
@@ -552,9 +616,12 @@ while (true) {
       ),
   ]);
   judgeDraftCount = judgeDraftCount + judgeDrafts.filter(Boolean).length;
-  judgeResult = await agent(
+  judgeResult = await agentWithRetries(
     finalJudgePrompt(iteration, commits, reviewResult, builderResult, judgeDrafts),
     { label: "goal-judge " + iteration, mode: "deep", schema: judgeSchema },
+    fallbackJudgeResult(
+      "Final judge failed to produce structured output after 3 attempts. Human review is required before continuing safely.",
+    ),
   );
   judgeCount = judgeCount + 1;
 
@@ -645,7 +712,7 @@ const finalBlockers = []
   .concat(judgeResult.humanReviewReason ? [judgeResult.humanReviewReason] : []);
 const ok = Boolean(reviewResult.ok && judgeResult.complete && finalBlockers.length === 0);
 const status = ok ? "complete" : "blocked";
-const summaryResult = await agent(
+const summaryResult = await agentWithRetries(
   [
     section(
       "instructions",
@@ -679,6 +746,15 @@ const summaryResult = await agent(
     ),
   ].join("\n\n"),
   { label: "goal-summary", mode: "docs", schema: summarySchema },
+  {
+    summary: status === "complete" ? "Goal workflow completed." : "Goal workflow blocked.",
+    changedFiles: [],
+    commits: [],
+    validation: [],
+    evidence: [].concat(reviewResult.evidence || []).concat(judgeResult.evidence || []),
+    blockers: finalBlockers,
+    nextAction: status === "complete" ? "none" : "human review required",
+  },
 );
 return {
   ok,

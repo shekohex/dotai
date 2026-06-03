@@ -50,7 +50,6 @@ export class WorkflowDialog extends Container implements Focusable {
     this.summaryText = new Text("", 1, 0);
     this.body = new Container();
     this.helpText = new Text("", 1, 0);
-    this.tui.terminal?.write?.("\u001B[?1000h\u001B[?1006h");
     this.refresh();
   }
 
@@ -93,30 +92,13 @@ export class WorkflowDialog extends Container implements Focusable {
   }
 
   dispose(): void {
-    this.tui.terminal?.write?.("\u001B[?1000l\u001B[?1006l");
-  }
-
-  private getMouseScrollDelta(data: string): number | null {
-    if (!data.startsWith("\u001B[<")) return null;
-    const match = data.slice(3).match(/^(\d+);\d+;\d+[Mm]$/);
-    if (!match) return null;
-
-    const button = Number(match[1]);
-    if ((button & 64) !== 64) return null;
-
-    return (button & 1) === 0 ? -3 : 3;
+    this.body.clear();
   }
 
   handleInput(data: string): void {
     if (this.options.onKey(data)) {
       this.scrollOffset = 0;
       this.refresh();
-      return;
-    }
-
-    const mouseScrollDelta = this.getMouseScrollDelta(data);
-    if (mouseScrollDelta !== null) {
-      this.scrollBy(mouseScrollDelta);
       return;
     }
 

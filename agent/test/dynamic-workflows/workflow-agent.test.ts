@@ -10,14 +10,10 @@ import type { RuntimeSubagent } from "../../src/subagent-sdk/types.js";
 const sdkStart = vi.fn<SubagentSDK["start"]>();
 const sdkResume = vi.fn<SubagentSDK["resume"]>();
 const sdkDispose = vi.fn<SubagentSDK["dispose"]>();
+const sdkFactory = vi.fn();
 
 vi.mock("../../src/subagent-sdk/sdk.js", () => ({
-  createSubagentSDK: vi.fn(() => ({
-    start: sdkStart,
-    resume: sdkResume,
-    dispose: sdkDispose,
-    onChildEvent: vi.fn(() => () => {}),
-  })),
+  createSubagentSDK: sdkFactory,
 }));
 
 const cleanupPaths: string[] = [];
@@ -26,6 +22,13 @@ beforeEach(() => {
   sdkStart.mockReset();
   sdkResume.mockReset();
   sdkDispose.mockReset();
+  sdkFactory.mockReset();
+  sdkFactory.mockReturnValue({
+    start: sdkStart,
+    resume: sdkResume,
+    dispose: sdkDispose,
+    onChildEvent: vi.fn(() => () => {}),
+  });
 });
 
 afterEach(() => {
@@ -71,6 +74,39 @@ test("WorkflowAgent falls back to start when resume session becomes inaccessible
   assert.equal(result, "fresh result");
   assert.equal(sdkResume.mock.calls.length, 1);
   assert.equal(sdkStart.mock.calls.length, 1);
+});
+
+test("WorkflowAgent uses lite subagent backend by default", async () => {
+  const { WorkflowAgent } = await import("../../src/extensions/dynamic-workflows/agent.js");
+  sdkStart.mockResolvedValue(createStartValue("lite-session", "lite result"));
+  const cwd = mkdtempSync(join(tmpdir(), "workflow-agent-lite-backend-"));
+  cleanupPaths.push(cwd);
+
+  await new WorkflowAgent({
+    cwd,
+    pi: {} as ExtensionAPI,
+    ctx: createContext(cwd),
+  }).run("prompt");
+
+  assert.deepEqual(sdkFactory.mock.calls[0]?.[1], { backend: { kind: "lite" } });
+});
+
+test("WorkflowAgent can use process subagent backend", async () => {
+  const { WorkflowAgent } = await import("../../src/extensions/dynamic-workflows/agent.js");
+  sdkStart.mockResolvedValue(createStartValue("process-session", "process result"));
+  const cwd = mkdtempSync(join(tmpdir(), "workflow-agent-process-backend-"));
+  cleanupPaths.push(cwd);
+
+  await new WorkflowAgent({
+    cwd,
+    pi: { exec: async () => ({ code: 0, stdout: "", stderr: "" }) } as ExtensionAPI,
+    ctx: createContext(cwd),
+    subagentBackend: "process",
+  }).run("prompt");
+
+  const options = sdkFactory.mock.calls[0]?.[1];
+  assert.equal("adapter" in options, true);
+  assert.equal(typeof options.buildLaunchCommand, "function");
 });
 
 function createStartValue(

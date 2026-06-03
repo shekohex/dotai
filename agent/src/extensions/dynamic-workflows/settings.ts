@@ -15,6 +15,7 @@ export const DynamicWorkflowSettingsSchema = Type.Object(
     tokenBudget: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.Null()])),
     persistLogs: Type.Optional(Type.Boolean()),
     backgroundDefault: Type.Optional(Type.Boolean()),
+    subagentBackend: Type.Optional(Type.Union([Type.Literal("lite"), Type.Literal("process")])),
   },
   { additionalProperties: true },
 );
@@ -38,6 +39,7 @@ export const defaultDynamicWorkflowSettings = {
   tokenBudget: null,
   persistLogs: true,
   backgroundDefault: true,
+  subagentBackend: "lite",
 } as const satisfies DynamicWorkflowSettings;
 
 export function getDynamicWorkflowSettings(): DynamicWorkflowSettings {

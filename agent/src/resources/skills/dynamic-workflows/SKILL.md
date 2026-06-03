@@ -54,13 +54,14 @@ Rules:
 
 ## Tool Parameters
 
-| Parameter        | Type      | Description                                                                                |
-| ---------------- | --------- | ------------------------------------------------------------------------------------------ |
-| `script`         | `string`  | **Required.** Raw JavaScript workflow.                                                     |
-| `args`           | `unknown` | Optional JSON value. Exposed inside the script as the global `args`.                       |
-| `background`     | `boolean` | Default `true`. Returns immediately; result delivered when finished. Set `false` to block. |
-| `maxAgents`      | `number`  | Max agents allowed. Default `1000`.                                                        |
-| `agentTimeoutMs` | `number`  | Timeout per agent. Default `1800000` (30 min).                                             |
+| Parameter         | Type                  | Description                                                                                |
+| ----------------- | --------------------- | ------------------------------------------------------------------------------------------ |
+| `script`          | `string`              | **Required.** Raw JavaScript workflow.                                                     |
+| `args`            | `unknown`             | Optional JSON value. Exposed inside the script as the global `args`.                       |
+| `background`      | `boolean`             | Default `true`. Returns immediately; result delivered when finished. Set `false` to block. |
+| `maxAgents`       | `number`              | Max agents allowed. Default `1000`.                                                        |
+| `agentTimeoutMs`  | `number`              | Timeout per agent. Default `1800000` (30 min).                                             |
+| `subagentBackend` | `"lite" \| "process"` | Subagent runtime. Default `lite`; use `process` for inspectable tmux/pty sessions.         |
 
 ## Script Globals
 

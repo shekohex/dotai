@@ -126,6 +126,12 @@ const workflowToolSchema = Type.Object({
       description: "Timeout per agent in milliseconds. Default: 1800000 (30 minutes).",
     }),
   ),
+  subagentBackend: Type.Optional(
+    Type.Union([Type.Literal("lite"), Type.Literal("process")], {
+      description:
+        "Runtime backend for workflow subagents. Default: lite. Use process to launch inspectable tmux/pty subagent panes when available.",
+    }),
+  ),
 });
 
 export type WorkflowToolInput = {
@@ -134,6 +140,7 @@ export type WorkflowToolInput = {
   background?: boolean;
   maxAgents?: number;
   agentTimeoutMs?: number;
+  subagentBackend?: "lite" | "process";
 };
 
 export interface WorkflowToolOptions {
@@ -317,7 +324,9 @@ async function executeWorkflowTool(
   const settings = getDynamicWorkflowSettings();
 
   if (params.background ?? settings.backgroundDefault) {
-    const { runId } = manager.startInBackground(script, params.args);
+    const { runId } = manager.startInBackground(script, params.args, {
+      subagentBackend: params.subagentBackend,
+    });
     return {
       content: [{ type: "text", text: backgroundStartedText(parsed.meta.name, runId) }],
       details: { runId, background: true },
@@ -386,6 +395,7 @@ async function runWorkflowSync(
     const runResult = await manager.runSync(script, params.args, {
       maxAgents: params.maxAgents,
       agentTimeoutMs: params.agentTimeoutMs,
+      subagentBackend: params.subagentBackend,
       externalSignal: signal,
       onProgress(live) {
         snapshot = recomputeWorkflowSnapshot(live);

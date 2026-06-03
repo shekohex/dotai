@@ -3,7 +3,7 @@
 import { EventEmitter } from "node:events";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
-import type { WorkflowAgent } from "./agent.js";
+import type { WorkflowAgent, WorkflowSubagentBackend } from "./agent.js";
 import { preview, type WorkflowAgentActivityEvent, type WorkflowSnapshot } from "./display.js";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
 import { getDynamicWorkflowSettings } from "./settings.js";
@@ -51,6 +51,8 @@ export interface ExecOptions {
   maxAgents?: number;
   /** Per-agent timeout in milliseconds. */
   agentTimeoutMs?: number;
+  /** Runtime backend for workflow subagents. */
+  subagentBackend?: WorkflowSubagentBackend;
   /** Host signal (e.g. tool/Esc) that should abort this run when fired. */
   externalSignal?: AbortSignal;
   /** Called with the live snapshot on every progress event. */
@@ -68,6 +70,8 @@ export interface WorkflowManagerOptions {
   ctx?: ExtensionContext;
   /** Parent session model label shown for agents that use default routing. */
   mainModel?: string;
+  /** Default runtime backend for workflow subagents. */
+  subagentBackend?: WorkflowSubagentBackend;
 }
 
 function mergeAgentActivityEvents(
@@ -134,6 +138,7 @@ export class WorkflowManager extends EventEmitter {
   private ctx?: ExtensionContext;
   /** Parent session model label shown for agents that use default routing. */
   private mainModel?: string;
+  private subagentBackend?: WorkflowSubagentBackend;
 
   constructor(options: WorkflowManagerOptions = {}) {
     super();
@@ -145,6 +150,7 @@ export class WorkflowManager extends EventEmitter {
     this.pi = options.pi;
     this.ctx = options.ctx;
     this.mainModel = options.mainModel;
+    this.subagentBackend = options.subagentBackend;
     this.persistence = createRunPersistence(this.cwd);
   }
 
@@ -170,6 +176,7 @@ export class WorkflowManager extends EventEmitter {
   startInBackground(
     script: string,
     args?: unknown,
+    exec: Pick<ExecOptions, "subagentBackend"> = {},
   ): { runId: string; promise: Promise<WorkflowRunResult> } {
     const runId = generateRunId();
     const controller = new AbortController();
@@ -214,7 +221,7 @@ export class WorkflowManager extends EventEmitter {
     });
 
     // Run workflow asynchronously
-    const promise = this.executeRun(managed, script, args);
+    const promise = this.executeRun(managed, script, args, exec);
     promise.catch(() => {});
 
     return { runId, promise };
@@ -302,6 +309,7 @@ export class WorkflowManager extends EventEmitter {
         concurrency: this.concurrency,
         maxAgents,
         agentTimeoutMs,
+        subagentBackend: exec.subagentBackend ?? this.subagentBackend,
         loadSavedWorkflow: this.loadSavedWorkflow,
         resumeJournal,
         resumeFromRunId: resumeJournal ? managed.runId : undefined,

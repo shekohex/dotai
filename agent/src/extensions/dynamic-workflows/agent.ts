@@ -5,7 +5,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { accessSync } from "node:fs";
 import type { Static, TSchema } from "typebox";
+import { buildLaunchCommand } from "../../subagent-sdk/launch.js";
 import { createSubagentSDK } from "../../subagent-sdk/sdk.js";
+import { createDefaultMuxAdapter } from "../../subagent-sdk/default-mux.js";
 import type { SubagentChildIpcEvent } from "../../subagent-sdk/ipc.js";
 import type { SubagentHandle, SubagentSDK } from "../../subagent-sdk/sdk-types.js";
 import type { RuntimeSubagent } from "../../subagent-sdk/types.js";
@@ -17,11 +19,14 @@ export interface WorkflowAgentOptions {
   pi?: ExtensionAPI;
   ctx?: ExtensionContext;
   mode?: string;
+  subagentBackend?: WorkflowSubagentBackend;
   outputRetryCount?: number;
   toolNames?: string[];
   customTools?: ToolDefinition[];
   instructions?: string;
 }
+
+export type WorkflowSubagentBackend = "lite" | "process";
 
 export interface AgentUsage {
   input: number;
@@ -57,6 +62,7 @@ export class WorkflowAgent {
   private readonly pi: ExtensionAPI | undefined;
   private readonly ctx: ExtensionContext | undefined;
   private readonly mode: string | undefined;
+  private readonly subagentBackend: WorkflowSubagentBackend;
   private readonly outputRetryCount: number | undefined;
   private readonly toolNames: string[];
   private readonly customTools: ToolDefinition[];
@@ -68,6 +74,7 @@ export class WorkflowAgent {
     this.pi = options.pi;
     this.ctx = options.ctx;
     this.mode = options.mode ?? settings.mode;
+    this.subagentBackend = options.subagentBackend ?? settings.subagentBackend;
     this.outputRetryCount = options.outputRetryCount ?? settings.outputRetryCount;
     this.toolNames = options.toolNames ?? settings.toolNames;
     this.customTools = options.customTools ?? [];
@@ -87,7 +94,7 @@ export class WorkflowAgent {
     const runCwd = options.cwd ?? this.cwd;
     const customTools = [...this.customTools, ...(options.customTools ?? [])];
     const toolNames = Array.from(new Set([...this.toolNames, ...(options.toolNames ?? [])]));
-    const sdk = createSubagentSDK(this.pi, { backend: { kind: "lite" } });
+    const sdk = createWorkflowSubagentSDK(this.pi, this.subagentBackend);
 
     try {
       if (isSignalAborted(options.signal)) throw new Error("Subagent was aborted");
@@ -159,6 +166,19 @@ export class WorkflowAgent {
 
     return parts.join("\n\n");
   }
+}
+
+function createWorkflowSubagentSDK(
+  pi: ExtensionAPI,
+  backend: WorkflowSubagentBackend,
+): SubagentSDK {
+  if (backend === "process") {
+    return createSubagentSDK(pi, {
+      adapter: createDefaultMuxAdapter(pi),
+      buildLaunchCommand,
+    });
+  }
+  return createSubagentSDK(pi, { backend: { kind: "lite" } });
 }
 
 type WorkflowSubagentParams = {

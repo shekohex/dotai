@@ -48,6 +48,7 @@ import {
   type GoalResult,
   type ThreadGoal,
 } from "./types.js";
+import { GoalWorkflowRuntime } from "./workflow-runtime.js";
 
 interface GoalAccountingState {
   activeGoalId: string | null;
@@ -92,8 +93,20 @@ class GoalRuntime {
     activeGoalId: null,
     lastAccountedAt: null,
   };
+  private readonly workflowRuntime: GoalWorkflowRuntime;
 
-  constructor(private readonly pi: ExtensionAPI) {}
+  constructor(private readonly pi: ExtensionAPI) {
+    this.workflowRuntime = new GoalWorkflowRuntime({
+      pi: this.pi,
+      getGoal: () => this.goalForDisplay(),
+      persistGoal: (goal, source) => {
+        this.persistGoal(goal, source);
+      },
+      refreshUi: (ctx) => {
+        this.refreshUi(ctx);
+      },
+    });
+  }
 
   register(): void {
     registerGoalCommand(this.pi, {
@@ -116,6 +129,11 @@ class GoalRuntime {
       disableTool: () => {
         this.disableTool();
         this.persistToolState();
+      },
+      startWorkflowGoal: (objective, ctx) => this.workflowRuntime.start(objective, ctx),
+      resumeWorkflowGoal: (ctx, reason) => {
+        this.workflowRuntime.resume(ctx, reason);
+        return Promise.resolve();
       },
     });
 

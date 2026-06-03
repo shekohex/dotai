@@ -13,8 +13,16 @@ import { describe, expect, test } from "vitest";
 import { groupedExtensionsC } from "../src/extensions/definitions-group-c.js";
 import goalExtension from "../src/extensions/goal/index.js";
 import { formatFooterStatus } from "../src/extensions/goal/format.js";
-import { parseGoalCustomEntry, reconstructGoal } from "../src/extensions/goal/state.js";
+import {
+  blockGoal,
+  parseGoalCustomEntry,
+  reconstructGoal,
+  replaceWorkflowGoal,
+} from "../src/extensions/goal/state.js";
 import { GOAL_EXTENSION_ENTRY_TYPE } from "../src/extensions/goal/types.js";
+import { handleGoalCommand, type GoalCommandHost } from "../src/extensions/goal/commands.js";
+import { parseGoalWorkflowObjective } from "../src/extensions/goal/workflow.js";
+import { GoalWorkflowRuntime } from "../src/extensions/goal/workflow-runtime.js";
 
 type GoalEventHandler = (event: object, ctx: ExtensionContext) => unknown | Promise<unknown>;
 
@@ -381,6 +389,89 @@ function waitForCompactionResume(): Promise<void> {
 
 function waitForPostAgentSettle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 175));
+}
+
+function deferredWorkflowResult() {
+  let resolve!: (value: {
+    result: unknown;
+    durationMs?: number;
+    tokenUsage?: { input: number; output: number; total: number };
+  }) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<{
+    result: unknown;
+    durationMs?: number;
+    tokenUsage?: { input: number; output: number; total: number };
+  }>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
+function createWorkflowRuntimeHarness(
+  initialGoal = null as ReturnType<typeof replaceWorkflowGoal>["goal"],
+) {
+  let goal = initialGoal;
+  const persistedGoals: Array<NonNullable<typeof goal>> = [];
+  const notifications: Array<{ message: string; level?: string }> = [];
+  const starts: Array<{ script: string; args: unknown; exec: unknown }> = [];
+  const resumes: string[] = [];
+  const deferred = deferredWorkflowResult();
+  const pi = {
+    exec: async () => ({ stdout: "abc123\n", stderr: "", code: 0, killed: false }),
+  } as never;
+  const ctx = {
+    cwd: "/tmp",
+    hasUI: true,
+    ui: {
+      confirm: async () => true,
+      notify: (message: string, level?: string) => notifications.push({ message, level }),
+    },
+  } as never;
+  const runtime = new GoalWorkflowRuntime({
+    pi,
+    getGoal: () => goal,
+    persistGoal: (nextGoal) => {
+      goal = nextGoal;
+      persistedGoals.push(nextGoal);
+    },
+    refreshUi: () => {},
+    createManager: () => ({
+      startInBackground(script, args, exec) {
+        starts.push({ script, args, exec });
+        const runId =
+          exec !== undefined &&
+          typeof exec === "object" &&
+          "runId" in exec &&
+          typeof exec.runId === "string"
+            ? exec.runId
+            : "run-id";
+        return { runId, promise: deferred.promise };
+      },
+      resumeInBackground(runId) {
+        resumes.push(runId);
+        return { runId, promise: deferred.promise };
+      },
+    }),
+  });
+  return {
+    ctx,
+    deferred,
+    notifications,
+    persistedGoals,
+    resumes,
+    runtime,
+    starts,
+    get goal() {
+      return goal;
+    },
+  };
+}
+
+async function flushWorkflowWatch(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 describe("goal extension", () => {
@@ -775,6 +866,248 @@ describe("goal extension", () => {
     await harness.runCommand(`@${objectiveFile}`);
 
     expect(harness.snapshot().goal?.objective).toBe("ship from file\nwith exact content");
+  });
+
+  test("goal workflow objective parses frontmatter deterministically", () => {
+    const parsed = parseGoalWorkflowObjective(`---
+successCriteria:
+  - ship complete behavior
+constraints:
+  - keep changes surgical
+verificationCommands:
+  - npm test
+context: Extra context only
+---
+
+# Goal
+Ship it`);
+
+    expect(parsed).toEqual({
+      objective: "# Goal\nShip it",
+      successCriteria: ["ship complete behavior"],
+      constraints: ["keep changes surgical"],
+      verificationCommands: ["npm test"],
+      context: "Extra context only",
+    });
+  });
+
+  test("goal workflow command dispatches workflow start without normal continuation", async () => {
+    const started: Array<{ objective: string; source: string }> = [];
+    const notifications: Array<{ message: string; level?: string }> = [];
+    const host: GoalCommandHost = {
+      getGoal: () => null,
+      setGoal: () => {},
+      clearGoal: () => {},
+      enableTool: () => {},
+      disableTool: () => {},
+      async startWorkflowGoal(objective) {
+        started.push({ objective: objective.objective, source: objective.source });
+      },
+      async resumeWorkflowGoal() {},
+    };
+    const pi = { sendMessage: () => {}, registerCommand: () => {} } as never;
+    const ctx = {
+      cwd: "/tmp",
+      hasUI: true,
+      sessionManager: {
+        getBranch: () => [],
+        getLeafId: () => null,
+        getSessionId: () => "session",
+      },
+      ui: {
+        confirm: async () => true,
+        input: async () => undefined,
+        notify: (message: string, level?: string) => notifications.push({ message, level }),
+        setStatus: () => {},
+      },
+    } as never;
+
+    await handleGoalCommand(pi, host, "workflow ship it", ctx);
+
+    expect(started).toEqual([{ objective: "ship it", source: "inline" }]);
+    expect(notifications).toEqual([]);
+  });
+
+  test("goal workflow runtime starts process-backed workflow with parsed file objective args", async () => {
+    const harness = createWorkflowRuntimeHarness();
+    const objective = [
+      "---",
+      "successCriteria:",
+      "  - ship complete behavior",
+      "constraints:",
+      "  - keep changes surgical",
+      "verificationCommands:",
+      "  - npm test",
+      "context: Extra context only",
+      "---",
+      "",
+      "# Goal",
+      "Ship it",
+    ].join("\n");
+
+    await harness.runtime.start(
+      {
+        objective,
+        label: "@/tmp/objective.md",
+        source: "file",
+        objectiveFile: "/tmp/objective.md",
+      },
+      harness.ctx,
+    );
+
+    expect(harness.starts).toHaveLength(1);
+    expect(harness.starts[0]?.exec).toMatchObject({ subagentBackend: "process" });
+    expect(harness.starts[0]?.args).toMatchObject({
+      objective: "# Goal\nShip it",
+      successCriteria: ["ship complete behavior"],
+      constraints: ["keep changes surgical"],
+      verificationCommands: ["npm test"],
+      context: "Extra context only",
+      startCommit: "abc123",
+    });
+    expect(harness.starts[0]?.args).toHaveProperty("startedAt");
+    expect(harness.starts[0]?.args).toHaveProperty("runId");
+    expect(harness.goal?.workflow).toMatchObject({
+      workflowName: "goal",
+      objectiveSource: "file",
+      objectiveFile: "/tmp/objective.md",
+      startCommit: "abc123",
+    });
+  });
+
+  test("goal workflow runtime completes only explicit complete results", async () => {
+    const harness = createWorkflowRuntimeHarness();
+    await harness.runtime.start(
+      { objective: "Ship it", label: "Ship it", source: "inline" },
+      harness.ctx,
+    );
+    harness.deferred.resolve({
+      result: { ok: true, status: "complete" },
+      durationMs: 1200,
+      tokenUsage: { input: 2, output: 3, total: 5 },
+    });
+    await flushWorkflowWatch();
+
+    expect(harness.goal?.status).toBe("complete");
+    expect(harness.goal?.usage).toEqual({ tokensUsed: 5, activeSeconds: 2 });
+    expect(harness.notifications.at(-1)?.message).toBe("Goal workflow complete.");
+  });
+
+  test("goal workflow runtime blocks non-complete results while preserving run id", async () => {
+    const created = replaceWorkflowGoal("Ship it", {
+      runId: "run-blocked",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+    });
+    if (created.goal === null) throw new Error("expected workflow goal");
+    const harness = createWorkflowRuntimeHarness(created.goal);
+
+    harness.runtime.resume(harness.ctx, "External dependency restored; continue same workflow.");
+    harness.deferred.resolve({
+      result: { ok: true, status: "blocked", blockers: ["Need production credential"] },
+    });
+    await flushWorkflowWatch();
+
+    expect(harness.resumes).toEqual(["run-blocked"]);
+    expect(harness.goal?.status).toBe("blocked");
+    expect(harness.goal?.workflow?.runId).toBe("run-blocked");
+    expect(harness.goal?.blockedReason).toContain("finished without satisfying the goal");
+    expect(harness.goal?.blockedReason).toContain("Need production credential");
+  });
+
+  test("goal workflow runtime unblocks blocked goal and resumes same run with reason", () => {
+    const created = replaceWorkflowGoal("Ship it", {
+      runId: "run-unblock",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+    });
+    const blocked = blockGoal(
+      created.goal,
+      "Need production credential from user before workflow can continue safely.",
+    );
+    if (blocked.goal === null) throw new Error("expected blocked workflow goal");
+    const harness = createWorkflowRuntimeHarness(blocked.goal);
+
+    harness.runtime.resume(harness.ctx, "Credential installed; continue workflow now.");
+
+    expect(harness.resumes).toEqual(["run-unblock"]);
+    expect(harness.goal?.status).toBe("active");
+    expect(harness.goal?.workflow?.runId).toBe("run-unblock");
+    expect(harness.goal?.resumedReason).toBe("Credential installed; continue workflow now.");
+  });
+
+  test("goal workflow resume command dispatches workflow resume", async () => {
+    let resumeCount = 0;
+    const host: GoalCommandHost = {
+      getGoal: () => null,
+      setGoal: () => {},
+      clearGoal: () => {},
+      enableTool: () => {},
+      disableTool: () => {},
+      async startWorkflowGoal() {},
+      async resumeWorkflowGoal() {
+        resumeCount += 1;
+      },
+    };
+    const pi = { sendMessage: () => {}, registerCommand: () => {} } as never;
+    const ctx = {
+      cwd: "/tmp",
+      hasUI: true,
+      sessionManager: {
+        getBranch: () => [],
+        getLeafId: () => null,
+        getSessionId: () => "session",
+      },
+      ui: {
+        confirm: async () => true,
+        input: async () => undefined,
+        notify: () => {},
+        setStatus: () => {},
+      },
+    } as never;
+
+    await handleGoalCommand(pi, host, "workflow resume", ctx);
+
+    expect(resumeCount).toBe(1);
+  });
+
+  test("goal workflow unblock command dispatches workflow resume with reason", async () => {
+    const reasons: string[] = [];
+    const host: GoalCommandHost = {
+      getGoal: () => null,
+      setGoal: () => {},
+      clearGoal: () => {},
+      enableTool: () => {},
+      disableTool: () => {},
+      async startWorkflowGoal() {},
+      async resumeWorkflowGoal(_ctx, reason) {
+        if (reason !== undefined) reasons.push(reason);
+      },
+    };
+    const pi = { sendMessage: () => {}, registerCommand: () => {} } as never;
+    const ctx = {
+      cwd: "/tmp",
+      hasUI: true,
+      sessionManager: {
+        getBranch: () => [],
+        getLeafId: () => null,
+        getSessionId: () => "session",
+      },
+      ui: {
+        confirm: async () => true,
+        input: async () => undefined,
+        notify: () => {},
+        setStatus: () => {},
+      },
+    } as never;
+
+    await handleGoalCommand(pi, host, "workflow unblock Credential installed");
+
+    expect(reasons).toEqual(["Credential installed"]);
   });
 
   test("goal command rejects oversized at-prefixed objective files", async () => {

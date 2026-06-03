@@ -109,11 +109,270 @@ test("workflow resources start with exported metadata", () => {
     "auto-generated.workflow.js",
     "codebase-audit.workflow.js",
     "deep-research.workflow.js",
+    "goal.workflow.js",
     "multi-perspective.workflow.js",
     "simplify.workflow.js",
   ]) {
     assert.match(loadWorkflowResource(resourceName), /^export const meta = /);
   }
+});
+
+test("goal workflow produces a valid, parseable script", () => {
+  const { meta, body } = parseWorkflowScript(loadWorkflowResource("goal.workflow.js"));
+  assert.equal(meta.name, "goal");
+  assert.deepEqual(
+    meta.phases?.map((phase) => phase.title),
+    ["Build", "Commit", "Review", "Judge", "Fix", "Result"],
+  );
+  assert.match(body, /resume: builderResult/);
+  assert.doesNotMatch(body, /maxIterations/);
+  assert.match(body, /reviewSchema/);
+  assert.match(body, /commitSchema/);
+  assert.match(body, /judgeSchema/);
+  assert.match(body, /summarySchema/);
+  assert.match(body, /confidence: \{/);
+  assert.match(body, /maximum: 100/);
+  assert.match(body, /toMarkdown\(/);
+  assert.match(body, /section\("objective"/);
+  assert.match(body, /section\("goal_context"/);
+  assert.match(body, /"review_findings"/);
+  assert.match(body, /untrusted_builder_claims/);
+  assert.match(body, /untrusted_review_opinion/);
+  assert.match(body, /Evidence hierarchy/);
+  assert.match(body, /review-code/);
+  assert.match(body, /review-proof/);
+  assert.match(body, /judge-criteria/);
+  assert.match(body, /judge-evidence/);
+  assert.match(body, /<" \+ name \+ ">/);
+  assert.match(body, /startCommit/);
+  assert.match(body, /tokenBudgetSpent/);
+});
+
+test("goal workflow returns completion evidence when review and judge pass", async () => {
+  const result = await runWorkflow(loadWorkflowResource("goal.workflow.js"), {
+    persistLogs: false,
+    args: {
+      objective: "ship test goal",
+      verificationCommands: ["npm test"],
+      startCommit: "start123",
+    },
+    agent: {
+      async run(prompt: string) {
+        if (/Create a checkpoint commit/.test(prompt)) {
+          return {
+            committed: true,
+            commit: "abc123",
+            summary: "feat: ship test goal",
+            blockers: [],
+          };
+        }
+        if (/Review the current/.test(prompt)) {
+          return {
+            ok: true,
+            commands: ["npm test"],
+            findings: [],
+            requiredFixes: [],
+            evidence: ["tests passed"],
+            externalBlockers: [],
+            needsHumanReview: false,
+            humanReviewReason: "",
+          };
+        }
+        if (/Deep goal judge/.test(prompt)) {
+          return {
+            complete: true,
+            confidence: 100,
+            coveredCriteria: ["ship test goal"],
+            missingCriteria: [],
+            requiredWork: [],
+            evidence: ["goal fully covered"],
+            externalBlockers: [],
+            needsHumanReview: false,
+            humanReviewReason: "",
+          };
+        }
+        if (/final goal completion summary/.test(prompt)) {
+          return {
+            summary: "Goal shipped",
+            changedFiles: ["src/example.ts"],
+            commits: ["abc123"],
+            validation: ["npm test"],
+            evidence: ["tests passed", "goal fully covered"],
+            blockers: [],
+            nextAction: "none",
+          };
+        }
+        return "built goal";
+      },
+    },
+  });
+
+  assert.equal(result.result.ok, true);
+  assert.equal(result.result.objective, "ship test goal");
+  assert.deepEqual(Array.from(result.result.evidence), ["tests passed", "goal fully covered"]);
+  assert.deepEqual(Array.from(result.result.blockers), []);
+  assert.equal(result.result.metrics.startCommit, "start123");
+  assert.equal(result.result.metrics.commitCount, 1);
+  assert.equal(result.result.metrics.reviewDraftCount, 4);
+  assert.equal(result.result.metrics.judgeDraftCount, 4);
+  assert.equal(result.result.summary.summary, "Goal shipped");
+});
+
+test("goal workflow keeps fixing until review findings and judge gaps are gone", async () => {
+  let reviewCalls = 0;
+  let judgeCalls = 0;
+  let fixCalls = 0;
+  const result = await runWorkflow(loadWorkflowResource("goal.workflow.js"), {
+    persistLogs: false,
+    args: { objective: "close loop" },
+    agent: {
+      async run(
+        prompt: string,
+        options: { onStart?: (state: { sessionId: string; sessionPath: string }) => void },
+      ) {
+        options.onStart?.({ sessionId: "goal-builder-session", sessionPath: "/tmp/goal-builder" });
+        if (/Create a checkpoint commit/.test(prompt)) {
+          return { committed: true, commit: "def456", summary: "feat: close loop", blockers: [] };
+        }
+        if (/Review the current/.test(prompt)) {
+          reviewCalls = reviewCalls + 1;
+          if (reviewCalls === 1) {
+            return {
+              ok: false,
+              commands: [],
+              findings: ["missing proof"],
+              requiredFixes: ["collect proof"],
+              evidence: [],
+              externalBlockers: [],
+              needsHumanReview: false,
+              humanReviewReason: "",
+            };
+          }
+          return {
+            ok: true,
+            commands: [],
+            findings: [],
+            requiredFixes: [],
+            evidence: ["review clean"],
+            externalBlockers: [],
+            needsHumanReview: false,
+            humanReviewReason: "",
+          };
+        }
+        if (/Deep goal judge/.test(prompt)) {
+          judgeCalls = judgeCalls + 1;
+          if (judgeCalls === 1) {
+            return {
+              complete: false,
+              confidence: 60,
+              coveredCriteria: [],
+              missingCriteria: ["full proof"],
+              requiredWork: ["finish proof"],
+              evidence: [],
+              externalBlockers: [],
+              needsHumanReview: false,
+              humanReviewReason: "",
+            };
+          }
+          return {
+            complete: true,
+            confidence: 100,
+            coveredCriteria: ["full proof"],
+            missingCriteria: [],
+            requiredWork: [],
+            evidence: ["judge clean"],
+            externalBlockers: [],
+            needsHumanReview: false,
+            humanReviewReason: "",
+          };
+        }
+        if (/final goal completion summary/.test(prompt)) {
+          return {
+            summary: "Loop closed",
+            changedFiles: [],
+            commits: ["def456"],
+            validation: [],
+            evidence: ["judge clean"],
+            blockers: [],
+            nextAction: "none",
+          };
+        }
+        if (/Continue your prior/.test(prompt)) {
+          fixCalls = fixCalls + 1;
+          return "fixed proof";
+        }
+        return "built goal";
+      },
+    },
+  });
+
+  assert.equal(result.result.ok, true);
+  assert.equal(reviewCalls, 2);
+  assert.equal(judgeCalls, 2);
+  assert.equal(fixCalls, 1);
+  assert.equal(result.result.metrics.iterations, 1);
+  assert.equal(result.result.metrics.commitCount, 2);
+  assert.equal(result.result.metrics.reviewDraftCount, 8);
+  assert.equal(result.result.metrics.judgeDraftCount, 8);
+});
+
+test("goal workflow blocks instead of fixing when human review is required", async () => {
+  const result = await runWorkflow(loadWorkflowResource("goal.workflow.js"), {
+    persistLogs: false,
+    args: { objective: "needs external approval" },
+    agent: {
+      async run(prompt: string) {
+        if (/Create a checkpoint commit/.test(prompt)) {
+          return { committed: true, commit: "ghi789", summary: "feat: checkpoint", blockers: [] };
+        }
+        if (/Review the current/.test(prompt)) {
+          return {
+            ok: false,
+            commands: [],
+            findings: [],
+            requiredFixes: [],
+            evidence: [],
+            externalBlockers: ["Need production credential from user"],
+            needsHumanReview: true,
+            humanReviewReason: "User must approve production credential use.",
+          };
+        }
+        if (/Deep goal judge/.test(prompt)) {
+          return {
+            complete: false,
+            confidence: 20,
+            coveredCriteria: [],
+            missingCriteria: [],
+            requiredWork: [],
+            evidence: [],
+            externalBlockers: [],
+            needsHumanReview: false,
+            humanReviewReason: "",
+          };
+        }
+        if (/final goal completion summary/.test(prompt)) {
+          return {
+            summary: "Blocked on approval",
+            changedFiles: [],
+            commits: ["ghi789"],
+            validation: [],
+            evidence: [],
+            blockers: ["Need production credential from user"],
+            nextAction: "user approval required",
+          };
+        }
+        return "built goal";
+      },
+    },
+  });
+
+  assert.equal(result.result.ok, false);
+  assert.equal(result.result.status, "blocked");
+  assert.deepEqual(Array.from(result.result.fixes), []);
+  assert.deepEqual(Array.from(result.result.blockers), [
+    "Need production credential from user",
+    "User must approve production credential use.",
+  ]);
 });
 
 test("parameterized workflow resources inject placeholders before parsing", () => {

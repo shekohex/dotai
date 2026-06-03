@@ -22,11 +22,24 @@ export const GoalUsageSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const GoalWorkflowMetadataSchema = Type.Object(
+  {
+    runId: Type.String(),
+    workflowName: Type.String(),
+    objectiveSource: Type.Union([Type.Literal("inline"), Type.Literal("file")]),
+    objectiveFile: Type.Optional(Type.String()),
+    startCommit: Type.String(),
+    startedAt: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
 const ThreadGoalBaseProperties = {
   goalId: Type.String(),
   objective: Type.String(),
   tokenBudget: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
   usage: GoalUsageSchema,
+  workflow: Type.Optional(GoalWorkflowMetadataSchema),
   resumedReason: Type.Optional(Type.String()),
   resumedAt: Type.Optional(Type.Integer({ minimum: 0 })),
   createdAt: Type.Integer({ minimum: 0 }),
@@ -111,6 +124,7 @@ export const GoalBlockedEventSchema = Type.Object(
 
 export type GoalStatus = Static<typeof GoalStatusSchema>;
 export type GoalUsage = Static<typeof GoalUsageSchema>;
+export type GoalWorkflowMetadata = Static<typeof GoalWorkflowMetadataSchema>;
 export type ThreadGoal = Static<typeof ThreadGoalSchema>;
 export type GoalEntrySource = Static<typeof GoalEntrySourceSchema>;
 export type GoalCustomEntry = Static<typeof GoalCustomEntrySchema>;

@@ -19,6 +19,11 @@ const GOAL_COMMAND_AUTOCOMPLETE_ITEMS: AutocompleteItem[] = [
     description: "Enable goal tool",
   },
   {
+    value: "workflow",
+    label: "workflow",
+    description: "Run current goal via bundled workflow orchestration",
+  },
+  {
     value: "off",
     label: "off",
     description: "Disable goal tool",
@@ -63,7 +68,13 @@ export interface GoalCommandContext {
 }
 
 type GoalCommandObjective =
-  | { ok: true; objective: string; label: string }
+  | {
+      ok: true;
+      objective: string;
+      label: string;
+      source: "inline" | "file";
+      objectiveFile?: string;
+    }
   | { ok: false; message: string };
 
 export interface GoalCommandHost {
@@ -72,6 +83,11 @@ export interface GoalCommandHost {
   clearGoal(source: GoalEntrySource, ctx: GoalCommandContext): void;
   enableTool(ctx: GoalCommandContext): void;
   disableTool(ctx: GoalCommandContext): void;
+  startWorkflowGoal(
+    objective: GoalCommandObjective & { ok: true },
+    ctx: ExtensionCommandContext,
+  ): Promise<void>;
+  resumeWorkflowGoal(ctx: ExtensionCommandContext, reason?: string): Promise<void>;
 }
 
 function goalCommandCompletions(prefix: string): AutocompleteItem[] {
@@ -148,7 +164,7 @@ async function resolveGoalCommandObjective(
 ): Promise<GoalCommandObjective> {
   const rawObjectiveFile = parseGoalObjectiveFileReference(trimmed);
   if (rawObjectiveFile === null) {
-    return { ok: true, objective: trimmed, label: trimmed };
+    return { ok: true, objective: trimmed, label: trimmed, source: "inline" };
   }
 
   if (rawObjectiveFile.length === 0) {
@@ -170,14 +186,64 @@ async function resolveGoalCommandObjective(
     };
   }
 
-  return { ok: true, objective, label: `@${absolutePath}` };
+  return {
+    ok: true,
+    objective,
+    label: `@${absolutePath}`,
+    source: "file",
+    objectiveFile: absolutePath,
+  };
+}
+
+function workflowObjectiveArgs(trimmed: string): string | null {
+  if (trimmed === "workflow") return "";
+  if (!trimmed.startsWith("workflow ")) return null;
+  return trimmed.slice("workflow".length).trim();
+}
+
+async function handleGoalWorkflowCommand(
+  host: GoalCommandHost,
+  workflowArgs: string,
+  ctx: ExtensionCommandContext,
+): Promise<void> {
+  if (workflowArgs.length === 0) {
+    ctx.ui.notify(
+      "Usage: /goal workflow <objective|@objective-file> or /goal workflow resume",
+      "warning",
+    );
+    return;
+  }
+  if (workflowArgs === "resume") {
+    await host.resumeWorkflowGoal(ctx);
+    return;
+  }
+  if (workflowArgs === "unblock" || workflowArgs.startsWith("unblock ")) {
+    const reason = await resolveInlineOrPromptedReason(
+      workflowArgs.slice("unblock".length),
+      "Unblock workflow goal",
+      "What changed externally?",
+      ctx,
+    );
+    if (reason === null || reason.length === 0) {
+      ctx.ui.notify("Unblock reason is required.", "warning");
+      return;
+    }
+    await host.resumeWorkflowGoal(ctx, reason);
+    return;
+  }
+  const objectiveResult = await resolveGoalCommandObjective(workflowArgs, ctx);
+  if (!objectiveResult.ok) {
+    ctx.ui.notify(objectiveResult.message, "error");
+    return;
+  }
+  await host.startWorkflowGoal(objectiveResult, ctx);
 }
 
 export async function handleGoalCommand(
   pi: GoalCommandPi,
   host: GoalCommandHost,
   args: string,
-  ctx: GoalCommandContext,
+  ctx: ExtensionCommandContext,
 ): Promise<void> {
   const trimmed = args.trim();
   if (trimmed === "off") {
@@ -195,6 +261,12 @@ export async function handleGoalCommand(
 
   if (trimmed.length === 0) {
     ctx.ui.notify(formatGoalSummary(host.getGoal()));
+    return;
+  }
+
+  const workflowArgs = workflowObjectiveArgs(trimmed);
+  if (workflowArgs !== null) {
+    await handleGoalWorkflowCommand(host, workflowArgs, ctx);
     return;
   }
 

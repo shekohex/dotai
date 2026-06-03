@@ -8,6 +8,7 @@ import {
   type GoalCustomEntry,
   type GoalEntrySource,
   type GoalResult,
+  type GoalWorkflowMetadata,
   type GoalSnapshot,
   type SessionEntryLike,
   type ThreadGoal,
@@ -154,6 +155,26 @@ export function replaceGoal(objective: string): GoalResult {
     ok: true,
     message: "Goal set.",
     goal: createThreadGoal(objective),
+  };
+}
+
+export function replaceWorkflowGoal(objective: string, workflow: GoalWorkflowMetadata): GoalResult {
+  const result = replaceGoal(objective);
+  if (!result.ok || result.goal === null) return result;
+  return { ...result, goal: { ...result.goal, workflow } };
+}
+
+export function addGoalWorkflowUsage(
+  goal: ThreadGoal,
+  usage: { tokens?: number; activeSeconds?: number },
+): ThreadGoal {
+  return {
+    ...cloneGoal(goal),
+    usage: {
+      tokensUsed: goal.usage.tokensUsed + Math.max(0, Math.floor(usage.tokens ?? 0)),
+      activeSeconds: goal.usage.activeSeconds + Math.max(0, Math.floor(usage.activeSeconds ?? 0)),
+    },
+    updatedAt: unixSeconds(),
   };
 }
 

@@ -20,7 +20,7 @@ Before drafting the goal prompt, read `references/PROMPT_GUIDE_GPT5_5.md` and ap
 1. Read relevant codebase files, docs, and prior context that can answer open questions about the goal.
 2. Ask the user for clarification before drafting when the goal is still ambiguous after inspection.
 3. Run `./scripts/draft-goal.sh <short-slug>` on Unix or `./scripts/draft-goal.ps1 <short-slug>` on PowerShell to create the temporary draft file and get the Plannotator annotation command.
-4. The file has a prompt template for you to fill in with the full goal prompt from the user's intent, discovered context, and the prompt guide, then present that file path for review before using any goal tool.
+4. The file has YAML frontmatter plus a prompt template. Fill in frontmatter deterministically, then write the full goal prompt from the user's intent, discovered context, and the prompt guide. Present that file path for review before using any goal tool.
 5. If the user requests changes, update the temporary file and present the same file path again. Repeat until explicit approval.
 6. If the user approves, call the `goal` tool to create or update the goal using `objectiveFile` with the absolute path to the approved prompt file. Prefer `objectiveFile` over inline `objective` so the file content is used exactly as written and the prompt is not duplicated into the tool call. If the `goal` tool is unavailable, ask the user to run `/goal on`.
 7. After goal tool success, delete the temporary file, then report the goal created or updated and any identifier returned by the tool.
@@ -34,6 +34,38 @@ Unix: `./scripts/draft-goal.sh <short-slug>`
 PowerShell: `./scripts/draft-goal.ps1 <short-slug>`
 
 The script creates `/tmp/goal-prompt-<short-slug>.md` or the platform temp equivalent. It prints the draft file path and the full `/plannotator annotate <draft-path>` command to show the user. It does not overwrite an existing draft.
+
+## Frontmatter
+
+Every goal prompt draft should start with YAML frontmatter so `/goal workflow` can parse execution inputs deterministically from either `objectiveFile` or inline objective text.
+
+Required keys:
+
+- `successCriteria`: observable criteria proving the goal is complete end to end.
+- `constraints`: side-effect limits, non-goals, approval rules, and project constraints.
+- `verificationCommands`: concrete commands/checks to run when applicable. Use an empty list when no command is known.
+
+Shape:
+
+```yaml
+---
+successCriteria:
+  - "User-visible behavior or repository state that must be true."
+constraints:
+  - "Constraint, non-goal, side-effect limit, or approval requirement."
+verificationCommands:
+  - "npm run typecheck"
+  - "npm test"
+---
+```
+
+Rules:
+
+- Keep frontmatter factual and deterministic. Do not include prose paragraphs there.
+- Quote every YAML list item with double quotes. This avoids parse errors when values contain reserved characters such as backticks, colons, braces, brackets, hashes, or angle brackets.
+- Mirror the same information in the body when it helps the executing agent, but treat frontmatter as the machine-readable source of truth for workflow args.
+- If validation requires screenshots, logs, manual QA, or external evidence instead of commands, put that requirement under `successCriteria` or `constraints`, not `verificationCommands`.
+- Do not add iteration caps, token limits, or time estimates unless the user explicitly asks.
 
 ## Goal Prompt Requirements
 

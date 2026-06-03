@@ -53,6 +53,7 @@ export interface ExecOptions {
   agentTimeoutMs?: number;
   /** Runtime backend for workflow subagents. */
   subagentBackend?: WorkflowSubagentBackend;
+  runId?: string;
   /** Host signal (e.g. tool/Esc) that should abort this run when fired. */
   externalSignal?: AbortSignal;
   /** Called with the live snapshot on every progress event. */
@@ -178,9 +179,9 @@ export class WorkflowManager extends EventEmitter {
   startInBackground(
     script: string,
     args?: unknown,
-    exec: Pick<ExecOptions, "subagentBackend"> = {},
+    exec: Pick<ExecOptions, "subagentBackend" | "runId"> = {},
   ): { runId: string; promise: Promise<WorkflowRunResult> } {
-    const runId = generateRunId();
+    const runId = exec.runId ?? generateRunId();
     const controller = new AbortController();
     const parsed = parseWorkflowScript(script);
 
@@ -480,6 +481,12 @@ export class WorkflowManager extends EventEmitter {
    * @returns Whether run was resumed.
    */
   resume(runId: string): boolean {
+    return this.resumeInBackground(runId) !== false;
+  }
+
+  resumeInBackground(
+    runId: string,
+  ): { runId: string; promise: Promise<WorkflowRunResult> } | false {
     const active = this.runs.get(runId);
     if (active?.status === "running") return false;
 
@@ -516,11 +523,9 @@ export class WorkflowManager extends EventEmitter {
 
     const resumeJournal = createResumeJournalMap(persisted.journal ?? []);
     this.emit("resumed", { runId });
-    // Run in the background; executeRun records status/errors on the managed run.
-    void this.executeRun(managed, persisted.script, persisted.args, { resumeJournal }).catch(
-      () => {},
-    );
-    return true;
+    const promise = this.executeRun(managed, persisted.script, persisted.args, { resumeJournal });
+    promise.catch(() => {});
+    return { runId, promise };
   }
 
   /*

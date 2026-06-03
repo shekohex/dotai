@@ -15,6 +15,15 @@ $draftPath = Join-Path $temporaryDirectory "goal-prompt-$ShortSlug.md"
 
 if (-not (Test-Path -LiteralPath $draftPath)) {
   @'
+---
+successCriteria:
+  - "[Observable completion criterion]"
+constraints:
+  - "[Side-effect limit, non-goal, approval rule, or project constraint]"
+verificationCommands:
+  - "[Command to prove completion, or remove this item if none is known]"
+---
+
 # Goal Prompt Draft
 
 Role: [Define the agent's job, operating context, and responsibility in 1-2 sentences.]

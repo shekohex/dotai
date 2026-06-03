@@ -16,6 +16,7 @@ export { registerBuiltinWorkflows } from "./builtin-commands.js";
 export * from "./config.js";
 export type { DeepResearchConfig } from "./deep-research.js";
 export { generateCodebaseAuditWorkflow, generateDeepResearchWorkflow } from "./deep-research.js";
+export { generateGoalWorkflow } from "./goal.js";
 export {
   jsString,
   loadWorkflowResource,

@@ -18,6 +18,15 @@ draft_path="${tmp_dir%/}/goal-prompt-${slug}.md"
 
 if [ ! -e "$draft_path" ]; then
   tee "$draft_path" >/dev/null <<'EOF'
+---
+successCriteria:
+  - "[Observable completion criterion]"
+constraints:
+  - "[Side-effect limit, non-goal, approval rule, or project constraint]"
+verificationCommands:
+  - "[Command to prove completion, or remove this item if none is known]"
+---
+
 # Goal Prompt Draft
 
 Role: [Define the agent's job, operating context, and responsibility in 1-2 sentences.]

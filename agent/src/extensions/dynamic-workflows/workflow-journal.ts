@@ -16,6 +16,8 @@ export const StartedJournalEntrySchema = Type.Intersect([
     status: Type.Literal("started"),
     sessionId: Type.String(),
     sessionPath: Type.String(),
+    paneId: Type.Optional(Type.String()),
+    muxBackend: Type.Optional(Type.String()),
   }),
 ]);
 
@@ -27,6 +29,8 @@ export const CompletedJournalEntrySchema = Type.Intersect([
     tokens: Type.Number(),
     sessionId: Type.Optional(Type.String()),
     sessionPath: Type.Optional(Type.String()),
+    paneId: Type.Optional(Type.String()),
+    muxBackend: Type.Optional(Type.String()),
   }),
 ]);
 
@@ -40,6 +44,8 @@ export const FailedJournalEntrySchema = Type.Intersect([
     recoverable: Type.Optional(Type.Boolean()),
     sessionId: Type.Optional(Type.String()),
     sessionPath: Type.Optional(Type.String()),
+    paneId: Type.Optional(Type.String()),
+    muxBackend: Type.Optional(Type.String()),
   }),
 ]);
 
@@ -57,14 +63,21 @@ export type JournalEntry = Static<typeof JournalEntrySchema>;
 
 export type AgentJournalInput = JournalEntryBase;
 
+export interface AgentJournalSessionRef {
+  sessionId: string;
+  sessionPath: string;
+  paneId?: string;
+  muxBackend?: string;
+}
+
 export function createStartedJournalEntry(
-  input: AgentJournalInput & { sessionId: string; sessionPath: string },
+  input: AgentJournalInput & AgentJournalSessionRef,
 ): StartedJournalEntry {
   return { ...input, status: "started" };
 }
 
 export function createCompletedJournalEntry(
-  input: AgentJournalInput & { sessionId?: string; sessionPath?: string },
+  input: AgentJournalInput & Partial<AgentJournalSessionRef>,
   result: unknown,
   tokens: number,
 ): CompletedJournalEntry {
@@ -72,7 +85,7 @@ export function createCompletedJournalEntry(
 }
 
 export function createFailedJournalEntry(
-  input: AgentJournalInput & { sessionId?: string; sessionPath?: string },
+  input: AgentJournalInput & Partial<AgentJournalSessionRef>,
   error: string,
   retryable: boolean,
   code?: string,

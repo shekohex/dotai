@@ -10,6 +10,8 @@ import {
 export interface ResumeSessionRef {
   sessionId: string;
   sessionPath: string;
+  paneId?: string;
+  muxBackend?: string;
 }
 
 export function getResumeSession(

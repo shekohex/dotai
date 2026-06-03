@@ -12,6 +12,7 @@ import {
   createCompletedJournalEntry,
   createStartedJournalEntry,
   type AgentJournalInput,
+  type AgentJournalSessionRef,
   type JournalEntry,
 } from "./workflow-journal.js";
 import { createWorkflowLogger } from "./logger.js";
@@ -169,7 +170,7 @@ interface LiveAgentCall {
   label: string;
   modeName: string | undefined;
   displayModel: string | undefined;
-  resumeSession?: { sessionId: string; sessionPath: string };
+  resumeSession?: AgentJournalSessionRef;
 }
 
 const DETERMINISM_BLOCKLIST = /\bDate\s*\.\s*now\b|\bMath\s*\.\s*random\b|\bnew\s+Date\s*\(\s*\)/;
@@ -466,7 +467,7 @@ async function runLiveAgentCall(
     mode: call.modeName,
     model: displayModel,
   };
-  let childSession: { sessionId: string; sessionPath: string } | undefined;
+  let childSession: AgentJournalSessionRef | undefined;
 
   try {
     execution.throwIfAborted();
@@ -495,8 +496,8 @@ async function runLiveAgentCall(
           });
         },
         onStart: (state: RuntimeSubagent) => {
-          if (state.sessionPath === undefined) return;
-          childSession = { sessionId: state.sessionId, sessionPath: state.sessionPath };
+          childSession = createAgentJournalSessionRef(state);
+          if (childSession === undefined) return;
           options.onAgentJournal?.(createStartedJournalEntry({ ...journalInput, ...childSession }));
         },
       }),
@@ -542,6 +543,16 @@ async function runLiveAgentCall(
   } finally {
     if (worktree?.isolated === true) await removeWorktree(worktree);
   }
+}
+
+function createAgentJournalSessionRef(state: RuntimeSubagent): AgentJournalSessionRef | undefined {
+  if (state.sessionPath === undefined) return undefined;
+  return {
+    sessionId: state.sessionId,
+    sessionPath: state.sessionPath,
+    paneId: state.paneId,
+    muxBackend: state.muxBackend,
+  };
 }
 
 function runWorkflowAgent(

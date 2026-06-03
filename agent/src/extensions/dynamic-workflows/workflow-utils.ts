@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   createFailedJournalEntry,
   type AgentJournalInput,
+  type AgentJournalSessionRef,
   type JournalEntry,
 } from "./workflow-journal.js";
 import {
@@ -102,11 +103,11 @@ export function createWorkflowFailedJournalEntry(
 }
 
 export function createResultSessionRef(
-  session: { sessionId: string; sessionPath: string } | undefined,
+  session: AgentJournalSessionRef | undefined,
   journalIndex: number,
 ): WorkflowAgentSessionRef | undefined {
   if (session === undefined) return undefined;
-  return { ...session, journalIndex };
+  return { sessionId: session.sessionId, sessionPath: session.sessionPath, journalIndex };
 }
 
 export function toSubagentResumeSession(

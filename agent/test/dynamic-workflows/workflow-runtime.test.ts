@@ -377,6 +377,46 @@ return await agent('follow up', { label: 'follow', resume: { sessionId: 'missing
   );
 });
 
+test("agent journal preserves pane metadata for process-backed sessions", async () => {
+  const script = `export const meta = { name: 'pane_metadata', description: 'pane metadata' }
+const result = await agent('first', { label: 'first' })
+return { result: String(result) }`;
+  const journal: JournalEntry[] = [];
+
+  await runWorkflow(script, {
+    persistLogs: false,
+    onAgentJournal: (entry) => journal.push(entry),
+    agent: {
+      async run(
+        prompt: string,
+        options: {
+          onStart?: (state: {
+            sessionId: string;
+            sessionPath: string;
+            paneId: string;
+            muxBackend: string;
+          }) => void;
+        },
+      ) {
+        options.onStart?.({
+          sessionId: "session-pane",
+          sessionPath: "/tmp/session-pane",
+          paneId: "%42",
+          muxBackend: "tmux",
+        });
+        return `ran:${prompt}`;
+      },
+    },
+  });
+
+  const started = journal.find((entry) => entry.status === "started");
+  const completed = journal.find((entry) => entry.status === "completed");
+  assert.equal(started?.paneId, "%42");
+  assert.equal(started?.muxBackend, "tmux");
+  assert.equal(completed?.paneId, "%42");
+  assert.equal(completed?.muxBackend, "tmux");
+});
+
 test("resume retries retryable failed agents using the persisted child session", async () => {
   const script = `export const meta = { name: 'retry_failed', description: 'retry failed' }
 const a = await agent('first', { label: 'a' })

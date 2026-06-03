@@ -121,7 +121,9 @@ export function mergeJournalEntry(
   if (entry.status === "completed") {
     const sessionId = entry.sessionId ?? matchingExisting?.sessionId;
     const sessionPath = entry.sessionPath ?? matchingExisting?.sessionPath;
-    return { ...entry, sessionId, sessionPath };
+    const paneId = entry.paneId ?? matchingExisting?.paneId;
+    const muxBackend = entry.muxBackend ?? matchingExisting?.muxBackend;
+    return { ...entry, sessionId, sessionPath, paneId, muxBackend };
   }
   return entry;
 }

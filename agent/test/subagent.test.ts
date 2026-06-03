@@ -4126,6 +4126,28 @@ timedTest("SubagentRuntime preserves explicit context prune options", async () =
   }
 });
 
+timedTest("subagent context prune tools are limited by child tools", async () => {
+  const { limitContextPruneToolsToChildTools } =
+    await import("../src/subagent-sdk/bootstrap-handlers.js");
+
+  expect(
+    limitContextPruneToolsToChildTools({ enabled: true, batchingMode: "turn" }, ["read"]),
+  ).toEqual({
+    enabled: true,
+    batchingMode: "turn",
+    tools: { contextPrune: false, contextTreeQuery: false },
+  });
+  expect(
+    limitContextPruneToolsToChildTools(
+      { enabled: true, tools: { contextPrune: true, contextTreeQuery: true } },
+      ["read", "context_tree_query"],
+    ),
+  ).toEqual({
+    enabled: true,
+    tools: { contextPrune: false, contextTreeQuery: true },
+  });
+});
+
 timedTest(
   "subagent tool execute auto-resumes dead child sessions before delivering a message",
   async () => {

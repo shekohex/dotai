@@ -69,6 +69,18 @@ function buildSettingItems(
   return [
     booleanItem("enabled", "Enabled", config.enabled, "Enable or disable context pruning"),
     booleanItem(
+      "tools.contextPrune",
+      "context_prune tool",
+      config.tools.contextPrune,
+      "Expose agentic prune tool when enabled",
+    ),
+    booleanItem(
+      "tools.contextTreeQuery",
+      "context_tree_query tool",
+      config.tools.contextTreeQuery,
+      "Expose pruned output lookup tool when enabled",
+    ),
+    booleanItem(
       "showPruneStatusLine",
       "Prune status line",
       config.showPruneStatusLine,
@@ -188,6 +200,10 @@ function updateSetting(
 
 function applySetting(config: ContextPruneConfig, id: string, value: string): ContextPruneConfig {
   if (id === "enabled") return { ...config, enabled: value === "true" };
+  if (id === "tools.contextPrune")
+    return { ...config, tools: { ...config.tools, contextPrune: value === "true" } };
+  if (id === "tools.contextTreeQuery")
+    return { ...config, tools: { ...config.tools, contextTreeQuery: value === "true" } };
   if (id === "showPruneStatusLine") return { ...config, showPruneStatusLine: value === "true" };
   if (id === "pruneOn" && isPruneOn(value)) return { ...config, pruneOn: value };
   if (id === "summarizerModels") return { ...config, summarizerModels: [value] };
@@ -209,6 +225,8 @@ function updateItemDescriptions(items: SettingItem[], config: ContextPruneConfig
 
 function nextItemValue(id: string, config: ContextPruneConfig): string | undefined {
   if (id === "enabled") return String(config.enabled);
+  if (id === "tools.contextPrune") return String(config.tools.contextPrune);
+  if (id === "tools.contextTreeQuery") return String(config.tools.contextTreeQuery);
   if (id === "showPruneStatusLine") return String(config.showPruneStatusLine);
   if (id === "pruneOn") return config.pruneOn;
   if (id === "summarizerModels") return config.summarizerModels.join(", ");

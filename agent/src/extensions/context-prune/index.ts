@@ -24,6 +24,7 @@ import { StatsAccumulator } from "./stats.js";
 import {
   AGENTIC_AUTO_SYSTEM_PROMPT,
   CONTEXT_PRUNE_TOOL_NAME,
+  CONTEXT_TREE_QUERY_TOOL_NAME,
   CUSTOM_TYPE_FRONTIER,
   CUSTOM_TYPE_INDEX,
   CUSTOM_TYPE_STATS,
@@ -31,6 +32,7 @@ import {
   DEFAULT_CONFIG,
   type CapturedBatch,
   type ContextPruneConfig,
+  type ContextPruneConfigPatch,
   type FlushOptions,
   type PruneFrontier,
   type SummarizeResult,
@@ -153,9 +155,13 @@ function registerPublicApi(
 function updateRuntimeConfig(
   pi: ExtensionAPI,
   state: RuntimeState,
-  patch: Partial<ContextPruneConfig>,
+  patch: ContextPruneConfigPatch,
 ): void {
-  state.currentConfig.value = { ...state.currentConfig.value, ...patch };
+  state.currentConfig.value = {
+    ...state.currentConfig.value,
+    ...patch,
+    tools: { ...state.currentConfig.value.tools, ...patch.tools },
+  };
   syncToolActivation(pi, state);
   setContextPruneFooterState({
     config: state.currentConfig.value,
@@ -269,6 +275,11 @@ function agenticPrompt(
 ): BeforeAgentStartResult | undefined {
   if (!state.currentConfig.value.enabled || state.currentConfig.value.pruneOn !== "agentic-auto")
     return undefined;
+  if (
+    !state.currentConfig.value.tools.contextPrune ||
+    !state.currentConfig.value.tools.contextTreeQuery
+  )
+    return undefined;
   return { systemPrompt: `${systemPrompt ?? ""}\n\n${AGENTIC_AUTO_SYSTEM_PROMPT}` };
 }
 
@@ -282,6 +293,8 @@ function pruneContext(state: RuntimeState, messages: AgentMessage[]): ContextRes
   }
   if (
     state.currentConfig.value.pruneOn === "agentic-auto" &&
+    state.currentConfig.value.tools.contextPrune &&
+    state.currentConfig.value.tools.contextTreeQuery &&
     state.currentConfig.value.remindUnprunedCount
   ) {
     const annotated = annotateIfNeeded(state, nextMessages);
@@ -538,7 +551,9 @@ function processSummary(
 ): void {
   const rawCharCount = batchRawCharCount(batch);
   const refs = state.indexer.allocateSummaryRefs(batch);
-  const summaryText = result.summaryText + formatSummaryToolCallRefs(refs);
+  const summaryText =
+    result.summaryText +
+    formatSummaryToolCallRefs(refs, state.currentConfig.value.tools.contextTreeQuery);
   state.stats.add(result.usage);
   context.rawCharCount += rawCharCount;
   context.summaryCharCount += summaryText.length;
@@ -743,12 +758,29 @@ function isFinalAssistantMessage(message: AgentMessage): boolean {
 }
 
 function syncToolActivation(pi: ExtensionAPI, state: RuntimeState): void {
-  const shouldActivate =
-    state.currentConfig.value.enabled && state.currentConfig.value.pruneOn === "agentic-auto";
+  const shouldActivateContextPrune =
+    state.currentConfig.value.enabled &&
+    state.currentConfig.value.tools.contextPrune &&
+    state.currentConfig.value.tools.contextTreeQuery &&
+    state.currentConfig.value.pruneOn === "agentic-auto";
+  const shouldActivateContextTreeQuery =
+    state.currentConfig.value.enabled && state.currentConfig.value.tools.contextTreeQuery;
   const activeTools = pi.getActiveTools();
-  if (shouldActivate && !activeTools.includes(CONTEXT_PRUNE_TOOL_NAME)) {
-    pi.setActiveTools([...activeTools, CONTEXT_PRUNE_TOOL_NAME]);
-  } else if (!shouldActivate && activeTools.includes(CONTEXT_PRUNE_TOOL_NAME)) {
-    pi.setActiveTools(activeTools.filter((toolName) => toolName !== CONTEXT_PRUNE_TOOL_NAME));
+  const nextTools = activeTools.filter(
+    (toolName) =>
+      (toolName !== CONTEXT_PRUNE_TOOL_NAME || shouldActivateContextPrune) &&
+      (toolName !== CONTEXT_TREE_QUERY_TOOL_NAME || shouldActivateContextTreeQuery),
+  );
+  if (shouldActivateContextPrune && !nextTools.includes(CONTEXT_PRUNE_TOOL_NAME)) {
+    nextTools.push(CONTEXT_PRUNE_TOOL_NAME);
+  }
+  if (shouldActivateContextTreeQuery && !nextTools.includes(CONTEXT_TREE_QUERY_TOOL_NAME)) {
+    nextTools.push(CONTEXT_TREE_QUERY_TOOL_NAME);
+  }
+  if (
+    nextTools.length !== activeTools.length ||
+    nextTools.some((toolName, index) => toolName !== activeTools[index])
+  ) {
+    pi.setActiveTools(nextTools);
   }
 }

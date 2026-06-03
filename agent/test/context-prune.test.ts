@@ -174,6 +174,10 @@ describe("context-prune public API", () => {
 });
 
 describe("context-prune settings", () => {
+  test("defaults expose both context prune tools", () => {
+    expect(DEFAULT_CONFIG.tools).toEqual({ contextPrune: true, contextTreeQuery: true });
+  });
+
   test("defaults skip tiny raw outputs before summarization", () => {
     expect(DEFAULT_CONFIG.minRawCharsToPrune).toBe(700);
     expect(
@@ -228,6 +232,168 @@ describe("context-prune settings", () => {
     expect(settings.modes).toEqual({ current: "build" });
     expect(settings.contextPrune).toMatchObject({ enabled: true, pruneOn: "on-demand" });
     await expect(loadConfig()).resolves.toMatchObject({ enabled: true, pruneOn: "on-demand" });
+    delete process.env.PI_CODING_AGENT_DIR;
+  });
+
+  test("loads tool exposure settings", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "context-prune-tool-settings-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    vi.resetModules();
+    const { loadConfig, SETTINGS_PATH } = await import("../src/extensions/context-prune/config.js");
+    writeFileSync(
+      SETTINGS_PATH,
+      `${JSON.stringify({
+        contextPrune: { tools: { contextPrune: false, contextTreeQuery: true } },
+      })}\n`,
+      "utf-8",
+    );
+    await expect(loadConfig()).resolves.toMatchObject({
+      tools: { contextPrune: false, contextTreeQuery: true },
+    });
+    delete process.env.PI_CODING_AGENT_DIR;
+  });
+
+  test("migrates missing tool exposure settings", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "context-prune-missing-tools-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    vi.resetModules();
+    const { loadConfig, SETTINGS_PATH } = await import("../src/extensions/context-prune/config.js");
+    writeFileSync(
+      SETTINGS_PATH,
+      `${JSON.stringify({ contextPrune: { enabled: false, pruneOn: "on-demand" } })}\n`,
+      "utf-8",
+    );
+    await expect(loadConfig()).resolves.toMatchObject({
+      enabled: false,
+      pruneOn: "on-demand",
+      tools: { contextPrune: true, contextTreeQuery: true },
+    });
+    const settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
+    expect(settings.contextPrune).toMatchObject({
+      enabled: false,
+      pruneOn: "on-demand",
+      tools: { contextPrune: true, contextTreeQuery: true },
+    });
+    delete process.env.PI_CODING_AGENT_DIR;
+  });
+
+  test("disabled context pruning strips both tools from active tools", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "context-prune-disabled-tools-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    vi.resetModules();
+    const { SETTINGS_PATH } = await import("../src/extensions/context-prune/config.js");
+    writeFileSync(
+      SETTINGS_PATH,
+      `${JSON.stringify({ contextPrune: { enabled: false, pruneOn: "agentic-auto" } })}\n`,
+      "utf-8",
+    );
+    const { default: contextPruneExtension } =
+      await import("../src/extensions/context-prune/index.js");
+    let activeTools = ["read", "context_prune", "context_tree_query"];
+    const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
+    contextPruneExtension({
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerMessageRenderer: vi.fn(),
+      getActiveTools: () => activeTools,
+      setActiveTools: (toolNames: string[]) => {
+        activeTools = toolNames;
+      },
+      on: (eventName: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
+        handlers.set(eventName, [...(handlers.get(eventName) ?? []), handler]);
+      },
+    } as never);
+    for (const handler of handlers.get("session_start") ?? []) {
+      await handler({}, {
+        ui: { setStatus: vi.fn() },
+        sessionManager: { getBranch: () => [] },
+      } as never);
+    }
+    expect(activeTools).toEqual(["read"]);
+    delete process.env.PI_CODING_AGENT_DIR;
+  });
+
+  test("tool exposure settings strip individual active tools", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "context-prune-individual-tools-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    vi.resetModules();
+    const { SETTINGS_PATH } = await import("../src/extensions/context-prune/config.js");
+    writeFileSync(
+      SETTINGS_PATH,
+      `${JSON.stringify({
+        contextPrune: {
+          enabled: true,
+          pruneOn: "agentic-auto",
+          tools: { contextPrune: false, contextTreeQuery: true },
+        },
+      })}\n`,
+      "utf-8",
+    );
+    const { default: contextPruneExtension } =
+      await import("../src/extensions/context-prune/index.js");
+    let activeTools = ["read", "context_prune"];
+    const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
+    contextPruneExtension({
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerMessageRenderer: vi.fn(),
+      getActiveTools: () => activeTools,
+      setActiveTools: (toolNames: string[]) => {
+        activeTools = toolNames;
+      },
+      on: (eventName: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
+        handlers.set(eventName, [...(handlers.get(eventName) ?? []), handler]);
+      },
+    } as never);
+    for (const handler of handlers.get("session_start") ?? []) {
+      await handler({}, {
+        ui: { setStatus: vi.fn() },
+        sessionManager: { getBranch: () => [] },
+      } as never);
+    }
+    expect(activeTools).toEqual(["read", "context_tree_query"]);
+    delete process.env.PI_CODING_AGENT_DIR;
+  });
+
+  test("context prune tool is inactive when query tool is disabled", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "context-prune-query-disabled-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    vi.resetModules();
+    const { SETTINGS_PATH } = await import("../src/extensions/context-prune/config.js");
+    writeFileSync(
+      SETTINGS_PATH,
+      `${JSON.stringify({
+        contextPrune: {
+          enabled: true,
+          pruneOn: "agentic-auto",
+          tools: { contextPrune: true, contextTreeQuery: false },
+        },
+      })}\n`,
+      "utf-8",
+    );
+    const { default: contextPruneExtension } =
+      await import("../src/extensions/context-prune/index.js");
+    let activeTools = ["read", "context_prune", "context_tree_query"];
+    const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
+    contextPruneExtension({
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerMessageRenderer: vi.fn(),
+      getActiveTools: () => activeTools,
+      setActiveTools: (toolNames: string[]) => {
+        activeTools = toolNames;
+      },
+      on: (eventName: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
+        handlers.set(eventName, [...(handlers.get(eventName) ?? []), handler]);
+      },
+    } as never);
+    for (const handler of handlers.get("session_start") ?? []) {
+      await handler({}, {
+        ui: { setStatus: vi.fn() },
+        sessionManager: { getBranch: () => [] },
+      } as never);
+    }
+    expect(activeTools).toEqual(["read"]);
     delete process.env.PI_CODING_AGENT_DIR;
   });
 });

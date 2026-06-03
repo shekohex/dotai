@@ -1,5 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getContextPruneAPI } from "../extensions/context-prune/public-api.js";
+import type { ContextPruneConfigPatch } from "../extensions/context-prune/types.js";
+import {
+  CONTEXT_PRUNE_TOOL_NAME,
+  CONTEXT_TREE_QUERY_TOOL_NAME,
+} from "../extensions/context-prune/types.js";
 import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 import { extractMessageText } from "../extensions/session-launch-utils.js";
 
@@ -34,6 +39,24 @@ function shutdownContextSafely(ctx: ExtensionContext): void {
       throw error;
     }
   }
+}
+
+export function limitContextPruneToolsToChildTools(
+  contextPrune: ContextPruneConfigPatch,
+  childTools: readonly string[],
+): ContextPruneConfigPatch {
+  const allowedTools = new Set(childTools);
+  return {
+    ...contextPrune,
+    tools: {
+      ...contextPrune.tools,
+      contextPrune:
+        (contextPrune.tools?.contextPrune ?? true) && allowedTools.has(CONTEXT_PRUNE_TOOL_NAME),
+      contextTreeQuery:
+        (contextPrune.tools?.contextTreeQuery ?? true) &&
+        allowedTools.has(CONTEXT_TREE_QUERY_TOOL_NAME),
+    },
+  };
 }
 
 function requestShutdown(state: ChildBootstrapRuntimeState, ctx: ExtensionContext): void {
@@ -191,7 +214,9 @@ function registerChildSessionStartHandler(
     applyChildToolState(pi, childState);
     const contextPrune = getContextPruneAPI(ctx);
     if (contextPrune !== null && childState.contextPrune !== undefined) {
-      contextPrune.updateConfig(childState.contextPrune);
+      contextPrune.updateConfig(
+        limitContextPruneToolsToChildTools(childState.contextPrune, childState.tools),
+      );
     }
     pi.setSessionName(formatChildSessionDisplayName(childState.name, childState.prompt));
     if (!ctx.hasUI) {

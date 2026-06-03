@@ -45,12 +45,15 @@ export function normalizeSummaryToolCallRefs(details: unknown): SummaryToolCallR
   return [];
 }
 
-export function formatSummaryToolCallRefs(refs: SummaryToolCallRef[]): string {
+export function formatSummaryToolCallRefs(
+  refs: SummaryToolCallRef[],
+  includeRecoveryGuidance: boolean,
+): string {
   const refList = refs.map((ref) => `\`${ref.shortId}\``).join(", ");
-  return (
-    `\n\n---\n**Summarized tool refs**: ${refList}\n` +
-    `Use \`context_tree_query\` with these refs to retrieve the original full outputs.`
-  );
+  const recoveryGuidance = includeRecoveryGuidance
+    ? "\nUse `context_tree_query` with these refs to retrieve the original full outputs."
+    : "";
+  return `\n\n---\n**Summarized tool refs**: ${refList}${recoveryGuidance}`;
 }
 
 export function makeSummaryDetails(

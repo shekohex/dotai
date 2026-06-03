@@ -9,6 +9,8 @@ import { buildPruneTree, TreeBrowser } from "./tree-browser.js";
 import type { ToolCallIndexer } from "./indexer.js";
 import {
   BATCHING_MODES,
+  CONTEXT_PRUNE_TOOL_NAME,
+  CONTEXT_TREE_QUERY_TOOL_NAME,
   PRUNE_ON_MODES,
   SUMMARIZER_THINKING_LEVELS,
   type CapturedBatch,
@@ -201,7 +203,7 @@ function showStatus(ctx: ExtensionCommandContext, runtime: CommandRuntime): void
 function showStatusConfig(config: ContextPruneConfig): string {
   const mode =
     PRUNE_ON_MODES.find((entry) => entry.value === config.pruneOn)?.label ?? config.pruneOn;
-  return `pruner status:\n  enabled:  ${config.enabled}\n  models:   ${config.summarizerModels.join(", ")}\n  thinking: ${config.summarizerThinking}\n  trigger:  ${mode}\n  batching: ${config.batchingMode}\n  min raw:  ${config.minRawCharsToPrune} chars\n  status:   ${config.showPruneStatusLine ? "on" : "off"}\n  remind:   ${config.remindUnprunedCount ? "on" : "off"}`;
+  return `pruner status:\n  enabled:  ${config.enabled}\n  tools:    ${CONTEXT_PRUNE_TOOL_NAME}=${config.tools.contextPrune}, ${CONTEXT_TREE_QUERY_TOOL_NAME}=${config.tools.contextTreeQuery}\n  models:   ${config.summarizerModels.join(", ")}\n  thinking: ${config.summarizerThinking}\n  trigger:  ${mode}\n  batching: ${config.batchingMode}\n  min raw:  ${config.minRawCharsToPrune} chars\n  status:   ${config.showPruneStatusLine ? "on" : "off"}\n  remind:   ${config.remindUnprunedCount ? "on" : "off"}`;
 }
 
 function statsText(stats: SummarizerStats): string {

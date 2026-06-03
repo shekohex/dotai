@@ -55,7 +55,10 @@ export const defaultSettings = {
     titleSpinner: true,
   },
   dynamic_workflows: defaultDynamicWorkflowSettings,
-  contextPrune: defaultContextPruneSettings,
+  contextPrune: {
+    ...defaultContextPruneSettings,
+    tools: { ...defaultContextPruneSettings.tools },
+  },
   interview: defaultInterviewSettings,
   openaiBetter: defaultOpenAIBetterSettings,
 } as const satisfies DefaultSettings;

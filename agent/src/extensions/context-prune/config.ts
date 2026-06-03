@@ -1,39 +1,33 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { getAgentRuntime } from "../interview/settings.js";
-import type { BatchingMode, ContextPruneConfig, PruneOn, SummarizerThinking } from "./types.js";
+import type {
+  BatchingMode,
+  ContextPruneConfig,
+  ContextPruneToolsConfig,
+  PruneOn,
+  SummarizerThinking,
+} from "./types.js";
 import {
   BATCHING_MODES,
   DEFAULT_CONFIG,
   PRUNE_ON_MODES,
   SUMMARIZER_THINKING_LEVELS,
 } from "./types.js";
+import {
+  ContextPruneConfigFileSchema,
+  ContextPruneToolsConfigFileSchema,
+  type ContextPruneConfigFile,
+} from "./schema.js";
 
 export const SETTINGS_PATH = join(getAgentRuntime(), "settings.json");
 const SETTINGS_KEY = "contextPrune";
 
-const ConfigFileSchema = Type.Partial(
-  Type.Object({
-    enabled: Type.Boolean(),
-    showPruneStatusLine: Type.Boolean(),
-    summarizerModels: Type.Array(Type.String()),
-    summarizerThinking: Type.Union(
-      SUMMARIZER_THINKING_LEVELS.map((level) => Type.Literal(level.value)),
-    ),
-    pruneOn: Type.Union(PRUNE_ON_MODES.map((mode) => Type.Literal(mode.value))),
-    remindUnprunedCount: Type.Boolean(),
-    batchingMode: Type.Union(BATCHING_MODES.map((mode) => Type.Literal(mode.value))),
-    minRawCharsToPrune: Type.Number({ minimum: 0 }),
-  }),
-);
-
-type ConfigFile = Static<typeof ConfigFileSchema>;
-
 const SettingsFileSchema = Type.Record(Type.String(), Type.Unknown());
 const AgentSettingsSchema = Type.Object({
-  contextPrune: Type.Optional(ConfigFileSchema),
+  contextPrune: Type.Optional(ContextPruneConfigFileSchema),
 });
 
 function isPruneOn(value: unknown): value is PruneOn {
@@ -50,17 +44,31 @@ function isBatchingMode(value: unknown): value is BatchingMode {
   return typeof value === "string" && BATCHING_MODES.some((mode) => mode.value === value);
 }
 
+function resolveToolsConfig(value: unknown): ContextPruneToolsConfig {
+  if (!Value.Check(ContextPruneToolsConfigFileSchema, value)) {
+    return { ...DEFAULT_CONFIG.tools };
+  }
+  return Value.Parse(ContextPruneToolsConfigFileSchema, value);
+}
+
 export async function loadConfig(): Promise<ContextPruneConfig> {
   try {
     const raw = await readFile(SETTINGS_PATH, "utf-8");
     const parsed: unknown = JSON.parse(raw);
-    const existing: ConfigFile = Value.Check(AgentSettingsSchema, parsed)
-      ? (Value.Parse(AgentSettingsSchema, parsed).contextPrune ?? {})
+    const contextPruneSettings = Value.Check(AgentSettingsSchema, parsed)
+      ? Value.Parse(AgentSettingsSchema, parsed).contextPrune
+      : undefined;
+    const existing: ContextPruneConfigFile = Value.Check(
+      ContextPruneConfigFileSchema,
+      contextPruneSettings,
+    )
+      ? Value.Parse(ContextPruneConfigFileSchema, contextPruneSettings)
       : {};
-    const merged: ContextPruneConfig = { ...DEFAULT_CONFIG, ...existing };
-    return {
+    const merged = { ...DEFAULT_CONFIG, ...existing };
+    const config = {
       ...merged,
       enabled: typeof merged.enabled === "boolean" ? merged.enabled : DEFAULT_CONFIG.enabled,
+      tools: resolveToolsConfig(merged.tools),
       showPruneStatusLine:
         typeof merged.showPruneStatusLine === "boolean"
           ? merged.showPruneStatusLine
@@ -83,6 +91,10 @@ export async function loadConfig(): Promise<ContextPruneConfig> {
         ? Math.max(0, merged.minRawCharsToPrune)
         : DEFAULT_CONFIG.minRawCharsToPrune,
     };
+    if (contextPruneSettings !== undefined && existing.tools === undefined) {
+      await saveConfig(config);
+    }
+    return config;
   } catch {
     return { ...DEFAULT_CONFIG };
   }

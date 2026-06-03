@@ -1,6 +1,11 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ToolCallIndexer } from "./indexer.js";
-import type { ContextPruneConfig, FlushOptions, SummarizerStats } from "./types.js";
+import type {
+  ContextPruneConfig,
+  ContextPruneConfigPatch,
+  FlushOptions,
+  SummarizerStats,
+} from "./types.js";
 
 export type FlushResult =
   | {
@@ -20,7 +25,7 @@ export type FlushResult =
 export interface ContextPruneAPI {
   readonly enabled: boolean;
   readonly config: ContextPruneConfig;
-  updateConfig(patch: Partial<ContextPruneConfig>): void;
+  updateConfig(patch: ContextPruneConfigPatch): void;
   cancel(reason?: string): void;
   flush(options?: FlushOptions): Promise<FlushResult>;
   pendingBatchCount(): number;
@@ -37,7 +42,7 @@ export interface ContextPruneFooterState {
 
 interface ContextPruneRuntime {
   getConfig(): ContextPruneConfig;
-  updateConfig(patch: Partial<ContextPruneConfig>): void;
+  updateConfig(patch: ContextPruneConfigPatch): void;
   cancel(reason?: string): void;
   flush(ctx: ExtensionContext, options?: FlushOptions): Promise<FlushResult>;
   pendingBatchCount(): number;

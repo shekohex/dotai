@@ -60,8 +60,15 @@ export const STATUS_WIDGET_ID = "context-prune";
 /** Widget ID for the live /pruner now progress panel shown above the editor. */
 export const PROGRESS_WIDGET_ID = "context-prune-progress";
 
+export interface ContextPruneToolsConfig {
+  contextPrune: boolean;
+  contextTreeQuery: boolean;
+}
+
 /** Name of the context_prune tool (injected only when agentic-auto mode is active) */
 export const CONTEXT_PRUNE_TOOL_NAME = "context_prune";
+
+export const CONTEXT_TREE_QUERY_TOOL_NAME = "context_tree_query";
 
 /** System prompt injected when agentic-auto mode is active */
 export const AGENTIC_AUTO_SYSTEM_PROMPT = `[Context Prune — Agentic Auto Mode]
@@ -155,6 +162,7 @@ export const PRUNE_ON_MODES: { value: PruneOn; label: string }[] = [
 export interface ContextPruneConfig {
   /** Whether to prune raw tool outputs from future LLM context */
   enabled: boolean;
+  tools: ContextPruneToolsConfig;
   /** Whether to show the prune footer status icon */
   showPruneStatusLine: boolean;
   /**
@@ -183,8 +191,16 @@ export interface ContextPruneConfig {
   minRawCharsToPrune: number;
 }
 
+export type ContextPruneConfigPatch = Omit<Partial<ContextPruneConfig>, "tools"> & {
+  tools?: Partial<ContextPruneToolsConfig>;
+};
+
 export const DEFAULT_CONFIG: ContextPruneConfig = {
   enabled: true,
+  tools: {
+    contextPrune: true,
+    contextTreeQuery: true,
+  },
   showPruneStatusLine: true,
   summarizerModels: [
     "gemini/gemini-3.1-flash-lite-preview",

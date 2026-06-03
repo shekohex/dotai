@@ -6,12 +6,12 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ToolCallIndexer } from "./indexer.js";
-import type { ToolCallRecord } from "./types.js";
+import { CONTEXT_TREE_QUERY_TOOL_NAME, type ToolCallRecord } from "./types.js";
 import { renderContextTreeQueryCall, renderContextTreeQueryResult } from "./tool-render.js";
 
 export function registerQueryTool(pi: ExtensionAPI, indexer: ToolCallIndexer): void {
   pi.registerTool({
-    name: "context_tree_query",
+    name: CONTEXT_TREE_QUERY_TOOL_NAME,
     label: "Query Original Tool History",
     renderShell: "self",
     description:

@@ -163,8 +163,15 @@ export class GoalWorkflowRuntime {
       activeSeconds: Math.ceil((workflowResult.durationMs ?? 0) / 1000),
     });
     if (!workflowResultComplete(workflowResult.result)) {
-      const blocked = blockGoal(goalWithUsage, workflowBlockReason(runId, workflowResult.result));
-      if (blocked.ok && blocked.goal !== null) this.persist(blocked.goal, ctx);
+      const reason = workflowBlockReason(runId, workflowResult.result);
+      const blocked = blockGoal(goalWithUsage, reason);
+      if (blocked.ok && blocked.goal !== null) {
+        this.persist(blocked.goal, ctx);
+        ctx.ui.notify(
+          `Goal workflow blocked. ${workflowBlockSummary(workflowResult.result)}`,
+          "warning",
+        );
+      }
       return;
     }
     const completed = updateGoalStatus(goalWithUsage, "complete");
@@ -177,8 +184,12 @@ export class GoalWorkflowRuntime {
   private block(runId: string, error: unknown, ctx: ExtensionContext): void {
     const current = this.options.getGoal();
     if (current?.workflow?.runId !== runId) return;
-    const blocked = blockGoal(current, workflowErrorReason(runId, error));
-    if (blocked.ok && blocked.goal !== null) this.persist(blocked.goal, ctx);
+    const reason = workflowErrorReason(runId, error);
+    const blocked = blockGoal(current, reason);
+    if (blocked.ok && blocked.goal !== null) {
+      this.persist(blocked.goal, ctx);
+      ctx.ui.notify(`Goal workflow failed. ${errorMessage(error)}`, "error");
+    }
   }
 
   private unblockForResume(
@@ -218,6 +229,14 @@ function workflowErrorReason(runId: string, error: unknown): string {
     "Inspect the workflow run, fix the cause, then resume the workflow when ready.",
     errorMessage(error),
   ].join("\n\n");
+}
+
+function workflowBlockSummary(result: unknown): string {
+  if (result !== null && typeof result === "object" && "status" in result) {
+    const status = result.status;
+    if (typeof status === "string" && status.length > 0) return `Status: ${status}.`;
+  }
+  return "Inspect blocked reason for details.";
 }
 
 function goalWorkflowDisplayName(

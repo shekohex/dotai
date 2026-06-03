@@ -202,6 +202,75 @@ timedTest("SubagentSDK onEvent deduplicates repeated poll-only updatedAt churn",
   }
 });
 
+timedTest("SubagentSDK resumes unknown process child from explicit sessionPath", async () => {
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await createTempDir("agent-subagent-sdk-resume-dir-");
+  const cwd = await createTempDir("agent-subagent-sdk-resume-cwd-");
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+
+  const fakePi = new FakePi();
+  const fakeMux = new FakeMuxAdapter();
+  const sdk = createSubagentSDK(fakePi as unknown as ExtensionAPI, {
+    adapter: fakeMux,
+    buildLaunchCommand: (_state, _childState, _prompt, options) =>
+      options.launchTarget?.kind === "session"
+        ? `pi --session ${options.launchTarget.sessionPath}`
+        : "pi",
+  });
+
+  try {
+    registerBuiltInModes(
+      TEST_MODE_SOURCE,
+      defineModesFile({
+        version: 1,
+        modes: {
+          worker: {
+            provider: "mode-provider",
+            modelId: "worker-model",
+            tools: ["read"],
+            autoExit: true,
+            tmuxTarget: "window",
+          },
+        },
+      }),
+    );
+
+    const sessionPath = path.join(cwd, "child.jsonl");
+    await fs.writeFile(
+      sessionPath,
+      JSON.stringify({
+        type: "session",
+        version: 3,
+        id: "child-session-id",
+        timestamp: new Date().toISOString(),
+        cwd,
+      }) + "\n",
+      "utf8",
+    );
+    const resumed = await sdk.resume(
+      {
+        sessionId: "child-session-id",
+        sessionPath,
+        name: "workflow fixer",
+        task: "Continue fixing workflow issues",
+        mode: "worker",
+        cwd,
+        autoExit: true,
+        outputFormat: { type: "text" },
+      },
+      createFakeContext({ cwd }),
+    );
+
+    expect(resumed.handle.sessionId).toBe("child-session-id");
+    expect(fakeMux.created[0]?.command).toContain(`--session ${sessionPath}`);
+  } finally {
+    sdk.dispose();
+    process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await fs.rm(agentDir, { recursive: true, force: true });
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest(
   "SubagentSDK spawn returns structured outcome for json_schema output format",
   async () => {

@@ -1091,6 +1091,28 @@ Ship it`);
     expect(harness.goal?.workflow?.runId).toBe("run-blocked");
     expect(harness.goal?.blockedReason).toContain("finished without satisfying the goal");
     expect(harness.goal?.blockedReason).toContain("Need production credential");
+    expect(harness.notifications.at(-1)).toEqual({
+      message: "Goal workflow blocked. Status: blocked.",
+      level: "warning",
+    });
+  });
+
+  test("goal workflow runtime notifies when workflow fails", async () => {
+    const harness = createWorkflowRuntimeHarness();
+    await harness.runtime.start(
+      { objective: "Ship it", label: "Ship it", source: "inline" },
+      harness.ctx,
+    );
+
+    harness.deferred.reject(new Error("subagent resume failed: sessionId old was not found"));
+    await flushWorkflowWatch();
+
+    expect(harness.goal?.status).toBe("blocked");
+    expect(harness.goal?.blockedReason).toContain("failed before completion");
+    expect(harness.notifications.at(-1)).toEqual({
+      message: "Goal workflow failed. subagent resume failed: sessionId old was not found",
+      level: "error",
+    });
   });
 
   test("goal workflow runtime unblocks blocked goal and resumes same run with reason", () => {

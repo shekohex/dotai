@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   buildContextTransferPrompt,
@@ -70,7 +71,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
     const errorAction = options.errorAction ?? "resume";
     const progressAction =
       options.progressAction ?? (errorAction === "message" ? "message" : "start");
-    const existing = this.getStateOrThrow(errorAction, params.sessionId);
+    const existing = await this.getExistingStateForResume(params, ctx, errorAction);
     const paneAlive = await this.hasLivePane(existing);
     if (paneAlive) {
       this.activeSessionIds.add(existing.sessionId);
@@ -109,6 +110,48 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
       parentSessionPath: ctx.sessionManager.getSessionFile(),
       resumedAt: Date.now(),
     };
+  }
+
+  private async getExistingStateForResume(
+    params: ResumeSubagentParams,
+    ctx: ExtensionContext,
+    errorAction: "resume" | "message",
+  ): Promise<RuntimeSubagent> {
+    const existing = this.states.get(params.sessionId);
+    if (existing !== undefined) return existing;
+    if (params.sessionPath === undefined || params.sessionPath.length === 0) {
+      return this.getStateOrThrow(errorAction, params.sessionId);
+    }
+    if ((await readSessionFileId(params.sessionPath)) !== params.sessionId) {
+      return this.getStateOrThrow(errorAction, params.sessionId);
+    }
+
+    const now = Date.now();
+    const hydrated: RuntimeSubagent = {
+      event: "completed",
+      sessionId: params.sessionId,
+      sessionPath: params.sessionPath,
+      persisted: params.persisted ?? true,
+      parentSessionId: ctx.sessionManager.getSessionId(),
+      parentSessionPath: ctx.sessionManager.getSessionFile(),
+      name: params.name ?? "subagent",
+      mode: params.mode,
+      modeLabel: params.mode ?? "worker",
+      cwd: params.cwd ?? ctx.cwd,
+      paneId: "",
+      task: params.task,
+      tools: params.toolNames,
+      handoff: false,
+      autoExit: params.autoExit ?? true,
+      completion: params.completion,
+      status: "completed",
+      outputFormat: params.outputFormat,
+      startedAt: now,
+      updatedAt: now,
+      completedAt: now,
+    };
+    this.states.set(hydrated.sessionId, hydrated);
+    return hydrated;
   }
 
   protected async requireAdapterAvailability(
@@ -302,4 +345,47 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
     this.refreshWidget();
     return state;
   }
+}
+
+async function readSessionFileId(sessionPath: string): Promise<string | undefined> {
+  const firstLine = await readFirstLine(sessionPath);
+  if (firstLine === undefined || firstLine.length === 0) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(firstLine);
+    if (parsed === null || typeof parsed !== "object" || !("type" in parsed) || !("id" in parsed)) {
+      return undefined;
+    }
+    return parsed.type === "session" && typeof parsed.id === "string" ? parsed.id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readFirstLine(sessionPath: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const stream = createReadStream(sessionPath, { encoding: "utf8", highWaterMark: 8192 });
+    let line = "";
+    let settled = false;
+    const finish = (value?: string): void => {
+      if (settled) return;
+      settled = true;
+      stream.destroy();
+      resolve(value);
+    };
+    stream.on("data", (chunk) => {
+      const text = String(chunk);
+      const newlineIndex = text.indexOf("\n");
+      if (newlineIndex === -1) {
+        line += text;
+        return;
+      }
+      finish(line + text.slice(0, newlineIndex));
+    });
+    stream.on("end", () => {
+      finish(line.length > 0 ? line : undefined);
+    });
+    stream.on("error", () => {
+      finish();
+    });
+  });
 }

@@ -14,7 +14,14 @@ import { Value } from "typebox/value";
 import { WORKFLOW_RUNS_DIR } from "./config.js";
 import { JournalEntrySchema, type JournalEntry } from "./workflow-journal.js";
 
-export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "aborted";
+export type RunStatus =
+  | "pending"
+  | "running"
+  | "paused"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "aborted";
 
 export interface PersistedAgentState {
   id: number;
@@ -96,6 +103,7 @@ const PersistedRunStateSchema = Type.Object({
     Type.Literal("running"),
     Type.Literal("paused"),
     Type.Literal("completed"),
+    Type.Literal("blocked"),
     Type.Literal("failed"),
     Type.Literal("aborted"),
   ]),

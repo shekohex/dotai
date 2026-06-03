@@ -136,6 +136,8 @@ test("goal workflow produces a valid, parseable script", () => {
   assert.match(body, /value instanceof String/);
   assert.match(body, /section\("objective"/);
   assert.match(body, /section\("goal_context"/);
+  assert.match(body, /section\("unblock_reason"/);
+  assert.match(body, /unblockedAt/);
   assert.match(body, /"review_findings"/);
   assert.match(body, /untrusted_builder_claims/);
   assert.match(body, /untrusted_review_opinion/);
@@ -147,6 +149,8 @@ test("goal workflow produces a valid, parseable script", () => {
   assert.match(body, /<" \+ name \+ ">/);
   assert.match(body, /startCommit/);
   assert.match(body, /tokenBudgetSpent/);
+  assert.match(body, /resume autonomous fixing/);
+  assert.match(body, /resolve external blockers and resume workflow/);
 });
 
 test("goal workflow returns completion evidence when review and judge pass", async () => {

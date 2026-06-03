@@ -20,6 +20,8 @@ const context = (args && args.context) || "";
 const startCommit = (args && args.startCommit) || "";
 const startedAt = (args && args.startedAt) || "";
 const runId = (args && args.runId) || "";
+const unblockReason = (args && args.unblockReason) || "";
+const unblockedAt = (args && args.unblockedAt) || "";
 
 const toMarkdown = (schema, value, level = 0) => {
   if (value === null || value === undefined) return "None";
@@ -71,6 +73,8 @@ const goalContext = [
   section("verification_commands", toMarkdown(null, verificationCommands)),
   section("start_commit", startCommit),
   section("workflow_run_id", runId),
+  section("unblock_reason", unblockReason),
+  section("unblocked_at", unblockedAt),
   section("additional_context", context),
 ].join("\n");
 
@@ -712,6 +716,12 @@ const finalBlockers = []
   .concat(judgeResult.humanReviewReason ? [judgeResult.humanReviewReason] : []);
 const ok = Boolean(reviewResult.ok && judgeResult.complete && finalBlockers.length === 0);
 const status = ok ? "complete" : "blocked";
+const hasBuilderFixableWork = Boolean(
+  (reviewResult.findings || []).length ||
+  (reviewResult.requiredFixes || []).length ||
+  (judgeResult.missingCriteria || []).length ||
+  (judgeResult.requiredWork || []).length,
+);
 const summaryResult = await agentWithRetries(
   [
     section(
@@ -753,7 +763,12 @@ const summaryResult = await agentWithRetries(
     validation: [],
     evidence: [].concat(reviewResult.evidence || []).concat(judgeResult.evidence || []),
     blockers: finalBlockers,
-    nextAction: status === "complete" ? "none" : "human review required",
+    nextAction:
+      status === "complete"
+        ? "none"
+        : hasBuilderFixableWork
+          ? "resume autonomous fixing"
+          : "resolve external blockers and resume workflow",
   },
 );
 return {

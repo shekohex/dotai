@@ -2,7 +2,10 @@
 
 import { EventEmitter } from "node:events";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { errorMessage } from "../../utils/error-message.js";
+import { asRecord } from "../../utils/unknown-data.js";
 import type { WorkflowAgent, WorkflowSubagentBackend } from "./agent.js";
 import { preview, type WorkflowAgentActivityEvent, type WorkflowSnapshot } from "./display.js";
 import { WorkflowError, WorkflowErrorCode } from "./errors.js";
@@ -20,6 +23,14 @@ import {
   runWorkflow,
   type WorkflowRunResult,
 } from "./workflow.js";
+
+const ResumableBlockedWorkflowResultSchema = Type.Object(
+  {
+    ok: Type.Literal(false),
+    status: Type.Literal("blocked"),
+  },
+  { additionalProperties: true },
+);
 
 export interface ManagedRun {
   runId: string;
@@ -112,6 +123,20 @@ function createResumeJournalMap(journal: JournalEntry[]): Map<number, JournalEnt
     }
   }
   return entries;
+}
+
+function workflowRunStatus(result: unknown): RunStatus {
+  return Value.Check(ResumableBlockedWorkflowResultSchema, result) ? "blocked" : "completed";
+}
+
+function mergeWorkflowArgs(args: unknown, resumeArgs: unknown): unknown {
+  if (resumeArgs === undefined) return args;
+  const argsRecord = asRecord(args);
+  const resumeArgsRecord = asRecord(resumeArgs);
+  if (argsRecord !== undefined && resumeArgsRecord !== undefined) {
+    return { ...argsRecord, ...resumeArgsRecord };
+  }
+  return resumeArgs;
 }
 
 export function mergeJournalEntry(
@@ -383,7 +408,7 @@ export class WorkflowManager extends EventEmitter {
         },
       });
 
-      managed.status = "completed";
+      managed.status = workflowRunStatus(result.result);
       managed.result = result;
       this.emit("complete", { runId: managed.runId, result });
 
@@ -488,6 +513,7 @@ export class WorkflowManager extends EventEmitter {
 
   resumeInBackground(
     runId: string,
+    resumeArgs?: unknown,
   ): { runId: string; promise: Promise<WorkflowRunResult> } | false {
     const active = this.runs.get(runId);
     if (active?.status === "running") return false;
@@ -501,6 +527,7 @@ export class WorkflowManager extends EventEmitter {
       return false;
 
     const controller = new AbortController();
+    const args = mergeWorkflowArgs(persisted.args, resumeArgs);
     const managed: ManagedRun = {
       runId,
       status: "running",
@@ -517,7 +544,7 @@ export class WorkflowManager extends EventEmitter {
       controller,
       startedAt: new Date(),
       script: persisted.script,
-      args: persisted.args,
+      args,
       journal: persisted.journal ?? [],
       background: true,
     };
@@ -525,7 +552,7 @@ export class WorkflowManager extends EventEmitter {
 
     const resumeJournal = createResumeJournalMap(persisted.journal ?? []);
     this.emit("resumed", { runId });
-    const promise = this.executeRun(managed, persisted.script, persisted.args, { resumeJournal });
+    const promise = this.executeRun(managed, persisted.script, args, { resumeJournal });
     promise.catch(() => {});
     return { runId, promise };
   }

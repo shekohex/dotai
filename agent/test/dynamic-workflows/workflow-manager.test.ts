@@ -8,6 +8,7 @@ import {
   mergeJournalEntry,
   WorkflowManager,
 } from "../../src/extensions/dynamic-workflows/workflow-manager.js";
+import { loadWorkflowResource } from "../../src/extensions/dynamic-workflows/resource-workflows.js";
 import { WorkflowErrorCode } from "../../src/extensions/dynamic-workflows/errors.js";
 import type { JournalEntry } from "../../src/extensions/dynamic-workflows/workflow-journal.js";
 
@@ -353,5 +354,115 @@ test(
 
     const run = manager.listRuns().find((entry) => entry.runId === runId);
     assert.equal(run?.status, "aborted");
+  }),
+);
+
+test(
+  "goal workflow blocked result persists as resumable and accepts unblock args",
+  withTempCwd(async (cwd) => {
+    const manager = new WorkflowManager({
+      cwd,
+      agent: {
+        async run(prompt: string) {
+          const unblocked = prompt.includes("<unblock_reason>\nExternal dependency fixed");
+          if (/Create a checkpoint commit/.test(prompt)) {
+            return {
+              committed: true,
+              commit: unblocked ? "complete123" : "blocked123",
+              summary: "feat: checkpoint goal workflow",
+              blockers: [],
+            };
+          }
+          if (/Strict review consolidator/.test(prompt)) {
+            return unblocked
+              ? {
+                  ok: true,
+                  commands: ["npm test"],
+                  findings: [],
+                  requiredFixes: [],
+                  evidence: ["external dependency fixed"],
+                  externalBlockers: [],
+                  needsHumanReview: false,
+                  humanReviewReason: "",
+                }
+              : {
+                  ok: false,
+                  commands: [],
+                  findings: [],
+                  requiredFixes: [],
+                  evidence: [],
+                  externalBlockers: ["External dependency unavailable"],
+                  needsHumanReview: true,
+                  humanReviewReason: "User must restore external dependency.",
+                };
+          }
+          if (/Deep goal judge/.test(prompt)) {
+            return unblocked
+              ? {
+                  complete: true,
+                  confidence: 100,
+                  coveredCriteria: ["workflow resumed"],
+                  missingCriteria: [],
+                  requiredWork: [],
+                  evidence: ["unblock reason reached resumed run"],
+                  externalBlockers: [],
+                  needsHumanReview: false,
+                  humanReviewReason: "",
+                }
+              : {
+                  complete: false,
+                  confidence: 10,
+                  coveredCriteria: [],
+                  missingCriteria: [],
+                  requiredWork: [],
+                  evidence: [],
+                  externalBlockers: ["External dependency unavailable"],
+                  needsHumanReview: false,
+                  humanReviewReason: "",
+                };
+          }
+          if (/final goal completion summary/.test(prompt)) {
+            return {
+              summary: unblocked ? "Goal complete" : "Goal blocked",
+              changedFiles: [],
+              commits: [],
+              validation: [],
+              evidence: [],
+              blockers: unblocked ? [] : ["External dependency unavailable"],
+              nextAction: unblocked ? "none" : "resolve external dependency",
+            };
+          }
+          return unblocked ? "built after unblock" : "built before unblock";
+        },
+      },
+    });
+
+    const firstRun = manager.startInBackground(
+      loadWorkflowResource("goal.workflow.js"),
+      { objective: "resume blocked goal workflow", runId: "goal-resume-run" },
+      { runId: "goal-resume-run", subagentBackend: "process" },
+    );
+    const firstResult = await firstRun.promise;
+
+    assert.equal(firstResult.result.status, "blocked");
+    assert.equal(manager.listRuns().find((run) => run.runId === firstRun.runId)?.status, "blocked");
+
+    const resumed = manager.resumeInBackground(firstRun.runId, {
+      unblockReason: "External dependency fixed",
+      unblockedAt: "2026-06-03T00:00:00.000Z",
+    });
+
+    assert.notEqual(resumed, false);
+    if (resumed === false) return;
+    const resumedResult = await resumed.promise;
+    const persisted = manager.listRuns().find((run) => run.runId === firstRun.runId);
+
+    assert.equal(resumed.runId, firstRun.runId);
+    assert.equal(resumedResult.result.status, "complete");
+    assert.equal(persisted?.status, "completed");
+    assert.equal(
+      (persisted?.args as { unblockReason?: string } | undefined)?.unblockReason,
+      "External dependency fixed",
+    );
   }),
 );

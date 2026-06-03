@@ -39,7 +39,10 @@ interface GoalWorkflowManager {
     args?: unknown,
     exec?: { subagentBackend?: "process"; runId?: string; displayName?: string },
   ): { runId: string; promise: Promise<WorkflowRunResult> };
-  resumeInBackground(runId: string): { runId: string; promise: Promise<WorkflowRunResult> } | false;
+  resumeInBackground(
+    runId: string,
+    resumeArgs?: unknown,
+  ): { runId: string; promise: Promise<WorkflowRunResult> } | false;
 }
 
 const GoalWorkflowCompleteResultSchema = Type.Object(
@@ -109,7 +112,12 @@ export class GoalWorkflowRuntime {
       ctx.ui.notify("No workflow goal is available to resume.", "warning");
       return;
     }
-    const resumed = this.createManager(ctx).resumeInBackground(runId);
+    const resumed = this.createManager(ctx).resumeInBackground(
+      runId,
+      reason === undefined
+        ? undefined
+        : { unblockReason: reason, unblockedAt: new Date().toISOString() },
+    );
     if (resumed === false) {
       ctx.ui.notify(`Goal workflow ${runId} is not resumable.`, "warning");
       return;

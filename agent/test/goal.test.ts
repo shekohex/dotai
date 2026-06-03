@@ -416,7 +416,7 @@ function createWorkflowRuntimeHarness(
   const persistedGoals: Array<NonNullable<typeof goal>> = [];
   const notifications: Array<{ message: string; level?: string }> = [];
   const starts: Array<{ script: string; args: unknown; exec: unknown }> = [];
-  const resumes: string[] = [];
+  const resumes: Array<{ runId: string; args: unknown }> = [];
   const deferred = deferredWorkflowResult();
   const pi = {
     exec: async () => ({ stdout: "abc123\n", stderr: "", code: 0, killed: false }),
@@ -452,8 +452,8 @@ function createWorkflowRuntimeHarness(
             : "run-id";
         return { runId, promise: deferred.promise };
       },
-      resumeInBackground(runId) {
-        resumes.push(runId);
+      resumeInBackground(runId, args) {
+        resumes.push({ runId, args });
         return { runId, promise: deferred.promise };
       },
     }),
@@ -1086,7 +1086,15 @@ Ship it`);
     });
     await flushWorkflowWatch();
 
-    expect(harness.resumes).toEqual(["run-blocked"]);
+    expect(harness.resumes).toEqual([
+      {
+        runId: "run-blocked",
+        args: {
+          unblockReason: "External dependency restored; continue same workflow.",
+          unblockedAt: expect.any(String),
+        },
+      },
+    ]);
     expect(harness.goal?.status).toBe("blocked");
     expect(harness.goal?.workflow?.runId).toBe("run-blocked");
     expect(harness.goal?.blockedReason).toContain("finished without satisfying the goal");
@@ -1132,7 +1140,15 @@ Ship it`);
 
     harness.runtime.resume(harness.ctx, "Credential installed; continue workflow now.");
 
-    expect(harness.resumes).toEqual(["run-unblock"]);
+    expect(harness.resumes).toEqual([
+      {
+        runId: "run-unblock",
+        args: {
+          unblockReason: "Credential installed; continue workflow now.",
+          unblockedAt: expect.any(String),
+        },
+      },
+    ]);
     expect(harness.goal?.status).toBe("active");
     expect(harness.goal?.workflow?.runId).toBe("run-unblock");
     expect(harness.goal?.resumedReason).toBe("Credential installed; continue workflow now.");

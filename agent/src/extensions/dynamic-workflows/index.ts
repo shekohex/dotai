@@ -11,6 +11,12 @@ export { registerBuiltinWorkflows } from "./builtin-commands.js";
 export * from "./config.js";
 export type { DeepResearchConfig } from "./deep-research.js";
 export { generateCodebaseAuditWorkflow, generateDeepResearchWorkflow } from "./deep-research.js";
+export {
+  jsString,
+  loadWorkflowResource,
+  renderWorkflowResource,
+  transformWorkflowTemplate,
+} from "./resource-workflows.js";
 export type {
   WorkflowAgentSnapshot,
   WorkflowAgentStatus,

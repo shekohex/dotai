@@ -276,9 +276,14 @@ export function installWorkflowInputHooks(pi: ExtensionAPI, state: WorkflowModeS
       state.active = false;
       return { action: "continue" } as const;
     }
+    const activeTools = pi.getActiveTools?.();
+    if (!Array.isArray(activeTools) || !activeTools.includes(WORKFLOW_TOOL_NAME)) {
+      state.active = false;
+      return { action: "continue" } as const;
+    }
     state.active = false;
     try {
-      savedTools ??= pi.getActiveTools?.();
+      savedTools ??= activeTools;
       pi.setActiveTools?.([WORKFLOW_TOOL_NAME]);
     } catch {
       // Tool restriction is best-effort; the directive still forces the workflow.

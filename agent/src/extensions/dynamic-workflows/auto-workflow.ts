@@ -3,6 +3,8 @@
  * task complexity.
  */
 
+import { renderWorkflowResource } from "./resource-workflows.js";
+
 export interface AutoWorkflowConfig {
   /** Enable auto-workflow mode. */
   enabled: boolean;
@@ -123,33 +125,8 @@ export function shouldUseWorkflow(
  * @returns {string} Workflow script suggestion.
  */
 export function suggestWorkflowScript(taskDescription: string): string {
-  return `export const meta = {
-  name: 'auto_generated',
-  description: '${taskDescription.replaceAll("'", "\\'").slice(0, 100)}',
-  phases: [
-    { title: 'Analyze' },
-    { title: 'Execute' },
-    { title: 'Verify' },
-  ],
-};
-
-phase('Analyze');
-const analysis = await agent(
-  'Analyze this task and break it into subtasks: ${taskDescription.replaceAll("'", "\\'").slice(0, 80)}',
-  { label: 'task analysis' }
-);
-
-phase('Execute');
-const results = await parallel([
-  () => agent('Execute subtask 1 based on: ' + analysis, { label: 'subtask-1' }),
-  // Add more subtasks as needed
-]);
-
-phase('Verify');
-const verification = await agent(
-  'Verify these results are correct: ' + JSON.stringify(results),
-  { label: 'verification' }
-);
-
-return { analysis, results, verification };`;
+  return renderWorkflowResource("auto-generated.workflow.js", {
+    description: JSON.stringify(taskDescription.slice(0, 100)),
+    analysisTask: JSON.stringify(taskDescription.slice(0, 80)),
+  });
 }

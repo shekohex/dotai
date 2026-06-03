@@ -177,3 +177,26 @@ test("installWorkflowInputHooks does not restrict tools after conversation start
   assert.equal(state.active, false, "arm is consumed without transforming");
   assert.deepEqual(activeTools, ["read", "bash", "workflow", "subagent"]);
 });
+
+test("installWorkflowInputHooks does not transform when workflow tool is disabled", () => {
+  const handlers: Record<string, (event: any, ctx?: any) => any> = {};
+  let activeTools = ["read", "bash", "subagent"];
+  const pi: any = {
+    on: (event: string, handler: any) => {
+      handlers[event] = handler;
+    },
+    getActiveTools: () => activeTools,
+    setActiveTools: (tools: string[]) => {
+      activeTools = tools;
+    },
+  };
+  const state = createWorkflowModeState();
+  installWorkflowInputHooks(pi, state);
+
+  state.active = true;
+  assert.deepEqual(handlers.input({ source: "interactive", text: "use workflow here" }), {
+    action: "continue",
+  });
+  assert.equal(state.active, false, "arm is consumed without transforming");
+  assert.deepEqual(activeTools, ["read", "bash", "subagent"]);
+});

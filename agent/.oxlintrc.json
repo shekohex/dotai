@@ -13,6 +13,7 @@
     "support/pi-test-harness/**",
     "resources/plannotator/**",
     "src/extensions/plannotator/generated/**",
+    "src/resources/workflows/**",
     "test/**",
     "vendor/**",
     "**/**/*.test.ts"

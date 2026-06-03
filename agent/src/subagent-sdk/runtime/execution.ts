@@ -1,11 +1,14 @@
 import fs from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 import {
   buildContextTransferPrompt,
   generateContextTransferSummary,
   getConversationMessages,
 } from "../../extensions/session-launch-utils.js";
+import { errorMessage } from "../../utils/error-message.js";
 import { resolveSubagentMode } from "../modes.js";
 import { createChildSessionFile } from "../persistence.js";
 import type {
@@ -24,6 +27,16 @@ import {
   SubagentRuntimeBase,
 } from "./base.js";
 import { buildResumeStateBundle } from "./state-bundles.js";
+
+const PersistedSessionHeaderSchema = Type.Object(
+  {
+    type: Type.Literal("session"),
+    id: Type.String(),
+  },
+  { additionalProperties: true },
+);
+
+type PersistedSessionHeader = Static<typeof PersistedSessionHeaderSchema>;
 
 export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
   async resume(
@@ -122,7 +135,8 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
     if (params.sessionPath === undefined || params.sessionPath.length === 0) {
       return this.getStateOrThrow(errorAction, params.sessionId);
     }
-    if ((await readSessionFileId(params.sessionPath)) !== params.sessionId) {
+    const sessionFileId = await readSessionFileId(params.sessionPath, errorAction);
+    if (sessionFileId !== params.sessionId) {
       return this.getStateOrThrow(errorAction, params.sessionId);
     }
 
@@ -347,22 +361,32 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
   }
 }
 
-async function readSessionFileId(sessionPath: string): Promise<string | undefined> {
-  const firstLine = await readFirstLine(sessionPath);
+async function readSessionFileId(
+  sessionPath: string,
+  errorAction: "resume" | "message",
+): Promise<string | undefined> {
+  let firstLine: string | undefined;
+  try {
+    firstLine = await readFirstLine(sessionPath);
+  } catch (error) {
+    throw runtimeSubagentError(
+      errorAction,
+      `sessionPath ${sessionPath} is not readable: ${errorMessage(error)}`,
+    );
+  }
   if (firstLine === undefined || firstLine.length === 0) return undefined;
   try {
     const parsed: unknown = JSON.parse(firstLine);
-    if (parsed === null || typeof parsed !== "object" || !("type" in parsed) || !("id" in parsed)) {
-      return undefined;
-    }
-    return parsed.type === "session" && typeof parsed.id === "string" ? parsed.id : undefined;
+    if (!Value.Check(PersistedSessionHeaderSchema, parsed)) return undefined;
+    const header: PersistedSessionHeader = Value.Parse(PersistedSessionHeaderSchema, parsed);
+    return header.id;
   } catch {
     return undefined;
   }
 }
 
 function readFirstLine(sessionPath: string): Promise<string | undefined> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const stream = createReadStream(sessionPath, { encoding: "utf8", highWaterMark: 8192 });
     let line = "";
     let settled = false;
@@ -384,8 +408,11 @@ function readFirstLine(sessionPath: string): Promise<string | undefined> {
     stream.on("end", () => {
       finish(line.length > 0 ? line : undefined);
     });
-    stream.on("error", () => {
-      finish();
+    stream.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      stream.destroy();
+      reject(error);
     });
   });
 }

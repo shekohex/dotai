@@ -271,6 +271,83 @@ timedTest("SubagentSDK resumes unknown process child from explicit sessionPath",
   }
 });
 
+timedTest("SubagentSDK resume reports explicit missing sessionPath", async () => {
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await createTempDir("agent-subagent-sdk-resume-dir-");
+  const cwd = await createTempDir("agent-subagent-sdk-resume-cwd-");
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+
+  const fakePi = new FakePi();
+  const fakeMux = new FakeMuxAdapter();
+  const sdk = createSubagentSDK(fakePi as unknown as ExtensionAPI, {
+    adapter: fakeMux,
+    buildLaunchCommand: () => "pi",
+  });
+
+  try {
+    const sessionPath = path.join(cwd, "missing-child.jsonl");
+    await expect(
+      sdk.resume(
+        {
+          sessionId: "child-session-id",
+          sessionPath,
+          name: "workflow fixer",
+          task: "Continue fixing workflow issues",
+          mode: "worker",
+          cwd,
+          autoExit: true,
+          outputFormat: { type: "text" },
+        },
+        createFakeContext({ cwd }),
+      ),
+    ).rejects.toThrow(`subagent resume failed: sessionPath ${sessionPath} is not readable:`);
+  } finally {
+    sdk.dispose();
+    process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await fs.rm(agentDir, { recursive: true, force: true });
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("SubagentSDK resume reports explicit unreadable sessionPath", async () => {
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = await createTempDir("agent-subagent-sdk-resume-dir-");
+  const cwd = await createTempDir("agent-subagent-sdk-resume-cwd-");
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+
+  const fakePi = new FakePi();
+  const fakeMux = new FakeMuxAdapter();
+  const sdk = createSubagentSDK(fakePi as unknown as ExtensionAPI, {
+    adapter: fakeMux,
+    buildLaunchCommand: () => "pi",
+  });
+
+  try {
+    const sessionPath = path.join(cwd, "child-directory.jsonl");
+    await fs.mkdir(sessionPath);
+    await expect(
+      sdk.resume(
+        {
+          sessionId: "child-session-id",
+          sessionPath,
+          name: "workflow fixer",
+          task: "Continue fixing workflow issues",
+          mode: "worker",
+          cwd,
+          autoExit: true,
+          outputFormat: { type: "text" },
+        },
+        createFakeContext({ cwd }),
+      ),
+    ).rejects.toThrow(`subagent resume failed: sessionPath ${sessionPath} is not readable:`);
+  } finally {
+    sdk.dispose();
+    process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await fs.rm(agentDir, { recursive: true, force: true });
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest(
   "SubagentSDK spawn returns structured outcome for json_schema output format",
   async () => {

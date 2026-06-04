@@ -235,6 +235,12 @@ function workflowStartArgs(workflowArgs: string): string {
   return workflowArgs;
 }
 
+function notifyInvalidWorkflowUnblock(goal: ThreadGoal | null, ctx: GoalCommandContext): boolean {
+  if (goal?.workflow === undefined || goal.status === "blocked") return false;
+  ctx.ui.notify("Only blocked workflow goals can be unblocked.", "warning");
+  return true;
+}
+
 async function handleGoalWorkflowCommand(
   host: GoalCommandHost,
   workflowArgs: string,
@@ -266,6 +272,7 @@ async function handleGoalWorkflowCommand(
       ctx.ui.notify("Unblock reason is required.", "warning");
       return;
     }
+    if (notifyInvalidWorkflowUnblock(host.getGoal(), ctx)) return;
     await host.resumeWorkflowGoal(ctx, reason);
     return;
   }
@@ -345,6 +352,7 @@ async function handleGoalUnblockCommand(
   }
 
   const current = host.getGoal();
+  if (notifyInvalidWorkflowUnblock(current, ctx)) return;
   if (current?.workflow !== undefined) {
     await host.resumeWorkflowGoal(ctx, reason);
     return;

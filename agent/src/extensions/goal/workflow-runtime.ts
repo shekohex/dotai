@@ -126,6 +126,10 @@ export class GoalWorkflowRuntime {
       );
       return;
     }
+    if (reason !== undefined && current.status !== "blocked") {
+      ctx.ui.notify("Only blocked workflow goals can be unblocked.", "warning");
+      return;
+    }
     const resumed = this.createManager(ctx).resumeInBackground(
       runId,
       reason === undefined

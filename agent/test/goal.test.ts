@@ -1140,7 +1140,12 @@ Ship it`);
       startedAt: "2026-06-03T00:00:00.000Z",
     });
     if (created.goal === null) throw new Error("expected workflow goal");
-    const harness = createWorkflowRuntimeHarness(created.goal);
+    const initiallyBlocked = blockGoal(
+      created.goal,
+      "Need external dependency restored before workflow can continue safely.",
+    );
+    if (initiallyBlocked.goal === null) throw new Error("expected blocked workflow goal");
+    const harness = createWorkflowRuntimeHarness(initiallyBlocked.goal);
 
     harness.runtime.resume(harness.ctx, "External dependency restored; continue same workflow.");
     harness.deferred.resolve({
@@ -1345,6 +1350,33 @@ Ship it`);
     });
   });
 
+  test("goal workflow runtime refuses unblock reason for non-blocked workflow goals", () => {
+    const created = replaceWorkflowGoal("Ship it", {
+      runId: "run-not-blocked-unblock",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+    });
+    if (created.goal === null) throw new Error("expected workflow goal");
+
+    for (const goal of [
+      created.goal,
+      { ...created.goal, status: "paused" } as typeof created.goal,
+    ]) {
+      const harness = createWorkflowRuntimeHarness(goal);
+
+      harness.runtime.resume(harness.ctx, "Credential installed; continue workflow now.");
+
+      expect(harness.resumes).toEqual([]);
+      expect(harness.sentMessages).toEqual([]);
+      expect(harness.notifications.at(-1)).toEqual({
+        message: "Only blocked workflow goals can be unblocked.",
+        level: "warning",
+      });
+    }
+  });
+
   test("goal workflow resume command dispatches workflow resume", async () => {
     let resumeCount = 0;
     const host: GoalCommandHost = {
@@ -1521,6 +1553,69 @@ Ship it`);
 
     expect(resumed).toEqual([{ reason: "Credential installed" }]);
     expect(sentMessages).toEqual([]);
+  });
+
+  test("workflow unblock commands reject active and paused workflow goals", async () => {
+    const created = replaceWorkflowGoal("Ship it", {
+      runId: "run-command-invalid-unblock",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+    });
+    if (created.goal === null) throw new Error("expected workflow goal");
+    const commands = ["unblock Credential installed", "workflow unblock Credential installed"];
+    const goals = [created.goal, { ...created.goal, status: "paused" } as typeof created.goal];
+
+    for (const command of commands) {
+      for (const goal of goals) {
+        const sentMessages: SentGoalMessage[] = [];
+        const notifications: Array<{ message: string; level?: string }> = [];
+        const resumed: string[] = [];
+        const host: GoalCommandHost = {
+          getGoal: () => goal,
+          setGoal: () => {
+            throw new Error("invalid workflow unblock must not mutate normal goal state");
+          },
+          clearGoal: () => {},
+          enableTool: () => {},
+          disableTool: () => {},
+          async startWorkflowGoal() {},
+          async resumeWorkflowGoal(_ctx, reason) {
+            resumed.push(reason ?? "");
+          },
+        };
+        const pi = {
+          sendMessage: (message: SentGoalMessage["message"], options: SentGoalMessage["options"]) =>
+            sentMessages.push({ message, options }),
+          registerCommand: () => {},
+        } as never;
+        const ctx = {
+          cwd: "/tmp",
+          hasUI: true,
+          sessionManager: {
+            getBranch: () => [],
+            getLeafId: () => null,
+            getSessionId: () => "session",
+          },
+          ui: {
+            confirm: async () => true,
+            input: async () => undefined,
+            notify: (message: string, level?: string) => notifications.push({ message, level }),
+            setStatus: () => {},
+          },
+        } as never;
+
+        await handleGoalCommand(pi, host, command, ctx);
+
+        expect(resumed).toEqual([]);
+        expect(sentMessages).toEqual([]);
+        expect(notifications.at(-1)).toEqual({
+          message: "Only blocked workflow goals can be unblocked.",
+          level: "warning",
+        });
+      }
+    }
   });
 
   test("goal workflow autocomplete includes workflow actions without breaking top-level items", () => {

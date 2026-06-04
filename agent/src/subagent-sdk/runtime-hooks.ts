@@ -202,7 +202,7 @@ function renderCoordinatedWidget(ctx: ExtensionContext | undefined): void {
             subagents: visibleSubagents,
             title: getDashboardTitle(scopedSlots),
             mode: subagentDashboardCoordinator.expanded ? "expanded" : "compact",
-            maxRows: subagentDashboardCoordinator.expanded ? 8 : 4,
+            maxRows: 4,
           }),
       { placement: "aboveEditor" },
     );

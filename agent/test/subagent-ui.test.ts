@@ -124,7 +124,7 @@ function renderWidgetContent(content: unknown, width = 100): string[] | undefine
     return content as string[];
   }
   const component = (content as (tui: TUI, theme: Theme) => Component)(
-    { requestRender() {} } as TUI,
+    { terminal: { rows: 40 }, requestRender() {} } as TUI,
     createTheme(),
   );
   return component.render(width);
@@ -320,10 +320,18 @@ describe("subagent ui", () => {
       { mode: "expanded" },
     );
 
-    expect(lines?.join("\n")).toContain("reviewer · failed · gsd-codebase-mapper");
-    expect(lines?.join("\n")).toContain("%1");
-    expect(lines?.join("\n")).toContain("Map codebase");
-    expect(lines?.join("\n")).toContain("Tests failed in subagent run");
+    const rendered = lines?.join("\n");
+    expect(rendered).toContain("─── 🤖 subagents");
+    expect(rendered).toContain("Agents: 1  0 running  0 idle  1 done");
+    expect(rendered).toContain("Longest: ★ reviewer");
+    expect(rendered).toContain("#  name");
+    expect(rendered).toContain("activity / summary");
+    expect(rendered).toContain("────────────────");
+    expect(rendered).toContain("reviewer");
+    expect(rendered).toContain("%1");
+    expect(rendered).toContain("failed");
+    expect(rendered).toContain("Map codebase");
+    expect(rendered).toContain("Tests failed in subagent");
   });
 
   it("keeps compact widget readable in narrow terminals", () => {
@@ -371,7 +379,7 @@ describe("subagent ui", () => {
     expect(visibleWidth(lines?.[0] ?? "")).toBeLessThanOrEqual(78);
   });
 
-  it("caps rows with explicit overflow count", () => {
+  it("caps rows with hidden subagent count", () => {
     const lines = renderSubagentDashboardLines(
       Array.from({ length: 6 }, (_, index) =>
         createRuntimeSubagent({
@@ -386,7 +394,31 @@ describe("subagent ui", () => {
     );
 
     expect(lines).toHaveLength(4);
-    expect(lines?.at(-1)).toContain("+4 more rows");
+    expect(lines?.at(-1)).toContain("… 4 hidden subagents");
+  });
+
+  it("renders expanded dashboard with item-level elision", () => {
+    const lines = renderSubagentDashboardLines(
+      Array.from({ length: 6 }, (_, index) =>
+        createRuntimeSubagent({
+          sessionId: `expanded-overflow-${index}`,
+          name: `agent-${index}`,
+          status: index === 5 ? "failed" : "running",
+          summary: index === 5 ? "terminal summary stays on same row" : undefined,
+          completedAt: index === 5 ? 2 : undefined,
+        }),
+      ),
+      110,
+      createTheme(),
+      { mode: "expanded", maxRows: 2 },
+    );
+    const rendered = lines?.join("\n");
+
+    expect(rendered).toContain("… 4 hidden subagents");
+    expect(rendered).not.toContain("1  agent-0");
+    expect(rendered).toContain("agent-4");
+    expect(rendered).toContain("agent-5");
+    expect(rendered).toContain("terminal summary stays on same row");
   });
 
   it("GSD subagent hooks delegate to shared dashboard with GSD title", () => {
@@ -445,6 +477,7 @@ describe("subagent ui", () => {
       },
     })(
       {
+        terminal: { rows: 12 },
         requestRender() {
           renderRequests += 1;
         },
@@ -452,13 +485,17 @@ describe("subagent ui", () => {
       createTheme(),
     );
 
-    const first = component.render(80).join("\n");
+    const firstLines = component.render(80);
+    const first = firstLines.join("\n");
     component.handleInput?.("\u001b[6~");
     const second = component.render(80).join("\n");
     component.handleInput?.("q");
 
-    expect(first).toContain("Subagents");
+    expect(firstLines).toHaveLength(9);
+    expect(first).toContain("─── 🤖 subagents");
+    expect(first).toContain("Agents: 12");
     expect(second).toContain("esc close");
+    expect(second).toContain("/");
     expect(renderRequests).toBe(1);
     expect(closed).toBe(true);
   });
@@ -473,7 +510,7 @@ describe("subagent ui", () => {
         return subagents;
       },
       done() {},
-    })({ requestRender() {} } as TUI, createTheme());
+    })({ terminal: { rows: 40 }, requestRender() {} } as TUI, createTheme());
 
     expect(component.render(100).join("\n")).toContain("Map codebase");
 
@@ -489,7 +526,8 @@ describe("subagent ui", () => {
     ];
 
     const updated = component.render(100).join("\n");
-    expect(updated).toContain("worker · failed");
+    expect(updated).toContain("worker");
+    expect(updated).toContain("failed");
     expect(updated).toContain("failed: Tool crashed");
   });
 

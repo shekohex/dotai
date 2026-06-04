@@ -1,13 +1,12 @@
 import { formatDurationHuman } from "../extensions/coreui/tools.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { isTerminalSubagentStatus } from "./status.js";
 import type { ChildBootstrapState, RuntimeSubagent } from "./types.js";
 
 const DEFAULT_COMPACT_ROWS = 4;
-const DEFAULT_EXPANDED_ROWS = 8;
-const DEFAULT_FULLSCREEN_ROWS = 18;
+const DEFAULT_EXPANDED_ROWS = 4;
 
 export type SubagentDashboardRenderMode = "compact" | "expanded";
 
@@ -26,6 +25,14 @@ export type SubagentTerminalRetentionOptions = {
 };
 
 type SubagentDashboardTheme = Pick<Theme, "fg" | "bold">;
+type SubagentColumnWidths = {
+  name: number;
+  mode: number;
+  elapsed: number;
+  pane: number;
+  status: number;
+  description: number;
+};
 
 const plainDashboardTheme: SubagentDashboardTheme = {
   fg(_color: string, text: string) {
@@ -87,6 +94,10 @@ function formatElapsed(subagent: RuntimeSubagent): string {
   return formatDurationHuman(Math.max(0, endTime - subagent.startedAt));
 }
 
+function formatMode(subagent: RuntimeSubagent): string {
+  return subagent.modeLabel ?? subagent.mode ?? "worker";
+}
+
 function getStatusTone(status: RuntimeSubagent["status"]): "success" | "warning" | "error" | "dim" {
   if (status === "completed") {
     return "success";
@@ -98,6 +109,54 @@ function getStatusTone(status: RuntimeSubagent["status"]): "success" | "warning"
     return "warning";
   }
   return "dim";
+}
+
+function truncateDisplayText(text: string, width: number): string {
+  if (width <= 0) {
+    return "";
+  }
+  return truncateToWidth(text, width, "…", true);
+}
+
+function appendRightAlignedAdaptiveHint(
+  left: string,
+  width: number,
+  theme: SubagentDashboardTheme,
+  candidates: string[],
+): string {
+  if (width <= 0) {
+    return "";
+  }
+  const leftWidth = visibleWidth(left);
+  for (const candidate of candidates) {
+    const hint = theme.fg("dim", ` ${candidate}`);
+    const hintWidth = visibleWidth(hint);
+    if (hintWidth > width) {
+      continue;
+    }
+    if (leftWidth + hintWidth <= width) {
+      return left + " ".repeat(Math.max(0, width - leftWidth - hintWidth)) + hint;
+    }
+    const availableLeftWidth = Math.max(0, width - hintWidth);
+    const truncatedLeft = truncateToWidth(left, availableLeftWidth, "…", true);
+    const truncatedLeftWidth = visibleWidth(truncatedLeft);
+    return truncatedLeft + " ".repeat(Math.max(0, width - truncatedLeftWidth - hintWidth)) + hint;
+  }
+  return truncateToWidth(left, width, "…", true);
+}
+
+function renderFramedTitleLine(
+  title: string,
+  width: number,
+  theme: SubagentDashboardTheme,
+  hints: string[],
+): string {
+  const titleText = truncateDisplayText(`🤖 ${title.toLowerCase()}`, Math.max(0, width - 5));
+  const left =
+    theme.fg("borderMuted", "───") +
+    theme.fg("accent", ` ${titleText} `) +
+    theme.fg("borderMuted", "─".repeat(Math.max(0, width - 5 - visibleWidth(titleText))));
+  return appendRightAlignedAdaptiveHint(left, width, theme, hints);
 }
 
 function renderTitleLine(
@@ -131,20 +190,6 @@ function renderTitleLine(
   return truncateToWidth(summary, width, "…");
 }
 
-function formatSubagentHints(subagent: RuntimeSubagent): string[] {
-  const hints: string[] = [];
-  if (subagent.handoff) {
-    hints.push("handoff");
-  }
-  if (subagent.completion !== undefined && subagent.completion !== false) {
-    hints.push(subagent.completion.deliverAs ?? "steer");
-  }
-  if (subagent.paneId !== undefined && subagent.paneId.length > 0) {
-    hints.push(subagent.paneId);
-  }
-  return hints;
-}
-
 function formatSubagentSummary(subagent: RuntimeSubagent): string | undefined {
   const summary = subagent.structuredError?.message ?? subagent.summary;
   if (summary === undefined || summary.trim().length === 0) {
@@ -153,39 +198,64 @@ function formatSubagentSummary(subagent: RuntimeSubagent): string | undefined {
   return summarizeTask(summary, 96);
 }
 
-function renderSubagentRow(
-  subagent: RuntimeSubagent,
+function formatSubagentDescription(subagent: RuntimeSubagent): string {
+  const summary = formatSubagentSummary(subagent);
+  const activity = formatActivity(subagent) ?? summarizeTask(subagent.task, 80);
+  if (summary !== undefined && isTerminalSubagentStatus(subagent.status)) {
+    return `${activity} · ${summary}`;
+  }
+  return activity;
+}
+
+function formatActivitySummaryPart(subagent: RuntimeSubagent): string {
+  return `${subagent.name} ${formatActivity(subagent) ?? subagent.status}`;
+}
+
+function wrapActivitySummary(
+  parts: string[],
   width: number,
   theme: SubagentDashboardTheme,
-  mode: SubagentDashboardRenderMode,
 ): string[] {
-  const status = theme.fg(getStatusTone(subagent.status), subagent.status);
-  const activity =
-    formatActivity(subagent) ?? summarizeTask(subagent.task, mode === "compact" ? 36 : 60);
-  const hints = formatSubagentHints(subagent);
-  const countdown = formatAutoExitCountdown(subagent);
-  const meta = [
-    subagent.modeLabel || subagent.mode,
-    formatElapsed(subagent),
-    ...hints,
-    countdown,
-  ].filter((part): part is string => part !== undefined && part.length > 0);
-  const name = theme.fg("text", subagent.name);
-  const firstLine = `  ${name} ${theme.fg("dim", "·")} ${status} ${theme.fg("dim", "·")} ${theme.fg("muted", meta.join(" · "))}`;
+  if (parts.length === 0) {
+    return [];
+  }
+  const prefix = "Activity:";
+  const indent = "         ";
+  const lines: string[] = [];
+  let current = "";
+  let currentPrefix = prefix;
 
-  if (mode === "compact") {
-    return [truncateToWidth(`${firstLine} ${theme.fg("dim", "·")} ${activity}`, width, "…")];
+  for (const part of parts) {
+    const separator = current.length > 0 ? "  " : "";
+    const next = `${current}${separator}${part}`;
+    const availableWidth = Math.max(1, width - 2 - currentPrefix.length - 1);
+    if (current.length > 0 && visibleWidth(next) > availableWidth) {
+      lines.push(
+        truncateToWidth(
+          `  ${theme.fg("muted", currentPrefix)} ${theme.fg("muted", current)}`,
+          width,
+          "…",
+          true,
+        ),
+      );
+      current = part;
+      currentPrefix = indent;
+    } else {
+      current = next;
+    }
   }
 
-  const summary = formatSubagentSummary(subagent);
-  if (summary !== undefined && isTerminalSubagentStatus(subagent.status)) {
-    return [
-      truncateToWidth(firstLine, width, "…"),
-      truncateToWidth(`    ${activity}`, width, "…"),
-      truncateToWidth(`    ${summary}`, width, "…"),
-    ];
+  if (current.length > 0) {
+    lines.push(
+      truncateToWidth(
+        `  ${theme.fg("muted", currentPrefix)} ${theme.fg("muted", current)}`,
+        width,
+        "…",
+        true,
+      ),
+    );
   }
-  return [truncateToWidth(firstLine, width, "…"), truncateToWidth(`    ${activity}`, width, "…")];
+  return lines;
 }
 
 function sortSubagentsForDisplay(subagents: RuntimeSubagent[]): RuntimeSubagent[] {
@@ -212,31 +282,207 @@ export function renderChildSessionWidget(childState: ChildBootstrapState): strin
 }
 
 export function renderSubagentWidget(subagents: RuntimeSubagent[]): string[] | undefined {
-  if (subagents.length === 0) {
-    return undefined;
+  return renderSubagentDashboardLines(subagents, 120, undefined, { mode: "compact" });
+}
+
+function renderCompactDashboardLines(
+  subagents: RuntimeSubagent[],
+  width: number,
+  theme: SubagentDashboardTheme,
+  title: string,
+  hints: string[],
+  maxRows: number,
+): string[] {
+  const titleLine = renderTitleLine(subagents, width, theme, title, hints);
+  const sortedSubagents = sortSubagentsForDisplay(subagents);
+  const rowLimit = Math.max(0, maxRows - 1);
+  if (rowLimit === 0) {
+    return [titleLine];
+  }
+  const visibleSubagents = sortedSubagents.slice(0, rowLimit);
+  const hiddenSubagents = sortedSubagents.length - visibleSubagents.length;
+  const rows = visibleSubagents.map((subagent) =>
+    truncateToWidth(formatCompactSubagentLine(subagent, theme), width, "…", true),
+  );
+  if (hiddenSubagents > 0 && rows.length > 0) {
+    rows[rows.length - 1] = truncateToWidth(
+      `  ${theme.fg("dim", `… ${hiddenSubagents + 1} hidden subagents`)}`,
+      width,
+      "…",
+      true,
+    );
+  }
+  return [titleLine, ...rows];
+}
+
+function formatCompactSubagentLine(
+  subagent: RuntimeSubagent,
+  theme: SubagentDashboardTheme,
+): string {
+  const meta = [
+    formatMode(subagent),
+    formatElapsed(subagent),
+    subagent.paneId,
+    formatAutoExitCountdown(subagent),
+  ]
+    .filter((part): part is string => part !== undefined && part.length > 0)
+    .join(" · ");
+  return `  ${theme.fg("text", subagent.name)} ${theme.fg("dim", "·")} ${theme.fg(getStatusTone(subagent.status), subagent.status)} ${theme.fg("dim", "·")} ${theme.fg("muted", meta)} ${theme.fg("dim", "·")} ${formatSubagentDescription(subagent)}`;
+}
+
+function calculateSubagentColumnWidths(
+  subagents: RuntimeSubagent[],
+  width: number,
+): SubagentColumnWidths {
+  const name = Math.max(
+    12,
+    Math.min(
+      22,
+      Math.max("name".length, ...subagents.map((subagent) => visibleWidth(subagent.name))) + 1,
+    ),
+  );
+  const mode = Math.max(
+    10,
+    Math.min(
+      18,
+      Math.max("mode".length, ...subagents.map((subagent) => visibleWidth(formatMode(subagent)))) +
+        1,
+    ),
+  );
+  const elapsed = 9;
+  const pane = Math.max(
+    6,
+    Math.min(
+      8,
+      Math.max(
+        "pane".length,
+        ...subagents.map((subagent) => visibleWidth(subagent.paneId ?? "—")),
+      ) + 1,
+    ),
+  );
+  const status = 10;
+  const fixedWidth = 2 + 3 + name + mode + elapsed + pane + status;
+  return { name, mode, elapsed, pane, status, description: Math.max(12, width - fixedWidth) };
+}
+
+function renderSubagentTableHeader(
+  widths: SubagentColumnWidths,
+  width: number,
+  theme: SubagentDashboardTheme,
+): string[] {
+  const header =
+    `  ${theme.fg("muted", "#".padEnd(3))}` +
+    theme.fg("muted", "name".padEnd(widths.name)) +
+    theme.fg("muted", "mode".padEnd(widths.mode)) +
+    theme.fg("muted", "elapsed".padEnd(widths.elapsed)) +
+    theme.fg("muted", "pane".padEnd(widths.pane)) +
+    theme.fg("muted", "status".padEnd(widths.status)) +
+    theme.fg("muted", "activity / summary");
+  return [
+    truncateToWidth(header, width, "…", true),
+    truncateToWidth(`  ${theme.fg("borderMuted", "─".repeat(Math.max(0, width - 4)))}`, width),
+  ];
+}
+
+function renderSubagentTableRow(
+  subagent: RuntimeSubagent,
+  rowNumber: number,
+  widths: SubagentColumnWidths,
+  width: number,
+  theme: SubagentDashboardTheme,
+): string {
+  const row =
+    `  ${theme.fg("dim", String(rowNumber).padEnd(3))}` +
+    theme.fg("text", truncateToWidth(subagent.name, widths.name - 1).padEnd(widths.name)) +
+    theme.fg("muted", truncateToWidth(formatMode(subagent), widths.mode - 1).padEnd(widths.mode)) +
+    theme.fg("muted", formatElapsed(subagent).padEnd(widths.elapsed)) +
+    theme.fg("muted", (subagent.paneId ?? "—").padEnd(widths.pane)) +
+    theme.fg(getStatusTone(subagent.status), subagent.status.padEnd(widths.status)) +
+    theme.fg(
+      "muted",
+      truncateToWidth(formatSubagentDescription(subagent), widths.description, "…", true),
+    );
+  return truncateToWidth(row, width, "…", true);
+}
+
+function renderExpandedDashboardLines(
+  subagents: RuntimeSubagent[],
+  width: number,
+  theme: SubagentDashboardTheme,
+  title: string,
+  hints: string[],
+  maxRows: number,
+): string[] {
+  const sortedSubagents = sortSubagentsForDisplay(subagents);
+  const runningCount = subagents.filter((subagent) => subagent.status === "running").length;
+  const idleCount = subagents.filter((subagent) => subagent.status === "idle").length;
+  const doneCount = subagents.filter((subagent) =>
+    isTerminalSubagentStatus(subagent.status),
+  ).length;
+  const longestSubagent = sortedSubagents.toSorted((left, right) => {
+    const leftElapsed = (left.completedAt ?? Date.now()) - left.startedAt;
+    const rightElapsed = (right.completedAt ?? Date.now()) - right.startedAt;
+    return rightElapsed - leftElapsed;
+  })[0];
+  const visibleCount = Math.max(0, Math.min(maxRows, sortedSubagents.length));
+  const startIndex = Math.max(0, sortedSubagents.length - visibleCount);
+  const visibleSubagents = sortedSubagents.slice(startIndex);
+  const hiddenSubagents = startIndex;
+  const widths = calculateSubagentColumnWidths(visibleSubagents, width);
+  const lines = [
+    renderFramedTitleLine(title, width, theme, hints),
+    truncateToWidth(
+      `  ${theme.fg("muted", "Agents:")} ${theme.fg("text", String(subagents.length))}  ${theme.fg("warning", `${runningCount} running`)}  ${theme.fg(
+        "dim",
+        `${idleCount} idle`,
+      )}  ${theme.fg("success", `${doneCount} done`)}`,
+      width,
+      "…",
+      true,
+    ),
+  ];
+
+  if (longestSubagent !== undefined) {
+    lines.push(
+      truncateToWidth(
+        `  ${theme.fg("muted", "Longest:")} ${theme.fg("warning", theme.bold(`★ ${longestSubagent.name}`))}  ${theme.fg(
+          "muted",
+          `${formatMode(longestSubagent)}  ${formatElapsed(longestSubagent)}  ${formatActivity(longestSubagent) ?? longestSubagent.status}`,
+        )}`,
+        width,
+        "…",
+        true,
+      ),
+    );
   }
 
-  return [
-    `Subagents (${subagents.length})`,
-    ...subagents
-      .slice()
-      .toSorted((left, right) => left.name.localeCompare(right.name))
-      .map((subagent) => {
-        const countdown = formatAutoExitCountdown(subagent);
-        const parts = [
-          subagent.name,
-          subagent.status,
-          formatElapsed(subagent),
-          formatActivity(subagent) ?? summarizeTask(subagent.task, 48),
-        ];
+  lines.push(
+    ...wrapActivitySummary(
+      sortedSubagents.slice(0, 4).map((subagent) => formatActivitySummaryPart(subagent)),
+      width,
+      theme,
+    ),
+  );
+  lines.push("");
+  lines.push(...renderSubagentTableHeader(widths, width, theme));
 
-        if (countdown !== undefined && countdown.length > 0) {
-          parts.push(countdown);
-        }
+  if (hiddenSubagents > 0) {
+    lines.push(
+      truncateToWidth(
+        `  ${theme.fg("dim", `… ${hiddenSubagents} hidden subagent${hiddenSubagents === 1 ? "" : "s"}`)}`,
+        width,
+        "…",
+        true,
+      ),
+    );
+  }
 
-        return parts.join(" · ");
-      }),
-  ];
+  for (const [index, subagent] of visibleSubagents.entries()) {
+    const rowNumber = startIndex + index + 1;
+    lines.push(renderSubagentTableRow(subagent, rowNumber, widths, width, theme));
+  }
+
+  return lines;
 }
 
 export function renderSubagentDashboardLines(
@@ -260,26 +506,27 @@ export function renderSubagentDashboardLines(
     options.hints ??
     (mode === "compact"
       ? ["/subagents toggle", "ctrl+alt+u"]
-      : ["/subagents toggle", "/subagents fullscreen"]);
-  const titleLine = renderTitleLine(activeSubagents, safeWidth, renderTheme, title, hints);
-  const rows = sortSubagentsForDisplay(activeSubagents).flatMap((subagent) =>
-    renderSubagentRow(subagent, safeWidth, renderTheme, mode),
-  );
-  const rowLimit = Math.max(0, maxRows - 1);
-  if (rowLimit === 0) {
-    return [titleLine];
-  }
-  if (rows.length <= rowLimit) {
-    return [titleLine, ...rows];
+      : ["ctrl+alt+u collapse", "/subagents fullscreen"]);
+
+  if (mode === "compact") {
+    return renderCompactDashboardLines(
+      activeSubagents,
+      safeWidth,
+      renderTheme,
+      title,
+      hints,
+      maxRows,
+    );
   }
 
-  const visibleRowLimit = Math.max(0, rowLimit - 1);
-  const hiddenRows = rows.length - visibleRowLimit;
-  return [
-    titleLine,
-    ...rows.slice(0, visibleRowLimit),
-    truncateToWidth(`  +${hiddenRows} more rows`, safeWidth, "…"),
-  ];
+  return renderExpandedDashboardLines(
+    activeSubagents,
+    safeWidth,
+    renderTheme,
+    title,
+    hints,
+    maxRows,
+  );
 }
 
 export function createSubagentDashboardWidget(input: {
@@ -311,7 +558,7 @@ export function createSubagentFullscreenComponent(input: {
 }): (tui: TUI, theme: Theme) => Component {
   return (tui, theme) => {
     let scrollOffset = 0;
-    let lastViewportRows = DEFAULT_FULLSCREEN_ROWS;
+    let lastViewportRows = 0;
     let lastTotalRows = 0;
 
     return {
@@ -325,7 +572,7 @@ export function createSubagentFullscreenComponent(input: {
             maxRows: Number.MAX_SAFE_INTEGER,
             hints: [],
           }) ?? [];
-        const viewportRows = DEFAULT_FULLSCREEN_ROWS;
+        const viewportRows = Math.max(4, tui.terminal.rows - 4);
         const maxScroll = Math.max(0, content.length - viewportRows);
         scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
         lastViewportRows = viewportRows;
@@ -339,25 +586,31 @@ export function createSubagentFullscreenComponent(input: {
           safeWidth >= 80
             ? ` ↑↓/j/k scroll · pgup/pgdn · g/G · esc close${scrollInfo} `
             : ` j/k scroll · esc close${scrollInfo} `;
+        const footerFill = Math.max(0, safeWidth - visibleWidth(helpText));
         return [
           ...visible.map((line) => truncateToWidth(line, safeWidth, "…")),
           ...Array.from({ length: Math.max(0, viewportRows - visible.length) }, () => ""),
-          truncateToWidth(theme.fg("dim", helpText), safeWidth, "…", true),
+          truncateToWidth(
+            theme.fg("borderMuted", "─".repeat(footerFill)) + theme.fg("dim", helpText),
+            safeWidth,
+            "…",
+            true,
+          ),
         ];
       },
       handleInput(data: string): void {
         const maxScroll = Math.max(0, lastTotalRows - lastViewportRows);
-        if (matchesKey(data, "escape") || data === "q") {
+        if (matchesKey(data, Key.escape) || data === "q") {
           input.done();
           return;
         }
-        if (matchesKey(data, "up") || data === "k") {
+        if (matchesKey(data, Key.up) || data === "k") {
           scrollOffset = Math.max(0, scrollOffset - 1);
-        } else if (matchesKey(data, "down") || data === "j") {
+        } else if (matchesKey(data, Key.down) || data === "j") {
           scrollOffset = Math.min(maxScroll, scrollOffset + 1);
-        } else if (matchesKey(data, "pageUp") || data === "u") {
+        } else if (matchesKey(data, Key.pageUp) || data === "u") {
           scrollOffset = Math.max(0, scrollOffset - lastViewportRows);
-        } else if (matchesKey(data, "pageDown") || data === "d") {
+        } else if (matchesKey(data, Key.pageDown) || data === "d") {
           scrollOffset = Math.min(maxScroll, scrollOffset + lastViewportRows);
         } else if (data === "g") {
           scrollOffset = 0;

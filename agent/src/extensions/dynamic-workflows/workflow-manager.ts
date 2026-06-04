@@ -64,6 +64,7 @@ export interface ExecOptions {
   agentTimeoutMs?: number;
   /** Runtime backend for workflow subagents. */
   subagentBackend?: WorkflowSubagentBackend;
+  toolNames?: string[];
   runId?: string;
   displayName?: string;
   /** Host signal (e.g. tool/Esc) that should abort this run when fired. */
@@ -205,7 +206,7 @@ export class WorkflowManager extends EventEmitter {
   startInBackground(
     script: string,
     args?: unknown,
-    exec: Pick<ExecOptions, "subagentBackend" | "runId" | "displayName"> = {},
+    exec: Pick<ExecOptions, "subagentBackend" | "toolNames" | "runId" | "displayName"> = {},
   ): { runId: string; promise: Promise<WorkflowRunResult> } {
     const runId = exec.runId ?? generateRunId();
     const controller = new AbortController();
@@ -235,6 +236,7 @@ export class WorkflowManager extends EventEmitter {
     };
 
     this.runs.set(runId, managed);
+    this.emit("started", { runId, workflowName });
 
     // Persist initial state
     this.persistence.save({
@@ -270,6 +272,7 @@ export class WorkflowManager extends EventEmitter {
   runSync(script: string, args?: unknown, exec: ExecOptions = {}): Promise<WorkflowRunResult> {
     const managed = this.createManaged(script, args);
     this.runs.set(managed.runId, managed);
+    this.emit("started", { runId: managed.runId, workflowName: managed.snapshot.name });
     // Persist the initial state immediately so listRuns()/the task panel can see
     // the run the moment it starts, not only after the first agent journals.
     this.persistRun(managed);
@@ -313,7 +316,8 @@ export class WorkflowManager extends EventEmitter {
     args?: unknown,
     exec: ExecOptions = {},
   ): Promise<WorkflowRunResult> {
-    const { resumeJournal, maxAgents, agentTimeoutMs, externalSignal, onProgress } = exec;
+    const { resumeJournal, maxAgents, agentTimeoutMs, externalSignal, onProgress, toolNames } =
+      exec;
     const progress = () => onProgress?.(managed.snapshot);
     // Let a host abort (e.g. Esc during a blocking tool call) cancel this run.
     if (externalSignal) {
@@ -339,6 +343,7 @@ export class WorkflowManager extends EventEmitter {
         concurrency: this.concurrency,
         maxAgents,
         agentTimeoutMs,
+        toolNames,
         subagentBackend: exec.subagentBackend ?? this.subagentBackend,
         loadSavedWorkflow: this.loadSavedWorkflow,
         resumeJournal,

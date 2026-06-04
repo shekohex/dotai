@@ -7,6 +7,10 @@ import { isStaleSessionReplacementContextError } from "./session-replacement.js"
 import { OPENUSAGE_UPDATED_EVENT } from "./openusage/types.js";
 import { parseUpdatedEvent } from "./openusage/events.js";
 import { renderStatus as renderOpenUsageStatus } from "./openusage/status.js";
+import {
+  parseWorkflowProgressEvent,
+  WORKFLOW_PROGRESS_EVENT,
+} from "./dynamic-workflows/status-events.js";
 import { clearContextPruneLastResult, getContextPruneAPI } from "./context-prune/public-api.js";
 import { OPENAI_BETTER_UPDATED_EVENT } from "./openai-better/types.js";
 import {
@@ -217,11 +221,19 @@ function createCoreUISubscriptions(input: {
     requestRenderSafely(input.getRequestRender());
   });
 
+  const unsubscribeWorkflowProgressEvents = input.pi.events.on(WORKFLOW_PROGRESS_EVENT, (data) => {
+    const event = parseWorkflowProgressEvent(data);
+    if (event?.status === "active") input.state.workflowStatus = event;
+    else if (event?.status === "clear") input.state.workflowStatus = undefined;
+    requestRenderSafely(input.getRequestRender());
+  });
+
   return () => {
     unsubscribeOpenUsageEvents();
     unsubscribeGitStateEvents();
     unsubscribeModeEvents();
     unsubscribeOpenAIBetterEvents();
+    unsubscribeWorkflowProgressEvents();
   };
 }
 

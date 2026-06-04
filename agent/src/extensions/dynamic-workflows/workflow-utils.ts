@@ -15,7 +15,53 @@ import {
   type WorkflowAgentSessionRef,
 } from "./agent-result.js";
 import { isRetryableWorkflowError, WorkflowError, WorkflowErrorCode, wrapError } from "./errors.js";
-import type { AgentOptions, WorkflowExecution, WorkflowRunOptions } from "./workflow.js";
+import type { WorkflowAgent } from "./agent.js";
+import type { createWorkflowLogger } from "./logger.js";
+import type { parseModeRoutingFromMeta } from "./mode-routing.js";
+import type { AgentOptions, SharedRuntime, WorkflowMeta, WorkflowRunOptions } from "./workflow.js";
+
+export interface RuntimeState {
+  currentPhase?: string;
+  logs: string[];
+  phases: string[];
+  callSeq: number;
+}
+
+type WorkflowLogger = ReturnType<typeof createWorkflowLogger>;
+
+export interface WorkflowExecution {
+  started: number;
+  meta: WorkflowMeta;
+  body: string;
+  routingConfig: ReturnType<typeof parseModeRoutingFromMeta>;
+  maxAgents: number;
+  agentTimeoutMs: number;
+  runId: string;
+  baseCwd: string;
+  logger: WorkflowLogger;
+  state: RuntimeState;
+  agentRunner: Pick<WorkflowAgent, "run">;
+  shared: SharedRuntime;
+  log: (message: string) => void;
+  phase: (title: string) => void;
+  budget: Readonly<{
+    total: number | null;
+    spent: () => number;
+    remaining: () => number;
+  }>;
+  throwIfAborted: () => void;
+}
+
+export interface LiveAgentCall {
+  prompt: string;
+  agentOptions: AgentOptions;
+  assignedPhase: string | undefined;
+  callIndex: number;
+  label: string;
+  modeName: string | undefined;
+  displayModel: string | undefined;
+  resumeSession?: AgentJournalSessionRef;
+}
 
 export function createLimiter(limit: number) {
   let active = 0;

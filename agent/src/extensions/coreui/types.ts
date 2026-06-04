@@ -1,4 +1,5 @@
 import type { ThemeColor } from "../../mode-utils.js";
+import type { WorkflowProgressEvent } from "../dynamic-workflows/status-events.js";
 
 export type CoreUITPSStats = {
   current: number;
@@ -21,6 +22,7 @@ export type CoreUIState = {
   tpsElapsedMs: number;
   tpsVisible: boolean;
   openUsageStatus?: string;
+  workflowStatus?: Extract<WorkflowProgressEvent, { status: "active" }>;
   dirty: boolean;
   addedLines: number;
   removedLines: number;

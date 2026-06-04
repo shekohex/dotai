@@ -67,6 +67,7 @@ export class WorkflowAgent {
   private readonly toolNames: string[];
   private readonly customTools: ToolDefinition[];
   private readonly instructions?: string;
+  private sdk: SubagentSDK | undefined;
 
   constructor(options: WorkflowAgentOptions = {}) {
     const settings = getDynamicWorkflowSettings();
@@ -94,48 +95,54 @@ export class WorkflowAgent {
     const runCwd = options.cwd ?? this.cwd;
     const customTools = [...this.customTools, ...(options.customTools ?? [])];
     const toolNames = Array.from(new Set([...this.toolNames, ...(options.toolNames ?? [])]));
-    const sdk = createWorkflowSubagentSDK(this.pi, this.subagentBackend);
+    const sdk = this.getSdk(this.pi);
 
+    if (isSignalAborted(options.signal)) throw new Error("Subagent was aborted");
+    const baseParams = {
+      name: options.label ?? "workflow agent",
+      task: this.buildPrompt(prompt, options, options.schema !== undefined),
+      mode: options.mode ?? this.mode,
+      cwd: runCwd,
+      autoExit: true,
+      persisted: true,
+      completion: false as const,
+      ...(toolNames.length === 0 ? {} : { toolNames }),
+      ...(customTools.length === 0 ? {} : { customTools }),
+    };
+    const started =
+      options.schema === undefined
+        ? await startOrResumeTextSubagent(sdk, this.ctx, baseParams, options)
+        : await startOrResumeStructuredSubagent(
+            sdk,
+            this.ctx,
+            baseParams,
+            options,
+            options.schema,
+            options.outputRetryCount ?? this.outputRetryCount,
+          );
+    const unsubscribeActivity = subscribeWorkflowAgentActivity(
+      sdk,
+      started.handle.sessionId,
+      options.onActivity,
+    );
+    options.onStart?.(started.handle.getState());
     try {
-      if (isSignalAborted(options.signal)) throw new Error("Subagent was aborted");
-      const baseParams = {
-        name: options.label ?? "workflow agent",
-        task: this.buildPrompt(prompt, options, options.schema !== undefined),
-        mode: options.mode ?? this.mode,
-        cwd: runCwd,
-        autoExit: true,
-        persisted: true,
-        completion: false as const,
-        ...(toolNames.length === 0 ? {} : { toolNames }),
-        ...(customTools.length === 0 ? {} : { customTools }),
-      };
-      const started =
-        options.schema === undefined
-          ? await startOrResumeTextSubagent(sdk, this.ctx, baseParams, options)
-          : await startOrResumeStructuredSubagent(
-              sdk,
-              this.ctx,
-              baseParams,
-              options,
-              options.schema,
-              options.outputRetryCount ?? this.outputRetryCount,
-            );
-      const unsubscribeActivity = subscribeWorkflowAgentActivity(
-        sdk,
-        started.handle.sessionId,
-        options.onActivity,
-      );
-      options.onStart?.(started.handle.getState());
-      try {
-        const terminal = await started.handle.waitForCompletion({ signal: options.signal });
-        emitUsage(options, terminal);
-        return readTerminalResult(terminal, options.schema !== undefined);
-      } finally {
-        unsubscribeActivity();
-      }
+      const terminal = await started.handle.waitForCompletion({ signal: options.signal });
+      emitUsage(options, terminal);
+      return readTerminalResult(terminal, options.schema !== undefined);
     } finally {
-      sdk.dispose();
+      unsubscribeActivity();
     }
+  }
+
+  dispose(): void {
+    this.sdk?.dispose();
+    this.sdk = undefined;
+  }
+
+  private getSdk(pi: ExtensionAPI): SubagentSDK {
+    this.sdk ??= createWorkflowSubagentSDK(pi, this.subagentBackend);
+    return this.sdk;
   }
 
   private buildPrompt(

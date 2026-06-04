@@ -8,7 +8,8 @@ import { errorMessage } from "../../utils/error-message.js";
 import { generateAdversarialReviewWorkflow } from "./adversarial-review.js";
 import { generateDeepResearchWorkflow } from "./deep-research.js";
 import { collectSimplifyChangeContext, generateSimplifyWorkflow } from "./simplify.js";
-import { runWorkflow, type WorkflowRunResult } from "./workflow.js";
+import type { WorkflowRunResult } from "./workflow.js";
+import type { WorkflowManager } from "./workflow-manager.js";
 
 function alreadyRegistered(pi: ExtensionAPI, name: string): boolean {
   try {
@@ -34,8 +35,12 @@ function hasStringReport(value: unknown): value is { report: string } {
   );
 }
 
-export function registerBuiltinWorkflows(pi: ExtensionAPI, opts: { cwd: string }): void {
+export function registerBuiltinWorkflows(
+  pi: ExtensionAPI,
+  opts: { cwd: string; manager: WorkflowManager },
+): void {
   const cwd = opts.cwd;
+  const manager = opts.manager;
 
   if (!alreadyRegistered(pi, "deep-research")) {
     pi.registerCommand("deep-research", {
@@ -49,34 +54,21 @@ export function registerBuiltinWorkflows(pi: ExtensionAPI, opts: { cwd: string }
           },
         ];
       },
-      async handler(args: string, ctx: ExtensionCommandContext) {
+      handler(args: string, ctx: ExtensionCommandContext) {
         const question = args.trim();
         if (!question) {
           ctx.ui.notify("Usage: /deep-research <question>", "warning");
-          return;
+          return Promise.resolve();
         }
-        ctx.ui.notify("Researching — running web searches across several angles…", "info");
-        try {
-          const result = await runWorkflow(generateDeepResearchWorkflow(), {
-            cwd,
-            pi,
-            ctx,
-            args: { question },
-            toolNames: ["websearch"],
-            onPhase: (title) => {
-              ctx.ui.setStatus("deep-research", `research: ${title}`);
-            },
-          });
-          ctx.ui.setStatus("deep-research", undefined);
-          pi.sendMessage({
-            customType: "deep-research",
-            content: reportText(result),
-            display: true,
-          });
-        } catch (error) {
-          ctx.ui.setStatus("deep-research", undefined);
-          ctx.ui.notify(`deep-research failed: ${errorMessage(error)}`, "error");
-        }
+        startWorkflowCommandRun(pi, ctx, manager, {
+          customType: "deep-research",
+          script: generateDeepResearchWorkflow(),
+          args: { question },
+          toolNames: ["websearch"],
+          startedMessage: "Researching in background — running web searches across several angles…",
+          failurePrefix: "deep-research failed",
+        });
+        return Promise.resolve();
       },
     });
   }
@@ -93,41 +85,28 @@ export function registerBuiltinWorkflows(pi: ExtensionAPI, opts: { cwd: string }
           },
         ];
       },
-      async handler(args: string, ctx: ExtensionCommandContext) {
+      handler(args: string, ctx: ExtensionCommandContext) {
         const task = args.trim();
         if (!task) {
           ctx.ui.notify("Usage: /adversarial-review <task or question>", "warning");
-          return;
+          return Promise.resolve();
         }
-        ctx.ui.notify("Reviewing — investigating then refuting each finding…", "info");
-        try {
-          const result = await runWorkflow(generateAdversarialReviewWorkflow(), {
-            cwd,
-            pi,
-            ctx,
-            args: { task },
-            onPhase: (title) => {
-              ctx.ui.setStatus("adversarial-review", `review: ${title}`);
-            },
-          });
-          ctx.ui.setStatus("adversarial-review", undefined);
-          pi.sendMessage({
-            customType: "adversarial-review",
-            content: reportText(result),
-            display: true,
-          });
-        } catch (error) {
-          ctx.ui.setStatus("adversarial-review", undefined);
-          ctx.ui.notify(`adversarial-review failed: ${errorMessage(error)}`, "error");
-        }
+        startWorkflowCommandRun(pi, ctx, manager, {
+          customType: "adversarial-review",
+          script: generateAdversarialReviewWorkflow(),
+          args: { task },
+          startedMessage: "Reviewing in background — investigating then refuting each finding…",
+          failurePrefix: "adversarial-review failed",
+        });
+        return Promise.resolve();
       },
     });
   }
 
-  registerSimplifyWorkflow(pi, cwd);
+  registerSimplifyWorkflow(pi, cwd, manager);
 }
 
-function registerSimplifyWorkflow(pi: ExtensionAPI, cwd: string): void {
+function registerSimplifyWorkflow(pi: ExtensionAPI, cwd: string, manager: WorkflowManager): void {
   if (alreadyRegistered(pi, "simplify")) return;
   pi.registerCommand("simplify", {
     description: "Review changed code for reuse, quality, and efficiency, then fix issues found",
@@ -141,31 +120,50 @@ function registerSimplifyWorkflow(pi: ExtensionAPI, cwd: string): void {
       ];
     },
     async handler(args: string, ctx: ExtensionCommandContext) {
-      ctx.ui.notify(
-        "Simplifying — reviewing changed code across reuse, quality, efficiency…",
-        "info",
-      );
       try {
         const changeContext = await collectSimplifyChangeContext(cwd);
-        const result = await runWorkflow(generateSimplifyWorkflow(), {
-          cwd,
-          pi,
-          ctx,
-          args: { ...changeContext, context: args.trim() },
-          onPhase: (title) => {
-            ctx.ui.setStatus("simplify", `simplify: ${title}`);
-          },
-        });
-        ctx.ui.setStatus("simplify", undefined);
-        pi.sendMessage({
+        startWorkflowCommandRun(pi, ctx, manager, {
           customType: "simplify",
-          content: reportText(result),
-          display: true,
+          script: generateSimplifyWorkflow(),
+          args: { ...changeContext, context: args.trim() },
+          startedMessage:
+            "Simplifying in background — reviewing changed code across reuse, quality, efficiency…",
+          failurePrefix: "simplify failed",
         });
       } catch (error) {
-        ctx.ui.setStatus("simplify", undefined);
         ctx.ui.notify(`simplify failed: ${errorMessage(error)}`, "error");
       }
     },
   });
+}
+
+function startWorkflowCommandRun(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  manager: WorkflowManager,
+  options: {
+    customType: string;
+    script: string;
+    args: unknown;
+    toolNames?: string[];
+    startedMessage: string;
+    failurePrefix: string;
+  },
+): void {
+  const { runId, promise } = manager.startInBackground(options.script, options.args, {
+    displayName: options.customType,
+    toolNames: options.toolNames,
+  });
+  ctx.ui.notify(`${options.startedMessage} Run ID: ${runId}`, "info");
+  promise
+    .then((result) => {
+      pi.sendMessage({
+        customType: options.customType,
+        content: reportText(result),
+        display: true,
+      });
+    })
+    .catch((error: unknown) => {
+      ctx.ui.notify(`${options.failurePrefix}: ${errorMessage(error)}`, "error");
+    });
 }

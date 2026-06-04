@@ -60,6 +60,12 @@ export {
   registerSavedWorkflow,
 } from "./saved-commands.js";
 export { installResultDelivery, installTaskPanel, type TaskPanelOptions } from "./task-panel.js";
+export {
+  parseWorkflowProgressEvent,
+  WORKFLOW_PROGRESS_EVENT,
+  WorkflowProgressEventSchema,
+  type WorkflowProgressEvent,
+} from "./status-events.js";
 export type {
   AgentOptions,
   JournalEntry,

@@ -109,6 +109,28 @@ test("WorkflowAgent can use process subagent backend", async () => {
   assert.equal(typeof options.buildLaunchCommand, "function");
 });
 
+test("WorkflowAgent reuses one SDK until disposed", async () => {
+  const { WorkflowAgent } = await import("../../src/extensions/dynamic-workflows/agent.js");
+  sdkStart.mockResolvedValueOnce(createStartValue("first-session", "first result"));
+  sdkStart.mockResolvedValueOnce(createStartValue("second-session", "second result"));
+  const cwd = mkdtempSync(join(tmpdir(), "workflow-agent-shared-sdk-"));
+  cleanupPaths.push(cwd);
+
+  const agent = new WorkflowAgent({
+    cwd,
+    pi: {} as ExtensionAPI,
+    ctx: createContext(cwd),
+  });
+
+  assert.equal(await agent.run("first"), "first result");
+  assert.equal(await agent.run("second"), "second result");
+  assert.equal(sdkFactory.mock.calls.length, 1);
+  assert.equal(sdkDispose.mock.calls.length, 0);
+
+  agent.dispose();
+  assert.equal(sdkDispose.mock.calls.length, 1);
+});
+
 function createStartValue(
   sessionId: string,
   result: string,

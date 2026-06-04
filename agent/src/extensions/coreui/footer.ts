@@ -58,6 +58,7 @@ export function bindCoreUI(
             theme,
             buildTPSStatus(theme, state),
             buildSessionElapsedStatus(theme, state),
+            buildWorkflowStatus(theme, state),
           );
           const leftBottom = appendGoalRuntimeStatus(
             theme,
@@ -121,6 +122,16 @@ export function buildSessionElapsedStatus(theme: Theme, state: CoreUIState): str
     return "";
   }
   return theme.fg("dim", formatDuration(state.tpsElapsedMs));
+}
+
+function buildWorkflowStatus(theme: Theme, state: CoreUIState): string {
+  const workflow = state.workflowStatus;
+  if (workflow === undefined) return "";
+  const phase =
+    workflow.phase !== undefined && workflow.phase.length > 0 ? ` · ${workflow.phase}` : "";
+  return theme.italic(
+    theme.fg("accent", `Workflow ${workflow.workflowName} ${workflow.elapsedSeconds}s${phase}`),
+  );
 }
 
 function joinFooterParts(theme: Theme, ...parts: string[]): string {

@@ -11,8 +11,8 @@ import { parseWorkflowErrorCode, WorkflowError, WorkflowErrorCode, wrapError } f
 import {
   createCompletedJournalEntry,
   createStartedJournalEntry,
-  type AgentJournalInput,
   type AgentJournalSessionRef,
+  type AgentJournalInput,
   type JournalEntry,
 } from "./workflow-journal.js";
 import { createWorkflowLogger } from "./logger.js";
@@ -33,6 +33,9 @@ import {
   defaultAgentLabel,
   estimateTokens,
   hashAgentCall,
+  type LiveAgentCall,
+  type RuntimeState,
+  type WorkflowExecution,
   resolveAgentResumeSession,
   toSubagentResumeSession,
   unwrapWorkflowAgentResult,
@@ -126,53 +129,8 @@ export interface AgentOptions<TSchemaDef extends TSchema | undefined = TSchema |
   isolation?: "worktree";
   agentType?: string;
   timeoutMs?: number;
-  /** Continue a previous workflow agent session using a prior agent result or explicit session ref. */
   resume?: unknown;
 }
-
-interface RuntimeState {
-  currentPhase?: string;
-  logs: string[];
-  phases: string[];
-  callSeq: number;
-}
-
-type WorkflowLogger = ReturnType<typeof createWorkflowLogger>;
-
-export interface WorkflowExecution {
-  started: number;
-  meta: WorkflowMeta;
-  body: string;
-  routingConfig: ReturnType<typeof parseModeRoutingFromMeta>;
-  maxAgents: number;
-  agentTimeoutMs: number;
-  runId: string;
-  baseCwd: string;
-  logger: WorkflowLogger;
-  state: RuntimeState;
-  agentRunner: Pick<WorkflowAgent, "run">;
-  shared: SharedRuntime;
-  log: (message: string) => void;
-  phase: (title: string) => void;
-  budget: Readonly<{
-    total: number | null;
-    spent: () => number;
-    remaining: () => number;
-  }>;
-  throwIfAborted: () => void;
-}
-
-interface LiveAgentCall {
-  prompt: string;
-  agentOptions: AgentOptions;
-  assignedPhase: string | undefined;
-  callIndex: number;
-  label: string;
-  modeName: string | undefined;
-  displayModel: string | undefined;
-  resumeSession?: AgentJournalSessionRef;
-}
-
 const DETERMINISM_BLOCKLIST = /\bDate\s*\.\s*now\b|\bMath\s*\.\s*random\b|\bnew\s+Date\s*\(\s*\)/;
 
 export function runWorkflow(
@@ -186,7 +144,11 @@ function runWorkflowInternal(
   script: string,
   options: WorkflowRunOptions,
 ): Promise<WorkflowRunResult> {
-  return executeWorkflow(createWorkflowExecution(script, options), options);
+  const execution = createWorkflowExecution(script, options);
+  return executeWorkflow(execution, options).finally(() => {
+    execution.logger.persist();
+    if (execution.agentRunner instanceof WorkflowAgent) execution.agentRunner.dispose();
+  });
 }
 
 function createWorkflowExecution(script: string, options: WorkflowRunOptions): WorkflowExecution {
@@ -294,8 +256,6 @@ async function executeWorkflow(
       workflow: workflowFn,
     }),
   );
-
-  execution.logger.persist();
 
   options.onTokenUsage?.(execution.shared.tokenUsage);
 

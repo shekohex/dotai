@@ -6,6 +6,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
 import { runWorkflow, type WorkflowRunResult } from "./workflow.js";
+import type { WorkflowManager } from "./workflow-manager.js";
 import type { SavedWorkflow, WorkflowStorage } from "./workflow-saved.js";
 
 function isRegistered(pi: ExtensionAPI, name: string): boolean {
@@ -57,7 +58,12 @@ export function parseCommandArgs(
 }
 
 /* Register one saved workflow as a `/<name>` command (idempotent). */
-export function registerSavedWorkflow(pi: ExtensionAPI, cwd: string, wf: SavedWorkflow): void {
+export function registerSavedWorkflow(
+  pi: ExtensionAPI,
+  cwd: string,
+  wf: SavedWorkflow,
+  manager?: WorkflowManager,
+): void {
   if (isRegistered(pi, wf.name)) return;
   pi.registerCommand(wf.name, {
     description: wf.description || `Saved workflow: ${wf.name}`,
@@ -80,28 +86,49 @@ export function registerSavedWorkflow(pi: ExtensionAPI, cwd: string, wf: SavedWo
       return parameterItems.filter((item) => item.value.startsWith(token));
     },
     async handler(args: string, ctx: ExtensionCommandContext) {
+      if (manager !== undefined) {
+        startSavedWorkflowCommandRun(pi, ctx, manager, wf, parseCommandArgs(args, wf.parameters));
+        return;
+      }
       try {
         const result = await runWorkflow(wf.script, {
           cwd,
           pi,
           ctx,
           args: parseCommandArgs(args, wf.parameters),
-          onPhase: (title) => {
-            ctx.ui.setStatus(`wf:${wf.name}`, `${wf.name}: ${title}`);
-          },
         });
-        ctx.ui.setStatus(`wf:${wf.name}`, undefined);
         pi.sendMessage({
           customType: `workflow:${wf.name}`,
           content: reportText(result),
           display: true,
         });
       } catch (error) {
-        ctx.ui.setStatus(`wf:${wf.name}`, undefined);
         ctx.ui.notify(`/${wf.name} failed: ${errorMessage(error)}`, "error");
       }
     },
   });
+}
+
+function startSavedWorkflowCommandRun(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  manager: WorkflowManager,
+  wf: SavedWorkflow,
+  args: unknown,
+): void {
+  const { runId, promise } = manager.startInBackground(wf.script, args, { displayName: wf.name });
+  ctx.ui.notify(`/${wf.name} workflow running in background. Run ID: ${runId}`, "info");
+  promise
+    .then((result) => {
+      pi.sendMessage({
+        customType: `workflow:${wf.name}`,
+        content: reportText(result),
+        display: true,
+      });
+    })
+    .catch((error: unknown) => {
+      ctx.ui.notify(`/${wf.name} failed: ${errorMessage(error)}`, "error");
+    });
 }
 
 /* Register every saved workflow found in storage. */
@@ -109,6 +136,7 @@ export function registerAllSavedWorkflows(
   pi: ExtensionAPI,
   cwd: string,
   storage: WorkflowStorage,
+  manager?: WorkflowManager,
 ): void {
-  for (const wf of storage.list()) registerSavedWorkflow(pi, cwd, wf);
+  for (const wf of storage.list()) registerSavedWorkflow(pi, cwd, wf, manager);
 }

@@ -17,11 +17,11 @@ import {
   registerBuiltinWorkflows,
   registerWorkflowCommands,
   setWorkflowModeAvailability,
+  WORKFLOW_PROGRESS_EVENT,
   WorkflowManager,
 } from "./index.js";
 
 const WORKFLOW_TOOL_NAME = "workflow";
-
 function activateWorkflowTool(pi: ExtensionAPI): void {
   const active = new Set([...pi.getActiveTools(), WORKFLOW_TOOL_NAME]);
   pi.setActiveTools(Array.from(active).toSorted((left, right) => left.localeCompare(right)));
@@ -44,6 +44,7 @@ export default function extension(pi: ExtensionAPI) {
 
   const workflowTool = createWorkflowTool({ cwd, pi, manager, storage });
   pi.registerTool(workflowTool);
+  const setWorkflowStatusContext = installWorkflowStatusEmitter(pi, manager);
   let workflowToolEnabled = false;
   const persistWorkflowToolState = (): void => {
     pi.appendEntry(
@@ -97,13 +98,14 @@ export default function extension(pi: ExtensionAPI) {
     },
   });
   registerWorkflowCommands(pi, manager, { storage, cwd });
-  registerBuiltinWorkflows(pi, { cwd });
-  registerAllSavedWorkflows(pi, cwd, storage);
+  registerBuiltinWorkflows(pi, { cwd, manager });
+  registerAllSavedWorkflows(pi, cwd, storage, manager);
   // Deliver a background run's result into the conversation when it finishes.
   installResultDelivery(pi, manager);
   installWorkflowInputHooks(pi, getWorkflowModeState());
 
   pi.on("session_start", (_event: unknown, ctx: ExtensionContext) => {
+    setWorkflowStatusContext(ctx);
     const restored = readToolState(ctx.sessionManager.getBranch(), WORKFLOW_TOOL_NAME);
     const conversationEmpty = isConversationStart(ctx);
     const enabled = restored === true || (restored === null && conversationEmpty);
@@ -119,6 +121,7 @@ export default function extension(pi: ExtensionAPI) {
     if (!workflowToolEnabled) deactivateWorkflowTool(pi);
   });
   pi.on("session_tree", (_event: unknown, ctx: ExtensionContext) => {
+    setWorkflowStatusContext(ctx);
     const restored = readToolState(ctx.sessionManager.getBranch(), WORKFLOW_TOOL_NAME);
     const conversationEmpty = isConversationStart(ctx);
     const enabled = restored === true || (restored === null && conversationEmpty);
@@ -128,4 +131,66 @@ export default function extension(pi: ExtensionAPI) {
     });
     setWorkflowToolEnabled(enabled);
   });
+}
+
+function installWorkflowStatusEmitter(
+  pi: ExtensionAPI,
+  manager: WorkflowManager,
+): (ctx: ExtensionContext) => void {
+  let currentContext: ExtensionContext | null = null;
+  const activeWorkflowStarts = new Map<string, number>();
+  const updateWorkflowStatus = (): void => {
+    if (currentContext === null) return;
+    const activeRuns = [...activeWorkflowStarts.keys()]
+      .map((runId) => manager.getRun(runId))
+      .filter(
+        (run) =>
+          run !== undefined && run.status === "running" && !isGoalWorkflowName(run.snapshot.name),
+      );
+    if (activeRuns.length === 0) {
+      pi.events.emit(WORKFLOW_PROGRESS_EVENT, {
+        status: "clear",
+        sessionId: currentContext.sessionManager.getSessionId(),
+        cwd: currentContext.cwd,
+      });
+      return;
+    }
+    const run = activeRuns.at(-1);
+    if (run === undefined) return;
+    const startedAt = activeWorkflowStarts.get(run.runId) ?? run.startedAt.getTime();
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    pi.events.emit(WORKFLOW_PROGRESS_EVENT, {
+      status: "active",
+      sessionId: currentContext.sessionManager.getSessionId(),
+      cwd: currentContext.cwd,
+      runId: run.runId,
+      workflowName: run.snapshot.name,
+      elapsedSeconds,
+      phase: run.snapshot.currentPhase,
+    });
+  };
+  const workflowStatusTimer = setInterval(updateWorkflowStatus, 1_000);
+  workflowStatusTimer.unref?.();
+  const settleWorkflowStatus = (event: { runId?: string }): void => {
+    if (event.runId !== undefined) activeWorkflowStarts.delete(event.runId);
+    updateWorkflowStatus();
+  };
+  manager.on("started", (event: { runId: string; workflowName: string }) => {
+    if (!isGoalWorkflowName(event.workflowName)) activeWorkflowStarts.set(event.runId, Date.now());
+    updateWorkflowStatus();
+  });
+  for (const eventName of ["phase", "agentStart", "agentEnd", "log"] as const) {
+    manager.on(eventName, updateWorkflowStatus);
+  }
+  for (const eventName of ["complete", "error", "stopped", "paused"] as const) {
+    manager.on(eventName, settleWorkflowStatus);
+  }
+  return (ctx) => {
+    currentContext = ctx;
+    updateWorkflowStatus();
+  };
+}
+
+function isGoalWorkflowName(name: string): boolean {
+  return name === "goal" || name.startsWith("goal-");
 }

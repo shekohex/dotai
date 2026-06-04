@@ -137,10 +137,10 @@ function installWorkflowStatusEmitter(
   pi: ExtensionAPI,
   manager: WorkflowManager,
 ): (ctx: ExtensionContext) => void {
-  let currentContext: ExtensionContext | null = null;
+  let currentSessionContext: { sessionId: string; cwd: string } | null = null;
   const activeWorkflowStarts = new Map<string, number>();
   const updateWorkflowStatus = (): void => {
-    if (currentContext === null) return;
+    if (currentSessionContext === null) return;
     const activeRuns = [...activeWorkflowStarts.keys()]
       .map((runId) => manager.getRun(runId))
       .filter(
@@ -150,8 +150,8 @@ function installWorkflowStatusEmitter(
     if (activeRuns.length === 0) {
       pi.events.emit(WORKFLOW_PROGRESS_EVENT, {
         status: "clear",
-        sessionId: currentContext.sessionManager.getSessionId(),
-        cwd: currentContext.cwd,
+        sessionId: currentSessionContext.sessionId,
+        cwd: currentSessionContext.cwd,
       });
       return;
     }
@@ -161,8 +161,8 @@ function installWorkflowStatusEmitter(
     const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
     pi.events.emit(WORKFLOW_PROGRESS_EVENT, {
       status: "active",
-      sessionId: currentContext.sessionManager.getSessionId(),
-      cwd: currentContext.cwd,
+      sessionId: currentSessionContext.sessionId,
+      cwd: currentSessionContext.cwd,
       runId: run.runId,
       workflowName: run.snapshot.name,
       elapsedSeconds,
@@ -186,7 +186,7 @@ function installWorkflowStatusEmitter(
     manager.on(eventName, settleWorkflowStatus);
   }
   return (ctx) => {
-    currentContext = ctx;
+    currentSessionContext = { sessionId: ctx.sessionManager.getSessionId(), cwd: ctx.cwd };
     updateWorkflowStatus();
   };
 }

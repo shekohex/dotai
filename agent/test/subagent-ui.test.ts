@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, TUI } from "@earendil-works/pi-tui";
+import { createGsdSubagentRuntimeHooks } from "../src/extensions/gsd/ui/subagent-widget.js";
 
-import { createDefaultSubagentRuntimeHooks } from "../src/subagent-sdk/runtime-hooks.js";
+import {
+  createDefaultSubagentRuntimeHooks,
+  resetSubagentDashboardCoordinatorForTests,
+} from "../src/subagent-sdk/runtime-hooks.js";
 import {
   SUBAGENT_OVERVIEW_WIDGET_KEY,
   type SubagentActivityEntry,
@@ -82,6 +86,36 @@ function createPi(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function createCtx(
+  scope: string,
+  widgets: Map<string, { content: unknown; placement?: string }> = new Map(),
+) {
+  return {
+    cwd: `/tmp/${scope}`,
+    hasUI: true,
+    sessionManager: {
+      getSessionId() {
+        return scope;
+      },
+    },
+    ui: {
+      theme: createTheme(),
+      notify() {},
+      async custom() {},
+      setWidget(key: string, content: unknown, options?: { placement?: string }) {
+        widgets.set(key, { content, placement: options?.placement });
+      },
+    },
+  };
+}
+
+function getRenderedWidget(
+  widgets: Map<string, { content: unknown; placement?: string }>,
+  width = 100,
+): string | undefined {
+  return renderWidgetContent(widgets.get(SUBAGENT_OVERVIEW_WIDGET_KEY)?.content, width)?.join("\n");
+}
+
 function renderWidgetContent(content: unknown, width = 100): string[] | undefined {
   if (content === undefined) {
     return undefined;
@@ -97,34 +131,28 @@ function renderWidgetContent(content: unknown, width = 100): string[] | undefine
 }
 
 describe("subagent ui", () => {
+  beforeEach(() => {
+    resetSubagentDashboardCoordinatorForTests();
+  });
+
   it("renders active subagent overview above editor", () => {
     const widgets = new Map<string, { content: unknown; placement?: string }>();
     const hooks = createDefaultSubagentRuntimeHooks(createPi() as never);
 
-    hooks.renderWidget(
-      {
-        hasUI: true,
-        ui: {
-          setWidget(key: string, content: unknown, options?: { placement?: string }) {
-            widgets.set(key, { content, placement: options?.placement });
-          },
-        },
-      } as never,
-      [
-        createRuntimeSubagent({
-          sessionId: "a",
-          name: "planner",
-          status: "running",
-          activity: createActivity(),
-        }),
-        createRuntimeSubagent({ sessionId: "b", name: "mapper", status: "idle" }),
-        createRuntimeSubagent({ sessionId: "c", name: "verifier", status: "completed" }),
-      ],
-    );
+    hooks.renderWidget(createCtx("subagent-ui-overview", widgets) as never, [
+      createRuntimeSubagent({
+        sessionId: "a",
+        name: "planner",
+        status: "running",
+        activity: createActivity(),
+      }),
+      createRuntimeSubagent({ sessionId: "b", name: "mapper", status: "idle" }),
+      createRuntimeSubagent({ sessionId: "c", name: "verifier", status: "completed" }),
+    ]);
 
     const widget = widgets.get(SUBAGENT_OVERVIEW_WIDGET_KEY);
     expect(widget?.placement).toBe("aboveEditor");
-    const rendered = renderWidgetContent(widget?.content)?.join("\n");
+    const rendered = getRenderedWidget(widgets);
     expect(rendered).toContain("Subagents · 3 active · 1 running · 1 idle · 1 done");
     expect(rendered).toContain("planner · running · gsd-codebase-mapper");
     expect(rendered).toContain("%1 · reading: PROJECT.md");
@@ -132,9 +160,74 @@ describe("subagent ui", () => {
     expect(rendered).toContain("verifier · completed");
   });
 
+  it("aggregates multiple runtime hook widgets and registers controls once per api", () => {
+    const commands = new Map<string, unknown>();
+    const shortcuts = new Map<string, unknown>();
+    const widgets = new Map<string, { content: unknown; placement?: string }>();
+    const pi = createPi({
+      registerCommand(name: string, options: unknown) {
+        commands.set(name, options);
+      },
+      registerShortcut(shortcut: string, options: unknown) {
+        shortcuts.set(shortcut, options);
+      },
+    });
+    const firstHooks = createDefaultSubagentRuntimeHooks(pi as never);
+    const secondHooks = createDefaultSubagentRuntimeHooks(pi as never);
+    const ctx = createCtx("subagent-ui-multi", widgets);
+
+    firstHooks.renderWidget(ctx as never, [
+      createRuntimeSubagent({ sessionId: "first", name: "planner", status: "running" }),
+    ]);
+    secondHooks.renderWidget(ctx as never, [
+      createRuntimeSubagent({ sessionId: "second", name: "reviewer", status: "idle" }),
+    ]);
+
+    const rendered = getRenderedWidget(widgets);
+    expect(commands.size).toBe(1);
+    expect(shortcuts.size).toBe(1);
+    expect(rendered).toContain("planner · running");
+    expect(rendered).toContain("reviewer · idle");
+  });
+
+  it("retains terminal states through persistState after active runtime list clears", async () => {
+    vi.useFakeTimers();
+    try {
+      const widgets = new Map<string, { content: unknown; placement?: string }>();
+      const hooks = createDefaultSubagentRuntimeHooks(createPi() as never, {
+        terminalRetentionMs: 25,
+      });
+      const ctx = createCtx("subagent-ui-terminal-retention", widgets);
+      const running = createRuntimeSubagent({
+        sessionId: "terminal-path",
+        name: "executor",
+        status: "running",
+      });
+
+      hooks.renderWidget(ctx as never, [running]);
+      await hooks.persistState({
+        ...running,
+        event: "completed",
+        status: "completed",
+        summary: "Done from real persist path",
+        completedAt: Date.now(),
+      });
+      hooks.renderWidget(ctx as never, []);
+
+      expect(getRenderedWidget(widgets)).toContain("executor · completed");
+
+      await vi.advanceTimersByTimeAsync(30);
+
+      expect(widgets.get(SUBAGENT_OVERVIEW_WIDGET_KEY)?.content).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("registers subagent dashboard command and shortcut controls", () => {
     const commands = new Map<string, { description?: string }>();
     const shortcuts = new Map<string, { description?: string }>();
+    const duplicateCommands = new Map<string, { description?: string }>();
 
     createDefaultSubagentRuntimeHooks(
       createPi({
@@ -146,9 +239,17 @@ describe("subagent ui", () => {
         },
       }) as never,
     );
+    createDefaultSubagentRuntimeHooks(
+      createPi({
+        registerCommand(name: string, options: { description?: string }) {
+          duplicateCommands.set(name, options);
+        },
+      }) as never,
+    );
 
     expect(commands.get("subagents")?.description).toBe("Show or toggle live subagent dashboard");
-    expect(shortcuts.get("ctrl+alt+a")?.description).toBe("Toggle subagent dashboard");
+    expect(shortcuts.get("ctrl+alt+u")?.description).toBe("Toggle subagent dashboard");
+    expect(duplicateCommands.size).toBe(0);
   });
 
   it("renders expanded actionable rows with terminal summaries", () => {
@@ -193,6 +294,58 @@ describe("subagent ui", () => {
     expect(lines).toBeDefined();
     expect(lines?.every((line) => visibleWidth(line) <= 36)).toBe(true);
     expect(lines?.join("\n")).toContain("Subagents · 1 active");
+  });
+
+  it("calculates themed title hint width by visible width", () => {
+    const ansiTheme = {
+      bg(_color: string, text: string) {
+        return text;
+      },
+      fg(_color: string, text: string) {
+        return `\u001b[2m${text}\u001b[22m`;
+      },
+      bold(text: string) {
+        return `\u001b[1m${text}\u001b[22m`;
+      },
+    } as Theme;
+    const lines = renderSubagentDashboardLines(
+      [createRuntimeSubagent({ sessionId: "ansi", name: "runner", status: "running" })],
+      78,
+      ansiTheme,
+      { mode: "compact" },
+    );
+
+    expect(lines?.[0]).toContain("ctrl+alt+u");
+    expect(visibleWidth(lines?.[0] ?? "")).toBeLessThanOrEqual(78);
+  });
+
+  it("caps rows with explicit overflow count", () => {
+    const lines = renderSubagentDashboardLines(
+      Array.from({ length: 6 }, (_, index) =>
+        createRuntimeSubagent({
+          sessionId: `overflow-${index}`,
+          name: `agent-${index}`,
+          status: "running",
+        }),
+      ),
+      100,
+      createTheme(),
+      { mode: "compact", maxRows: 4 },
+    );
+
+    expect(lines).toHaveLength(4);
+    expect(lines?.at(-1)).toContain("+4 more rows");
+  });
+
+  it("GSD subagent hooks delegate to shared dashboard with GSD title", () => {
+    const widgets = new Map<string, { content: unknown; placement?: string }>();
+    const hooks = createGsdSubagentRuntimeHooks(createPi() as never);
+
+    hooks.renderWidget(createCtx("gsd-subagent-shared-title", widgets) as never, [
+      createRuntimeSubagent({ sessionId: "gsd", name: "gsd-planner", status: "running" }),
+    ]);
+
+    expect(getRenderedWidget(widgets)).toContain("GSD Subagents · 1 active · 1 running");
   });
 
   it("retains recent terminal subagents after active list clears", () => {
@@ -278,17 +431,9 @@ describe("subagent ui", () => {
     const widgets = new Map<string, { content: unknown; placement?: string }>();
     const hooks = createDefaultSubagentRuntimeHooks(createPi() as never);
 
-    hooks.renderWidget(
-      {
-        hasUI: true,
-        ui: {
-          setWidget(key: string, content: unknown, options?: { placement?: string }) {
-            widgets.set(key, { content, placement: options?.placement });
-          },
-        },
-      } as never,
-      [createRuntimeSubagent({ sessionId: "live", name: "mapper", status: "running" })],
-    );
+    hooks.renderWidget(createCtx("subagent-ui-live-runtime", widgets) as never, [
+      createRuntimeSubagent({ sessionId: "live", name: "mapper", status: "running" }),
+    ]);
 
     expect(widgets.has(SUBAGENT_OVERVIEW_WIDGET_KEY)).toBe(true);
   });

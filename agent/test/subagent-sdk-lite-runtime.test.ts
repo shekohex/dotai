@@ -74,6 +74,29 @@ test("LiteRuntime resume fails when persisted sessionPath is missing", async () 
   ).rejects.toThrow(/subagent resume failed: sessionPath is not accessible/u);
 });
 
+test("LiteRuntime restore routes state through subagent UI hooks", async () => {
+  let renderedStateCount: number | undefined;
+  const runtime = new LiteRuntime({} as never, {
+    kind: "lite",
+    hooks: {
+      persistState() {
+        return Promise.resolve();
+      },
+      persistMessage() {
+        return Promise.resolve();
+      },
+      emitStatusMessage() {},
+      renderWidget(_ctx, subagents) {
+        renderedStateCount = subagents.length;
+      },
+    },
+  });
+
+  await runtime.restore({ cwd: "/tmp/lite-ui", hasUI: true } as never);
+
+  expect(renderedStateCount).toBe(0);
+});
+
 test("lite StructuredOutput tool persists structured output to child session", async () => {
   const cwd = await createTempDir("agent-lite-structured-cwd-");
   const agentDir = await createTempDir("agent-lite-structured-agent-");

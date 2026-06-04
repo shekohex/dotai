@@ -1,6 +1,6 @@
 import { formatDurationHuman } from "../extensions/coreui/tools.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import type { ChildBootstrapState, RuntimeSubagent } from "./types.js";
 
@@ -122,7 +122,8 @@ function renderTitleLine(
   ].filter((part): part is string => part !== undefined);
   const summary = parts.join(theme.fg("dim", " · "));
   const hintText = hints.length > 0 ? theme.fg("dim", ` ${hints.join(" · ")}`) : "";
-  const availableSummaryWidth = Math.max(1, width - (hintText.length > 0 ? hintText.length : 0));
+  const hintWidth = visibleWidth(hintText);
+  const availableSummaryWidth = Math.max(1, width - hintWidth);
 
   if (hintText.length > 0 && width >= 74) {
     return truncateToWidth(summary, availableSummaryWidth, "…") + hintText;
@@ -259,20 +260,27 @@ export function renderSubagentDashboardLines(
   const hints =
     options.hints ??
     (mode === "compact"
-      ? ["/subagents toggle", "ctrl+alt+a"]
+      ? ["/subagents toggle", "ctrl+alt+u"]
       : ["/subagents toggle", "/subagents fullscreen"]);
-  const lines = [renderTitleLine(activeSubagents, safeWidth, renderTheme, title, hints)];
+  const titleLine = renderTitleLine(activeSubagents, safeWidth, renderTheme, title, hints);
   const rows = sortSubagentsForDisplay(activeSubagents).flatMap((subagent) =>
     renderSubagentRow(subagent, safeWidth, renderTheme, mode),
   );
-  lines.push(...rows.slice(0, Math.max(0, maxRows - 1)));
-  const hiddenRows = rows.length - (lines.length - 1);
-  if (hiddenRows > 0 && lines.length < maxRows) {
-    lines.push(truncateToWidth(`  +${hiddenRows} more rows`, safeWidth, "…"));
-  } else if (hiddenRows > 0) {
-    lines[lines.length - 1] = truncateToWidth(`  +${hiddenRows + 1} more rows`, safeWidth, "…");
+  const rowLimit = Math.max(0, maxRows - 1);
+  if (rowLimit === 0) {
+    return [titleLine];
   }
-  return lines;
+  if (rows.length <= rowLimit) {
+    return [titleLine, ...rows];
+  }
+
+  const visibleRowLimit = Math.max(0, rowLimit - 1);
+  const hiddenRows = rows.length - visibleRowLimit;
+  return [
+    titleLine,
+    ...rows.slice(0, visibleRowLimit),
+    truncateToWidth(`  +${hiddenRows} more rows`, safeWidth, "…"),
+  ];
 }
 
 export function createSubagentDashboardWidget(input: {

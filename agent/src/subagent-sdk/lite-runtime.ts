@@ -9,7 +9,6 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
 
 import {
   buildContextTransferPrompt,
@@ -21,6 +20,7 @@ import { SubagentRuntimeEventBus } from "./events.js";
 import type { SubagentChildIpcEvent } from "./ipc.js";
 import { resolveSubagentMode, type ResolvedSubagentMode } from "./modes.js";
 import { createLiteSessionResources } from "./lite-session-resources.js";
+import { renderLiteRuntimeWidget, resolveLiteRuntimeModel } from "./lite-runtime-ui.js";
 import { buildLiteResumePrompt } from "./lite-resume-prompt.js";
 import {
   assertLiteSessionPathAccessible,
@@ -78,24 +78,6 @@ function toTokenUsage(stats: ReturnType<LiteAgentSession["getSessionStats"]>): T
   };
 }
 
-function resolveModel(
-  ctx: ExtensionContext,
-  mode: ResolvedSubagentMode,
-  requestedModel: string | undefined,
-): Model<Api> | undefined {
-  const modelSpec = requestedModel ?? mode.model;
-  if (modelSpec === undefined) {
-    return ctx.model;
-  }
-
-  const slashIndex = modelSpec.indexOf("/");
-  if (slashIndex <= 0 || slashIndex === modelSpec.length - 1) {
-    return ctx.model;
-  }
-
-  return ctx.modelRegistry.find(modelSpec.slice(0, slashIndex), modelSpec.slice(slashIndex + 1));
-}
-
 function resolveCompletionDelivery(state: RuntimeSubagent) {
   return state.completion === false
     ? ({ enabled: false, deliverAs: "steer", triggerTurn: false } as const)
@@ -119,6 +101,7 @@ export class LiteRuntime {
   private states = new Map<string, RuntimeSubagent>();
   private sessions = new Map<string, LiteSessionState>();
   private disposed = false;
+  private lastCtx: ExtensionContext | undefined;
   private readonly eventBus = new SubagentRuntimeEventBus();
   private readonly hooks: SubagentRuntimeHooks;
 
@@ -153,7 +136,12 @@ export class LiteRuntime {
     this.eventBus.emitChildEvent(sessionId, event);
   }
 
-  restore(_ctx?: ExtensionContext): Promise<void> {
+  renderWidget(ctx: ExtensionContext | undefined = this.lastCtx): void {
+    this.lastCtx = renderLiteRuntimeWidget(this.hooks, ctx, this.listStates()) ?? this.lastCtx;
+  }
+
+  restore(ctx?: ExtensionContext): Promise<void> {
+    this.renderWidget(ctx);
     this.emitChangedStates();
     return Promise.resolve();
   }
@@ -164,6 +152,7 @@ export class LiteRuntime {
     onUpdate?: AgentToolUpdateCallback,
     signal?: AbortSignal,
   ): Promise<StartSubagentResult> {
+    this.lastCtx = ctx;
     this.disposed = false;
     const startedAt = Date.now();
     const resolved = await resolveSubagentMode(this.pi, ctx, {
@@ -195,7 +184,7 @@ export class LiteRuntime {
       sessionPath,
     );
     const structuredCapture: { value?: unknown } = {};
-    const model = resolveModel(ctx, resolved.value, params.model);
+    const model = resolveLiteRuntimeModel(ctx, resolved.value, params.model);
     const agentDir = this.options.agentDir ?? getAgentDir();
     const { customTools, resourceLoader, sessionTools, settingsManager } =
       await createLiteSessionResources({
@@ -233,6 +222,7 @@ export class LiteRuntime {
     });
     this.states.set(sessionId, stateWithTools);
     await this.hooks.persistState(stateWithTools);
+    this.renderWidget(ctx);
     this.emitChangedStates();
     signal?.addEventListener(
       "abort",
@@ -252,6 +242,7 @@ export class LiteRuntime {
     onUpdate?: AgentToolUpdateCallback,
     options: ResumeExecutionOptions = {},
   ): Promise<ResumeSubagentResult> {
+    this.lastCtx = ctx;
     if (params.sessionPath === undefined || params.sessionPath.length === 0) {
       throw new Error("subagent resume failed: lite resume requires a persisted sessionPath.");
     }
@@ -279,7 +270,7 @@ export class LiteRuntime {
       params.sessionPath,
     );
     const structuredCapture: { value?: unknown } = {};
-    const model = resolveModel(ctx, resolved.value, params.model);
+    const model = resolveLiteRuntimeModel(ctx, resolved.value, params.model);
     const agentDir = this.options.agentDir ?? getAgentDir();
     const sessionManager = SessionManager.open(params.sessionPath, undefined, resolved.value.cwd);
     const { customTools, resourceLoader, sessionTools, settingsManager } =
@@ -318,6 +309,7 @@ export class LiteRuntime {
     });
     this.states.set(params.sessionId, stateWithTools);
     await this.hooks.persistState(stateWithTools);
+    this.renderWidget(ctx);
     this.emitChangedStates();
     options.signal?.addEventListener(
       "abort",
@@ -335,6 +327,7 @@ export class LiteRuntime {
     _ctx: ExtensionContext,
     onUpdate?: AgentToolUpdateCallback,
   ): Promise<MessageSubagentResult> {
+    this.lastCtx = _ctx;
     const state = this.states.get(params.sessionId);
     const live = this.sessions.get(params.sessionId);
     if (!state || !live) {
@@ -381,6 +374,7 @@ export class LiteRuntime {
       status: "delivered",
     });
     await this.hooks.persistState(updated);
+    this.renderWidget(_ctx);
     this.emitChangedStates();
     return { state: cloneRuntimeSubagent(updated), autoResumed: false };
   }
@@ -420,6 +414,7 @@ export class LiteRuntime {
     };
     this.states.set(cancelled.sessionId, cancelled);
     await this.hooks.persistState(cancelled);
+    this.renderWidget();
     this.emitChangedStates();
     this.emitCompletionStatus(cancelled);
     return cloneRuntimeSubagent(cancelled);
@@ -725,6 +720,7 @@ export class LiteRuntime {
     };
     this.states.set(sessionId, terminal);
     await this.hooks.persistState(terminal);
+    this.renderWidget();
     this.emitChangedStates();
     this.emitCompletionStatus(terminal);
   }
@@ -763,6 +759,7 @@ export class LiteRuntime {
     };
     this.states.set(sessionId, failed);
     await this.hooks.persistState(failed);
+    this.renderWidget();
     this.emitChangedStates();
     this.emitCompletionStatus(failed);
   }

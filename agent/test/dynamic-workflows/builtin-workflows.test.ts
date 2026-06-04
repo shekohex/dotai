@@ -138,7 +138,12 @@ test("goal workflow produces a valid, parseable script", () => {
   assert.match(body, /section\("goal_context"/);
   assert.match(body, /section\("unblock_reason"/);
   assert.match(body, /unblockedAt/);
-  assert.match(body, /"review_findings"/);
+  assert.match(body, /requiredWorkItemsFrom/);
+  assert.match(body, /"required_work_items"/);
+  assert.doesNotMatch(body, /"review_findings"/);
+  assert.doesNotMatch(body, /"required_review_fixes"/);
+  assert.doesNotMatch(body, /"judge_missing_criteria"/);
+  assert.doesNotMatch(body, /"judge_required_work"/);
   assert.match(body, /untrusted_builder_claims/);
   assert.match(body, /untrusted_review_opinion/);
   assert.match(body, /Evidence hierarchy/);
@@ -302,8 +307,13 @@ test("goal workflow keeps fixing until review findings and judge gaps are gone",
             nextAction: "none",
           };
         }
-        if (/Continue your prior/.test(prompt)) {
+        if (/Continue the prior work session/.test(prompt)) {
           fixCalls = fixCalls + 1;
+          assert.match(prompt, /<required_work_items>/);
+          assert.match(prompt, /missing proof/);
+          assert.match(prompt, /collect proof/);
+          assert.match(prompt, /full proof/);
+          assert.match(prompt, /finish proof/);
           return "fixed proof";
         }
         return "built goal";

@@ -423,6 +423,22 @@ const fallbackJudgeResult = (reason) => ({
   humanReviewReason: reason,
 });
 
+const requiredWorkItemsFrom = (reviewResult, judgeResult) => {
+  const items = []
+    .concat(reviewResult.findings || [])
+    .concat(reviewResult.requiredFixes || [])
+    .concat(judgeResult.missingCriteria || [])
+    .concat(judgeResult.requiredWork || []);
+  return Array.from(new Set(items.filter((item) => typeof item === "string" && item.length > 0)));
+};
+
+const blockerItemsFrom = (reviewResult, judgeResult) =>
+  []
+    .concat(reviewResult.externalBlockers || [])
+    .concat(judgeResult.externalBlockers || [])
+    .concat(reviewResult.humanReviewReason ? [reviewResult.humanReviewReason] : [])
+    .concat(judgeResult.humanReviewReason ? [judgeResult.humanReviewReason] : []);
+
 const commitCheckpoint = async (label, workResult, reviewResult, judgeResult) =>
   agentWithRetries(
     [
@@ -457,12 +473,12 @@ let builderResult = await agent(
   [
     section(
       "role",
-      "Autonomous goal executor working in a shared codebase. Resolve the whole goal end to end with proof, not just a plausible slice.",
+      "Autonomous goal worker in a shared codebase. Complete the requested outcome end to end with proof, not just a plausible slice.",
     ),
     section(
       "instructions",
       [
-        "Implement this goal in the working tree.",
+        "Complete the goal exactly as requested. If the requested outcome is an audit, report, plan, or validation result, produce that artifact. If it requires code or docs changes, make them in the working tree.",
         "Use the smallest safe change that satisfies the objective and every success criterion.",
         "Do not add speculative features, broaden scope, or hide uncertainty.",
         "Before claiming success, look for loopholes that could let one completed slice masquerade as the whole goal.",
@@ -651,45 +667,22 @@ while (true) {
   if (reviewResult.ok && !hasReviewFindings && judgeResult.complete && !hasJudgeFindings) break;
 
   phase("Fix");
+  const requiredWorkItems = requiredWorkItemsFrom(reviewResult, judgeResult);
+  const blockerItems = blockerItemsFrom(reviewResult, judgeResult);
   const fixResult = await agent(
     [
       section(
         "instructions",
         [
-          "Continue your prior builder session and fix the reviewed/judged issues.",
-          "Address every real finding. Do not stop after one slice if the judge identified missing criteria.",
-          "Keep changes surgical. Re-run targeted checks when possible.",
-          "If a requested fix is impossible or requires user approval, stop changing code and report the blocker clearly.",
+          "Continue the prior work session.",
+          "Complete every required work item below. Do not stop after one slice if more work items remain.",
+          "Keep changes surgical. Re-run focused checks when possible.",
+          "If a required work item is impossible locally or requires user approval, stop changing code and report the blocker clearly.",
         ].join("\n"),
       ),
       section("goal_context", goalContext),
-      section(
-        "review_findings",
-        toMarkdown(reviewSchema.properties.findings, reviewResult.findings),
-      ),
-      section(
-        "required_review_fixes",
-        toMarkdown(reviewSchema.properties.requiredFixes, reviewResult.requiredFixes),
-      ),
-      section(
-        "judge_missing_criteria",
-        toMarkdown(judgeSchema.properties.missingCriteria, judgeResult.missingCriteria),
-      ),
-      section(
-        "judge_required_work",
-        toMarkdown(judgeSchema.properties.requiredWork, judgeResult.requiredWork),
-      ),
-      section(
-        "blockers",
-        toMarkdown(
-          null,
-          []
-            .concat(reviewResult.externalBlockers || [])
-            .concat(judgeResult.externalBlockers || [])
-            .concat(reviewResult.humanReviewReason ? [reviewResult.humanReviewReason] : [])
-            .concat(judgeResult.humanReviewReason ? [judgeResult.humanReviewReason] : []),
-        ),
-      ),
+      section("required_work_items", toMarkdown(null, requiredWorkItems)),
+      section("blockers", toMarkdown(null, blockerItems)),
     ].join("\n\n"),
     { label: "goal-fix " + iteration, mode: "build", resume: builderResult },
   );
@@ -709,11 +702,7 @@ while (true) {
 }
 
 phase("Result");
-const finalBlockers = []
-  .concat(reviewResult.externalBlockers || [])
-  .concat(judgeResult.externalBlockers || [])
-  .concat(reviewResult.humanReviewReason ? [reviewResult.humanReviewReason] : [])
-  .concat(judgeResult.humanReviewReason ? [judgeResult.humanReviewReason] : []);
+const finalBlockers = blockerItemsFrom(reviewResult, judgeResult);
 const ok = Boolean(reviewResult.ok && judgeResult.complete && finalBlockers.length === 0);
 const status = ok ? "complete" : "blocked";
 const hasBuilderFixableWork = Boolean(

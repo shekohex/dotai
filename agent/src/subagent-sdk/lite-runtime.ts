@@ -552,6 +552,7 @@ export class LiteRuntime {
         },
         updatedAt: Date.now(),
       });
+      this.renderWidget();
       this.emitChangedStates();
     }
   }

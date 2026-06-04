@@ -213,6 +213,12 @@ function renderCoordinatedWidget(ctx: ExtensionContext | undefined): void {
   }
 }
 
+function ensureSlotRegistered(slotId: symbol, slot: SubagentRuntimeUiSlot): void {
+  if (!subagentDashboardCoordinator.slots.has(slotId)) {
+    subagentDashboardCoordinator.slots.set(slotId, slot);
+  }
+}
+
 function scheduleTerminalExpiry(slot: SubagentRuntimeUiSlot, sessionId: string): void {
   const existingTimer = slot.expiryTimers.get(sessionId);
   if (existingTimer) {
@@ -261,6 +267,8 @@ async function showCoordinatedFullscreen(ctx: ExtensionContext): Promise<void> {
     (tui, theme, _keybindings, done) =>
       createSubagentFullscreenComponent({
         subagents: visibleSubagents,
+        getSubagents: () => getScopedSubagents(ctx),
+        getTitle: () => getDashboardTitle(getScopedSlots(ctx)),
         title: getDashboardTitle(scopedSlots),
         done,
       })(tui, theme),
@@ -287,6 +295,7 @@ export function createDefaultSubagentRuntimeHooks(
     if (ctx === undefined) {
       return;
     }
+    ensureSlotRegistered(slotId, slot);
     slot.ctx = ctx;
     slot.scopeKey = getScopeKey(ctx);
     renderCoordinatedWidget(ctx);
@@ -315,6 +324,7 @@ export function createDefaultSubagentRuntimeHooks(
   return {
     persistState(state) {
       try {
+        ensureSlotRegistered(slotId, slot);
         pi.appendEntry(SUBAGENT_STATE_ENTRY, serializeSubagentStateEntry(state));
         retainTerminalState(slot, state);
       } catch (error) {

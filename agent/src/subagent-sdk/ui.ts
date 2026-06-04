@@ -304,7 +304,9 @@ export function createSubagentDashboardWidget(input: {
 
 export function createSubagentFullscreenComponent(input: {
   subagents: RuntimeSubagent[];
+  getSubagents?: () => RuntimeSubagent[];
   title?: string;
+  getTitle?: () => string;
   done: () => void;
 }): (tui: TUI, theme: Theme) => Component {
   return (tui, theme) => {
@@ -315,9 +317,10 @@ export function createSubagentFullscreenComponent(input: {
     return {
       render(width: number): string[] {
         const safeWidth = Math.max(1, width);
+        const subagents = input.getSubagents?.() ?? input.subagents;
         const content =
-          renderSubagentDashboardLines(input.subagents, safeWidth, theme, {
-            title: input.title,
+          renderSubagentDashboardLines(subagents, safeWidth, theme, {
+            title: input.getTitle?.() ?? input.title,
             mode: "expanded",
             maxRows: Number.MAX_SAFE_INTEGER,
             hints: [],

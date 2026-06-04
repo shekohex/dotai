@@ -8,9 +8,35 @@ import { buildLiteResumePrompt } from "../src/subagent-sdk/lite-resume-prompt.ts
 import { LiteRuntime } from "../src/subagent-sdk/lite-runtime.ts";
 import { STRUCTURED_OUTPUT_TOOL_NAME } from "../src/subagent-sdk/bootstrap-core.ts";
 import { readChildSessionOutcome } from "../src/subagent-sdk/persistence.ts";
+import type { RuntimeSubagent } from "../src/subagent-sdk/types.ts";
 import { createTempDir } from "./test-utils/temp-paths.ts";
 
 const cleanupPaths: string[] = [];
+
+function createRuntimeSubagent(overrides: Partial<RuntimeSubagent>): RuntimeSubagent {
+  return {
+    event: "started",
+    sessionId: "lite-session",
+    sessionPath: "/tmp/lite-session.jsonl",
+    persisted: true,
+    parentSessionId: "parent-session",
+    parentSessionPath: "/tmp/parent-session.jsonl",
+    name: "lite-worker",
+    mode: "worker",
+    modeLabel: "worker",
+    cwd: "/tmp/project",
+    paneId: "lite",
+    task: "Run lite task",
+    handoff: false,
+    autoExit: true,
+    autoExitTimeoutMs: 30_000,
+    autoExitTimeoutActive: false,
+    status: "running",
+    startedAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -100,6 +126,38 @@ test("LiteRuntime restore routes state through subagent UI hooks", async () => {
   runtime.dispose();
 
   expect(renderedStateCount).toBe(-1);
+});
+
+test("LiteRuntime tool activity updates render live subagent widget", async () => {
+  let renderedActivity: string | undefined;
+  const runtime = new LiteRuntime({} as never, {
+    kind: "lite",
+    hooks: {
+      persistState() {
+        return Promise.resolve();
+      },
+      persistMessage() {
+        return Promise.resolve();
+      },
+      emitStatusMessage() {},
+      renderWidget(_ctx, subagents) {
+        renderedActivity = subagents[0]?.activity?.label;
+      },
+    },
+  });
+  const harness = runtime as unknown as {
+    states: Map<string, RuntimeSubagent>;
+    handleSessionEvent(
+      sessionId: string,
+      event: { type: "tool_execution_start"; toolName: string },
+    ): void;
+  };
+  harness.states.set("lite-session", createRuntimeSubagent({ sessionId: "lite-session" }));
+
+  await runtime.restore({ cwd: "/tmp/lite-ui", hasUI: true } as never);
+  harness.handleSessionEvent("lite-session", { type: "tool_execution_start", toolName: "read" });
+
+  expect(renderedActivity).toBe("read");
 });
 
 test("lite StructuredOutput tool persists structured output to child session", async () => {

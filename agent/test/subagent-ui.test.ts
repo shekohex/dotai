@@ -296,6 +296,12 @@ describe("subagent ui", () => {
     hooks.dispose?.();
 
     expect(widgets.get(SUBAGENT_OVERVIEW_WIDGET_KEY)?.content).toBeUndefined();
+
+    hooks.renderWidget(ctx as never, [
+      createRuntimeSubagent({ sessionId: "restored", name: "restored-agent", status: "running" }),
+    ]);
+
+    expect(getRenderedWidget(widgets)).toContain("restored-agent");
   });
 
   it("renders expanded actionable rows with terminal summaries", () => {
@@ -455,6 +461,36 @@ describe("subagent ui", () => {
     expect(second).toContain("esc close");
     expect(renderRequests).toBe(1);
     expect(closed).toBe(true);
+  });
+
+  it("fullscreen component renders live subagent updates without reopening", () => {
+    let subagents = [
+      createRuntimeSubagent({ sessionId: "live-fullscreen", name: "worker", status: "running" }),
+    ];
+    const component = createSubagentFullscreenComponent({
+      subagents,
+      getSubagents() {
+        return subagents;
+      },
+      done() {},
+    })({ requestRender() {} } as TUI, createTheme());
+
+    expect(component.render(100).join("\n")).toContain("Map codebase");
+
+    subagents = [
+      createRuntimeSubagent({
+        sessionId: "live-fullscreen",
+        name: "worker",
+        status: "failed",
+        activity: createActivity({ label: "failed", detail: "Tool crashed" }),
+        summary: "Tool crashed",
+        completedAt: 2,
+      }),
+    ];
+
+    const updated = component.render(100).join("\n");
+    expect(updated).toContain("worker · failed");
+    expect(updated).toContain("failed: Tool crashed");
   });
 
   it("renders child session badge with subagent label", () => {

@@ -322,7 +322,7 @@ describe("subagent ui", () => {
 
     const rendered = lines?.join("\n");
     expect(rendered).toContain("─── 🤖 subagents");
-    expect(rendered).toContain("Agents: 1  0 running  0 idle  1 done");
+    expect(rendered).toContain("Agents: 1  0 running  0 idle  0 done  1 failed");
     expect(rendered).toContain("Longest: ★ reviewer");
     expect(rendered).toContain("#  name");
     expect(rendered).toContain("activity / summary");
@@ -415,10 +415,143 @@ describe("subagent ui", () => {
     const rendered = lines?.join("\n");
 
     expect(rendered).toContain("… 4 hidden subagents");
-    expect(rendered).not.toContain("1  agent-0");
-    expect(rendered).toContain("agent-4");
-    expect(rendered).toContain("agent-5");
-    expect(rendered).toContain("terminal summary stays on same row");
+    expect(rendered).toContain("agent-0");
+    expect(rendered).toContain("agent-1");
+    expect(rendered).not.toContain("5  agent-4");
+    expect(rendered).not.toContain("6  agent-5");
+  });
+
+  it("prioritizes live expanded rows over retained terminal rows", () => {
+    const lines = renderSubagentDashboardLines(
+      [
+        ...Array.from({ length: 4 }, (_, index) =>
+          createRuntimeSubagent({
+            sessionId: `running-${index}`,
+            name: `running-${index}`,
+            status: "running",
+          }),
+        ),
+        ...Array.from({ length: 4 }, (_, index) =>
+          createRuntimeSubagent({
+            sessionId: `done-${index}`,
+            name: `done-${index}`,
+            status: "completed",
+            completedAt: 2,
+          }),
+        ),
+      ],
+      110,
+      createTheme(),
+      { mode: "expanded", maxRows: 4 },
+    );
+    const rendered = lines?.join("\n");
+
+    expect(rendered).toContain("running-0");
+    expect(rendered).toContain("running-3");
+    expect(rendered).not.toContain("done-0     ");
+    expect(rendered).toContain("… 4 hidden subagents");
+  });
+
+  it("keeps expanded dashboard bounded in narrow terminals", () => {
+    const lines = renderSubagentDashboardLines(
+      Array.from({ length: 6 }, (_, index) =>
+        createRuntimeSubagent({
+          sessionId: `narrow-expanded-${index}`,
+          name: `agent-${index}`,
+          status: "running",
+          activity: createActivity({
+            label: "reading",
+            detail: `packages/some/very/long/path/for/agent-${index}/README.md`,
+          }),
+        }),
+      ),
+      60,
+      createTheme(),
+      { mode: "expanded", maxRows: 4 },
+    );
+
+    expect(lines).toBeDefined();
+    expect(lines?.length).toBeLessThanOrEqual(12);
+    expect(lines?.every((line) => visibleWidth(line) <= 60)).toBe(true);
+    expect(lines?.join("\n")).toContain("agent-0");
+  });
+
+  it("splits completed failed and cancelled summary counts", () => {
+    const rendered = renderSubagentDashboardLines(
+      [
+        createRuntimeSubagent({
+          sessionId: "completed-a",
+          name: "completed-a",
+          status: "completed",
+        }),
+        createRuntimeSubagent({ sessionId: "failed-a", name: "failed-a", status: "failed" }),
+        createRuntimeSubagent({
+          sessionId: "cancelled-a",
+          name: "cancelled-a",
+          status: "cancelled",
+        }),
+        createRuntimeSubagent({
+          sessionId: "completed-b",
+          name: "completed-b",
+          status: "completed",
+        }),
+        createRuntimeSubagent({ sessionId: "failed-b", name: "failed-b", status: "failed" }),
+        createRuntimeSubagent({
+          sessionId: "cancelled-b",
+          name: "cancelled-b",
+          status: "cancelled",
+        }),
+      ],
+      120,
+      createTheme(),
+      { mode: "expanded", maxRows: 2 },
+    )?.join("\n");
+
+    expect(rendered).toContain("2 done  2 failed  2 cancelled");
+    expect(rendered).not.toContain("6 done");
+    expect(rendered).toContain("… 4 hidden subagents");
+  });
+
+  it("shows handoff and completion metadata", () => {
+    const subagent = createRuntimeSubagent({
+      sessionId: "metadata",
+      name: "agentx",
+      status: "running",
+      handoff: true,
+      completion: { deliverAs: "followUp" },
+    });
+    const compact = renderSubagentDashboardLines([subagent], 120, createTheme(), {
+      mode: "compact",
+    })?.join("\n");
+    const expanded = renderSubagentDashboardLines([subagent], 120, createTheme(), {
+      mode: "expanded",
+    })?.join("\n");
+
+    expect(compact).toContain("handoff");
+    expect(compact).toContain("followUp");
+    expect(expanded).toContain("handoff");
+    expect(expanded).toContain("followUp");
+  });
+
+  it("keeps long elapsed values in aligned table columns", () => {
+    const now = Date.now();
+    const rendered = renderSubagentDashboardLines(
+      [
+        createRuntimeSubagent({
+          sessionId: "long-running",
+          name: "long-running",
+          status: "running",
+          startedAt: now - 100 * 60 * 60 * 1000,
+          updatedAt: now,
+        }),
+      ],
+      120,
+      createTheme(),
+      { mode: "expanded" },
+    )?.join("\n");
+
+    expect(rendered).toContain("100h 0m 0s %1");
+    expect(rendered).not.toContain("100h 0m 0s%1");
   });
 
   it("GSD subagent hooks delegate to shared dashboard with GSD title", () => {

@@ -7,6 +7,7 @@ import type { ChildBootstrapState, RuntimeSubagent } from "./types.js";
 
 const DEFAULT_COMPACT_ROWS = 4;
 const DEFAULT_EXPANDED_ROWS = 4;
+const DEFAULT_EXPANDED_LINE_BUDGET = 12;
 
 export type SubagentDashboardRenderMode = "compact" | "expanded";
 
@@ -171,12 +172,20 @@ function renderTitleLine(
   const terminalCount = subagents.filter((subagent) =>
     isTerminalSubagentStatus(subagent.status),
   ).length;
+  const failedCount = subagents.filter((subagent) => subagent.status === "failed").length;
+  const cancelledCount = subagents.filter((subagent) => subagent.status === "cancelled").length;
+  const completedCount = subagents.filter((subagent) => subagent.status === "completed").length;
   const parts = [
     theme.fg("accent", theme.bold(title)),
     `${subagents.length} active`,
     runningCount > 0 ? `${runningCount} running` : undefined,
     idleCount > 0 ? `${idleCount} idle` : undefined,
-    terminalCount > 0 ? `${terminalCount} done` : undefined,
+    completedCount > 0 ? `${completedCount} done` : undefined,
+    failedCount > 0 ? `${failedCount} failed` : undefined,
+    cancelledCount > 0 ? `${cancelledCount} cancelled` : undefined,
+    terminalCount > 0 && completedCount + failedCount + cancelledCount === 0
+      ? `${terminalCount} done`
+      : undefined,
   ].filter((part): part is string => part !== undefined);
   const summary = parts.join(theme.fg("dim", " · "));
   const hintText = hints.length > 0 ? theme.fg("dim", ` ${hints.join(" · ")}`) : "";
@@ -201,10 +210,23 @@ function formatSubagentSummary(subagent: RuntimeSubagent): string | undefined {
 function formatSubagentDescription(subagent: RuntimeSubagent): string {
   const summary = formatSubagentSummary(subagent);
   const activity = formatActivity(subagent) ?? summarizeTask(subagent.task, 80);
+  const metadata = formatSubagentMetadata(subagent);
+  const suffix = metadata.length > 0 ? ` · ${metadata.join(" · ")}` : "";
   if (summary !== undefined && isTerminalSubagentStatus(subagent.status)) {
-    return `${activity} · ${summary}`;
+    return `${activity} · ${summary}${suffix}`;
   }
-  return activity;
+  return `${activity}${suffix}`;
+}
+
+function formatSubagentMetadata(subagent: RuntimeSubagent): string[] {
+  const metadata: string[] = [];
+  if (subagent.handoff) {
+    metadata.push("handoff");
+  }
+  if (subagent.completion !== undefined && subagent.completion !== false) {
+    metadata.push(subagent.completion.deliverAs ?? "steer");
+  }
+  return metadata;
 }
 
 function formatActivitySummaryPart(subagent: RuntimeSubagent): string {
@@ -323,6 +345,7 @@ function formatCompactSubagentLine(
     formatMode(subagent),
     formatElapsed(subagent),
     subagent.paneId,
+    ...formatSubagentMetadata(subagent),
     formatAutoExitCountdown(subagent),
   ]
     .filter((part): part is string => part !== undefined && part.length > 0)
@@ -349,7 +372,16 @@ function calculateSubagentColumnWidths(
         1,
     ),
   );
-  const elapsed = 9;
+  const elapsed = Math.max(
+    9,
+    Math.min(
+      13,
+      Math.max(
+        "elapsed".length,
+        ...subagents.map((subagent) => visibleWidth(formatElapsed(subagent))),
+      ) + 1,
+    ),
+  );
   const pane = Math.max(
     6,
     Math.min(
@@ -395,7 +427,10 @@ function renderSubagentTableRow(
     `  ${theme.fg("dim", String(rowNumber).padEnd(3))}` +
     theme.fg("text", truncateToWidth(subagent.name, widths.name - 1).padEnd(widths.name)) +
     theme.fg("muted", truncateToWidth(formatMode(subagent), widths.mode - 1).padEnd(widths.mode)) +
-    theme.fg("muted", formatElapsed(subagent).padEnd(widths.elapsed)) +
+    theme.fg(
+      "muted",
+      truncateToWidth(formatElapsed(subagent), widths.elapsed - 1).padEnd(widths.elapsed),
+    ) +
     theme.fg("muted", (subagent.paneId ?? "—").padEnd(widths.pane)) +
     theme.fg(getStatusTone(subagent.status), subagent.status.padEnd(widths.status)) +
     theme.fg(
@@ -416,26 +451,21 @@ function renderExpandedDashboardLines(
   const sortedSubagents = sortSubagentsForDisplay(subagents);
   const runningCount = subagents.filter((subagent) => subagent.status === "running").length;
   const idleCount = subagents.filter((subagent) => subagent.status === "idle").length;
-  const doneCount = subagents.filter((subagent) =>
-    isTerminalSubagentStatus(subagent.status),
-  ).length;
+  const completedCount = subagents.filter((subagent) => subagent.status === "completed").length;
+  const failedCount = subagents.filter((subagent) => subagent.status === "failed").length;
+  const cancelledCount = subagents.filter((subagent) => subagent.status === "cancelled").length;
   const longestSubagent = sortedSubagents.toSorted((left, right) => {
     const leftElapsed = (left.completedAt ?? Date.now()) - left.startedAt;
     const rightElapsed = (right.completedAt ?? Date.now()) - right.startedAt;
     return rightElapsed - leftElapsed;
   })[0];
-  const visibleCount = Math.max(0, Math.min(maxRows, sortedSubagents.length));
-  const startIndex = Math.max(0, sortedSubagents.length - visibleCount);
-  const visibleSubagents = sortedSubagents.slice(startIndex);
-  const hiddenSubagents = startIndex;
-  const widths = calculateSubagentColumnWidths(visibleSubagents, width);
+  const lineBudget = Number.isFinite(maxRows)
+    ? DEFAULT_EXPANDED_LINE_BUDGET
+    : Number.MAX_SAFE_INTEGER;
   const lines = [
     renderFramedTitleLine(title, width, theme, hints),
     truncateToWidth(
-      `  ${theme.fg("muted", "Agents:")} ${theme.fg("text", String(subagents.length))}  ${theme.fg("warning", `${runningCount} running`)}  ${theme.fg(
-        "dim",
-        `${idleCount} idle`,
-      )}  ${theme.fg("success", `${doneCount} done`)}`,
+      `  ${theme.fg("muted", "Agents:")} ${theme.fg("text", String(subagents.length))}  ${theme.fg("warning", `${runningCount} running`)}  ${theme.fg("dim", `${idleCount} idle`)}  ${theme.fg("success", `${completedCount} done`)}  ${theme.fg("error", `${failedCount} failed`)}  ${theme.fg("error", `${cancelledCount} cancelled`)}`,
       width,
       "…",
       true,
@@ -456,14 +486,24 @@ function renderExpandedDashboardLines(
     );
   }
 
-  lines.push(
-    ...wrapActivitySummary(
-      sortedSubagents.slice(0, 4).map((subagent) => formatActivitySummaryPart(subagent)),
-      width,
-      theme,
-    ),
-  );
+  const activityLines = wrapActivitySummary(
+    sortedSubagents.slice(0, 4).map((subagent) => formatActivitySummaryPart(subagent)),
+    width,
+    theme,
+  ).slice(0, 1);
+  lines.push(...activityLines);
   lines.push("");
+
+  const tableBaseLines = 2;
+  const remainingBudget = Math.max(1, lineBudget - lines.length - tableBaseLines - 1);
+  const requestedVisibleCount = Number.isFinite(maxRows) ? maxRows : sortedSubagents.length;
+  const visibleCount = Math.max(
+    0,
+    Math.min(requestedVisibleCount, remainingBudget, sortedSubagents.length),
+  );
+  const visibleSubagents = sortedSubagents.slice(0, visibleCount);
+  const hiddenSubagents = sortedSubagents.length - visibleSubagents.length;
+  const widths = calculateSubagentColumnWidths(visibleSubagents, width);
   lines.push(...renderSubagentTableHeader(widths, width, theme));
 
   if (hiddenSubagents > 0) {
@@ -478,8 +518,7 @@ function renderExpandedDashboardLines(
   }
 
   for (const [index, subagent] of visibleSubagents.entries()) {
-    const rowNumber = startIndex + index + 1;
-    lines.push(renderSubagentTableRow(subagent, rowNumber, widths, width, theme));
+    lines.push(renderSubagentTableRow(subagent, index + 1, widths, width, theme));
   }
 
   return lines;

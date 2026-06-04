@@ -143,21 +143,23 @@ function renderFramedTitleLine(
   hints: string[],
 ): string {
   const hintCandidates = hints.filter((hint) => hint.trim().length > 0);
-  const effectiveHintCandidates =
-    hintCandidates.length > 0 ? hintCandidates : getExpandedDashboardHintVariants();
-  const candidate = effectiveHintCandidates[0];
-  if (candidate !== undefined) {
+  for (const candidate of hintCandidates) {
     const hint = theme.fg("dim", ` ${candidate}`);
-    const hintWidth = 1 + approximatePlainWidth(candidate);
-    const availableTitleWidth = Math.max(0, width - hintWidth - 5);
-    const titleText = truncateDisplayText(`🤖 ${title.toLowerCase()}`, availableTitleWidth);
-    const titlePrefix = theme.fg("borderMuted", "───") + theme.fg("accent", ` ${titleText} `);
-    const titlePrefixWidth = 5 + approximatePlainWidth(titleText);
-    return (
-      titlePrefix +
-      theme.fg("borderMuted", "─".repeat(Math.max(0, width - titlePrefixWidth - hintWidth - 1))) +
-      hint
+    const hintWidth = visibleWidth(hint);
+    if (hintWidth > width) {
+      continue;
+    }
+    const availableLeftWidth = Math.max(0, width - hintWidth);
+    const titleText = truncateDisplayText(
+      `🤖 ${title.toLowerCase()}`,
+      Math.max(0, availableLeftWidth - 5),
     );
+    const titlePrefix = theme.fg("borderMuted", "───") + theme.fg("accent", ` ${titleText} `);
+    const titlePrefixWidth = visibleWidth(titlePrefix);
+    const left =
+      titlePrefix +
+      theme.fg("borderMuted", "─".repeat(Math.max(0, availableLeftWidth - titlePrefixWidth)));
+    return appendRightAlignedAdaptiveHint(left, width, theme, [candidate]);
   }
   const titleText = truncateDisplayText(`🤖 ${title.toLowerCase()}`, Math.max(0, width - 5));
   const titlePrefix = theme.fg("borderMuted", "───") + theme.fg("accent", ` ${titleText} `);
@@ -180,6 +182,33 @@ function getExpandedDashboardHintVariants(): string[] {
 
 function approximatePlainWidth(value: string): number {
   return Array.from(value).length;
+}
+
+function appendRightAlignedAdaptiveHint(
+  left: string,
+  width: number,
+  theme: SubagentDashboardTheme,
+  candidates: string[],
+): string {
+  if (width <= 0) {
+    return "";
+  }
+  const leftWidth = visibleWidth(left);
+  for (const candidate of candidates) {
+    const hint = theme.fg("dim", ` ${candidate}`);
+    const hintWidth = visibleWidth(hint);
+    if (hintWidth > width) {
+      continue;
+    }
+    if (leftWidth + hintWidth <= width) {
+      return left + " ".repeat(Math.max(0, width - leftWidth - hintWidth)) + hint;
+    }
+    const availableLeftWidth = Math.max(0, width - hintWidth);
+    const truncatedLeft = truncateToWidth(left, availableLeftWidth, "…", true);
+    const truncatedLeftWidth = visibleWidth(truncatedLeft);
+    return truncatedLeft + " ".repeat(Math.max(0, width - truncatedLeftWidth - hintWidth)) + hint;
+  }
+  return truncateToWidth(left, width, "…", true);
 }
 
 function renderTitleLine(
@@ -497,23 +526,24 @@ function renderExpandedDashboardLines(
     );
   }
 
+  const tableBaseLines = 2;
+  const requestedVisibleCount = Number.isFinite(maxRows) ? maxRows : sortedSubagents.length;
+  const visibleCount = Math.max(0, Math.min(requestedVisibleCount, sortedSubagents.length));
+  const hiddenSubagents = sortedSubagents.length - visibleCount;
+  const hiddenLineCount = hiddenSubagents > 0 ? 1 : 0;
+  const maxActivityLines = Number.isFinite(maxRows)
+    ? Math.max(0, lineBudget - lines.length - 1 - tableBaseLines - hiddenLineCount - visibleCount)
+    : Number.MAX_SAFE_INTEGER;
+
   const activityLines = wrapActivitySummary(
     sortedSubagents.slice(0, 4).map((subagent) => formatActivitySummaryPart(subagent)),
     width,
     theme,
-  ).slice(0, Number.isFinite(maxRows) ? 2 : Number.MAX_SAFE_INTEGER);
+  ).slice(0, maxActivityLines);
   lines.push(...activityLines);
   lines.push("");
 
-  const tableBaseLines = 2;
-  const remainingBudget = Math.max(1, lineBudget - lines.length - tableBaseLines - 1);
-  const requestedVisibleCount = Number.isFinite(maxRows) ? maxRows : sortedSubagents.length;
-  const visibleCount = Math.max(
-    0,
-    Math.min(requestedVisibleCount, remainingBudget, sortedSubagents.length),
-  );
   const visibleSubagents = sortedSubagents.slice(0, visibleCount);
-  const hiddenSubagents = sortedSubagents.length - visibleSubagents.length;
   const widths = calculateSubagentColumnWidths(visibleSubagents, width);
   lines.push(...renderSubagentTableHeader(widths, width, theme));
 
@@ -553,9 +583,8 @@ export function renderSubagentDashboardLines(
     options.maxRows ?? (mode === "compact" ? DEFAULT_COMPACT_ROWS : DEFAULT_EXPANDED_ROWS);
   const title = options.title ?? "Subagents";
   const hints =
-    mode === "compact"
-      ? (options.hints ?? ["/subagents toggle", "ctrl+alt+u"])
-      : getExpandedDashboardHintVariants();
+    options.hints ??
+    (mode === "compact" ? ["/subagents toggle", "ctrl+alt+u"] : getExpandedDashboardHintVariants());
 
   if (mode === "compact") {
     return renderCompactDashboardLines(

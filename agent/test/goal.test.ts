@@ -415,11 +415,13 @@ function createWorkflowRuntimeHarness(
   let goal = initialGoal;
   const persistedGoals: Array<NonNullable<typeof goal>> = [];
   const notifications: Array<{ message: string; level?: string }> = [];
+  const sentMessages: Array<{ message: unknown; options: unknown }> = [];
   const starts: Array<{ script: string; args: unknown; exec: unknown }> = [];
   const resumes: Array<{ runId: string; args: unknown }> = [];
   const deferred = deferredWorkflowResult();
   const pi = {
     exec: async () => ({ stdout: "abc123\n", stderr: "", code: 0, killed: false }),
+    sendMessage: (message: unknown, options: unknown) => sentMessages.push({ message, options }),
   } as never;
   const ctx = {
     cwd: "/tmp",
@@ -465,6 +467,7 @@ function createWorkflowRuntimeHarness(
     persistedGoals,
     resumes,
     runtime,
+    sentMessages,
     starts,
     get goal() {
       return goal;
@@ -1058,7 +1061,7 @@ Ship it`);
       harness.ctx,
     );
     harness.deferred.resolve({
-      result: { ok: true, status: "complete" },
+      result: { ok: true, status: "complete", summary: { summary: "Shipped workflow feature." } },
       durationMs: 1200,
       tokenUsage: { input: 2, output: 3, total: 5 },
     });
@@ -1067,6 +1070,14 @@ Ship it`);
     expect(harness.goal?.status).toBe("complete");
     expect(harness.goal?.usage).toEqual({ tokensUsed: 5, activeSeconds: 2 });
     expect(harness.notifications.at(-1)?.message).toBe("Goal workflow complete.");
+    expect(harness.sentMessages.at(-1)).toMatchObject({
+      message: {
+        customType: "goal",
+        content: expect.stringContaining("Shipped workflow feature."),
+        display: true,
+      },
+      options: { triggerTurn: false },
+    });
   });
 
   test("goal workflow runtime blocks non-complete results while preserving run id", async () => {

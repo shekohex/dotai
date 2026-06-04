@@ -336,6 +336,10 @@ class GoalRuntime {
       this.clearStoppedRuntimeState();
     }
 
+    if (nextGoal.status === "active" && this.accounting.activeGoalId !== nextGoal.goalId) {
+      this.beginAccounting();
+    }
+
     if (
       nextGoal.status === "paused" ||
       nextGoal.status === "blocked" ||

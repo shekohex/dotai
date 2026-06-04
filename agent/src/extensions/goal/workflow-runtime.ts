@@ -192,8 +192,21 @@ export class GoalWorkflowRuntime {
     const completed = updateGoalStatus(goalWithUsage, "complete");
     if (completed.ok && completed.goal !== null) {
       this.persist(completed.goal, ctx);
+      this.sendCompletionMessage(runId, workflowResult.result);
       ctx.ui.notify("Goal workflow complete.");
     }
+  }
+
+  private sendCompletionMessage(runId: string, result: unknown): void {
+    this.options.pi.sendMessage(
+      {
+        customType: "goal",
+        content: workflowCompletionMessage(runId, result),
+        display: true,
+        details: { kind: "workflow-complete", runId, result },
+      },
+      { triggerTurn: false },
+    );
   }
 
   private block(runId: string, error: unknown, ctx: ExtensionContext): void {
@@ -252,6 +265,25 @@ function workflowBlockSummary(result: unknown): string {
     if (typeof status === "string" && status.length > 0) return `Status: ${status}.`;
   }
   return "Inspect blocked reason for details.";
+}
+
+function workflowCompletionMessage(runId: string, result: unknown): string {
+  const summary = workflowSummaryText(result);
+  return [`Goal workflow complete. Run ID: ${runId}`, summary]
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+}
+
+function workflowSummaryText(result: unknown): string {
+  if (result !== null && typeof result === "object" && "summary" in result) {
+    const summary = result.summary;
+    if (typeof summary === "string") return summary;
+    if (summary !== null && typeof summary === "object" && "summary" in summary) {
+      const text = summary.summary;
+      if (typeof text === "string") return text;
+    }
+  }
+  return JSON.stringify(result, null, 2);
 }
 
 function goalWorkflowDisplayName(

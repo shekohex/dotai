@@ -379,6 +379,20 @@ describe("subagent ui", () => {
     expect(visibleWidth(lines?.[0] ?? "")).toBeLessThanOrEqual(78);
   });
 
+  it("shows combined expanded header hint at normal width", () => {
+    const lines = renderSubagentDashboardLines(
+      [createRuntimeSubagent({ sessionId: "hint", name: "runner", status: "running" })],
+      120,
+      createTheme(),
+      { mode: "expanded" },
+    );
+
+    expect(lines?.[0]).toContain("ctrl+alt+u collapse");
+    expect(lines?.[0]).toContain("/subagents fullscreen");
+    expect(lines?.[0]).not.toContain("…");
+    expect(visibleWidth(lines?.[0] ?? "")).toBeLessThanOrEqual(120);
+  });
+
   it("caps rows with hidden subagent count", () => {
     const lines = renderSubagentDashboardLines(
       Array.from({ length: 6 }, (_, index) =>
@@ -476,6 +490,31 @@ describe("subagent ui", () => {
     expect(lines?.join("\n")).toContain("agent-0");
   });
 
+  it("keeps one expanded activity continuation within budget", () => {
+    const lines = renderSubagentDashboardLines(
+      Array.from({ length: 4 }, (_, index) =>
+        createRuntimeSubagent({
+          sessionId: `activity-wrap-${index}`,
+          name: `agent-${index}`,
+          status: "running",
+          activity: createActivity({
+            label: "reading",
+            detail: `packages/some/very/long/path/for/agent-${index}/README.md`,
+          }),
+        }),
+      ),
+      60,
+      createTheme(),
+      { mode: "expanded", maxRows: 4 },
+    );
+    const activityLineCount = lines?.filter((line) => line.includes("Activity:")).length ?? 0;
+    const continuationLineCount = lines?.filter((line) => line.includes("agent-1")).length ?? 0;
+
+    expect(lines?.length).toBeLessThanOrEqual(12);
+    expect(activityLineCount).toBe(1);
+    expect(continuationLineCount).toBeGreaterThan(0);
+  });
+
   it("splits completed failed and cancelled summary counts", () => {
     const rendered = renderSubagentDashboardLines(
       [
@@ -552,6 +591,25 @@ describe("subagent ui", () => {
 
     expect(rendered).toContain("100h 0m 0s %1");
     expect(rendered).not.toContain("100h 0m 0s%1");
+  });
+
+  it("truncates long pane ids before status column", () => {
+    const rendered = renderSubagentDashboardLines(
+      [
+        createRuntimeSubagent({
+          sessionId: "long-pane",
+          name: "long-pane",
+          status: "running",
+          paneId: "pty:12345:mabc:verylongpaneid",
+        }),
+      ],
+      120,
+      createTheme(),
+      { mode: "expanded" },
+    )?.join("\n");
+
+    expect(rendered).toMatch(/pty:.*running/u);
+    expect(rendered).not.toContain("verylongpaneidrunning");
   });
 
   it("GSD subagent hooks delegate to shared dashboard with GSD title", () => {
@@ -631,6 +689,27 @@ describe("subagent ui", () => {
     expect(second).toContain("/");
     expect(renderRequests).toBe(1);
     expect(closed).toBe(true);
+  });
+
+  it("fullscreen renders all subagent rows without hidden elision", () => {
+    const component = createSubagentFullscreenComponent({
+      subagents: Array.from({ length: 12 }, (_, index) =>
+        createRuntimeSubagent({
+          sessionId: `fullscreen-${index}`,
+          name: `fullscreen-${index}`,
+          status: "running",
+        }),
+      ),
+      done() {},
+    })({ terminal: { rows: 12 }, requestRender() {} } as TUI, createTheme());
+
+    const first = component.render(100).join("\n");
+    component.handleInput?.("G");
+    const last = component.render(100).join("\n");
+
+    expect(first).not.toContain("hidden subagents");
+    expect(last).not.toContain("hidden subagents");
+    expect(last).toContain("fullscreen-11");
   });
 
   it("fullscreen component renders live subagent updates without reopening", () => {

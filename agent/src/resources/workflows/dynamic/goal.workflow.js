@@ -22,6 +22,7 @@ const startedAt = (args && args.startedAt) || "";
 const runId = (args && args.runId) || "";
 const unblockReason = (args && args.unblockReason) || "";
 const unblockedAt = (args && args.unblockedAt) || "";
+const workflowCounters = (args && args.workflowCounters) || {};
 
 const toMarkdown = (schema, value, level = 0) => {
   if (value === null || value === undefined) return "None";
@@ -491,12 +492,12 @@ let builderResult = await agent(
   { label: "goal-builder", mode: "build" },
 );
 
-let iteration = 0;
-let reviewCount = 0;
-let judgeCount = 0;
-let reviewDraftCount = 0;
-let judgeDraftCount = 0;
-let commitCount = 0;
+let iteration = workflowCounters.iterations || 0;
+let reviewCount = workflowCounters.reviewCount || 0;
+let judgeCount = workflowCounters.judgeCount || 0;
+let reviewDraftCount = workflowCounters.reviewDraftCount || 0;
+let judgeDraftCount = workflowCounters.judgeDraftCount || 0;
+let commitCount = workflowCounters.commitCount || 0;
 let reviewResult = {
   ok: false,
   commands: [],

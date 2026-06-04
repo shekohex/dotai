@@ -18,6 +18,7 @@ import {
   parseGoalCustomEntry,
   reconstructGoal,
   replaceWorkflowGoal,
+  setEntry,
 } from "../src/extensions/goal/state.js";
 import { GOAL_EXTENSION_ENTRY_TYPE } from "../src/extensions/goal/types.js";
 import { handleGoalCommand, type GoalCommandHost } from "../src/extensions/goal/commands.js";
@@ -83,6 +84,7 @@ function createGoalHarness(
   let commandHandler:
     | ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>)
     | null = null;
+  let commandCompletions: ((argumentPrefix: string) => unknown) | null = null;
   let ctx: ExtensionCommandContext;
   let entryIndex = 0;
 
@@ -95,6 +97,7 @@ function createGoalHarness(
   const registerCommand: ExtensionAPI["registerCommand"] = (name, definition) => {
     if (name === "goal") {
       commandHandler = definition.handler;
+      commandCompletions = definition.getArgumentCompletions ?? null;
     }
   };
 
@@ -284,6 +287,9 @@ function createGoalHarness(
 
   return {
     emit,
+    commandCompletions(argumentPrefix: string) {
+      return commandCompletions?.(argumentPrefix) ?? [];
+    },
     entries,
     runCommand,
     runTool,
@@ -1075,7 +1081,37 @@ Ship it`);
         customType: "goal",
         content: expect.stringContaining("Shipped workflow feature."),
         display: true,
+        details: { kind: "workflow-complete", runId: expect.any(String) },
       },
+      options: { triggerTurn: false },
+    });
+  });
+
+  test("goal workflow runtime completes with string summary and persists counters", async () => {
+    const harness = createWorkflowRuntimeHarness();
+    await harness.runtime.start(
+      { objective: "Ship it", label: "Ship it", source: "inline" },
+      harness.ctx,
+    );
+    harness.deferred.resolve({
+      result: {
+        ok: true,
+        status: "complete",
+        summary: "Done.",
+        metrics: { iterations: 2, reviewCount: 3, judgeCount: 4, commitCount: 5 },
+      },
+    });
+    await flushWorkflowWatch();
+
+    expect(harness.goal?.status).toBe("complete");
+    expect(harness.goal?.workflow?.counters).toMatchObject({
+      iterations: 2,
+      reviewCount: 3,
+      judgeCount: 4,
+      commitCount: 5,
+    });
+    expect(harness.sentMessages.at(-1)).toMatchObject({
+      message: { content: expect.stringContaining("Done.") },
       options: { triggerTurn: false },
     });
   });
@@ -1093,7 +1129,13 @@ Ship it`);
 
     harness.runtime.resume(harness.ctx, "External dependency restored; continue same workflow.");
     harness.deferred.resolve({
-      result: { ok: true, status: "blocked", blockers: ["Need production credential"] },
+      result: {
+        ok: true,
+        status: "blocked",
+        summary: { summary: "Need credential.", nextAction: "provide credential and resume" },
+        blockers: ["Need production credential"],
+        metrics: { iterations: 7, reviewCount: 8 },
+      },
     });
     await flushWorkflowWatch();
 
@@ -1108,12 +1150,49 @@ Ship it`);
     ]);
     expect(harness.goal?.status).toBe("blocked");
     expect(harness.goal?.workflow?.runId).toBe("run-blocked");
+    expect(harness.goal?.workflow?.counters).toMatchObject({ iterations: 7, reviewCount: 8 });
     expect(harness.goal?.blockedReason).toContain("finished without satisfying the goal");
     expect(harness.goal?.blockedReason).toContain("Need production credential");
     expect(harness.notifications.at(-1)).toEqual({
       message: "Goal workflow blocked. Status: blocked.",
       level: "warning",
     });
+    expect(harness.sentMessages.at(-1)).toMatchObject({
+      message: {
+        customType: "goal",
+        content: expect.stringContaining("Need credential."),
+        display: true,
+        details: { kind: "workflow-blocked", runId: "run-blocked" },
+      },
+      options: { triggerTurn: false },
+    });
+    expect(String(harness.sentMessages.at(-1)?.message.content)).toContain(
+      "Need production credential",
+    );
+    expect(String(harness.sentMessages.at(-1)?.message.content)).toContain(
+      "provide credential and resume",
+    );
+  });
+
+  test("goal workflow runtime blocked report falls back when summary is missing", async () => {
+    const created = replaceWorkflowGoal("Ship it", {
+      runId: "run-fallback-blocked",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+    });
+    if (created.goal === null) throw new Error("expected workflow goal");
+    const harness = createWorkflowRuntimeHarness(created.goal);
+
+    harness.deferred.resolve({
+      result: { ok: true, status: "blocked", blockers: ["Need approval"] },
+    });
+    harness.runtime.resume(harness.ctx);
+    await flushWorkflowWatch();
+
+    expect(String(harness.sentMessages.at(-1)?.message.content)).toContain("Need approval");
+    expect(String(harness.sentMessages.at(-1)?.message.content)).toContain('"status": "blocked"');
   });
 
   test("goal workflow runtime notifies when workflow fails", async () => {
@@ -1132,6 +1211,16 @@ Ship it`);
       message: "Goal workflow failed. subagent resume failed: sessionId old was not found",
       level: "error",
     });
+    expect(harness.sentMessages.at(-1)).toMatchObject({
+      message: {
+        customType: "goal",
+        content: expect.stringContaining("subagent resume failed: sessionId old was not found"),
+        display: true,
+        details: { kind: "workflow-failed-blocked", runId: expect.any(String) },
+      },
+      options: { triggerTurn: false },
+    });
+    expect(String(harness.sentMessages.at(-1)?.message.content)).toContain("/goal workflow resume");
   });
 
   test("goal workflow runtime unblocks blocked goal and resumes same run with reason", () => {
@@ -1163,6 +1252,38 @@ Ship it`);
     expect(harness.goal?.status).toBe("active");
     expect(harness.goal?.workflow?.runId).toBe("run-unblock");
     expect(harness.goal?.resumedReason).toBe("Credential installed; continue workflow now.");
+    expect(harness.sentMessages.at(-1)).toMatchObject({
+      message: {
+        customType: "goal",
+        content: expect.stringContaining("Credential installed; continue workflow now."),
+        display: true,
+        details: { kind: "workflow-unblocked", runId: "run-unblock" },
+      },
+      options: { triggerTurn: false },
+    });
+  });
+
+  test("goal workflow resume restores persisted counters", () => {
+    const created = replaceWorkflowGoal("Ship it", {
+      runId: "run-counters",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+      counters: { iterations: 4, reviewCount: 5, judgeCount: 6 },
+    });
+    if (created.goal === null) throw new Error("expected workflow goal");
+    const harness = createWorkflowRuntimeHarness({ ...created.goal, status: "paused" });
+
+    harness.runtime.resume(harness.ctx);
+
+    expect(harness.resumes).toEqual([
+      {
+        runId: "run-counters",
+        args: { workflowCounters: { iterations: 4, reviewCount: 5, judgeCount: 6 } },
+      },
+    ]);
+    expect(harness.goal?.status).toBe("active");
   });
 
   test("goal workflow runtime refuses plain resume for blocked workflow goals", () => {
@@ -1260,6 +1381,22 @@ Ship it`);
     expect(reasons).toEqual(["Credential installed"]);
   });
 
+  test("goal workflow autocomplete includes workflow actions without breaking top-level items", () => {
+    const harness = createGoalHarness();
+
+    expect(harness.commandCompletions("res")).toMatchObject([{ value: "resume" }]);
+    expect(harness.commandCompletions("workflow ")).toMatchObject([
+      { value: "workflow start " },
+      { value: "workflow resume" },
+      { value: "workflow unblock " },
+      { value: "workflow status" },
+      { value: "workflow @" },
+    ]);
+    expect(harness.commandCompletions("workflow u")).toMatchObject([
+      { value: "workflow unblock " },
+    ]);
+  });
+
   test("goal command rejects oversized at-prefixed objective files", async () => {
     const notifications: Array<{ message: string; level?: string }> = [];
     const directory = mkdtempSync(join(tmpdir(), "agent-goal-command-objective-"));
@@ -1318,6 +1455,69 @@ Ship it`);
     });
 
     expect(harness.snapshot().goal?.status).toBe("paused");
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]).toMatchObject({
+      message: {
+        customType: "goal",
+        content: expect.stringContaining("Goal paused"),
+        display: true,
+        details: { kind: "goal-paused", goalId: harness.snapshot().goal?.goalId },
+      },
+      options: { triggerTurn: false },
+    });
+  });
+
+  test("goal pause sends visible lifecycle message without queuing hidden continuation", async () => {
+    const harness = createGoalHarness();
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.runCommand("pause");
+
+    expect(harness.snapshot().goal?.status).toBe("paused");
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]).toMatchObject({
+      message: {
+        customType: "goal",
+        display: true,
+        details: { kind: "goal-paused", goalId: harness.snapshot().goal?.goalId },
+      },
+      options: { triggerTurn: false },
+    });
+  });
+
+  test("active workflow goals do not enqueue normal hidden continuations", async () => {
+    const created = replaceWorkflowGoal("Ship workflow", {
+      runId: "run-no-hidden",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+    });
+    if (created.goal === null) throw new Error("expected workflow goal");
+    const harness = createGoalHarness({
+      contextUsagePercent: 10,
+      contextUsageTokens: 100,
+      initialEntries: [
+        {
+          type: "custom",
+          id: "workflow-goal-entry",
+          parentId: null,
+          timestamp: new Date(0).toISOString(),
+          customType: GOAL_EXTENSION_ENTRY_TYPE,
+          data: setEntry(created.goal, "command"),
+        } as never,
+      ],
+    });
+
+    await harness.emit("session_start", { type: "session_start", reason: "resume" });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 1, output: 1 })],
+    });
+    await waitForPostAgentSettle();
+
+    expect(harness.snapshot().goal?.workflow?.runId).toBe("run-no-hidden");
     expect(harness.sentMessages).toHaveLength(0);
   });
 

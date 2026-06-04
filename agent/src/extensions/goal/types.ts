@@ -22,6 +22,18 @@ export const GoalUsageSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const GoalWorkflowCountersSchema = Type.Object(
+  {
+    iterations: Type.Optional(Type.Integer({ minimum: 0 })),
+    reviewCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    judgeCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    reviewDraftCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    judgeDraftCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    commitCount: Type.Optional(Type.Integer({ minimum: 0 })),
+  },
+  { additionalProperties: false },
+);
+
 export const GoalWorkflowMetadataSchema = Type.Object(
   {
     runId: Type.String(),
@@ -30,6 +42,7 @@ export const GoalWorkflowMetadataSchema = Type.Object(
     objectiveFile: Type.Optional(Type.String()),
     startCommit: Type.String(),
     startedAt: Type.String(),
+    counters: Type.Optional(GoalWorkflowCountersSchema),
   },
   { additionalProperties: false },
 );
@@ -124,6 +137,7 @@ export const GoalBlockedEventSchema = Type.Object(
 
 export type GoalStatus = Static<typeof GoalStatusSchema>;
 export type GoalUsage = Static<typeof GoalUsageSchema>;
+export type GoalWorkflowCounters = Static<typeof GoalWorkflowCountersSchema>;
 export type GoalWorkflowMetadata = Static<typeof GoalWorkflowMetadataSchema>;
 export type ThreadGoal = Static<typeof ThreadGoalSchema>;
 export type GoalEntrySource = Static<typeof GoalEntrySourceSchema>;

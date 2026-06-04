@@ -761,6 +761,12 @@ export function openWorkflowNavigator(
           getTitle: () => workflowDialogTitle(state, model),
           helpText: () => workflowDialogHelp(state),
           renderBody: (innerWidth) => renderNavigator(state, model, innerWidth, theme).slice(0, -2),
+          onCachedScrollKey: (data, scrollBy) => {
+            const action = keyToAction(parseKey(data), state.kind);
+            if (state.kind !== "detail" || action.type !== "move") return false;
+            scrollBy(action.delta);
+            return true;
+          },
           onKey: (data) => {
             const action = keyToAction(parseKey(data), state.kind);
             if (action.type === "none") return false;

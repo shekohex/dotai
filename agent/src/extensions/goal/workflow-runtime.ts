@@ -13,9 +13,10 @@ import {
   blockGoal,
   replaceWorkflowGoal,
   unblockGoal,
+  updateGoalWorkflowCounters,
   updateGoalStatus,
 } from "./state.js";
-import type { GoalEntrySource, ThreadGoal } from "./types.js";
+import type { GoalEntrySource, GoalWorkflowCounters, ThreadGoal } from "./types.js";
 import { parseGoalWorkflowObjective } from "./workflow.js";
 
 export interface GoalWorkflowObjectiveInput {
@@ -54,6 +55,18 @@ const GoalWorkflowCompleteResultSchema = Type.Object(
 );
 
 type GoalWorkflowCompleteResult = Static<typeof GoalWorkflowCompleteResultSchema>;
+
+const GoalWorkflowCountersSchema = Type.Object(
+  {
+    iterations: Type.Optional(Type.Integer({ minimum: 0 })),
+    reviewCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    judgeCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    reviewDraftCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    judgeDraftCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    commitCount: Type.Optional(Type.Integer({ minimum: 0 })),
+  },
+  { additionalProperties: false },
+);
 
 export class GoalWorkflowRuntime {
   constructor(private readonly options: GoalWorkflowRuntimeOptions) {}
@@ -122,14 +135,19 @@ export class GoalWorkflowRuntime {
     const resumed = this.createManager(ctx).resumeInBackground(
       runId,
       reason === undefined
-        ? undefined
-        : { unblockReason: reason, unblockedAt: new Date().toISOString() },
+        ? workflowResumeArgs(current)
+        : {
+            ...workflowResumeArgs(current),
+            unblockReason: reason,
+            unblockedAt: new Date().toISOString(),
+          },
     );
     if (resumed === false) {
       ctx.ui.notify(`Goal workflow ${runId} is not resumable.`, "warning");
       return;
     }
-    if (current.status === "blocked") this.unblockForResume(current, runId, reason, ctx);
+    this.activateForResume(current, runId, reason, ctx);
+    this.sendResumeMessage(runId, reason);
     ctx.ui.notify(`Goal workflow resumed. Run ID: ${runId}`);
     this.watch(runId, resumed.promise, ctx);
   }
@@ -173,15 +191,19 @@ export class GoalWorkflowRuntime {
   private complete(runId: string, workflowResult: WorkflowRunResult, ctx: ExtensionContext): void {
     const current = this.options.getGoal();
     if (current?.workflow?.runId !== runId) return;
-    const goalWithUsage = addGoalWorkflowUsage(current, {
-      tokens: workflowResult.tokenUsage?.total,
-      activeSeconds: Math.ceil((workflowResult.durationMs ?? 0) / 1000),
-    });
+    const goalWithUsage = updateGoalWorkflowCounters(
+      addGoalWorkflowUsage(current, {
+        tokens: workflowResult.tokenUsage?.total,
+        activeSeconds: Math.ceil((workflowResult.durationMs ?? 0) / 1000),
+      }),
+      workflowCounters(workflowResult.result),
+    );
     if (!workflowResultComplete(workflowResult.result)) {
       const reason = workflowBlockReason(runId, workflowResult.result);
       const blocked = blockGoal(goalWithUsage, reason);
       if (blocked.ok && blocked.goal !== null) {
         this.persist(blocked.goal, ctx);
+        this.sendBlockedMessage(runId, workflowResult.result);
         ctx.ui.notify(
           `Goal workflow blocked. ${workflowBlockSummary(workflowResult.result)}`,
           "warning",
@@ -209,6 +231,46 @@ export class GoalWorkflowRuntime {
     );
   }
 
+  private sendBlockedMessage(runId: string, result: unknown): void {
+    this.options.pi.sendMessage(
+      {
+        customType: "goal",
+        content: workflowBlockedMessage(runId, result),
+        display: true,
+        details: { kind: "workflow-blocked", runId, result },
+      },
+      { triggerTurn: false },
+    );
+  }
+
+  private sendFailedMessage(runId: string, error: unknown): void {
+    this.options.pi.sendMessage(
+      {
+        customType: "goal",
+        content: workflowFailedMessage(runId, error),
+        display: true,
+        details: { kind: "workflow-failed-blocked", runId, error: errorMessage(error) },
+      },
+      { triggerTurn: false },
+    );
+  }
+
+  private sendResumeMessage(runId: string, reason: string | undefined): void {
+    this.options.pi.sendMessage(
+      {
+        customType: "goal",
+        content: workflowResumeMessage(runId, reason),
+        display: true,
+        details: {
+          kind: reason === undefined ? "workflow-resumed" : "workflow-unblocked",
+          runId,
+          reason,
+        },
+      },
+      { triggerTurn: false },
+    );
+  }
+
   private block(runId: string, error: unknown, ctx: ExtensionContext): void {
     const current = this.options.getGoal();
     if (current?.workflow?.runId !== runId) return;
@@ -216,27 +278,43 @@ export class GoalWorkflowRuntime {
     const blocked = blockGoal(current, reason);
     if (blocked.ok && blocked.goal !== null) {
       this.persist(blocked.goal, ctx);
+      this.sendFailedMessage(runId, error);
       ctx.ui.notify(`Goal workflow failed. ${errorMessage(error)}`, "error");
     }
   }
 
-  private unblockForResume(
+  private activateForResume(
     current: ThreadGoal,
     runId: string,
     reason: string | undefined,
     ctx: ExtensionContext,
   ): void {
-    const unblocked = unblockGoal(
-      current,
-      reason ?? `Resuming workflow run ${runId} after user requested /goal workflow resume.`,
-    );
-    if (unblocked.ok && unblocked.goal !== null) this.persist(unblocked.goal, ctx);
+    if (current.status === "blocked") {
+      const unblocked = unblockGoal(
+        current,
+        reason ?? `Resuming workflow run ${runId} after user requested /goal workflow resume.`,
+      );
+      if (unblocked.ok && unblocked.goal !== null) this.persist(unblocked.goal, ctx);
+      return;
+    }
+
+    if (current.status === "paused") {
+      const resumed = updateGoalStatus(current, "active");
+      if (resumed.ok && resumed.goal !== null) this.persist(resumed.goal, ctx);
+    }
   }
 
   private persist(goal: ThreadGoal, ctx: ExtensionContext): void {
     this.options.persistGoal(goal, "runtime");
     this.options.refreshUi(ctx);
   }
+}
+
+function workflowResumeArgs(
+  goal: ThreadGoal,
+): { workflowCounters: GoalWorkflowCounters } | undefined {
+  const counters = goal.workflow?.counters;
+  return counters === undefined ? undefined : { workflowCounters: counters };
 }
 
 function workflowResultComplete(result: unknown): result is GoalWorkflowCompleteResult {
@@ -267,6 +345,39 @@ function workflowBlockSummary(result: unknown): string {
   return "Inspect blocked reason for details.";
 }
 
+function workflowBlockedMessage(runId: string, result: unknown): string {
+  const parts = [`Goal workflow blocked. Run ID: ${runId}`];
+  const status = workflowStringField(result, "status");
+  const summary = workflowSummaryText(result);
+  const blockers = workflowArrayField(result, "blockers");
+  const nextAction =
+    workflowStringField(result, "nextAction") ??
+    workflowStringField(workflowObjectField(result, "summary"), "nextAction");
+  if (status !== undefined) parts.push(`Status: ${status}`);
+  if (summary.length > 0) parts.push(summary);
+  if (blockers.length > 0)
+    parts.push(["Blockers:", ...blockers.map((blocker) => `- ${blocker}`)].join("\n"));
+  if (nextAction !== undefined) parts.push(`Next action: ${nextAction}`);
+  return parts.join("\n\n");
+}
+
+function workflowFailedMessage(runId: string, error: unknown): string {
+  return [
+    `Goal workflow failed and is blocked. Run ID: ${runId}`,
+    `Error: ${errorMessage(error)}`,
+    "Fix the workflow failure, then resume with /goal workflow resume or unblock with /goal workflow unblock <reason>.",
+  ].join("\n\n");
+}
+
+function workflowResumeMessage(runId: string, reason: string | undefined): string {
+  return [
+    reason === undefined
+      ? `Goal workflow resumed. Run ID: ${runId}`
+      : `Goal workflow unblocked and resumed. Run ID: ${runId}`,
+    reason === undefined ? "Reason: user requested workflow resume." : `Reason: ${reason}`,
+  ].join("\n\n");
+}
+
 function workflowCompletionMessage(runId: string, result: unknown): string {
   const summary = workflowSummaryText(result);
   return [`Goal workflow complete. Run ID: ${runId}`, summary]
@@ -284,6 +395,33 @@ function workflowSummaryText(result: unknown): string {
     }
   }
   return JSON.stringify(result, null, 2);
+}
+
+function workflowObjectField(result: unknown, key: string): unknown {
+  if (isWorkflowRecord(result)) return result[key];
+  return undefined;
+}
+
+function isWorkflowRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function workflowStringField(result: unknown, key: string): string | undefined {
+  const value = workflowObjectField(result, key);
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function workflowArrayField(result: unknown, key: string): string[] {
+  const value = workflowObjectField(result, key);
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+}
+
+function workflowCounters(result: unknown): GoalWorkflowCounters | undefined {
+  const metrics = workflowObjectField(result, "metrics");
+  if (!Value.Check(GoalWorkflowCountersSchema, metrics)) return undefined;
+  return Value.Parse(GoalWorkflowCountersSchema, metrics);
 }
 
 function goalWorkflowDisplayName(

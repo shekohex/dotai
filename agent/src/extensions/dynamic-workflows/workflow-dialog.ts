@@ -15,6 +15,7 @@ export interface WorkflowDialogOptions {
   getTitle: () => string;
   helpText: () => string;
   renderBody: (innerWidth: number) => string[];
+  onCachedScrollKey?: (data: string, scrollBy: (delta: number) => void) => boolean;
   onKey: (data: string) => boolean;
 }
 
@@ -96,6 +97,14 @@ export class WorkflowDialog extends Container implements Focusable {
   }
 
   handleInput(data: string): void {
+    if (
+      this.options.onCachedScrollKey?.(data, (delta) => {
+        this.scrollBy(delta);
+      }) === true
+    ) {
+      return;
+    }
+
     if (this.options.onKey(data)) {
       this.scrollOffset = 0;
       this.refresh();

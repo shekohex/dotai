@@ -7,6 +7,7 @@ import {
   GoalCustomEntrySchema,
   type GoalCustomEntry,
   type GoalEntrySource,
+  type GoalWorkflowCounters,
   type GoalResult,
   type GoalWorkflowMetadata,
   type GoalSnapshot,
@@ -173,6 +174,21 @@ export function addGoalWorkflowUsage(
     usage: {
       tokensUsed: goal.usage.tokensUsed + Math.max(0, Math.floor(usage.tokens ?? 0)),
       activeSeconds: goal.usage.activeSeconds + Math.max(0, Math.floor(usage.activeSeconds ?? 0)),
+    },
+    updatedAt: unixSeconds(),
+  };
+}
+
+export function updateGoalWorkflowCounters(
+  goal: ThreadGoal,
+  counters: GoalWorkflowCounters | undefined,
+): ThreadGoal {
+  if (goal.workflow === undefined || counters === undefined) return goal;
+  return {
+    ...cloneGoal(goal),
+    workflow: {
+      ...goal.workflow,
+      counters,
     },
     updatedAt: unixSeconds(),
   };

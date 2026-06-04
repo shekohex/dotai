@@ -55,6 +55,22 @@ const GOAL_COMMAND_AUTOCOMPLETE_ITEMS: AutocompleteItem[] = [
   },
 ];
 
+const GOAL_WORKFLOW_AUTOCOMPLETE_ITEMS: AutocompleteItem[] = [
+  { value: "workflow start ", label: "workflow start", description: "Start workflow goal" },
+  { value: "workflow resume", label: "workflow resume", description: "Resume workflow goal" },
+  {
+    value: "workflow unblock ",
+    label: "workflow unblock",
+    description: "Unblock workflow goal with reason",
+  },
+  { value: "workflow status", label: "workflow status", description: "Show workflow goal status" },
+  {
+    value: "workflow @",
+    label: "workflow @file",
+    description: "Start workflow goal from objective file",
+  },
+];
+
 export type GoalCommandPi = Pick<ExtensionAPI, "registerCommand" | "sendMessage">;
 
 export interface GoalCommandContext {
@@ -91,7 +107,26 @@ export interface GoalCommandHost {
 }
 
 function goalCommandCompletions(prefix: string): AutocompleteItem[] {
+  if (prefix === "workflow" || prefix.startsWith("workflow ")) {
+    return GOAL_WORKFLOW_AUTOCOMPLETE_ITEMS.filter((item) => item.value.startsWith(prefix));
+  }
   return GOAL_COMMAND_AUTOCOMPLETE_ITEMS.filter((item) => item.value.startsWith(prefix));
+}
+
+function sendGoalLifecycleMessage(
+  pi: GoalCommandPi,
+  content: string,
+  details: Record<string, unknown>,
+): void {
+  pi.sendMessage(
+    {
+      customType: GOAL_EXTENSION_ENTRY_TYPE,
+      content,
+      display: true,
+      details,
+    },
+    { triggerTurn: false },
+  );
 }
 
 function queueGoalTurn(
@@ -205,6 +240,11 @@ function workflowObjectiveArgs(trimmed: string): string | null {
   return trimmed.slice("workflow".length).trim();
 }
 
+function workflowStartArgs(workflowArgs: string): string {
+  if (workflowArgs.startsWith("start ")) return workflowArgs.slice("start".length).trim();
+  return workflowArgs;
+}
+
 async function handleGoalWorkflowCommand(
   host: GoalCommandHost,
   workflowArgs: string,
@@ -212,9 +252,13 @@ async function handleGoalWorkflowCommand(
 ): Promise<void> {
   if (workflowArgs.length === 0) {
     ctx.ui.notify(
-      "Usage: /goal workflow <objective|@objective-file> or /goal workflow resume",
+      "Usage: /goal workflow start <objective|@objective-file>, resume, unblock <reason>, or status",
       "warning",
     );
+    return;
+  }
+  if (workflowArgs === "status") {
+    ctx.ui.notify(formatGoalSummary(host.getGoal()));
     return;
   }
   if (workflowArgs === "resume") {
@@ -235,7 +279,12 @@ async function handleGoalWorkflowCommand(
     await host.resumeWorkflowGoal(ctx, reason);
     return;
   }
-  const objectiveResult = await resolveGoalCommandObjective(workflowArgs, ctx, {
+  if (workflowArgs === "start") {
+    ctx.ui.notify("Usage: /goal workflow start <objective|@objective-file>", "warning");
+    return;
+  }
+  const startArgs = workflowStartArgs(workflowArgs);
+  const objectiveResult = await resolveGoalCommandObjective(startArgs, ctx, {
     enforceMaxObjectiveChars: false,
   });
   if (!objectiveResult.ok) {
@@ -309,6 +358,13 @@ export async function handleGoalCommand(
 
     host.setGoal(result.goal, "command", ctx);
     ctx.ui.notify(result.message);
+    if (trimmed === "pause") {
+      sendGoalLifecycleMessage(pi, `Goal paused. Goal ID: ${result.goal.goalId}`, {
+        kind: "goal-paused",
+        goalId: result.goal.goalId,
+        reason: "user requested /goal pause",
+      });
+    }
     if (trimmed === "resume" && result.goal.status === "active") {
       queueGoalTurn(pi, result.goal, "command_resume");
     }

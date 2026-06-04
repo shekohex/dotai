@@ -373,7 +373,24 @@ class GoalRuntime {
 
     this.clearStoppedRuntimeState();
     this.persistGoal(result.goal, "runtime");
+    this.sendGoalLifecycleMessage("Goal paused because assistant turn was aborted.", {
+      kind: "goal-paused",
+      goalId: result.goal.goalId,
+      reason: "assistant turn aborted",
+    });
     this.refreshUi(ctx);
+  }
+
+  private sendGoalLifecycleMessage(content: string, details: Record<string, unknown>): void {
+    this.pi.sendMessage(
+      {
+        customType: GOAL_EXTENSION_ENTRY_TYPE,
+        content,
+        display: true,
+        details,
+      },
+      { triggerTurn: false },
+    );
   }
 
   private resumePausedGoal(ctx: ExtensionContext): void {
@@ -478,6 +495,7 @@ class GoalRuntime {
     if (
       this.goal === null ||
       this.goal.status !== "active" ||
+      this.goal.workflow !== undefined ||
       this.continuationQueuedFor === this.goal.goalId
     ) {
       return;

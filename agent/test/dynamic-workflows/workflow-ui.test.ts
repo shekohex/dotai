@@ -6,6 +6,7 @@ import {
   NavigatorState,
   renderNavigator,
 } from "../../src/extensions/dynamic-workflows/workflow-ui.js";
+import { WorkflowDialog } from "../../src/extensions/dynamic-workflows/workflow-dialog.js";
 
 /** Fake manager exposing one running run with two phases. */
 function fakeManager() {
@@ -167,4 +168,46 @@ test("renderNavigator shows the selected row and a footer hint", () => {
   assert.match(detailView, /Prompt/);
   assert.match(detailView, /scan the code/);
   assert.match(detailView, /j\/k scroll/);
+});
+
+test("WorkflowDialog cached scroll keys do not rebuild detail body", () => {
+  let renderBodyCount = 0;
+  let renderCount = 0;
+  const tui = {
+    terminal: { columns: 80, rows: 30 },
+    requestRender() {
+      renderCount += 1;
+    },
+  } as any;
+  const theme = {
+    fg: (_color: string, text: string) => text,
+    bold: (text: string) => text,
+  } as any;
+  const dialog = new WorkflowDialog(
+    tui,
+    theme,
+    {
+      getTitle: () => "Workflows — detail",
+      helpText: () => "j/k scroll",
+      renderBody: () => {
+        renderBodyCount += 1;
+        return Array.from({ length: 40 }, (_value, index) => `line ${index}`);
+      },
+      onCachedScrollKey(data, scrollBy) {
+        if (data !== "j") return false;
+        scrollBy(1);
+        return true;
+      },
+      onKey: () => {
+        throw new Error("scroll-only key must not reach refresh path");
+      },
+    },
+    () => {},
+  );
+
+  assert.equal(renderBodyCount, 1);
+  dialog.handleInput("j");
+
+  assert.equal(renderBodyCount, 1);
+  assert.equal(renderCount, 2);
 });

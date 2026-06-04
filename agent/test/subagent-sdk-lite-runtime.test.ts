@@ -89,12 +89,17 @@ test("LiteRuntime restore routes state through subagent UI hooks", async () => {
       renderWidget(_ctx, subagents) {
         renderedStateCount = subagents.length;
       },
+      dispose() {
+        renderedStateCount = -1;
+      },
     },
   });
 
   await runtime.restore({ cwd: "/tmp/lite-ui", hasUI: true } as never);
-
   expect(renderedStateCount).toBe(0);
+  runtime.dispose();
+
+  expect(renderedStateCount).toBe(-1);
 });
 
 test("lite StructuredOutput tool persists structured output to child session", async () => {

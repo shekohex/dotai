@@ -7,6 +7,7 @@ import {
   createSubagentFullscreenComponent,
   mergeSubagentsWithTerminalRetention,
 } from "./ui.js";
+import { isTerminalSubagentStatus } from "./status.js";
 import {
   SUBAGENT_MESSAGE_ENTRY,
   SUBAGENT_OVERVIEW_WIDGET_KEY,
@@ -63,6 +64,7 @@ export type SubagentRuntimeHooks = {
     triggerTurn?: boolean;
   }): void;
   renderWidget(ctx: ExtensionContext | undefined, subagents: RuntimeSubagent[]): void;
+  dispose?(): void;
 };
 
 export type DefaultSubagentRuntimeHooksOptions = {
@@ -74,12 +76,7 @@ type SubagentRuntimeUiControls = {
   toggle(): void;
   setExpanded(nextExpanded: boolean): void;
   showFullscreen(ctx: ExtensionContext): Promise<void>;
-  render(ctx: ExtensionContext | undefined): void;
 };
-
-function isTerminalStatus(status: RuntimeSubagent["status"]): boolean {
-  return status === "completed" || status === "failed" || status === "cancelled";
-}
 
 function toRuntimeSubagent(state: SubagentStateEntry): RuntimeSubagent {
   return {
@@ -127,7 +124,7 @@ function registerSubagentRuntimeControls(
       } else {
         controls.toggle();
       }
-      controls.render(ctx);
+      renderCoordinatedWidget(ctx);
     },
   });
 
@@ -135,9 +132,16 @@ function registerSubagentRuntimeControls(
     description: "Toggle subagent dashboard",
     handler(ctx) {
       controls.toggle();
-      controls.render(ctx);
+      renderCoordinatedWidget(ctx);
     },
   });
+}
+
+function clearSlotTimers(slot: SubagentRuntimeUiSlot): void {
+  for (const timer of slot.expiryTimers.values()) {
+    clearTimeout(timer);
+  }
+  slot.expiryTimers.clear();
 }
 
 function createRuntimeUiSlot(options: DefaultSubagentRuntimeHooksOptions): SubagentRuntimeUiSlot {
@@ -226,7 +230,7 @@ function scheduleTerminalExpiry(slot: SubagentRuntimeUiSlot, sessionId: string):
 
 function retainTerminalState(slot: SubagentRuntimeUiSlot, state: SubagentStateEntry): void {
   const runtimeState = toRuntimeSubagent(state);
-  if (!isTerminalStatus(runtimeState.status)) {
+  if (!isTerminalSubagentStatus(runtimeState.status)) {
     slot.retainedTerminalSubagents.delete(runtimeState.sessionId);
     const existingTimer = slot.expiryTimers.get(runtimeState.sessionId);
     if (existingTimer) {
@@ -296,8 +300,17 @@ export function createDefaultSubagentRuntimeHooks(
       subagentDashboardCoordinator.expanded = nextExpanded;
     },
     showFullscreen: showCoordinatedFullscreen,
-    render: renderMergedWidget,
   });
+
+  const dispose = (): void => {
+    clearSlotTimers(slot);
+    subagentDashboardCoordinator.slots.delete(slotId);
+    slot.subagents = [];
+    slot.retainedTerminalSubagents.clear();
+    renderCoordinatedWidget(slot.ctx);
+    slot.ctx = undefined;
+    slot.scopeKey = undefined;
+  };
 
   return {
     persistState(state) {
@@ -343,5 +356,6 @@ export function createDefaultSubagentRuntimeHooks(
       slot.subagents = subagents;
       renderMergedWidget(ctx);
     },
+    dispose,
   };
 }

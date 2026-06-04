@@ -4,6 +4,8 @@ import type { ResolvedSubagentMode } from "./modes.js";
 import type { SubagentRuntimeHooks } from "./runtime-hooks.js";
 import type { RuntimeSubagent } from "./types.js";
 
+export { isTerminalSubagentStatus } from "./status.js";
+
 export function resolveLiteRuntimeModel(
   ctx: ExtensionContext,
   mode: ResolvedSubagentMode,

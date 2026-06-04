@@ -2,6 +2,7 @@ import { formatDurationHuman } from "../extensions/coreui/tools.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, TUI } from "@earendil-works/pi-tui";
+import { isTerminalSubagentStatus } from "./status.js";
 import type { ChildBootstrapState, RuntimeSubagent } from "./types.js";
 
 const DEFAULT_COMPACT_ROWS = 4;
@@ -86,10 +87,6 @@ function formatElapsed(subagent: RuntimeSubagent): string {
   return formatDurationHuman(Math.max(0, endTime - subagent.startedAt));
 }
 
-function isTerminalStatus(status: RuntimeSubagent["status"]): boolean {
-  return status === "completed" || status === "failed" || status === "cancelled";
-}
-
 function getStatusTone(status: RuntimeSubagent["status"]): "success" | "warning" | "error" | "dim" {
   if (status === "completed") {
     return "success";
@@ -112,7 +109,9 @@ function renderTitleLine(
 ): string {
   const runningCount = subagents.filter((subagent) => subagent.status === "running").length;
   const idleCount = subagents.filter((subagent) => subagent.status === "idle").length;
-  const terminalCount = subagents.filter((subagent) => isTerminalStatus(subagent.status)).length;
+  const terminalCount = subagents.filter((subagent) =>
+    isTerminalSubagentStatus(subagent.status),
+  ).length;
   const parts = [
     theme.fg("accent", theme.bold(title)),
     `${subagents.length} active`,
@@ -179,7 +178,7 @@ function renderSubagentRow(
   }
 
   const summary = formatSubagentSummary(subagent);
-  if (summary !== undefined && isTerminalStatus(subagent.status)) {
+  if (summary !== undefined && isTerminalSubagentStatus(subagent.status)) {
     return [
       truncateToWidth(firstLine, width, "…"),
       truncateToWidth(`    ${activity}`, width, "…"),
@@ -191,8 +190,8 @@ function renderSubagentRow(
 
 function sortSubagentsForDisplay(subagents: RuntimeSubagent[]): RuntimeSubagent[] {
   return subagents.slice().toSorted((left, right) => {
-    const leftTerminal = isTerminalStatus(left.status) ? 1 : 0;
-    const rightTerminal = isTerminalStatus(right.status) ? 1 : 0;
+    const leftTerminal = isTerminalSubagentStatus(left.status) ? 1 : 0;
+    const rightTerminal = isTerminalSubagentStatus(right.status) ? 1 : 0;
     if (leftTerminal !== rightTerminal) {
       return leftTerminal - rightTerminal;
     }
@@ -377,7 +376,7 @@ export function mergeSubagentsWithTerminalRetention({
 }: SubagentTerminalRetentionOptions): RuntimeSubagent[] {
   const nextIds = new Set(next.map((subagent) => subagent.sessionId));
   const retained = previous.filter((subagent) => {
-    if (!isTerminalStatus(subagent.status) || nextIds.has(subagent.sessionId)) {
+    if (!isTerminalSubagentStatus(subagent.status) || nextIds.has(subagent.sessionId)) {
       return false;
     }
     const completedAt = subagent.completedAt ?? subagent.updatedAt;

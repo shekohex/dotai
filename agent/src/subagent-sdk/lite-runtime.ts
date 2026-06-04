@@ -20,7 +20,11 @@ import { SubagentRuntimeEventBus } from "./events.js";
 import type { SubagentChildIpcEvent } from "./ipc.js";
 import { resolveSubagentMode, type ResolvedSubagentMode } from "./modes.js";
 import { createLiteSessionResources } from "./lite-session-resources.js";
-import { renderLiteRuntimeWidget, resolveLiteRuntimeModel } from "./lite-runtime-ui.js";
+import {
+  isTerminalSubagentStatus,
+  renderLiteRuntimeWidget,
+  resolveLiteRuntimeModel,
+} from "./lite-runtime-ui.js";
 import { buildLiteResumePrompt } from "./lite-resume-prompt.js";
 import {
   assertLiteSessionPathAccessible,
@@ -63,10 +67,6 @@ type LiteSessionState = {
 };
 
 const DEFAULT_LITE_RUNTIME_OPTIONS: LiteRuntimeOptions = { kind: "lite" };
-function isTerminalStatus(status: RuntimeSubagent["status"]): boolean {
-  return status === "completed" || status === "cancelled" || status === "failed";
-}
-
 function toTokenUsage(stats: ReturnType<LiteAgentSession["getSessionStats"]>): TokenUsage {
   return {
     input: stats.tokens.input,
@@ -335,7 +335,7 @@ export class LiteRuntime {
         `subagent message failed: lite sessionId ${params.sessionId} is not live. Start a new subagent instead.`,
       );
     }
-    if (isTerminalStatus(state.status)) {
+    if (isTerminalSubagentStatus(state.status)) {
       throw new Error(
         `subagent message failed: lite sessionId ${params.sessionId} already completed. Start a new subagent instead.`,
       );
@@ -385,7 +385,7 @@ export class LiteRuntime {
       throw new Error(`subagent cancel failed: unknown lite sessionId ${params.sessionId}.`);
     }
     const live = this.sessions.get(params.sessionId);
-    if (isTerminalStatus(state.status)) {
+    if (isTerminalSubagentStatus(state.status)) {
       return cloneRuntimeSubagent(state);
     }
     if (!live) {
@@ -430,6 +430,7 @@ export class LiteRuntime {
   dispose(): void {
     this.disposed = true;
     for (const sessionId of this.sessions.keys()) this.disposeSession(sessionId);
+    this.hooks.dispose?.();
   }
 
   private async buildPrompt(

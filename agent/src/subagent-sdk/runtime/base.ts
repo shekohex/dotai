@@ -5,6 +5,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { createDefaultSubagentRuntimeHooks, type SubagentRuntimeHooks } from "../runtime-hooks.js";
+import { isTerminalSubagentStatus } from "../status.js";
 import type { LaunchCommandBuilder } from "../launch.js";
 import type { MuxAdapter } from "../mux.js";
 import { asRecord } from "../../utils/unknown-data.js";
@@ -107,9 +108,7 @@ function isParentSessionPersisted(ctx: ExtensionContext): boolean {
   return typeof result === "boolean" ? result : true;
 }
 
-export function isTerminalStatus(status: RuntimeSubagent["status"]): boolean {
-  return status === "completed" || status === "cancelled" || status === "failed";
-}
+export const isTerminalStatus = isTerminalSubagentStatus;
 
 export function emitProgressUpdate(
   onUpdate: AgentToolUpdateCallback | undefined,
@@ -155,6 +154,8 @@ export abstract class SubagentRuntimeBase {
       clearInterval(this.widgetTimer);
       this.widgetTimer = undefined;
     }
+
+    this.hooks.dispose?.();
   }
 
   listStates(): RuntimeSubagent[] {

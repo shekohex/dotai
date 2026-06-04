@@ -225,13 +225,13 @@ describe("subagent ui", () => {
   });
 
   it("registers subagent dashboard command and shortcut controls", () => {
-    const commands = new Map<string, { description?: string }>();
+    const commands = new Map<string, { description?: string; handler?: unknown }>();
     const shortcuts = new Map<string, { description?: string }>();
     const duplicateCommands = new Map<string, { description?: string }>();
 
     createDefaultSubagentRuntimeHooks(
       createPi({
-        registerCommand(name: string, options: { description?: string }) {
+        registerCommand(name: string, options: { description?: string; handler?: unknown }) {
           commands.set(name, options);
         },
         registerShortcut(shortcut: string, options: { description?: string }) {
@@ -250,6 +250,52 @@ describe("subagent ui", () => {
     expect(commands.get("subagents")?.description).toBe("Show or toggle live subagent dashboard");
     expect(shortcuts.get("ctrl+alt+u")?.description).toBe("Toggle subagent dashboard");
     expect(duplicateCommands.size).toBe(0);
+  });
+
+  it("dashboard command renders only current session scope", async () => {
+    const commands = new Map<string, { handler(args: string, ctx: unknown): Promise<void> }>();
+    const sessionAWidgets = new Map<string, { content: unknown; placement?: string }>();
+    const sessionBWidgets = new Map<string, { content: unknown; placement?: string }>();
+    const pi = createPi({
+      registerCommand(
+        name: string,
+        options: { handler(args: string, ctx: unknown): Promise<void> },
+      ) {
+        commands.set(name, options);
+      },
+    });
+    const sessionAHooks = createDefaultSubagentRuntimeHooks(pi as never);
+    const sessionBHooks = createDefaultSubagentRuntimeHooks(pi as never);
+    const sessionACtx = createCtx("session-a", sessionAWidgets);
+    const sessionBCtx = createCtx("session-b", sessionBWidgets);
+
+    sessionAHooks.renderWidget(sessionACtx as never, [
+      createRuntimeSubagent({ sessionId: "a", name: "session-a-agent", status: "running" }),
+    ]);
+    sessionBHooks.renderWidget(sessionBCtx as never, [
+      createRuntimeSubagent({ sessionId: "b", name: "session-b-agent", status: "running" }),
+    ]);
+
+    await commands.get("subagents")?.handler("toggle", sessionBCtx);
+
+    const renderedSessionB = getRenderedWidget(sessionBWidgets);
+    expect(renderedSessionB).toContain("session-b-agent");
+    expect(renderedSessionB).not.toContain("session-a-agent");
+  });
+
+  it("disposing hooks removes stale rows and clears scoped widget", () => {
+    const widgets = new Map<string, { content: unknown; placement?: string }>();
+    const hooks = createDefaultSubagentRuntimeHooks(createPi() as never);
+    const ctx = createCtx("subagent-ui-dispose", widgets);
+
+    hooks.renderWidget(ctx as never, [
+      createRuntimeSubagent({ sessionId: "stale", name: "stale-agent", status: "running" }),
+    ]);
+    expect(getRenderedWidget(widgets)).toContain("stale-agent");
+
+    hooks.dispose?.();
+
+    expect(widgets.get(SUBAGENT_OVERVIEW_WIDGET_KEY)?.content).toBeUndefined();
   });
 
   it("renders expanded actionable rows with terminal summaries", () => {

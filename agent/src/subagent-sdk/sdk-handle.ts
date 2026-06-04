@@ -4,12 +4,9 @@ import { cloneRuntimeSubagent } from "./types.js";
 import type { MessageSubagentParams, RuntimeSubagent } from "./types.js";
 import type { SubagentHandle, SubagentSDK, SubagentSDKEvent } from "./sdk-types.js";
 import type { SubagentChildIpcEvent } from "./ipc.js";
+import { isTerminalSubagentStatus } from "./status.js";
 
 const noop = () => {};
-
-function isTerminalStatus(status: RuntimeSubagent["status"]): boolean {
-  return status === "completed" || status === "cancelled" || status === "failed";
-}
 
 export class SDKSubagentHandle implements SubagentHandle {
   constructor(
@@ -41,7 +38,7 @@ export class SDKSubagentHandle implements SubagentHandle {
 
   waitForCompletion(options: { signal?: AbortSignal } = {}): Promise<RuntimeSubagent> {
     const currentState = this.getState();
-    if (isTerminalStatus(currentState.status)) {
+    if (isTerminalSubagentStatus(currentState.status)) {
       return Promise.resolve(currentState);
     }
     return new Promise<RuntimeSubagent>((resolve, reject) => {
@@ -55,14 +52,14 @@ export class SDKSubagentHandle implements SubagentHandle {
         reject(new Error("Cancelled"));
       };
       cleanup = this.onEvent(({ state }) => {
-        if (!isTerminalStatus(state.status)) {
+        if (!isTerminalSubagentStatus(state.status)) {
           return;
         }
         dispose();
         resolve(state);
       });
       const updatedState = this.getState();
-      if (isTerminalStatus(updatedState.status)) {
+      if (isTerminalSubagentStatus(updatedState.status)) {
         dispose();
         resolve(updatedState);
         return;

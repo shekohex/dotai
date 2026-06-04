@@ -12,9 +12,11 @@ import {
   getWorkflowModeState,
   installResultDelivery,
   installWorkflowInputHooks,
+  isConversationStart,
   registerAllSavedWorkflows,
   registerBuiltinWorkflows,
   registerWorkflowCommands,
+  setWorkflowModeAvailability,
   WorkflowManager,
 } from "./index.js";
 
@@ -53,6 +55,10 @@ export default function extension(pi: ExtensionAPI) {
     workflowToolEnabled = enabled;
     if (enabled) activateWorkflowTool(pi);
     else deactivateWorkflowTool(pi);
+    setWorkflowModeAvailability(getWorkflowModeState(), {
+      conversationEmpty: getWorkflowModeState().conversationEmpty,
+      toolEnabled: workflowToolEnabled,
+    });
   };
   pi.registerCommand("workflow", {
     description:
@@ -99,7 +105,13 @@ export default function extension(pi: ExtensionAPI) {
 
   pi.on("session_start", (_event: unknown, ctx: ExtensionContext) => {
     const restored = readToolState(ctx.sessionManager.getBranch(), WORKFLOW_TOOL_NAME);
-    setWorkflowToolEnabled(restored === true);
+    const conversationEmpty = isConversationStart(ctx);
+    const enabled = restored === true || (restored === null && conversationEmpty);
+    setWorkflowModeAvailability(getWorkflowModeState(), {
+      conversationEmpty,
+      toolEnabled: enabled,
+    });
+    setWorkflowToolEnabled(enabled);
     manager.setMainModel(ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined);
     manager.setExtensionContext(ctx);
   });
@@ -108,6 +120,12 @@ export default function extension(pi: ExtensionAPI) {
   });
   pi.on("session_tree", (_event: unknown, ctx: ExtensionContext) => {
     const restored = readToolState(ctx.sessionManager.getBranch(), WORKFLOW_TOOL_NAME);
-    setWorkflowToolEnabled(restored === true);
+    const conversationEmpty = isConversationStart(ctx);
+    const enabled = restored === true || (restored === null && conversationEmpty);
+    setWorkflowModeAvailability(getWorkflowModeState(), {
+      conversationEmpty,
+      toolEnabled: enabled,
+    });
+    setWorkflowToolEnabled(enabled);
   });
 }

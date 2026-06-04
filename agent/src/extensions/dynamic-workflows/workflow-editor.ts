@@ -52,6 +52,8 @@ export interface WorkflowModeState {
   disabled: boolean;
   tick: number;
   wasTriggered: boolean;
+  conversationEmpty: boolean;
+  toolEnabled: boolean;
 }
 
 interface AnsiToken {
@@ -156,7 +158,14 @@ export function colorizeWorkflow(line: string, tick: number, palette: number[] =
  * @returns {boolean} Whether input is backspace.
  */
 export function createWorkflowModeState(): WorkflowModeState {
-  return { active: false, disabled: false, tick: 0, wasTriggered: false };
+  return {
+    active: false,
+    disabled: false,
+    tick: 0,
+    wasTriggered: false,
+    conversationEmpty: true,
+    toolEnabled: false,
+  };
 }
 
 const sharedWorkflowModeState = createWorkflowModeState();
@@ -170,7 +179,7 @@ export function isWorkflowBackspace(data: string): boolean {
 }
 
 export function isWorkflowModeActive(state: WorkflowModeState, text: string): boolean {
-  return !state.disabled && hasTrigger(text);
+  return !state.disabled && (state.conversationEmpty || state.toolEnabled) && hasTrigger(text);
 }
 
 export function syncWorkflowModeState(state: WorkflowModeState, text: string): void {
@@ -245,16 +254,29 @@ export function buildForcedWorkflowPrompt(text: string): string {
 /** The exact name of the workflow tool that workflows mode forces. */
 export const WORKFLOW_TOOL_NAME = "workflow";
 
-function isConversationStart(ctx: ExtensionContext | undefined): boolean {
+export function isConversationStart(ctx: ExtensionContext | undefined): boolean {
   const branch = ctx?.sessionManager.getBranch() ?? [];
   return !branch.some((entry) => {
-    if (!hasRoleField(entry)) return false;
-    return entry.role === "user" || entry.role === "assistant";
+    const role = sessionEntryRole(entry);
+    return role === "user" || role === "assistant";
   });
 }
 
-function hasRoleField(entry: unknown): entry is { role: unknown } {
-  return typeof entry === "object" && entry !== null && "role" in entry;
+export function setWorkflowModeAvailability(
+  state: WorkflowModeState,
+  input: { conversationEmpty: boolean; toolEnabled: boolean },
+): void {
+  state.conversationEmpty = input.conversationEmpty;
+  state.toolEnabled = input.toolEnabled;
+}
+
+function sessionEntryRole(entry: unknown): unknown {
+  if (typeof entry !== "object" || entry === null) return undefined;
+  if ("role" in entry) return entry.role;
+  if (!("message" in entry)) return undefined;
+  const message = entry.message;
+  if (typeof message !== "object" || message === null || !("role" in message)) return undefined;
+  return message.role;
 }
 
 export function installWorkflowInputHooks(pi: ExtensionAPI, state: WorkflowModeState): void {

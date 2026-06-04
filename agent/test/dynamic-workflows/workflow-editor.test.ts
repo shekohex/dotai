@@ -7,7 +7,9 @@ import {
   endsWithTrigger,
   hasTrigger,
   installWorkflowInputHooks,
+  isWorkflowModeActive,
   RAINBOW,
+  setWorkflowModeAvailability,
   tokenizeAnsi,
 } from "../../src/extensions/dynamic-workflows/workflow-editor.js";
 
@@ -74,6 +76,19 @@ test("colorizeWorkflow paints the trigger and preserves visible text + escapes",
 test("colorizeWorkflow leaves non-trigger lines untouched", () => {
   const input = "just some plain text";
   assert.equal(colorizeWorkflow(input, 3), input);
+});
+
+test("workflow rainbow is armed only for new chats or enabled workflow tool", () => {
+  const state = createWorkflowModeState();
+  setWorkflowModeAvailability(state, { conversationEmpty: false, toolEnabled: false });
+
+  assert.equal(isWorkflowModeActive(state, "use workflow"), false);
+
+  setWorkflowModeAvailability(state, { conversationEmpty: true, toolEnabled: false });
+  assert.equal(isWorkflowModeActive(state, "use workflow"), true);
+
+  setWorkflowModeAvailability(state, { conversationEmpty: false, toolEnabled: true });
+  assert.equal(isWorkflowModeActive(state, "use workflow"), true);
 });
 
 test("colorizeWorkflow does not corrupt the cursor escape or CURSOR_MARKER", () => {
@@ -164,7 +179,9 @@ test("installWorkflowInputHooks does not restrict tools after conversation start
   };
   const ctx = {
     sessionManager: {
-      getBranch: () => [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+      getBranch: () => [
+        { type: "message", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+      ],
     },
   };
   const state = createWorkflowModeState();

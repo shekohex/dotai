@@ -34,6 +34,9 @@ export function renderLiteRuntimeWidget(
   if (ctx === undefined) {
     return undefined;
   }
-  hooks.renderWidget(ctx, states);
+  hooks.renderWidget(
+    ctx,
+    states.filter((state) => state.status === "running" || state.status === "idle"),
+  );
   return ctx;
 }

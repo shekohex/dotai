@@ -256,9 +256,10 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
       return;
     }
 
-    const visibleSubagents = Array.from(this.states.values()).toSorted(
-      (left, right) => left.startedAt - right.startedAt,
-    );
+    const visibleSubagents = Array.from(this.activeSessionIds.values())
+      .map((sessionId) => this.states.get(sessionId))
+      .filter((state): state is RuntimeSubagent => state !== undefined)
+      .toSorted((left, right) => left.startedAt - right.startedAt);
 
     this.hooks.renderWidget(this.ctx, visibleSubagents);
     this.ensureWidgetTimer();

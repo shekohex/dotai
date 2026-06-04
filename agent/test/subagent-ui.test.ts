@@ -427,6 +427,45 @@ describe("subagent ui", () => {
     expect(rendered).not.toContain("/subagents fullscreen");
   });
 
+  it("renders no-hint expanded header without trailing ellipsis", () => {
+    for (const width of [20, 30, 40, 60, 100]) {
+      const lines = renderSubagentDashboardLines(
+        [
+          createRuntimeSubagent({
+            sessionId: `no-hint-header-${width}`,
+            name: "runner",
+            status: "running",
+          }),
+        ],
+        width,
+        createTheme(),
+        { mode: "expanded", hints: [] },
+      );
+
+      expect(lines?.[0]).not.toContain("…");
+      expect(visibleWidth(lines?.[0] ?? "")).toBeLessThanOrEqual(width);
+    }
+  });
+
+  it("renders fullscreen no-hint header without trailing ellipsis", () => {
+    for (const width of [20, 30, 40, 60, 100]) {
+      const component = createSubagentFullscreenComponent({
+        subagents: [
+          createRuntimeSubagent({
+            sessionId: `fullscreen-no-hint-header-${width}`,
+            name: "runner",
+            status: "running",
+          }),
+        ],
+        done() {},
+      })({ terminal: { rows: 20 }, requestRender() {} } as TUI, createTheme());
+      const line = component.render(width)[0] ?? "";
+
+      expect(line).not.toContain("…");
+      expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+    }
+  });
+
   it("caps rows with hidden subagent count", () => {
     const lines = renderSubagentDashboardLines(
       Array.from({ length: 6 }, (_, index) =>
@@ -717,7 +756,7 @@ describe("subagent ui", () => {
     ).toEqual([]);
   });
 
-  it("keeps completed history visible after terminal retention expiry when runtime provides history", async () => {
+  it("expires retained terminal subagents after retention window", async () => {
     vi.useFakeTimers();
     try {
       const widgets = new Map<string, { content: unknown; placement?: string }>();
@@ -734,18 +773,56 @@ describe("subagent ui", () => {
       });
 
       await hooks.persistState(completed);
-      await vi.advanceTimersByTimeAsync(30);
-      hooks.renderWidget(ctx as never, [completed]);
+      hooks.renderWidget(ctx as never, []);
 
-      const rendered = getRenderedWidget(widgets);
-      expect(rendered).toContain("history-done");
-      expect(rendered).toContain("completed");
+      expect(getRenderedWidget(widgets)).toContain("history-done");
+
+      await vi.advanceTimersByTimeAsync(30);
+
+      expect(widgets.get(SUBAGENT_OVERVIEW_WIDGET_KEY)?.content).toBeUndefined();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("lite runtime passes completed history to shared dashboard", () => {
+  it("lite runtime uses retained terminal state and expires it", async () => {
+    vi.useFakeTimers();
+    try {
+      const widgets = new Map<string, { content: unknown; placement?: string }>();
+      const hooks = createDefaultSubagentRuntimeHooks(createPi() as never, {
+        terminalRetentionMs: 25,
+      });
+      const ctx = createCtx("subagent-ui-lite-history", widgets);
+
+      await hooks.persistState(
+        createRuntimeSubagent({
+          sessionId: "lite-history-done",
+          name: "lite-history-done",
+          status: "completed",
+          completedAt: Date.now(),
+        }),
+      );
+
+      renderLiteRuntimeWidget(hooks, ctx as never, [
+        createRuntimeSubagent({
+          sessionId: "lite-running",
+          name: "lite-running",
+          status: "running",
+        }),
+      ]);
+
+      expect(getRenderedWidget(widgets)).toContain("lite-history-done");
+
+      renderLiteRuntimeWidget(hooks, ctx as never, []);
+      await vi.advanceTimersByTimeAsync(30);
+
+      expect(widgets.get(SUBAGENT_OVERVIEW_WIDGET_KEY)?.content).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lite runtime filters terminal states from direct widget input", () => {
     const widgets = new Map<string, { content: unknown; placement?: string }>();
     const hooks = createDefaultSubagentRuntimeHooks(createPi() as never);
     const ctx = createCtx("subagent-ui-lite-history", widgets);
@@ -759,7 +836,7 @@ describe("subagent ui", () => {
       }),
     ]);
 
-    expect(getRenderedWidget(widgets)).toContain("lite-history-done");
+    expect(widgets.get(SUBAGENT_OVERVIEW_WIDGET_KEY)?.content).toBeUndefined();
   });
 
   it("fullscreen component scrolls and closes explicitly", () => {

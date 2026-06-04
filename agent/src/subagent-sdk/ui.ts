@@ -163,7 +163,7 @@ function renderFramedTitleLine(
   }
   const titleText = truncateDisplayText(`🤖 ${title.toLowerCase()}`, Math.max(0, width - 5));
   const titlePrefix = theme.fg("borderMuted", "───") + theme.fg("accent", ` ${titleText} `);
-  const titlePrefixWidth = 5 + approximatePlainWidth(titleText);
+  const titlePrefixWidth = visibleWidth(titlePrefix);
   return truncateToWidth(
     titlePrefix + theme.fg("borderMuted", "─".repeat(Math.max(0, width - titlePrefixWidth))),
     width,
@@ -178,10 +178,6 @@ function getExpandedDashboardHintVariants(): string[] {
     "ctrl+alt+u collapse • fullscreen",
     "ctrl+alt+u collapse",
   ];
-}
-
-function approximatePlainWidth(value: string): number {
-  return Array.from(value).length;
 }
 
 function appendRightAlignedAdaptiveHint(

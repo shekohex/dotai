@@ -1154,6 +1154,31 @@ Ship it`);
     expect(harness.goal?.resumedReason).toBe("Credential installed; continue workflow now.");
   });
 
+  test("goal workflow runtime refuses plain resume for blocked workflow goals", () => {
+    const created = replaceWorkflowGoal("Ship it", {
+      runId: "run-blocked-resume",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+    });
+    const blocked = blockGoal(
+      created.goal,
+      "Need production credential from user before workflow can continue safely.",
+    );
+    if (blocked.goal === null) throw new Error("expected blocked workflow goal");
+    const harness = createWorkflowRuntimeHarness(blocked.goal);
+
+    harness.runtime.resume(harness.ctx);
+
+    expect(harness.resumes).toEqual([]);
+    expect(harness.goal?.status).toBe("blocked");
+    expect(harness.notifications.at(-1)).toEqual({
+      message: "Use /goal workflow unblock <reason> to resume blocked workflow goals.",
+      level: "warning",
+    });
+  });
+
   test("goal workflow resume command dispatches workflow resume", async () => {
     let resumeCount = 0;
     const host: GoalCommandHost = {

@@ -112,6 +112,13 @@ export class GoalWorkflowRuntime {
       ctx.ui.notify("No workflow goal is available to resume.", "warning");
       return;
     }
+    if (current.status === "blocked" && reason === undefined) {
+      ctx.ui.notify(
+        "Use /goal workflow unblock <reason> to resume blocked workflow goals.",
+        "warning",
+      );
+      return;
+    }
     const resumed = this.createManager(ctx).resumeInBackground(
       runId,
       reason === undefined

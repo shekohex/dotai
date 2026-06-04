@@ -22,6 +22,7 @@ import {
 } from "../src/extensions/goal/state.js";
 import { GOAL_EXTENSION_ENTRY_TYPE } from "../src/extensions/goal/types.js";
 import { handleGoalCommand, type GoalCommandHost } from "../src/extensions/goal/commands.js";
+import { continuationPrompt } from "../src/extensions/goal/prompts.js";
 import { parseGoalWorkflowObjective } from "../src/extensions/goal/workflow.js";
 import { GoalWorkflowRuntime } from "../src/extensions/goal/workflow-runtime.js";
 
@@ -1098,7 +1099,19 @@ Ship it`);
         ok: true,
         status: "complete",
         summary: "Done.",
-        metrics: { iterations: 2, reviewCount: 3, judgeCount: 4, commitCount: 5 },
+        metrics: {
+          runId: "run-production-metrics",
+          startedAt: "2026-06-03T00:00:00.000Z",
+          startCommit: "abc123",
+          iterations: 2,
+          reviewCount: 3,
+          judgeCount: 4,
+          reviewDraftCount: 9,
+          judgeDraftCount: 10,
+          commitCount: 5,
+          agentCalls: 22,
+          tokenBudgetSpent: 12345,
+        },
       },
     });
     await flushWorkflowWatch();
@@ -1108,6 +1121,8 @@ Ship it`);
       iterations: 2,
       reviewCount: 3,
       judgeCount: 4,
+      reviewDraftCount: 9,
+      judgeDraftCount: 10,
       commitCount: 5,
     });
     expect(harness.sentMessages.at(-1)).toMatchObject({
@@ -1134,7 +1149,19 @@ Ship it`);
         status: "blocked",
         summary: { summary: "Need credential.", nextAction: "provide credential and resume" },
         blockers: ["Need production credential"],
-        metrics: { iterations: 7, reviewCount: 8 },
+        metrics: {
+          runId: "run-blocked",
+          startedAt: "2026-06-03T00:00:00.000Z",
+          startCommit: "abc123",
+          iterations: 7,
+          reviewCount: 8,
+          judgeCount: 9,
+          reviewDraftCount: 10,
+          judgeDraftCount: 11,
+          commitCount: 12,
+          agentCalls: 33,
+          tokenBudgetSpent: 4567,
+        },
       },
     });
     await flushWorkflowWatch();
@@ -1150,7 +1177,14 @@ Ship it`);
     ]);
     expect(harness.goal?.status).toBe("blocked");
     expect(harness.goal?.workflow?.runId).toBe("run-blocked");
-    expect(harness.goal?.workflow?.counters).toMatchObject({ iterations: 7, reviewCount: 8 });
+    expect(harness.goal?.workflow?.counters).toMatchObject({
+      iterations: 7,
+      reviewCount: 8,
+      judgeCount: 9,
+      reviewDraftCount: 10,
+      judgeDraftCount: 11,
+      commitCount: 12,
+    });
     expect(harness.goal?.blockedReason).toContain("finished without satisfying the goal");
     expect(harness.goal?.blockedReason).toContain("Need production credential");
     expect(harness.notifications.at(-1)).toEqual({
@@ -1381,6 +1415,114 @@ Ship it`);
     expect(reasons).toEqual(["Credential installed"]);
   });
 
+  test("top-level goal resume routes workflow goals to workflow runtime without hidden follow-up", async () => {
+    const created = replaceWorkflowGoal("Ship it", {
+      runId: "run-top-resume",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+      counters: { iterations: 3 },
+    });
+    if (created.goal === null) throw new Error("expected workflow goal");
+    const sentMessages: SentGoalMessage[] = [];
+    const resumed: Array<{ reason: string | undefined }> = [];
+    const host: GoalCommandHost = {
+      getGoal: () => ({ ...created.goal, status: "paused" }) as NonNullable<typeof created.goal>,
+      setGoal: () => {
+        throw new Error("workflow resume must not use normal goal state path");
+      },
+      clearGoal: () => {},
+      enableTool: () => {},
+      disableTool: () => {},
+      async startWorkflowGoal() {},
+      async resumeWorkflowGoal(_ctx, reason) {
+        resumed.push({ reason });
+      },
+    };
+    const pi = {
+      sendMessage: (message: SentGoalMessage["message"], options: SentGoalMessage["options"]) =>
+        sentMessages.push({ message, options }),
+      registerCommand: () => {},
+    } as never;
+    const ctx = {
+      cwd: "/tmp",
+      hasUI: true,
+      sessionManager: {
+        getBranch: () => [],
+        getLeafId: () => null,
+        getSessionId: () => "session",
+      },
+      ui: {
+        confirm: async () => true,
+        input: async () => undefined,
+        notify: () => {},
+        setStatus: () => {},
+      },
+    } as never;
+
+    await handleGoalCommand(pi, host, "resume", ctx);
+
+    expect(resumed).toEqual([{ reason: undefined }]);
+    expect(sentMessages).toEqual([]);
+  });
+
+  test("top-level goal unblock routes workflow goals to workflow runtime without hidden follow-up", async () => {
+    const created = replaceWorkflowGoal("Ship it", {
+      runId: "run-top-unblock",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+      counters: { iterations: 4 },
+    });
+    const blocked = blockGoal(
+      created.goal,
+      "Need production credential from user before workflow can continue safely.",
+    );
+    if (blocked.goal === null) throw new Error("expected blocked workflow goal");
+    const sentMessages: SentGoalMessage[] = [];
+    const resumed: Array<{ reason: string | undefined }> = [];
+    const host: GoalCommandHost = {
+      getGoal: () => blocked.goal,
+      setGoal: () => {
+        throw new Error("workflow unblock must not use normal goal state path");
+      },
+      clearGoal: () => {},
+      enableTool: () => {},
+      disableTool: () => {},
+      async startWorkflowGoal() {},
+      async resumeWorkflowGoal(_ctx, reason) {
+        resumed.push({ reason });
+      },
+    };
+    const pi = {
+      sendMessage: (message: SentGoalMessage["message"], options: SentGoalMessage["options"]) =>
+        sentMessages.push({ message, options }),
+      registerCommand: () => {},
+    } as never;
+    const ctx = {
+      cwd: "/tmp",
+      hasUI: true,
+      sessionManager: {
+        getBranch: () => [],
+        getLeafId: () => null,
+        getSessionId: () => "session",
+      },
+      ui: {
+        confirm: async () => true,
+        input: async () => undefined,
+        notify: () => {},
+        setStatus: () => {},
+      },
+    } as never;
+
+    await handleGoalCommand(pi, host, "unblock Credential installed", ctx);
+
+    expect(resumed).toEqual([{ reason: "Credential installed" }]);
+    expect(sentMessages).toEqual([]);
+  });
+
   test("goal workflow autocomplete includes workflow actions without breaking top-level items", () => {
     const harness = createGoalHarness();
 
@@ -1519,6 +1661,40 @@ Ship it`);
 
     expect(harness.snapshot().goal?.workflow?.runId).toBe("run-no-hidden");
     expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("active workflow goals reject pre-existing normal hidden continuations", async () => {
+    const created = replaceWorkflowGoal("Ship workflow", {
+      runId: "run-reject-hidden",
+      workflowName: "goal",
+      objectiveSource: "inline",
+      startCommit: "abc123",
+      startedAt: "2026-06-03T00:00:00.000Z",
+    });
+    if (created.goal === null) throw new Error("expected workflow goal");
+    const harness = createGoalHarness({
+      initialEntries: [
+        {
+          type: "custom",
+          id: "workflow-goal-entry",
+          parentId: null,
+          timestamp: new Date(0).toISOString(),
+          customType: GOAL_EXTENSION_ENTRY_TYPE,
+          data: setEntry(created.goal, "command"),
+        } as never,
+      ],
+    });
+
+    await harness.emit("session_start", { type: "session_start", reason: "resume" });
+    const results = await harness.emit("before_agent_start", {
+      type: "before_agent_start",
+      prompt: continuationPrompt(created.goal),
+      systemPrompt: "base prompt",
+      systemPromptOptions: {},
+    });
+
+    expect(harness.abortCount).toBe(1);
+    expect((results[0] as { systemPrompt?: string } | undefined)?.systemPrompt).toContain("stale");
   });
 
   test("completed turns keep accounting without enforcing token budgets", async () => {

@@ -33,6 +33,7 @@ import {
   clearEntry,
   goalWithLiveUsage,
   reconstructGoal,
+  sendVisibleGoalMessage,
   setEntry,
   updateGoalStatus,
 } from "./state.js";
@@ -373,24 +374,12 @@ class GoalRuntime {
 
     this.clearStoppedRuntimeState();
     this.persistGoal(result.goal, "runtime");
-    this.sendGoalLifecycleMessage("Goal paused because assistant turn was aborted.", {
+    sendVisibleGoalMessage(this.pi, "Goal paused because assistant turn was aborted.", {
       kind: "goal-paused",
       goalId: result.goal.goalId,
       reason: "assistant turn aborted",
     });
     this.refreshUi(ctx);
-  }
-
-  private sendGoalLifecycleMessage(content: string, details: Record<string, unknown>): void {
-    this.pi.sendMessage(
-      {
-        customType: GOAL_EXTENSION_ENTRY_TYPE,
-        content,
-        display: true,
-        details,
-      },
-      { triggerTurn: false },
-    );
   }
 
   private resumePausedGoal(ctx: ExtensionContext): void {
@@ -662,7 +651,8 @@ class GoalRuntime {
     const isCurrentGoal =
       this.goal !== null &&
       this.goal.goalId === continuationGoalId &&
-      this.goal.status === "active";
+      this.goal.status === "active" &&
+      this.goal.workflow === undefined;
     if (isCurrentGoal) {
       return undefined;
     }
@@ -777,7 +767,8 @@ class GoalRuntime {
         const isCurrentActiveGoal =
           queuedGoalId !== null &&
           this.goal?.goalId === queuedGoalId &&
-          this.goal.status === "active";
+          this.goal.status === "active" &&
+          this.goal.workflow === undefined;
         if (queuedGoalId === null || isCurrentActiveGoal) {
           return message;
         }

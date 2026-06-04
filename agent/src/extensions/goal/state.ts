@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import {
   GOAL_EXTENSION_ENTRY_TYPE,
@@ -16,6 +17,7 @@ import {
 } from "./types.js";
 
 type DirectGoalStatusUpdate = Exclude<ThreadGoal["status"], "blocked">;
+type GoalLifecycleMessagePi = Pick<ExtensionAPI, "sendMessage">;
 
 export interface ApplyUsageOptions {
   expectedGoalId?: string | null;
@@ -24,6 +26,22 @@ export interface ApplyUsageOptions {
 
 export function unixSeconds(): number {
   return Math.floor(Date.now() / 1000);
+}
+
+export function sendVisibleGoalMessage(
+  pi: GoalLifecycleMessagePi,
+  content: string,
+  details: Record<string, unknown>,
+): void {
+  pi.sendMessage(
+    {
+      customType: GOAL_EXTENSION_ENTRY_TYPE,
+      content,
+      display: true,
+      details,
+    },
+    { triggerTurn: false },
+  );
 }
 
 export function cloneGoal(goal: ThreadGoal): ThreadGoal {

@@ -5,7 +5,13 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { formatGoalSummary } from "./format.js";
 import { continuationPrompt } from "./prompts.js";
-import { blockGoal, replaceGoal, unblockGoal, updateGoalStatus } from "./state.js";
+import {
+  blockGoal,
+  replaceGoal,
+  sendVisibleGoalMessage,
+  unblockGoal,
+  updateGoalStatus,
+} from "./state.js";
 import {
   GOAL_EXTENSION_ENTRY_TYPE,
   GOAL_MAX_OBJECTIVE_CHARS,
@@ -111,22 +117,6 @@ function goalCommandCompletions(prefix: string): AutocompleteItem[] {
     return GOAL_WORKFLOW_AUTOCOMPLETE_ITEMS.filter((item) => item.value.startsWith(prefix));
   }
   return GOAL_COMMAND_AUTOCOMPLETE_ITEMS.filter((item) => item.value.startsWith(prefix));
-}
-
-function sendGoalLifecycleMessage(
-  pi: GoalCommandPi,
-  content: string,
-  details: Record<string, unknown>,
-): void {
-  pi.sendMessage(
-    {
-      customType: GOAL_EXTENSION_ENTRY_TYPE,
-      content,
-      display: true,
-      details,
-    },
-    { triggerTurn: false },
-  );
 }
 
 function queueGoalTurn(
@@ -294,6 +284,83 @@ async function handleGoalWorkflowCommand(
   await host.startWorkflowGoal(objectiveResult, ctx);
 }
 
+async function handleGoalPauseOrResumeCommand(
+  pi: GoalCommandPi,
+  host: GoalCommandHost,
+  command: "pause" | "resume",
+  ctx: ExtensionCommandContext,
+): Promise<void> {
+  const current = host.getGoal();
+  if (command === "resume" && current?.workflow !== undefined) {
+    await host.resumeWorkflowGoal(ctx);
+    return;
+  }
+
+  if (command === "pause" && current?.status === "blocked") {
+    ctx.ui.notify("Goal is already blocked. Use /goal unblock <reason> to resume.", "warning");
+    return;
+  }
+
+  if (command === "resume" && current?.status === "blocked") {
+    ctx.ui.notify("Use /goal unblock <reason> to resume blocked goals.", "warning");
+    return;
+  }
+
+  const status = command === "pause" ? "paused" : "active";
+  const result = updateGoalStatus(current, status);
+  if (!result.ok || !result.goal) {
+    ctx.ui.notify(result.message, "warning");
+    return;
+  }
+
+  host.setGoal(result.goal, "command", ctx);
+  ctx.ui.notify(result.message);
+  if (command === "pause") {
+    sendVisibleGoalMessage(pi, `Goal paused. Goal ID: ${result.goal.goalId}`, {
+      kind: "goal-paused",
+      goalId: result.goal.goalId,
+      reason: "user requested /goal pause",
+    });
+  }
+  if (command === "resume" && result.goal.status === "active") {
+    queueGoalTurn(pi, result.goal, "command_resume");
+  }
+}
+
+async function handleGoalUnblockCommand(
+  pi: GoalCommandPi,
+  host: GoalCommandHost,
+  trimmed: string,
+  ctx: ExtensionCommandContext,
+): Promise<void> {
+  const reason = await resolveInlineOrPromptedReason(
+    trimmed.slice("unblock".length),
+    "Unblock goal",
+    "What changed?",
+    ctx,
+  );
+  if (reason === null || reason.length === 0) {
+    ctx.ui.notify("Unblock reason is required.", "warning");
+    return;
+  }
+
+  const current = host.getGoal();
+  if (current?.workflow !== undefined) {
+    await host.resumeWorkflowGoal(ctx, reason);
+    return;
+  }
+
+  const result = unblockGoal(current, reason);
+  if (!result.ok || !result.goal) {
+    ctx.ui.notify(result.message, "warning");
+    return;
+  }
+
+  host.setGoal(result.goal, "command", ctx);
+  ctx.ui.notify(result.message);
+  queueGoalTurn(pi, result.goal, "command_resume", reason);
+}
+
 export async function handleGoalCommand(
   pi: GoalCommandPi,
   host: GoalCommandHost,
@@ -338,36 +405,7 @@ export async function handleGoalCommand(
   }
 
   if (trimmed === "pause" || trimmed === "resume") {
-    const current = host.getGoal();
-    if (trimmed === "pause" && current?.status === "blocked") {
-      ctx.ui.notify("Goal is already blocked. Use /goal unblock <reason> to resume.", "warning");
-      return;
-    }
-
-    if (trimmed === "resume" && current?.status === "blocked") {
-      ctx.ui.notify("Use /goal unblock <reason> to resume blocked goals.", "warning");
-      return;
-    }
-
-    const status = trimmed === "pause" ? "paused" : "active";
-    const result = updateGoalStatus(current, status);
-    if (!result.ok || !result.goal) {
-      ctx.ui.notify(result.message, "warning");
-      return;
-    }
-
-    host.setGoal(result.goal, "command", ctx);
-    ctx.ui.notify(result.message);
-    if (trimmed === "pause") {
-      sendGoalLifecycleMessage(pi, `Goal paused. Goal ID: ${result.goal.goalId}`, {
-        kind: "goal-paused",
-        goalId: result.goal.goalId,
-        reason: "user requested /goal pause",
-      });
-    }
-    if (trimmed === "resume" && result.goal.status === "active") {
-      queueGoalTurn(pi, result.goal, "command_resume");
-    }
+    await handleGoalPauseOrResumeCommand(pi, host, trimmed, ctx);
     return;
   }
 
@@ -385,26 +423,7 @@ export async function handleGoalCommand(
   }
 
   if (trimmed === "unblock" || trimmed.startsWith("unblock ")) {
-    const reason = await resolveInlineOrPromptedReason(
-      trimmed.slice("unblock".length),
-      "Unblock goal",
-      "What changed?",
-      ctx,
-    );
-    if (reason === null || reason.length === 0) {
-      ctx.ui.notify("Unblock reason is required.", "warning");
-      return;
-    }
-
-    const result = unblockGoal(host.getGoal(), reason);
-    if (!result.ok || !result.goal) {
-      ctx.ui.notify(result.message, "warning");
-      return;
-    }
-
-    host.setGoal(result.goal, "command", ctx);
-    ctx.ui.notify(result.message);
-    queueGoalTurn(pi, result.goal, "command_resume", reason);
+    await handleGoalUnblockCommand(pi, host, trimmed, ctx);
     return;
   }
 

@@ -12,11 +12,17 @@ import {
   addGoalWorkflowUsage,
   blockGoal,
   replaceWorkflowGoal,
+  sendVisibleGoalMessage,
   unblockGoal,
   updateGoalWorkflowCounters,
   updateGoalStatus,
 } from "./state.js";
-import type { GoalEntrySource, GoalWorkflowCounters, ThreadGoal } from "./types.js";
+import {
+  GoalWorkflowCountersSchema,
+  type GoalEntrySource,
+  type GoalWorkflowCounters,
+  type ThreadGoal,
+} from "./types.js";
 import { parseGoalWorkflowObjective } from "./workflow.js";
 
 export interface GoalWorkflowObjectiveInput {
@@ -55,18 +61,6 @@ const GoalWorkflowCompleteResultSchema = Type.Object(
 );
 
 type GoalWorkflowCompleteResult = Static<typeof GoalWorkflowCompleteResultSchema>;
-
-const GoalWorkflowCountersSchema = Type.Object(
-  {
-    iterations: Type.Optional(Type.Integer({ minimum: 0 })),
-    reviewCount: Type.Optional(Type.Integer({ minimum: 0 })),
-    judgeCount: Type.Optional(Type.Integer({ minimum: 0 })),
-    reviewDraftCount: Type.Optional(Type.Integer({ minimum: 0 })),
-    judgeDraftCount: Type.Optional(Type.Integer({ minimum: 0 })),
-    commitCount: Type.Optional(Type.Integer({ minimum: 0 })),
-  },
-  { additionalProperties: false },
-);
 
 export class GoalWorkflowRuntime {
   constructor(private readonly options: GoalWorkflowRuntimeOptions) {}
@@ -220,55 +214,35 @@ export class GoalWorkflowRuntime {
   }
 
   private sendCompletionMessage(runId: string, result: unknown): void {
-    this.options.pi.sendMessage(
-      {
-        customType: "goal",
-        content: workflowCompletionMessage(runId, result),
-        display: true,
-        details: { kind: "workflow-complete", runId, result },
-      },
-      { triggerTurn: false },
-    );
+    sendVisibleGoalMessage(this.options.pi, workflowCompletionMessage(runId, result), {
+      kind: "workflow-complete",
+      runId,
+      result,
+    });
   }
 
   private sendBlockedMessage(runId: string, result: unknown): void {
-    this.options.pi.sendMessage(
-      {
-        customType: "goal",
-        content: workflowBlockedMessage(runId, result),
-        display: true,
-        details: { kind: "workflow-blocked", runId, result },
-      },
-      { triggerTurn: false },
-    );
+    sendVisibleGoalMessage(this.options.pi, workflowBlockedMessage(runId, result), {
+      kind: "workflow-blocked",
+      runId,
+      result,
+    });
   }
 
   private sendFailedMessage(runId: string, error: unknown): void {
-    this.options.pi.sendMessage(
-      {
-        customType: "goal",
-        content: workflowFailedMessage(runId, error),
-        display: true,
-        details: { kind: "workflow-failed-blocked", runId, error: errorMessage(error) },
-      },
-      { triggerTurn: false },
-    );
+    sendVisibleGoalMessage(this.options.pi, workflowFailedMessage(runId, error), {
+      kind: "workflow-failed-blocked",
+      runId,
+      error: errorMessage(error),
+    });
   }
 
   private sendResumeMessage(runId: string, reason: string | undefined): void {
-    this.options.pi.sendMessage(
-      {
-        customType: "goal",
-        content: workflowResumeMessage(runId, reason),
-        display: true,
-        details: {
-          kind: reason === undefined ? "workflow-resumed" : "workflow-unblocked",
-          runId,
-          reason,
-        },
-      },
-      { triggerTurn: false },
-    );
+    sendVisibleGoalMessage(this.options.pi, workflowResumeMessage(runId, reason), {
+      kind: reason === undefined ? "workflow-resumed" : "workflow-unblocked",
+      runId,
+      reason,
+    });
   }
 
   private block(runId: string, error: unknown, ctx: ExtensionContext): void {
@@ -420,8 +394,18 @@ function workflowArrayField(result: unknown, key: string): string[] {
 
 function workflowCounters(result: unknown): GoalWorkflowCounters | undefined {
   const metrics = workflowObjectField(result, "metrics");
-  if (!Value.Check(GoalWorkflowCountersSchema, metrics)) return undefined;
-  return Value.Parse(GoalWorkflowCountersSchema, metrics);
+  if (!isWorkflowRecord(metrics)) return undefined;
+  const counters = {
+    iterations: metrics.iterations,
+    reviewCount: metrics.reviewCount,
+    judgeCount: metrics.judgeCount,
+    reviewDraftCount: metrics.reviewDraftCount,
+    judgeDraftCount: metrics.judgeDraftCount,
+    commitCount: metrics.commitCount,
+  };
+  if (Object.values(counters).every((value) => value === undefined)) return undefined;
+  if (!Value.Check(GoalWorkflowCountersSchema, counters)) return undefined;
+  return Value.Parse(GoalWorkflowCountersSchema, counters);
 }
 
 function goalWorkflowDisplayName(

@@ -23,6 +23,9 @@ import {
 
 initTheme("dark");
 
+const STALE_CONTEXT_ERROR_MESSAGE =
+  "This extension ctx is stale after session replacement or reload.";
+
 function createRuntimeSubagent(
   overrides: Partial<RuntimeSubagent> & Pick<RuntimeSubagent, "sessionId" | "name" | "status">,
 ): RuntimeSubagent {
@@ -837,6 +840,32 @@ describe("subagent ui", () => {
     ]);
 
     expect(widgets.get(SUBAGENT_OVERVIEW_WIDGET_KEY)?.content).toBeUndefined();
+  });
+
+  it("lite runtime widget ignores stale session replacement context before scope lookup", () => {
+    const hooks = createDefaultSubagentRuntimeHooks(createPi() as never);
+    const staleCtx = {
+      cwd: "/tmp/stale-subagent-ui",
+      hasUI: true,
+      get sessionManager() {
+        throw new Error(STALE_CONTEXT_ERROR_MESSAGE);
+      },
+      ui: {
+        setWidget() {
+          throw new Error("stale ctx should not render");
+        },
+      },
+    };
+
+    expect(() =>
+      renderLiteRuntimeWidget(hooks, staleCtx as never, [
+        createRuntimeSubagent({
+          sessionId: "lite-stale",
+          name: "lite-stale",
+          status: "running",
+        }),
+      ]),
+    ).not.toThrow();
   });
 
   it("fullscreen component scrolls and closes explicitly", () => {

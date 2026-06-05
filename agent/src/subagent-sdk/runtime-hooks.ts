@@ -156,6 +156,10 @@ function createRuntimeUiSlot(options: DefaultSubagentRuntimeHooksOptions): Subag
 
 function getScopedSlots(ctx: ExtensionContext): SubagentRuntimeUiSlot[] {
   const scopeKey = getScopeKey(ctx);
+  return getScopedSlotsByScopeKey(scopeKey);
+}
+
+function getScopedSlotsByScopeKey(scopeKey: string): SubagentRuntimeUiSlot[] {
   return Array.from(subagentDashboardCoordinator.slots.values()).filter(
     (slot) => slot.scopeKey === scopeKey,
   );
@@ -167,8 +171,11 @@ function getDashboardTitle(slots: SubagentRuntimeUiSlot[]): string {
 }
 
 function getScopedSubagents(ctx: ExtensionContext): RuntimeSubagent[] {
+  return getScopedSubagentsFromSlots(getScopedSlots(ctx));
+}
+
+function getScopedSubagentsFromSlots(slots: SubagentRuntimeUiSlot[]): RuntimeSubagent[] {
   const now = Date.now();
-  const slots = getScopedSlots(ctx);
   const merged = slots.flatMap((slot) =>
     mergeSubagentsWithTerminalRetention({
       previous: Array.from(slot.retainedTerminalSubagents.values()),
@@ -185,15 +192,26 @@ function getScopedSubagents(ctx: ExtensionContext): RuntimeSubagent[] {
     .toSorted((left, right) => left.startedAt - right.startedAt);
 }
 
-function renderCoordinatedWidget(ctx: ExtensionContext | undefined): void {
-  if (ctx === undefined || !ctx.hasUI) {
-    return;
+function clearContextReferences(ctx: ExtensionContext): void {
+  for (const slot of subagentDashboardCoordinator.slots.values()) {
+    if (slot.ctx !== ctx) {
+      continue;
+    }
+    slot.ctx = undefined;
+    slot.scopeKey = undefined;
   }
+}
 
-  const scopedSlots = getScopedSlots(ctx);
-  const visibleSubagents = getScopedSubagents(ctx);
-
+function renderCoordinatedWidget(ctx: ExtensionContext | undefined): void {
   try {
+    if (ctx === undefined || !ctx.hasUI) {
+      return;
+    }
+
+    const scopeKey = getScopeKey(ctx);
+    const scopedSlots = getScopedSlotsByScopeKey(scopeKey);
+    const visibleSubagents = getScopedSubagentsFromSlots(scopedSlots);
+
     ctx.ui.setWidget(
       SUBAGENT_OVERVIEW_WIDGET_KEY,
       visibleSubagents.length === 0
@@ -209,6 +227,9 @@ function renderCoordinatedWidget(ctx: ExtensionContext | undefined): void {
   } catch (error) {
     if (!isStaleSessionReplacementContextError(error)) {
       throw error;
+    }
+    if (ctx !== undefined) {
+      clearContextReferences(ctx);
     }
   }
 }
@@ -252,35 +273,42 @@ function retainTerminalState(slot: SubagentRuntimeUiSlot, state: SubagentStateEn
 }
 
 async function showCoordinatedFullscreen(ctx: ExtensionContext): Promise<void> {
-  if (!ctx.hasUI) {
-    return;
-  }
+  try {
+    if (!ctx.hasUI) {
+      return;
+    }
 
-  const scopedSlots = getScopedSlots(ctx);
-  const visibleSubagents = getScopedSubagents(ctx);
-  if (visibleSubagents.length === 0) {
-    ctx.ui.notify("No subagents to show", "info");
-    return;
-  }
+    const scopedSlots = getScopedSlots(ctx);
+    const visibleSubagents = getScopedSubagentsFromSlots(scopedSlots);
+    if (visibleSubagents.length === 0) {
+      ctx.ui.notify("No subagents to show", "info");
+      return;
+    }
 
-  await ctx.ui.custom<void>(
-    (tui, theme, _keybindings, done) =>
-      createSubagentFullscreenComponent({
-        subagents: visibleSubagents,
-        getSubagents: () => getScopedSubagents(ctx),
-        getTitle: () => getDashboardTitle(getScopedSlots(ctx)),
-        title: getDashboardTitle(scopedSlots),
-        done,
-      })(tui, theme),
-    {
-      overlay: true,
-      overlayOptions: {
-        width: "95%",
-        maxHeight: "90%",
-        anchor: "center",
+    await ctx.ui.custom<void>(
+      (tui, theme, _keybindings, done) =>
+        createSubagentFullscreenComponent({
+          subagents: visibleSubagents,
+          getSubagents: () => getScopedSubagents(ctx),
+          getTitle: () => getDashboardTitle(getScopedSlots(ctx)),
+          title: getDashboardTitle(scopedSlots),
+          done,
+        })(tui, theme),
+      {
+        overlay: true,
+        overlayOptions: {
+          width: "95%",
+          maxHeight: "90%",
+          anchor: "center",
+        },
       },
-    },
-  );
+    );
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) {
+      throw error;
+    }
+    clearContextReferences(ctx);
+  }
 }
 
 export function createDefaultSubagentRuntimeHooks(
@@ -295,10 +323,20 @@ export function createDefaultSubagentRuntimeHooks(
     if (ctx === undefined) {
       return;
     }
-    ensureSlotRegistered(slotId, slot);
-    slot.ctx = ctx;
-    slot.scopeKey = getScopeKey(ctx);
-    renderCoordinatedWidget(ctx);
+    try {
+      if (!ctx.hasUI) {
+        return;
+      }
+      ensureSlotRegistered(slotId, slot);
+      slot.scopeKey = getScopeKey(ctx);
+      slot.ctx = ctx;
+      renderCoordinatedWidget(ctx);
+    } catch (error) {
+      if (!isStaleSessionReplacementContextError(error)) {
+        throw error;
+      }
+      clearContextReferences(ctx);
+    }
   };
 
   registerSubagentRuntimeControls(pi, {

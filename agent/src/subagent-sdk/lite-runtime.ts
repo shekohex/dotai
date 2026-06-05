@@ -137,7 +137,7 @@ export class LiteRuntime {
   }
 
   renderWidget(ctx: ExtensionContext | undefined = this.lastCtx): void {
-    this.lastCtx = renderLiteRuntimeWidget(this.hooks, ctx, this.listStates()) ?? this.lastCtx;
+    this.lastCtx = renderLiteRuntimeWidget(this.hooks, ctx, this.listStates());
   }
 
   restore(ctx?: ExtensionContext): Promise<void> {

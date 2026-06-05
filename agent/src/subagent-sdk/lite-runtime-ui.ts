@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
 import type { ResolvedSubagentMode } from "./modes.js";
 import type { SubagentRuntimeHooks } from "./runtime-hooks.js";
 import type { RuntimeSubagent } from "./types.js";
@@ -34,9 +35,20 @@ export function renderLiteRuntimeWidget(
   if (ctx === undefined) {
     return undefined;
   }
-  hooks.renderWidget(
-    ctx,
-    states.filter((state) => state.status === "running" || state.status === "idle"),
-  );
-  return ctx;
+  try {
+    if (!ctx.hasUI) {
+      return undefined;
+    }
+    ctx.sessionManager.getSessionId?.();
+    hooks.renderWidget(
+      ctx,
+      states.filter((state) => state.status === "running" || state.status === "idle"),
+    );
+    return ctx;
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) {
+      throw error;
+    }
+    return undefined;
+  }
 }

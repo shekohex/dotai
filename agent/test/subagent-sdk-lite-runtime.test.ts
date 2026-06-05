@@ -12,6 +12,8 @@ import type { RuntimeSubagent } from "../src/subagent-sdk/types.ts";
 import { createTempDir } from "./test-utils/temp-paths.ts";
 
 const cleanupPaths: string[] = [];
+const STALE_CONTEXT_ERROR_MESSAGE =
+  "This extension ctx is stale after session replacement or reload.";
 
 function createRuntimeSubagent(overrides: Partial<RuntimeSubagent>): RuntimeSubagent {
   return {
@@ -121,7 +123,11 @@ test("LiteRuntime restore routes state through subagent UI hooks", async () => {
     },
   });
 
-  await runtime.restore({ cwd: "/tmp/lite-ui", hasUI: true } as never);
+  await runtime.restore({
+    cwd: "/tmp/lite-ui",
+    hasUI: true,
+    sessionManager: { getSessionId: () => "lite-ui-session" },
+  } as never);
   expect(renderedStateCount).toBe(0);
   runtime.dispose();
 
@@ -154,10 +160,54 @@ test("LiteRuntime tool activity updates render live subagent widget", async () =
   };
   harness.states.set("lite-session", createRuntimeSubagent({ sessionId: "lite-session" }));
 
-  await runtime.restore({ cwd: "/tmp/lite-ui", hasUI: true } as never);
+  await runtime.restore({
+    cwd: "/tmp/lite-ui",
+    hasUI: true,
+    sessionManager: { getSessionId: () => "lite-ui-session" },
+  } as never);
   harness.handleSessionEvent("lite-session", { type: "tool_execution_start", toolName: "read" });
 
   expect(renderedActivity).toBe("read");
+});
+
+test("LiteRuntime renderWidget clears stale cached UI context", async () => {
+  let renderedCount = 0;
+  let sessionManagerAccessCount = 0;
+  let contextStale = false;
+  const runtime = new LiteRuntime({} as never, {
+    kind: "lite",
+    hooks: {
+      persistState() {
+        return Promise.resolve();
+      },
+      persistMessage() {
+        return Promise.resolve();
+      },
+      emitStatusMessage() {},
+      renderWidget() {
+        renderedCount += 1;
+      },
+    },
+  });
+  const ctx = {
+    cwd: "/tmp/lite-ui",
+    hasUI: true,
+    get sessionManager() {
+      sessionManagerAccessCount += 1;
+      if (contextStale) {
+        throw new Error(STALE_CONTEXT_ERROR_MESSAGE);
+      }
+      return { getSessionId: () => "lite-ui-session" };
+    },
+  };
+
+  await runtime.restore(ctx as never);
+  contextStale = true;
+  runtime.renderWidget();
+  runtime.renderWidget();
+
+  expect(renderedCount).toBe(1);
+  expect(sessionManagerAccessCount).toBe(2);
 });
 
 test("lite StructuredOutput tool persists structured output to child session", async () => {

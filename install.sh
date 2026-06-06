@@ -73,6 +73,7 @@ Usage: $0 [OPTIONS]
 
 Options:
   --non-interactive  Apply changes without prompting
+  --yes, -y          Apply changes without prompting
   -h, --help         Show this help message
 
 Environment:
@@ -85,6 +86,9 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
     --non-interactive)
+      DOTAI_NONINTERACTIVE=1
+      ;;
+    --yes | -y)
       DOTAI_NONINTERACTIVE=1
       ;;
     -h | --help)

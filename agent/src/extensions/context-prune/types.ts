@@ -196,10 +196,10 @@ export type ContextPruneConfigPatch = Omit<Partial<ContextPruneConfig>, "tools">
 };
 
 export const DEFAULT_CONFIG: ContextPruneConfig = {
-  enabled: true,
+  enabled: false,
   tools: {
-    contextPrune: true,
-    contextTreeQuery: true,
+    contextPrune: false,
+    contextTreeQuery: false,
   },
   showPruneStatusLine: true,
   summarizerModels: [

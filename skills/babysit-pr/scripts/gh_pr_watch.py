@@ -2,14 +2,15 @@
 """Watch GitHub PR CI and review activity for AI Agent PR babysitting workflows."""
 
 import argparse
+import base64
+import binascii
+import hashlib
 import json
-import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
-from pathlib import Path
+import zlib
 from urllib.parse import urlparse
 
 FAILED_RUN_CONCLUSIONS = {
@@ -48,6 +49,8 @@ MERGE_CONFLICT_OR_BLOCKING_STATES = {
     "UNKNOWN",
 }
 GREEN_STATE_MAX_POLL_SECONDS = 60 * 60
+COMMENT_BODY_MAX_CHARS = 3000
+CURSOR_VERSION = 1
 
 
 class GhCommandError(RuntimeError):
@@ -65,14 +68,32 @@ def parse_args():
     parser.add_argument("--repo", help="Optional OWNER/REPO override")
     parser.add_argument("--poll-seconds", type=int, default=30, help="Watch poll interval")
     parser.add_argument(
+        "--max-wait-seconds",
+        type=int,
+        default=15 * 60,
+        help="Emit a heartbeat event after this many seconds without actionable changes",
+    )
+    parser.add_argument(
         "--max-flaky-retries",
         type=int,
         default=3,
         help="Max rerun cycles per head SHA before stop recommendation",
     )
-    parser.add_argument("--state-file", help="Path to state JSON file")
-    parser.add_argument("--once", action="store_true", help="Emit one snapshot and exit")
-    parser.add_argument("--watch", action="store_true", help="Continuously emit JSONL snapshots")
+    parser.add_argument(
+        "--cursor",
+        help="Opaque cursor returned by a previous watcher event; avoids external state files",
+    )
+    parser.add_argument("--once", action="store_true", help="Emit one compact snapshot and exit")
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Block silently until a compact actionable/terminal/heartbeat event, then exit",
+    )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Debug mode: continuously emit compact JSONL snapshots",
+    )
     parser.add_argument(
         "--retry-failed-now",
         action="store_true",
@@ -81,17 +102,23 @@ def parse_args():
     parser.add_argument(
         "--json",
         action="store_true",
-        help="Emit machine-readable output (default behavior for --once and --retry-failed-now)",
+        help="Compatibility no-op; output is always JSON",
     )
     args = parser.parse_args()
 
     if args.poll_seconds <= 0:
         parser.error("--poll-seconds must be > 0")
+    if args.max_wait_seconds <= 0:
+        parser.error("--max-wait-seconds must be > 0")
     if args.max_flaky_retries < 0:
         parser.error("--max-flaky-retries must be >= 0")
     if args.watch and args.retry_failed_now:
         parser.error("--watch cannot be combined with --retry-failed-now")
-    if not args.once and not args.watch and not args.retry_failed_now:
+    if args.stream and args.retry_failed_now:
+        parser.error("--stream cannot be combined with --retry-failed-now")
+    if args.watch and args.stream:
+        parser.error("--watch cannot be combined with --stream")
+    if not args.once and not args.watch and not args.stream and not args.retry_failed_now:
         args.once = True
     return args
 
@@ -213,6 +240,8 @@ def extract_repo_from_pr_view(data):
     if owner and name:
         return f"{owner}/{name}"
     return None
+
+
 def extract_repo_from_pr_url(pr_url):
     parsed = urlparse(pr_url)
     parts = [p for p in parsed.path.split("/") if p]
@@ -221,47 +250,89 @@ def extract_repo_from_pr_url(pr_url):
     return None
 
 
-def load_state(path):
-    if path.exists():
-        try:
-            data = json.loads(path.read_text())
-        except json.JSONDecodeError as err:
-            raise RuntimeError(f"State file is not valid JSON: {path}") from err
-        if not isinstance(data, dict):
-            raise RuntimeError(f"State file must contain an object: {path}")
-        return data, False
+def default_cursor_state():
     return {
-        "pr": {},
+        "version": CURSOR_VERSION,
         "started_at": None,
         "last_seen_head_sha": None,
+        "last_checks_key": None,
+        "last_mergeability_key": None,
+        "last_ci_failed_event_key": None,
+        "last_green_head_sha": None,
         "retries_by_sha": {},
-        "seen_issue_comment_ids": [],
-        "seen_review_comment_ids": [],
-        "seen_review_ids": [],
-        "last_snapshot_at": None,
-    }, True
+        "review_watermarks": {},
+    }
 
 
-def save_state(path, state):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(state, indent=2, sort_keys=True) + "\n"
-    fd, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=path.parent)
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
-            tmp_file.write(payload)
-        os.replace(tmp_path, path)
-    except Exception:
+def normalize_cursor_state(value):
+    state = default_cursor_state()
+    if not isinstance(value, dict):
+        return state
+
+    state["started_at"] = value.get("started_at")
+    state["last_seen_head_sha"] = value.get("last_seen_head_sha")
+    state["last_checks_key"] = value.get("last_checks_key")
+    state["last_mergeability_key"] = value.get("last_mergeability_key")
+    state["last_ci_failed_event_key"] = value.get("last_ci_failed_event_key") or value.get(
+        "last_emitted_event_key"
+    )
+    state["last_green_head_sha"] = value.get("last_green_head_sha")
+    state["retries_by_sha"] = normalize_retries_by_sha(value.get("retries_by_sha"))
+    state["review_watermarks"] = normalize_review_watermarks(value.get("review_watermarks"))
+    return state
+
+
+def normalize_retries_by_sha(value):
+    if not isinstance(value, dict):
+        return {}
+    retries = {}
+    for key, raw_count in value.items():
         try:
-            tmp_path.unlink(missing_ok=True)
-        except OSError:
+            retries[str(key)] = max(0, int(raw_count))
+        except (TypeError, ValueError):
+            continue
+    return retries
+
+
+def normalize_review_watermarks(value):
+    if not isinstance(value, dict):
+        return {}
+    watermarks = {}
+    for kind in ("issue_comment", "review_comment", "review"):
+        raw_watermark = value.get(kind)
+        if not isinstance(raw_watermark, dict):
+            continue
+        watermarks[kind] = {
+            "created_at": str(raw_watermark.get("created_at") or ""),
+            "id": str(raw_watermark.get("id") or ""),
+        }
+    return watermarks
+
+
+def decode_cursor(cursor):
+    if not cursor:
+        return default_cursor_state()
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        raw = base64.urlsafe_b64decode((cursor + padding).encode("ascii"))
+        try:
+            raw = zlib.decompress(raw)
+        except zlib.error:
             pass
-        raise
+        payload = json.loads(raw.decode("utf-8"))
+    except (binascii.Error, ValueError, UnicodeError, zlib.error) as err:
+        raise ValueError("--cursor is not a valid babysit-pr cursor") from err
+    if not isinstance(payload, dict) or payload.get("version") != CURSOR_VERSION:
+        raise ValueError("--cursor has an unsupported babysit-pr cursor version")
+    return normalize_cursor_state(payload)
 
 
-def default_state_file_for(pr):
-    repo_slug = pr["repo"].replace("/", "-")
-    return Path(f"/tmp/babysit-pr-{repo_slug}-pr{pr['number']}.json")
+def encode_cursor(state):
+    payload = normalize_cursor_state(state)
+    payload["version"] = CURSOR_VERSION
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    compressed = zlib.compress(raw, level=9)
+    return base64.urlsafe_b64encode(compressed).decode("ascii").rstrip("=")
 
 
 def get_pr_checks(pr_spec, repo):
@@ -302,6 +373,23 @@ def summarize_checks(checks):
         "passed_count": passed_count,
         "all_terminal": pending_count == 0,
     }
+
+
+def failed_checks_from_checks(checks):
+    failed_checks = []
+    for check in checks:
+        if str(check.get("bucket") or "").lower() != "fail":
+            continue
+        failed_checks.append(
+            {
+                "name": str(check.get("name") or ""),
+                "workflow": str(check.get("workflow") or ""),
+                "state": str(check.get("state") or ""),
+                "link": str(check.get("link") or ""),
+            }
+        )
+    failed_checks.sort(key=lambda item: (item["workflow"], item["name"], item["link"]))
+    return failed_checks
 
 
 def get_workflow_runs_for_sha(repo, head_sha):
@@ -467,7 +555,36 @@ def is_trusted_human_review_author(item, authenticated_login):
     return association in TRUSTED_AUTHOR_ASSOCIATIONS
 
 
-def fetch_new_review_items(pr, state, fresh_state, authenticated_login=None):
+def numeric_id(value):
+    text = str(value or "")
+    if text.isdigit():
+        return int(text)
+    return 0
+
+
+def review_item_position(item):
+    return (str(item.get("created_at") or ""), numeric_id(item.get("id")))
+
+
+def watermark_position(watermark):
+    if not isinstance(watermark, dict):
+        return ("", 0)
+    return (str(watermark.get("created_at") or ""), numeric_id(watermark.get("id")))
+
+
+def update_review_watermark(watermarks, item):
+    kind = str(item.get("kind") or "")
+    if not kind:
+        return
+    if review_item_position(item) <= watermark_position(watermarks.get(kind)):
+        return
+    watermarks[kind] = {
+        "created_at": str(item.get("created_at") or ""),
+        "id": str(item.get("id") or ""),
+    }
+
+
+def fetch_new_review_items(pr, state, authenticated_login=None):
     repo = pr["repo"]
     pr_number = pr["number"]
     endpoints = comment_endpoints(repo, pr_number)
@@ -481,13 +598,10 @@ def fetch_new_review_items(pr, state, fresh_state, authenticated_login=None):
     review_items = normalize_reviews(review_payload)
     all_items = issue_items + review_comment_items + review_items
 
-    seen_issue = {str(x) for x in state.get("seen_issue_comment_ids") or []}
-    seen_review_comment = {str(x) for x in state.get("seen_review_comment_ids") or []}
-    seen_review = {str(x) for x in state.get("seen_review_ids") or []}
+    watermarks = normalize_review_watermarks(state.get("review_watermarks"))
 
-    # On a brand-new state file, surface existing review activity instead of
-    # silently treating it as seen. This avoids missing already-pending review
-    # feedback when monitoring starts after comments were posted.
+    # With no cursor, surface existing trusted review activity once. Subsequent
+    # polls/restarts suppress these IDs via the opaque cursor.
 
     new_items = []
     for item in all_items:
@@ -504,25 +618,14 @@ def fetch_new_review_items(pr, state, fresh_state, authenticated_login=None):
             continue
 
         kind = item["kind"]
-        if kind == "issue_comment" and item_id in seen_issue:
-            continue
-        if kind == "review_comment" and item_id in seen_review_comment:
-            continue
-        if kind == "review" and item_id in seen_review:
+        if review_item_position(item) <= watermark_position(watermarks.get(kind)):
             continue
 
         new_items.append(item)
-        if kind == "issue_comment":
-            seen_issue.add(item_id)
-        elif kind == "review_comment":
-            seen_review_comment.add(item_id)
-        elif kind == "review":
-            seen_review.add(item_id)
+        update_review_watermark(watermarks, item)
 
     new_items.sort(key=lambda item: (item.get("created_at") or "", item.get("kind") or "", item.get("id") or ""))
-    state["seen_issue_comment_ids"] = sorted(seen_issue)
-    state["seen_review_comment_ids"] = sorted(seen_review_comment)
-    state["seen_review_ids"] = sorted(seen_review)
+    state["review_watermarks"] = watermarks
     return new_items
 
 
@@ -600,10 +703,8 @@ def recommend_actions(pr, checks_summary, failed_runs, new_review_items, retries
     return unique_actions(actions)
 
 
-def collect_snapshot(args):
+def collect_snapshot(args, state):
     pr = resolve_pr(args.pr, repo_override=args.repo)
-    state_path = Path(args.state_file) if args.state_file else default_state_file_for(pr)
-    state, fresh_state = load_state(state_path)
 
     if not state.get("started_at"):
         state["started_at"] = int(time.time())
@@ -618,7 +719,6 @@ def collect_snapshot(args):
     new_review_items = fetch_new_review_items(
         pr,
         state,
-        fresh_state=fresh_state,
         authenticated_login=authenticated_login,
     )
 
@@ -632,14 +732,10 @@ def collect_snapshot(args):
         args.max_flaky_retries,
     )
 
-    state["pr"] = {"repo": pr["repo"], "number": pr["number"]}
-    state["last_seen_head_sha"] = pr["head_sha"]
-    state["last_snapshot_at"] = int(time.time())
-    save_state(state_path, state)
-
     snapshot = {
         "pr": pr,
         "checks": checks_summary,
+        "failed_checks": failed_checks_from_checks(checks),
         "failed_runs": failed_runs,
         "new_review_items": new_review_items,
         "actions": actions,
@@ -648,11 +744,12 @@ def collect_snapshot(args):
             "max_flaky_retries": args.max_flaky_retries,
         },
     }
-    return snapshot, state_path
+    return snapshot
 
 
 def retry_failed_now(args):
-    snapshot, state_path = collect_snapshot(args)
+    state = decode_cursor(args.cursor)
+    snapshot = collect_snapshot(args, state)
     pr = snapshot["pr"]
     checks_summary = snapshot["checks"]
     failed_runs = snapshot["failed_runs"]
@@ -660,8 +757,14 @@ def retry_failed_now(args):
     max_retries = snapshot["retry_state"]["max_flaky_retries"]
 
     result = {
-        "snapshot": snapshot,
-        "state_file": str(state_path),
+        "event": "retry_result",
+        "terminal": False,
+        "actions": snapshot.get("actions") or [],
+        "pr": compact_pr(pr),
+        "checks": compact_checks(checks_summary),
+        "failed_checks": snapshot.get("failed_checks") or [],
+        "failed_runs": failed_runs,
+        "retry": compact_retry(snapshot),
         "rerun_attempted": False,
         "rerun_count": 0,
         "rerun_run_ids": [],
@@ -670,19 +773,19 @@ def retry_failed_now(args):
 
     if pr["closed"] or pr["merged"]:
         result["reason"] = "pr_closed"
-        return result
+        return finalize_retry_result(result, state, snapshot)
     if checks_summary["failed_count"] <= 0:
         result["reason"] = "no_failed_pr_checks"
-        return result
+        return finalize_retry_result(result, state, snapshot)
     if not failed_runs:
         result["reason"] = "no_failed_runs"
-        return result
+        return finalize_retry_result(result, state, snapshot)
     if not checks_summary["all_terminal"]:
         result["reason"] = "checks_still_pending"
-        return result
+        return finalize_retry_result(result, state, snapshot)
     if retries_used >= max_retries:
         result["reason"] = "retry_budget_exhausted"
-        return result
+        return finalize_retry_result(result, state, snapshot)
 
     for run in failed_runs:
         run_id = run.get("run_id")
@@ -692,17 +795,22 @@ def retry_failed_now(args):
         result["rerun_run_ids"].append(run_id)
 
     if result["rerun_run_ids"]:
-        state, _ = load_state(state_path)
         new_count = current_retry_count(state, pr["head_sha"]) + 1
         set_retry_count(state, pr["head_sha"], new_count)
-        state["last_snapshot_at"] = int(time.time())
-        save_state(state_path, state)
         result["rerun_attempted"] = True
         result["rerun_count"] = len(result["rerun_run_ids"])
         result["reason"] = "rerun_triggered"
+        snapshot["retry_state"]["current_sha_retries_used"] = new_count
+        result["retry"] = compact_retry(snapshot)
     else:
         result["reason"] = "failed_runs_missing_ids"
 
+    return finalize_retry_result(result, state, snapshot)
+
+
+def finalize_retry_result(result, state, snapshot):
+    update_cursor_after_snapshot(state, snapshot)
+    result["cursor"] = encode_cursor(state)
     return result
 
 
@@ -713,6 +821,179 @@ def print_json(obj):
 
 def print_event(event, payload):
     print_json({"event": event, "payload": payload})
+
+
+def truncate_text(value, max_chars=COMMENT_BODY_MAX_CHARS):
+    text = str(value or "")
+    if len(text) <= max_chars:
+        return text, False
+    return text[:max_chars], True
+
+
+def compact_review_items(items):
+    compact_items = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        body, truncated = truncate_text(item.get("body"))
+        compact_items.append(
+            {
+                "kind": str(item.get("kind") or ""),
+                "id": str(item.get("id") or ""),
+                "author": str(item.get("author") or ""),
+                "created_at": str(item.get("created_at") or ""),
+                "path": item.get("path"),
+                "line": item.get("line"),
+                "url": str(item.get("url") or ""),
+                "body": body,
+                "body_truncated": truncated,
+            }
+        )
+    return compact_items
+
+
+def compact_pr(pr):
+    return {
+        "repo": pr.get("repo"),
+        "number": pr.get("number"),
+        "url": pr.get("url"),
+        "head_sha": pr.get("head_sha"),
+        "head_branch": pr.get("head_branch"),
+        "state": pr.get("state"),
+        "merged": pr.get("merged"),
+        "closed": pr.get("closed"),
+        "mergeable": pr.get("mergeable"),
+        "merge_state_status": pr.get("merge_state_status"),
+        "review_decision": pr.get("review_decision"),
+    }
+
+
+def compact_checks(checks):
+    return {
+        "passed": int(checks.get("passed_count") or 0),
+        "failed": int(checks.get("failed_count") or 0),
+        "pending": int(checks.get("pending_count") or 0),
+        "all_terminal": bool(checks.get("all_terminal")),
+    }
+
+
+def compact_retry(snapshot):
+    retry_state = snapshot.get("retry_state") or {}
+    return {
+        "used": int(retry_state.get("current_sha_retries_used") or 0),
+        "max": int(retry_state.get("max_flaky_retries") or 0),
+    }
+
+
+def checks_key(snapshot):
+    checks = snapshot.get("checks") or {}
+    return [
+        int(checks.get("passed_count") or 0),
+        int(checks.get("failed_count") or 0),
+        int(checks.get("pending_count") or 0),
+        bool(checks.get("all_terminal")),
+    ]
+
+
+def mergeability_key(snapshot):
+    pr = snapshot.get("pr") or {}
+    return [
+        str(pr.get("mergeable") or ""),
+        str(pr.get("merge_state_status") or ""),
+        str(pr.get("review_decision") or ""),
+    ]
+
+
+def event_key(event_type, snapshot):
+    raw_key = json.dumps(
+        [event_type, snapshot_change_key(snapshot), compact_retry(snapshot)],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()[:16]
+
+
+def base_compact_event(event_type, snapshot, reason, terminal=False):
+    return {
+        "event": event_type,
+        "terminal": terminal,
+        "reason": reason,
+        "actions": snapshot.get("actions") or [],
+        "pr": compact_pr(snapshot.get("pr") or {}),
+        "checks": compact_checks(snapshot.get("checks") or {}),
+        "failed_checks": snapshot.get("failed_checks") or [],
+        "failed_runs": snapshot.get("failed_runs") or [],
+        "review_items": compact_review_items(snapshot.get("new_review_items") or []),
+        "retry": compact_retry(snapshot),
+    }
+
+
+def mark_emitted(state, event_type, snapshot):
+    if event_type == "ci_failed":
+        state["last_ci_failed_event_key"] = event_key(event_type, snapshot)
+    if event_type == "ci_green":
+        pr = snapshot.get("pr") or {}
+        state["last_green_head_sha"] = pr.get("head_sha")
+
+
+def update_cursor_after_snapshot(state, snapshot):
+    pr = snapshot.get("pr") or {}
+    state["last_seen_head_sha"] = pr.get("head_sha")
+    state["last_checks_key"] = checks_key(snapshot)
+    state["last_mergeability_key"] = mergeability_key(snapshot)
+
+
+def build_compact_event(event_type, snapshot, reason, state, terminal=False):
+    event = base_compact_event(event_type, snapshot, reason, terminal=terminal)
+    mark_emitted(state, event_type, snapshot)
+    update_cursor_after_snapshot(state, snapshot)
+    event["cursor"] = encode_cursor(state)
+    return event
+
+
+def already_emitted(state, event_type, snapshot):
+    if event_type == "ci_failed":
+        return state.get("last_ci_failed_event_key") == event_key(event_type, snapshot)
+    return False
+
+
+def choose_watch_event(args, snapshot, state, elapsed_seconds):
+    actions = set(snapshot.get("actions") or [])
+    pr = snapshot.get("pr") or {}
+    current_checks_key = checks_key(snapshot)
+    current_mergeability_key = mergeability_key(snapshot)
+    previous_head_sha = state.get("last_seen_head_sha")
+    current_head_sha = pr.get("head_sha")
+
+    if "stop_pr_closed" in actions:
+        return build_compact_event("closed", snapshot, "pr_closed_or_merged", state, terminal=True)
+    if "stop_ready_to_merge" in actions:
+        return build_compact_event("ready", snapshot, "ready_to_merge", state, terminal=True)
+    if "stop_exhausted_retries" in actions:
+        return build_compact_event("blocked", snapshot, "retry_budget_exhausted", state, terminal=True)
+
+    if snapshot.get("new_review_items"):
+        return build_compact_event("review_feedback", snapshot, "trusted_review_activity", state)
+
+    if "diagnose_ci_failure" in actions and not already_emitted(state, "ci_failed", snapshot):
+        return build_compact_event("ci_failed", snapshot, "failed_checks_present", state)
+
+    if previous_head_sha and current_head_sha and previous_head_sha != current_head_sha:
+        return build_compact_event("sha_changed", snapshot, "head_sha_changed", state)
+
+    if state.get("last_mergeability_key") is not None and state.get("last_mergeability_key") != current_mergeability_key:
+        return build_compact_event("mergeability_changed", snapshot, "mergeability_or_review_decision_changed", state)
+
+    if is_ci_green(snapshot) and state.get("last_green_head_sha") != current_head_sha:
+        return build_compact_event("ci_green", snapshot, "ci_green_for_head_sha", state)
+
+    if elapsed_seconds >= args.max_wait_seconds:
+        return build_compact_event("heartbeat", snapshot, "max_wait_elapsed_without_actionable_change", state)
+
+    state["last_checks_key"] = current_checks_key
+    state["last_mergeability_key"] = current_mergeability_key
+    state["last_seen_head_sha"] = current_head_sha
+    return None
 
 
 def is_ci_green(snapshot):
@@ -747,40 +1028,58 @@ def snapshot_change_key(snapshot):
 
 
 def run_watch(args):
+    state = decode_cursor(args.cursor)
     poll_seconds = args.poll_seconds
-    last_change_key = None
+    started_at = time.time()
     while True:
-        snapshot, state_path = collect_snapshot(args)
-        print_event(
-            "snapshot",
-            {
-                "snapshot": snapshot,
-                "state_file": str(state_path),
-                "next_poll_seconds": poll_seconds,
-            },
-        )
-        actions = set(snapshot.get("actions") or [])
-        if (
-            "stop_pr_closed" in actions
-            or "stop_exhausted_retries" in actions
-            or "stop_ready_to_merge" in actions
-        ):
-            print_event("stop", {"actions": snapshot.get("actions"), "pr": snapshot.get("pr")})
+        snapshot = collect_snapshot(args, state)
+        event = choose_watch_event(args, snapshot, state, time.time() - started_at)
+        if event:
+            event["next_poll_seconds"] = poll_seconds
+            print_json(event)
             return 0
 
         current_change_key = snapshot_change_key(snapshot)
-        changed = current_change_key != last_change_key
+        changed = current_change_key != state.get("last_snapshot_change_key")
         green = is_ci_green(snapshot)
 
         if not green:
             poll_seconds = args.poll_seconds
-        elif changed or last_change_key is None:
+        elif changed or state.get("last_snapshot_change_key") is None:
             poll_seconds = args.poll_seconds
         else:
             poll_seconds = min(poll_seconds * 2, GREEN_STATE_MAX_POLL_SECONDS)
 
-        last_change_key = current_change_key
+        state["last_snapshot_change_key"] = current_change_key
         time.sleep(poll_seconds)
+
+
+def run_stream(args):
+    state = decode_cursor(args.cursor)
+    poll_seconds = args.poll_seconds
+    while True:
+        snapshot = collect_snapshot(args, state)
+        event = base_compact_event("snapshot", snapshot, "debug_stream_snapshot")
+        update_cursor_after_snapshot(state, snapshot)
+        event["cursor"] = encode_cursor(state)
+        event["next_poll_seconds"] = poll_seconds
+        print_json(event)
+
+        if is_ci_green(snapshot):
+            poll_seconds = min(poll_seconds * 2, GREEN_STATE_MAX_POLL_SECONDS)
+        else:
+            poll_seconds = args.poll_seconds
+        time.sleep(poll_seconds)
+
+
+def run_once(args):
+    state = decode_cursor(args.cursor)
+    snapshot = collect_snapshot(args, state)
+    event = choose_watch_event(args, snapshot, state, elapsed_seconds=0)
+    if event is None:
+        event = build_compact_event("snapshot", snapshot, "one_shot_snapshot", state)
+    print_json(event)
+    return 0
 
 
 def main():
@@ -791,10 +1090,9 @@ def main():
             return 0
         if args.watch:
             return run_watch(args)
-        snapshot, state_path = collect_snapshot(args)
-        snapshot["state_file"] = str(state_path)
-        print_json(snapshot)
-        return 0
+        if args.stream:
+            return run_stream(args)
+        return run_once(args)
     except (GhCommandError, RuntimeError, ValueError) as err:
         sys.stderr.write(f"gh_pr_watch.py error: {err}\n")
         return 1

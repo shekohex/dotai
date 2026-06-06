@@ -1,5 +1,9 @@
 # GitHub CLI / API Notes For `babysit-pr`
 
+The watcher uses polling through `gh`; GitHub does not provide a general PR WebSocket/GraphQL subscription API. GitHub webhooks are the push-based option, but they require an external receiver and repo configuration, so this skill defaults to local polling.
+
+`--watch` is event-gated: it polls silently, emits one compact JSON event when useful state changes (or heartbeat/terminal state), then exits. Cross-invocation state is carried by the returned opaque `cursor`, not by an external JSON state file.
+
 ## Primary commands used
 
 ### PR metadata

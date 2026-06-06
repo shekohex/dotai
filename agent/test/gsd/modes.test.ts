@@ -3,6 +3,7 @@ import { loadModeRegistrySync } from "../../src/mode-utils.ts";
 import {
   buildBuiltInGsdModes,
   registerBuiltInGsdModes,
+  syncBuiltInGsdModes,
   unregisterBuiltInGsdModesForTests,
 } from "../../src/extensions/gsd/modes.js";
 
@@ -37,6 +38,17 @@ describe("ensureBuiltInGsdModes", () => {
     const loaded = loadModeRegistrySync();
     expect(loaded.modes["gsd-planner"]?.description).toBe("Built-in GSD planner");
     expect(loaded.modes["gsd-verifier"]).toBeDefined();
+  });
+
+  it("syncs bundled gsd modes with enabled state", () => {
+    syncBuiltInGsdModes(false);
+    expect(loadModeRegistrySync().modes["gsd-planner"]).toBeUndefined();
+
+    syncBuiltInGsdModes(true);
+    expect(loadModeRegistrySync().modes["gsd-planner"]).toBeDefined();
+
+    syncBuiltInGsdModes(false);
+    expect(loadModeRegistrySync().modes["gsd-planner"]).toBeUndefined();
   });
 
   it("uses explicit per-role tool sets without glob or grep", () => {

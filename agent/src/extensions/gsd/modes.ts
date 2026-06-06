@@ -32,7 +32,17 @@ export function registerBuiltInGsdModes(): void {
   notifyModeFlagRefresh();
 }
 
-export function unregisterBuiltInGsdModesForTests(): void {
+export function unregisterBuiltInGsdModes(): void {
   unregisterBuiltInModes("gsd");
+  notifyModeFlagRefresh();
+}
+
+export function syncBuiltInGsdModes(enabled: boolean): void {
+  if (enabled) registerBuiltInGsdModes();
+  else unregisterBuiltInGsdModes();
+}
+
+export function unregisterBuiltInGsdModesForTests(): void {
+  unregisterBuiltInGsdModes();
   clearBuiltInModesForTests();
 }

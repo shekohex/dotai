@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { buildGsdSystemContext } from "./context.js";
 import { registerGsdCommands } from "./commands.js";
-import { registerBuiltInGsdModes } from "./modes.js";
+import { syncBuiltInGsdModes } from "./modes.js";
 import { getGsdSettings } from "./settings.js";
 import { rememberGsdCwd } from "./state/cwd.js";
 import { detectExistingPlanning } from "./state/detect.js";
@@ -9,11 +9,11 @@ import { registerGsdMessageRenderers } from "./ui/messages.js";
 import { applyPendingGsdWorkflowLaunch } from "./workflow-launch.js";
 
 export default function gsdExtension(pi: ExtensionAPI): void {
-  registerBuiltInGsdModes();
   registerGsdMessageRenderers(pi);
   pi.on("session_start", async (event, ctx) => {
     rememberGsdCwd(ctx.cwd);
     const settings = getGsdSettings(ctx.cwd);
+    syncBuiltInGsdModes(settings.enabled);
     if (!settings.enabled) {
       return;
     }

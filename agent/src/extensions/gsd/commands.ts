@@ -3,6 +3,7 @@ import { parseGsdCommandArgs, usesParsedArgs } from "./args.js";
 import { getGsdArgumentCompletions, getGsdSubcommands } from "./autocomplete.js";
 import { gsdHandlers } from "./handlers.js";
 import { getGsdSettings, saveGsdSettings } from "./settings.js";
+import { syncBuiltInGsdModes } from "./modes.js";
 import { showGsdHelp } from "./help.js";
 import { rememberGsdCwd } from "./state/cwd.js";
 import { showGsdDashboard } from "./ui.js";
@@ -65,6 +66,7 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
           return;
         }
         saveGsdSettings(ctx.cwd, { enabled: true });
+        syncBuiltInGsdModes(true);
         ctx.ui.notify("GSD enabled", "info");
         return;
       }
@@ -74,6 +76,7 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
           return;
         }
         saveGsdSettings(ctx.cwd, { enabled: false });
+        syncBuiltInGsdModes(false);
         ctx.ui.notify("GSD disabled", "info");
         return;
       }

@@ -174,8 +174,8 @@ describe("context-prune public API", () => {
 });
 
 describe("context-prune settings", () => {
-  test("defaults expose both context prune tools", () => {
-    expect(DEFAULT_CONFIG.tools).toEqual({ contextPrune: true, contextTreeQuery: true });
+  test("defaults hide both context prune tools", () => {
+    expect(DEFAULT_CONFIG.tools).toEqual({ contextPrune: false, contextTreeQuery: false });
   });
 
   test("defaults skip tiny raw outputs before summarization", () => {
@@ -266,13 +266,13 @@ describe("context-prune settings", () => {
     await expect(loadConfig()).resolves.toMatchObject({
       enabled: false,
       pruneOn: "on-demand",
-      tools: { contextPrune: true, contextTreeQuery: true },
+      tools: { contextPrune: false, contextTreeQuery: false },
     });
     const settings = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
     expect(settings.contextPrune).toMatchObject({
       enabled: false,
       pruneOn: "on-demand",
-      tools: { contextPrune: true, contextTreeQuery: true },
+      tools: { contextPrune: false, contextTreeQuery: false },
     });
     delete process.env.PI_CODING_AGENT_DIR;
   });

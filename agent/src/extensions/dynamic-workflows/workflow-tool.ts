@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { isAbsolute } from "node:path";
+
 import {
   defineTool,
   type AgentToolResult,
@@ -7,6 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+import { errorMessage } from "../../utils/error-message.js";
 import { applyLinePrefix, createTextComponent, formatToolRail } from "../coreui/tools.js";
 import {
   createToolUpdateWorkflowDisplay,
@@ -84,14 +88,24 @@ const WorkflowSnapshotDetailsSchema = Type.Object({
 });
 
 const workflowToolSchema = Type.Object({
-  script: Type.String({
-    description: [
-      "Required raw JavaScript workflow script, with no Markdown fences.",
-      "First statement: export const meta = { name: 'short_snake_case', description: 'non-empty description', phases: [{ title: 'Phase' }] }",
-      "Use phase('Name'), agent(prompt, opts), parallel(arrayOfFunctions), pipeline(items, ...stages), log(message), args, and budget. The workflow must call agent() at least once. Route agents with opts.mode when a specialized mode fits.",
-      "parallel() requires functions, not promises: await parallel(items.map(item => () => agent(...))).",
-    ].join(" "),
-  }),
+  script: Type.Optional(
+    Type.String({
+      description: [
+        "Raw JavaScript workflow script, with no Markdown fences. Mutually exclusive with scriptFile.",
+        "First statement: export const meta = { name: 'short_snake_case', description: 'non-empty description', phases: [{ title: 'Phase' }] }",
+        "Use phase('Name'), agent(prompt, opts), parallel(arrayOfFunctions), pipeline(items, ...stages), log(message), args, and budget. The workflow must call agent() at least once. Route agents with opts.mode when a specialized mode fits.",
+        "parallel() requires functions, not promises: await parallel(items.map(item => () => agent(...))).",
+      ].join(" "),
+    }),
+  ),
+  scriptFile: Type.Optional(
+    Type.String({
+      description: [
+        "Absolute path to a JavaScript script file to execute exactly as written. Mutually exclusive with script.",
+        "First statement: export const meta = { name: 'short_snake_case', description: 'non-empty description', phases: [{ title: 'Phase' }] }",
+      ].join(" "),
+    }),
+  ),
   args: Type.Optional(
     Type.Unknown({
       description: "Optional JSON value exposed to the workflow script as global `args`.",
@@ -122,7 +136,8 @@ const workflowToolSchema = Type.Object({
 });
 
 export type WorkflowToolInput = {
-  script: string;
+  script?: string;
+  scriptFile?: string;
   args?: unknown;
   background?: boolean;
   maxAgents?: number;
@@ -159,7 +174,7 @@ export function createWorkflowTool(
     renderShell: "self",
     description: [
       "Execute a deterministic JavaScript workflow that orchestrates multiple subagents with agent(), parallel(), and pipeline().",
-      "script is required raw JavaScript. It must start with export const meta = { name, description, phases? } and must call agent() at least once.",
+      "Provide exactly one of script or scriptFile. script is raw JavaScript; scriptFile is an absolute path to a JS script file. It must start with export const meta = { name, description, phases? } and must call agent() at least once.",
     ].join(" "),
     promptSnippet:
       "Run a deterministic JavaScript workflow. Before use, read dynamic-workflows skill.",
@@ -179,9 +194,10 @@ export function createWorkflowTool(
       const rail = formatToolRail(theme, context);
       const name = previewWorkflowName(args.script);
       const status = formatWorkflowStatus(theme, context, "workflow");
+      const source = name ?? args.scriptFile;
       return createTextComponent(
         context.lastComponent,
-        `${rail}${status}${name === undefined ? "" : ` ${theme.fg("muted", name)}`}`,
+        `${rail}${status}${source === undefined ? "" : ` ${theme.fg("muted", source)}`}`,
       );
     },
     renderResult(result, { expanded, isPartial }, theme, context) {
@@ -292,7 +308,7 @@ async function executeWorkflowTool(
   onUpdate: AgentToolUpdateCallback<unknown> | undefined,
   manager: WorkflowManager,
 ): Promise<AgentToolResult<unknown>> {
-  const script = normalizeWorkflowScript(params.script);
+  const script = await resolveWorkflowScript(params);
   const parsed = parseWorkflowScript(script);
   const settings = getDynamicWorkflowSettings();
 
@@ -402,13 +418,55 @@ function parseWorkflowSnapshotDetails(details: unknown): WorkflowSnapshot | unde
 
 function normalizeWorkflowToolArgs(args: unknown): WorkflowToolInput {
   if (args === null || typeof args !== "object")
-    throw new Error("workflow requires an object argument with a script string");
+    throw new Error(
+      'workflow requires an object argument. Provide exactly one of: { script: "..." } or { scriptFile: "/absolute/path/to/workflow.js" }.',
+    );
   if (!Value.Check(workflowToolSchema, args))
-    throw new Error("workflow requires `script` to be a string");
+    throw new Error(
+      "script source invalid. `script` must be a string, or `scriptFile` must be an absolute path string. Do not provide both.",
+    );
   const value = Value.Parse(workflowToolSchema, args);
-  if (typeof value.script !== "string")
-    throw new Error("workflow requires `script` to be a string");
-  return { ...value, script: normalizeWorkflowScript(value.script) };
+  const sourceCount = Number(value.script !== undefined) + Number(value.scriptFile !== undefined);
+  if (sourceCount !== 1)
+    throw new Error(
+      "script source ambiguous. Provide exactly one of `script` or `scriptFile`. Use `script` for inline JavaScript, or `scriptFile` for an absolute path to a .js script file.",
+    );
+  if (value.script !== undefined)
+    return { ...value, script: normalizeWorkflowScript(value.script) };
+  const scriptFile = value.scriptFile;
+  if (scriptFile === undefined || !isAbsolute(scriptFile)) {
+    throw new Error(
+      `scriptFile must be an absolute path. Received: ${JSON.stringify(scriptFile)}. Use path like /home/coder/project/workflows/audit.workflow.js.`,
+    );
+  }
+  return value;
+}
+
+async function resolveWorkflowScript(params: WorkflowToolInput): Promise<string> {
+  const sourceCount = Number(params.script !== undefined) + Number(params.scriptFile !== undefined);
+  if (sourceCount !== 1) {
+    throw new Error(
+      "script source ambiguous. Provide exactly one of `script` or `scriptFile`. Use `script` for inline JavaScript, or `scriptFile` for an absolute path to a .js script file.",
+    );
+  }
+
+  if (params.script !== undefined) return normalizeWorkflowScript(params.script);
+
+  const scriptFile = params.scriptFile;
+  if (scriptFile === undefined || !isAbsolute(scriptFile)) {
+    throw new Error(
+      `scriptFile must be an absolute path. Received: ${JSON.stringify(scriptFile)}. Use path like /home/coder/project/workflows/audit.workflow.js.`,
+    );
+  }
+
+  try {
+    return normalizeWorkflowScript(await readFile(scriptFile, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `Failed to read scriptFile at ${scriptFile}: ${errorMessage(error)}. Check file exists, path is absolute, and current process can read it.`,
+      { cause: error },
+    );
+  }
 }
 
 function normalizeWorkflowScript(script: string): string {

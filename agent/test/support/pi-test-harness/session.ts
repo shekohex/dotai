@@ -33,17 +33,21 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
   const propagateErrors = options.propagateErrors ?? true;
   const ownsTmpDir = !options.cwd;
   const cwd = options.cwd ?? createTempDirSync("pi-test-harness-");
+  const agentDir = options.agentDir ?? cwd;
 
   // Ensure cwd exists
   if (!fs.existsSync(cwd)) {
     fs.mkdirSync(cwd, { recursive: true });
+  }
+  if (!fs.existsSync(agentDir)) {
+    fs.mkdirSync(agentDir, { recursive: true });
   }
 
   // Build resource loader with extensions
   const settingsManager = SettingsManager.inMemory();
   const loader = new DefaultResourceLoader({
     cwd,
-    agentDir: cwd, // Use cwd as agent dir to avoid touching real ~/.pi
+    agentDir,
     settingsManager,
     additionalExtensionPaths: options.extensions?.map((p) => path.resolve(cwd, p)) ?? [],
     extensionFactories: options.extensionFactories,
@@ -57,7 +61,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
   // Create real session with in-memory persistence
   const { session, extensionsResult } = await createAgentSession({
     cwd,
-    agentDir: cwd,
+    agentDir,
     model: playbookModel,
     sessionManager: SessionManager.inMemory(),
     settingsManager,

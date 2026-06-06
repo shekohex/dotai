@@ -63,8 +63,26 @@ export function formatAvailableModesXml(modes: AvailableMode[]): string {
   ].join("\n");
 }
 
+export function formatAvailableModesCompact(modes: AvailableMode[]): string {
+  if (modes.length === 0) {
+    return "(none)";
+  }
+
+  return modes
+    .slice()
+    .toSorted((left, right) => compareModeNames(left.name, right.name))
+    .map(({ name, spec }) => {
+      const description = (spec.description ?? "")
+        .replace(/^Use me when you want (?:to )?/iu, "")
+        .replace(/\.$/u, "")
+        .trim();
+      return description.length > 0 ? `- ${name}: ${description}` : `- ${name}`;
+    })
+    .join("\n");
+}
+
 export async function buildAvailableModesPromptGuideline(heading: string): Promise<string> {
-  return `${heading}\n${formatAvailableModesXml(await loadAvailableModes())}`;
+  return `${heading}\n${formatAvailableModesCompact(await loadAvailableModes())}`;
 }
 
 export async function buildAvailableModesPromptGuidelines(

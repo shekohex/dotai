@@ -31,9 +31,7 @@ export const webSearchTool = defineTool({
   promptSnippet:
     "Search the live web with Google grounding when the task needs fresh or external information",
   promptGuidelines: [
-    "Use `websearch` when the task needs fresh web data, release notes, official docs, or verification against external sources.",
-    "Prefer primary sources and use returned citations in the final answer when the user asks for evidence or references.",
-    "Use `websearch` tool instead of guessing whenever correctness depends on current or externally verifiable information.",
+    "Use `websearch` for fresh/current/external facts, prefer primary sources, and cite returned sources when evidence is requested.",
   ],
   parameters: Type.Object({
     query: Type.String({ description: "Search query or question to answer from the web" }),

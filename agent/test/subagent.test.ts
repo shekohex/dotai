@@ -24,7 +24,10 @@ import {
 } from "../src/mode-utils.ts";
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
 import { syncModeTools } from "../src/extensions/modes/tools.ts";
-import { formatAvailableModesXml } from "../src/extensions/available-modes.ts";
+import {
+  formatAvailableModesCompact,
+  formatAvailableModesXml,
+} from "../src/extensions/available-modes.ts";
 import { resolveSubagentMode, resolveModeTools } from "../src/subagent-sdk/modes.ts";
 import { applyModeSystemPrompt } from "../src/mode-system-prompt.ts";
 import { createLiteSessionResources } from "../src/subagent-sdk/lite-session-resources.ts";
@@ -2655,11 +2658,8 @@ timedTest(
         ),
       ).toBe(true);
       expect(
-        initialTool.promptGuidelines?.some((guideline) => /<available_modes>/i.test(guideline)),
-      ).toBe(true);
-      expect(
         initialTool.promptGuidelines?.some((guideline) =>
-          /description="Review &amp; verify"/i.test(guideline),
+          /- review: Review & verify/i.test(guideline),
         ),
       ).toBe(true);
 
@@ -2690,9 +2690,7 @@ timedTest(
       expect(updatedTool).toBeTruthy();
       expect(
         updatedTool.promptGuidelines?.some((guideline) =>
-          /<mode name="docs" model="mode-provider\/docs-model" thinkingLevel="low" description="Fast &lt;writing&gt;" \/>/i.test(
-            guideline,
-          ),
+          /- docs: Fast <writing>/i.test(guideline),
         ),
       ).toBe(true);
     } finally {
@@ -2734,6 +2732,33 @@ timedTest("formatAvailableModesXml sorts unsorted modes deterministically", () =
       "</available_modes>",
     ].join("\n"),
   );
+});
+
+timedTest("formatAvailableModesCompact sorts unsorted modes deterministically", () => {
+  const compact = formatAvailableModesCompact([
+    {
+      name: "zeta",
+      spec: {
+        description: "Last",
+      },
+    },
+    {
+      name: "alpha",
+      spec: {
+        provider: "mode-provider",
+        modelId: "alpha-model",
+      },
+    },
+    {
+      name: "middle",
+      spec: {
+        thinkingLevel: "low",
+        description: 'Fast <focused> & "safe"',
+      },
+    },
+  ]);
+
+  expect(compact).toBe(["- alpha", '- middle: Fast <focused> & "safe"', "- zeta: Last"].join("\n"));
 });
 
 timedTest("reduceRuntimeSubagents keeps latest state for the current parent session", () => {

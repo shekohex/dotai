@@ -120,6 +120,20 @@ function forceApplyPatchExtension(pi: ExtensionAPI) {
   });
 }
 
+function activateAllRegisteredToolsExtension(pi: ExtensionAPI) {
+  const activateAllTools = () => {
+    pi.setActiveTools(pi.getAllTools().map((tool) => tool.name));
+  };
+
+  pi.on("session_start", () => {
+    activateAllTools();
+  });
+
+  pi.on("before_agent_start", () => {
+    activateAllTools();
+  });
+}
+
 function patchHarnessAgent(testSession: TestSession): void {
   const agent = testSession.session.agent as {
     state: { tools: unknown[] };
@@ -799,6 +813,160 @@ function hasRegisteredCommand(testSession: TestSession, commandName: string): bo
 function getCurrentSystemPrompt(testSession: TestSession): string {
   return (testSession.session as { agent: { state: { systemPrompt: string } } }).agent.state
     .systemPrompt;
+}
+
+function estimatePromptTokenCount(prompt: string): number {
+  const pieces = prompt.match(/[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]/gu) ?? [];
+  return pieces.reduce(
+    (total, piece) => total + 1 + Math.max(0, Math.ceil(piece.length / 12) - 1),
+    0,
+  );
+}
+
+function getPromptSectionBreakdown(prompt: string): Array<{
+  name: string;
+  chars: number;
+  estimatedTokens: number;
+}> {
+  const positions = [
+    { name: "core identity", index: 0 },
+    { name: "tools inventory", index: prompt.indexOf("Available tools:\n") },
+    { name: "agent/tool guidelines", index: prompt.indexOf("Guidelines:\n") },
+    { name: "pi docs pointers", index: prompt.indexOf("Pi documentation") },
+    { name: "project instructions", index: prompt.indexOf("<project_context>") },
+    {
+      name: "skills registry",
+      index: prompt.indexOf("The following skills provide specialized instructions"),
+    },
+    { name: "runtime footer", index: prompt.indexOf("Current date:") },
+  ]
+    .filter((position) => position.index >= 0)
+    .sort((left, right) => left.index - right.index);
+
+  return positions.map((position, index) => {
+    const end = positions[index + 1]?.index ?? prompt.length;
+    const section = prompt.slice(position.index, end);
+    return {
+      name: position.name,
+      chars: section.length,
+      estimatedTokens: estimatePromptTokenCount(section),
+    };
+  });
+}
+
+function getPromptBlockBreakdown(
+  prompt: string,
+  pattern: RegExp,
+  labelIndex: number,
+): Array<{ name: string; chars: number; estimatedTokens: number }> {
+  return [...prompt.matchAll(pattern)]
+    .map((match) => ({
+      name: match[labelIndex] ?? "unknown",
+      chars: match[0].length,
+      estimatedTokens: estimatePromptTokenCount(match[0]),
+    }))
+    .sort((left, right) => right.estimatedTokens - left.estimatedTokens);
+}
+
+function getPromptGuidelineBreakdown(
+  prompt: string,
+): Array<{ name: string; chars: number; estimatedTokens: number }> {
+  const start = prompt.indexOf("Guidelines:\n");
+  const end = prompt.indexOf("\n\nPi documentation");
+  if (start < 0 || end < 0) return [];
+
+  return prompt
+    .slice(start + "Guidelines:\n".length, end)
+    .split(/\n- /u)
+    .map((item, index) => (index === 0 ? item.replace(/^- /u, "") : item))
+    .filter((item) => item.trim().length > 0)
+    .map((item) => ({
+      name: item.split("\n", 1)[0]?.slice(0, 120) ?? "unknown",
+      chars: item.length,
+      estimatedTokens: estimatePromptTokenCount(item),
+    }))
+    .sort((left, right) => right.estimatedTokens - left.estimatedTokens);
+}
+
+function getPromptSkillBreakdown(
+  prompt: string,
+): Array<{ name: string; chars: number; estimatedTokens: number }> {
+  const xmlSkills = getPromptBlockBreakdown(
+    prompt,
+    /<skill>\n    <name>(.*?)<\/name>\n[\s\S]*?\n  <\/skill>/gu,
+    1,
+  );
+  if (xmlSkills.length > 0) return xmlSkills;
+
+  const start = prompt.indexOf("Available skills:\n");
+  const end = prompt.indexOf("\nCurrent date:");
+  if (start < 0 || end < 0) return [];
+
+  return getPromptBlockBreakdown(prompt.slice(start, end), /^- ([^:]+): .*$/gmu, 1);
+}
+
+function escapeMarkdownTableCell(value: string): string {
+  return value.replaceAll("|", "\\|").replaceAll("\n", " ");
+}
+
+function renderPromptBenchmarkTable(input: {
+  estimatedTokens: number;
+  chars: number;
+  activeToolCount?: number;
+  activeTools?: string[];
+  sections: Array<{ name: string; chars: number; estimatedTokens: number }>;
+  projectInstructions: Array<{ name: string; chars: number; estimatedTokens: number }>;
+  guidelines?: Array<{ name: string; chars: number; estimatedTokens: number }>;
+  skills: Array<{ name: string; chars: number; estimatedTokens: number }>;
+  tools: Array<{ name: string; chars: number; estimatedTokens: number }>;
+}): string {
+  const renderRows = (rows: Array<{ name: string; chars: number; estimatedTokens: number }>) =>
+    rows
+      .map(
+        (row) =>
+          `| ${escapeMarkdownTableCell(row.name)} | ${row.estimatedTokens} | ${row.chars} | ${((row.estimatedTokens / input.estimatedTokens) * 100).toFixed(1)}% |`,
+      )
+      .join("\n");
+
+  return [
+    `# System prompt benchmark`,
+    "",
+    `Estimated tokens: ${input.estimatedTokens}`,
+    `Chars: ${input.chars}`,
+    input.activeToolCount === undefined ? "" : `Active tools: ${input.activeToolCount}`,
+    input.activeTools === undefined ? "" : `Active tool names: ${input.activeTools.join(", ")}`,
+    "",
+    "## Sections",
+    "",
+    "| Section | Estimated tokens | Chars | Share |",
+    "| --- | ---: | ---: | ---: |",
+    renderRows(input.sections),
+    "",
+    "## Project instructions",
+    "",
+    "| File | Estimated tokens | Chars | Share |",
+    "| --- | ---: | ---: | ---: |",
+    renderRows(input.projectInstructions),
+    "",
+    "## Guidelines",
+    "",
+    "| Guideline | Estimated tokens | Chars | Share |",
+    "| --- | ---: | ---: | ---: |",
+    renderRows(input.guidelines ?? []),
+    "",
+    "## Skills",
+    "",
+    "| Skill | Estimated tokens | Chars | Share |",
+    "| --- | ---: | ---: | ---: |",
+    renderRows(input.skills),
+    "",
+    "## Tools",
+    "",
+    "| Tool | Estimated tokens | Chars | Share |",
+    "| --- | ---: | ---: | ---: |",
+    renderRows(input.tools),
+    "",
+  ].join("\n");
 }
 
 function renderSessionChatLines(testSession: TestSession, width = 120): string[] {
@@ -1636,19 +1804,14 @@ timedTest(
       setSessionPersistence(session, true);
 
       const initialPrompt = getCurrentSystemPrompt(session);
-      expect(initialPrompt).toMatch(/<available_modes>/);
-      expect(initialPrompt).toMatch(
-        /<mode name="docs" model="mode-provider\/mode-model" thinkingLevel="high" description="Fast technical writing" \/>/,
-      );
-      expect(initialPrompt).toMatch(
-        /<mode name="smart" model="mode-provider\/smart-model" thinkingLevel="low" \/>/,
-      );
+      expect(initialPrompt).toMatch(/- docs: Fast technical writing/);
+      expect(initialPrompt).toMatch(/- smart/);
 
       await session.session.prompt("/mode store deep");
       await session.session.agent.waitForIdle();
 
       await waitForAssertion(() => {
-        expect(getCurrentSystemPrompt(session)).toMatch(/<mode name="deep"/);
+        expect(getCurrentSystemPrompt(session)).toMatch(/- deep:/);
       });
     } finally {
       session?.dispose();
@@ -2376,6 +2539,95 @@ timedTest("bundled extension stack keeps interview hidden in gsd debug manager m
     session?.dispose();
     providers.dispose();
     await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("benchmarks bundled system prompt token budget", async () => {
+  const cwd = await createTempDir("agent-system-prompt-benchmark-");
+  const agentDir = await createTempDir("agent-system-prompt-benchmark-global-");
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("ok");
+
+  try {
+    const defaultGlobalAgentsPath = join(process.cwd(), "..", "AI.md");
+    const globalAgentsContent = await readFile(defaultGlobalAgentsPath, "utf8");
+    const loadedGlobalAgentsPath = join(agentDir, "AGENTS.md");
+    await writeFile(loadedGlobalAgentsPath, globalAgentsContent, "utf8");
+    const projectAgentsPath = join(process.cwd(), "AGENTS.md");
+    const loadedProjectAgentsPath = join(cwd, "AGENTS.md");
+    await writeFile(loadedProjectAgentsPath, await readFile(projectAgentsPath, "utf8"), "utf8");
+
+    session = await createTestSession({
+      cwd,
+      agentDir,
+      extensionFactories: [
+        ...bundledExtensionFactories,
+        providers.extensionFactory,
+        activateAllRegisteredToolsExtension,
+      ],
+    });
+
+    await session.session.prompt("hello");
+    await session.session.agent.waitForIdle();
+
+    if (session === undefined) {
+      throw new Error("benchmark session was not created");
+    }
+    const systemPrompt = getCurrentSystemPrompt(session);
+    const activeTools = (
+      session.session as { getActiveToolNames: () => string[] }
+    ).getActiveToolNames();
+    const tokenCount = estimatePromptTokenCount(systemPrompt);
+    const benchmarkPath = join(process.cwd(), ".tmp", "system-prompt-benchmark.json");
+    const benchmarkMarkdownPath = join(process.cwd(), ".tmp", "system-prompt-benchmark.md");
+    const projectInstructionBreakdown = getPromptBlockBreakdown(
+      systemPrompt,
+      /<project_instructions path="([^"]+)">\n[\s\S]*?\n<\/project_instructions>/gu,
+      1,
+    );
+    const skillBreakdown = getPromptSkillBreakdown(systemPrompt);
+    const availableToolsSection = systemPrompt.slice(
+      systemPrompt.indexOf("Available tools:\n"),
+      systemPrompt.indexOf("\n\nIn addition"),
+    );
+    const toolBreakdown = getPromptBlockBreakdown(availableToolsSection, /^- ([^:]+): .*$/gmu, 1);
+    const benchmark = {
+      estimatedTokens: tokenCount,
+      chars: systemPrompt.length,
+      activeToolCount: activeTools.length,
+      activeTools,
+      defaultGlobalAgentsPath,
+      loadedGlobalAgentsPath,
+      projectAgentsPath,
+      loadedProjectAgentsPath,
+      sections: getPromptSectionBreakdown(systemPrompt),
+      projectInstructions: projectInstructionBreakdown,
+      guidelines: getPromptGuidelineBreakdown(systemPrompt),
+      skills: skillBreakdown,
+      tools: toolBreakdown,
+    };
+
+    await mkdir(join(process.cwd(), ".tmp"), { recursive: true });
+    await writeFile(benchmarkPath, `${JSON.stringify(benchmark, null, 2)}\n`, "utf8");
+    await writeFile(benchmarkMarkdownPath, renderPromptBenchmarkTable(benchmark), "utf8");
+
+    expect(tokenCount).toBeLessThanOrEqual(5_500);
+    expect(projectInstructionBreakdown.some((entry) => entry.name === loadedGlobalAgentsPath)).toBe(
+      true,
+    );
+    expect(
+      projectInstructionBreakdown.some((entry) => entry.name === loadedProjectAgentsPath),
+    ).toBe(true);
+    expect(systemPrompt).toContain(
+      "- workflow: Run a deterministic JavaScript workflow. Before use, read dynamic-workflows skill.",
+    );
+    expect(systemPrompt).not.toContain("For workflow, route subagents with opts.mode.");
+    expect(systemPrompt).not.toContain("For workflow, parallel() takes functions");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+    await rm(agentDir, { recursive: true, force: true });
   }
 });
 

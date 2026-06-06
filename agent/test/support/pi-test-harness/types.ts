@@ -94,6 +94,7 @@ export interface TestSessionOptions {
   extensionFactories?: Array<(pi: any) => void>;
   /** Working directory (auto temp dir if omitted, cleaned on dispose) */
   cwd?: string;
+  agentDir?: string;
   /** System prompt override */
   systemPrompt?: string;
 

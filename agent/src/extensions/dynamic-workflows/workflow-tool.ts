@@ -7,7 +7,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import { loadModeRegistrySync } from "../../mode-utils.js";
 import { applyLinePrefix, createTextComponent, formatToolRail } from "../coreui/tools.js";
 import {
   createToolUpdateWorkflowDisplay,
@@ -21,18 +20,6 @@ import { getDynamicWorkflowSettings } from "./settings.js";
 import { parseWorkflowScript, type WorkflowRunResult } from "./workflow.js";
 import { WorkflowManager } from "./workflow-manager.js";
 import { createWorkflowStorage, type WorkflowStorage } from "./workflow-saved.js";
-
-function modeRoutingGuideline(): string {
-  const modes = Object.entries(loadModeRegistrySync().resolvedData.modes)
-    .map(([name, spec]) => `${name}: ${spec.description}`)
-    .join("; ");
-  return [
-    "For workflow, route subagents with opts.mode.",
-    "Use opts.mode when a subagent has a clear role:",
-    "Available modes: " + modes,
-    "Omit opts.mode when the generic worker mode is sufficient.",
-  ].join(" ");
-}
 
 const WorkflowSnapshotDetailsSchema = Type.Object({
   name: Type.String(),
@@ -175,24 +162,10 @@ export function createWorkflowTool(
       "script is required raw JavaScript. It must start with export const meta = { name, description, phases? } and must call agent() at least once.",
     ].join(" "),
     promptSnippet:
-      "Run a deterministic JavaScript workflow. Required script header: export const meta = { name: 'short_snake_case', description: 'non-empty description', phases: [{ title: 'Phase' }] }.",
+      "Run a deterministic JavaScript workflow. Before use, read dynamic-workflows skill.",
     promptGuidelines: [
-      "Use workflow only when the user explicitly asks for a workflow, workflows, fan-out, or multi-agent orchestration.",
-      "For workflow, always pass one raw JavaScript string in the required script parameter; do not include Markdown fences or prose around the script.",
-      "For workflow, the script's first statement must be `export const meta = { name: 'short_snake_case', description: 'non-empty human description', phases: [{ title: 'Phase name' }] }`; meta.name and meta.description are required non-empty strings.",
-      "For workflow, write plain JavaScript after the meta export. Do not use TypeScript syntax, imports, require(), fs, Date.now(), Math.random(), or new Date().",
-      "For workflow, available globals are agent(prompt, opts), parallel(thunks), pipeline(items, ...stages), phase(title), log(message), args, cwd, process.cwd(), and budget. Every workflow must call agent() at least once; do not use workflow only to declare phases or return a static object.",
-      "For workflow, prefer it for decomposable work: repository inspection, independent research/checks, multi-perspective review, or fan-out/fan-in synthesis. Do not use it for a single quick file read/edit or when ordinary tools are enough.",
-      "For workflow, parallel() takes functions, not promises: use `await parallel(items.map(item => () => agent('...', { label: '...' })))`, never `await parallel(items.map(item => agent(...)))`. Results are returned in input order.",
-      "For workflow, pipeline(items, ...stages) runs each item through stages sequentially, while different items may run concurrently. Each stage receives (previousValue, originalItem, index).",
-      "For workflow, every agent() call should include a unique short label option, 2-5 words, such as { label: 'repo inventory' } or { label: 'source modules' }; unique labels make live status and error reporting readable.",
-      "For workflow, failed agent(), parallel(), or pipeline() branches return null and log the failure unless the workflow is aborted. Check for nulls before synthesizing conclusions.",
-      "For workflow, include a final synthesis/assertion agent when combining multiple subagent results; return a compact JSON-serializable value with ok/verdict plus the important outputs.",
-      "For workflow, if agent() needs machine-readable output, pass a plain JSON Schema via opts.schema; agent() will return the validated object. Use JSON Schema syntax, not TypeScript or TypeBox constructors.",
-      modeRoutingGuideline(),
-      "For workflow, do not assume the parent assistant has repository code context inside subagents; include enough task context and relevant paths in each agent prompt.",
-      "For workflow, runs are background by default: the tool returns immediately with a run ID, the turn ends so the user isn't blocked, and the result is delivered back into the conversation when the run finishes. Pass background: false only when you must use the result inline in this same turn (it will block).",
-      "For workflow, you may call `await workflow('saved-name', argsObject)` to run a saved workflow inline and use its result; nesting is one level deep only, and the global 16-concurrent / 1000-total caps hold across the nesting.",
+      "Use workflow only when the user explicitly asks for workflow, fan-out, or multi-agent orchestration.",
+      "Before calling workflow, read the dynamic-workflows skill for script format, API, and constraints.",
     ],
     parameters: workflowToolSchema,
     prepareArguments(args) {

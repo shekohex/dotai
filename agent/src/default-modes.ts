@@ -21,8 +21,7 @@ export const defaultModes = {
       color: "warning",
       tmuxTarget: "window",
       tools: ["*", "!subagent"],
-      description:
-        "Use me when you want a cheap, fast agent for exploration, rough implementation, and trying ideas quickly and you’re willing to review the output carefully using the review mode.",
+      description: "cheap fast exploration/rough implementation",
     },
     docs: {
       provider: "opencode-go",
@@ -31,8 +30,7 @@ export const defaultModes = {
       color: "success",
       tmuxTarget: "window",
       tools: ["*"],
-      description:
-        "Use me when you want a cheap, fast agent for technical writing, including docs, issues, PR descriptions, changelogs, and release notes.",
+      description: "technical writing/docs/issues/PRs",
     },
     build: {
       provider: "openai-codex",
@@ -41,8 +39,7 @@ export const defaultModes = {
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
-      description:
-        "Use me when you want fast, capable model for day to day coding tasks, I'm the default mode.",
+      description: "default coding",
     },
     deep: {
       provider: "openai-codex",
@@ -51,8 +48,7 @@ export const defaultModes = {
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
-      description:
-        "Use me when you want the highest-quality help for complex implementation, debugging, and code review.",
+      description: "complex implementation/debugging/review",
     },
     review: {
       provider: "openai-codex",
@@ -62,8 +58,7 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "bash", "websearch"],
       autoExit: true,
-      description:
-        "Use me when you want a focused code review that looks for bugs, regressions, security issues, and correctness problems.",
+      description: "focused correctness review",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
     },
@@ -75,8 +70,7 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "bash", "websearch"],
       autoExit: true,
-      description:
-        "Use me when you want a fast and cheap code review that looks for bugs, regressions, security issues, and correctness problems.",
+      description: "fast cheap correctness review",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
     },
@@ -88,8 +82,7 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "bash", "websearch"],
       autoExit: true,
-      description:
-        "Use me when you want a ultra fast and dirt cheap code review that looks for bugs, regressions, security issues, and correctness problems. You can use a lot of parallel review agents to get a quick answer.",
+      description: "ultra-fast parallel correctness review",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
     },
@@ -101,8 +94,7 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "bash"],
       autoExit: true,
-      description:
-        "Use me when you want to group local git changes and create atomic conventional commits.",
+      description: "atomic conventional commits",
       systemPrompt: modeSystemPrompt("commiter"),
       systemPromptMode: "append",
     },
@@ -114,8 +106,7 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "bash"],
       autoExit: true,
-      description:
-        "Use me when you want a quick answer from the current codebase or local files, especially for fast exploration.",
+      description: "quick codebase/local-file answers",
     },
     painter: {
       provider: "zai-coding-plan",
@@ -124,8 +115,7 @@ export const defaultModes = {
       color: "bashMode",
       tmuxTarget: "window",
       tools: ["*"],
-      description:
-        "Use me when you want frontend and UI work, UX exploration, or product-facing implementation that should look polished and feel good to use.",
+      description: "frontend/UI/UX polish",
     },
     ask: {
       provider: "openai-codex",
@@ -134,12 +124,12 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "bash", "websearch", "execute", "subagent"],
       autoExit: true,
-      description: "Use me when you want to do QA and chat with your codebase, explore options",
+      description: "QA/codebase chat",
     },
     worker: {
       tools: ["*", "!subagent"],
       autoExit: true,
-      description: "Use me when you want a general-purpose worker for a focused task.",
+      description: "general-purpose worker",
       tmuxTarget: "window",
     },
     websearch: {
@@ -150,8 +140,7 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "bash", "websearch"],
       autoExit: true,
-      description:
-        "Use me when you want to search the web for information or look up up-to-date library documentation or doing an overall web research.",
+      description: "web/current docs research",
     },
   },
 } as const satisfies DefaultModes;

@@ -39,7 +39,7 @@ export const defaultDynamicWorkflowSettings = {
   tokenBudget: null,
   persistLogs: true,
   backgroundDefault: true,
-  subagentBackend: "lite",
+  subagentBackend: "process",
 } as const satisfies DynamicWorkflowSettings;
 
 export function getDynamicWorkflowSettings(): DynamicWorkflowSettings {

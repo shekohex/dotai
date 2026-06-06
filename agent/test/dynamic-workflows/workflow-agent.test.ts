@@ -76,19 +76,21 @@ test("WorkflowAgent falls back to start when resume session becomes inaccessible
   assert.equal(sdkStart.mock.calls.length, 1);
 });
 
-test("WorkflowAgent uses lite subagent backend by default", async () => {
+test("WorkflowAgent uses process subagent backend by default", async () => {
   const { WorkflowAgent } = await import("../../src/extensions/dynamic-workflows/agent.js");
-  sdkStart.mockResolvedValue(createStartValue("lite-session", "lite result"));
-  const cwd = mkdtempSync(join(tmpdir(), "workflow-agent-lite-backend-"));
+  sdkStart.mockResolvedValue(createStartValue("process-session", "process result"));
+  const cwd = mkdtempSync(join(tmpdir(), "workflow-agent-process-default-backend-"));
   cleanupPaths.push(cwd);
 
   await new WorkflowAgent({
     cwd,
-    pi: {} as ExtensionAPI,
+    pi: { exec: async () => ({ code: 0, stdout: "", stderr: "" }) } as ExtensionAPI,
     ctx: createContext(cwd),
   }).run("prompt");
 
-  assert.deepEqual(sdkFactory.mock.calls[0]?.[1], { backend: { kind: "lite" } });
+  const options = sdkFactory.mock.calls[0]?.[1];
+  assert.equal("adapter" in options, true);
+  assert.equal(typeof options.buildLaunchCommand, "function");
 });
 
 test("WorkflowAgent can use process subagent backend", async () => {

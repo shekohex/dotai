@@ -13,7 +13,7 @@ The `workflow` tool executes a deterministic JavaScript script that orchestrates
   background?: boolean;  // Default: true. Run in background, deliver result later.
   maxAgents?: number;    // Default: 1000. Hard cap on agents in this run.
   agentTimeoutMs?: number; // Default: 1800000 (30 minutes).
-  subagentBackend?: "lite" | "process"; // Default: "lite".
+  subagentBackend?: "lite" | "process"; // Default: "process".
 }
 ```
 
@@ -107,12 +107,12 @@ Avoid resuming the same prior result concurrently from multiple `parallel()` bra
 
 Workflow subagents can run on two backends:
 
-| Backend   | Behavior                                                                                                                                                                            |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lite`    | Default in-process runtime. Fast, low overhead, persists session files, but has no live tmux pane/window.                                                                           |
-| `process` | Launches real child Pi sessions through the mux backend. Inside tmux, this creates inspectable tmux panes/windows according to mode settings; outside tmux it can fall back to pty. |
+| Backend   | Behavior                                                                                                                                                                                             |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lite`    | In-process runtime. Fast, low overhead, persists session files, but has no live tmux pane/window.                                                                                                    |
+| `process` | Default runtime. Launches real child Pi sessions through the mux backend. Inside tmux, this creates inspectable tmux panes/windows according to mode settings; outside tmux it can fall back to pty. |
 
-Use `process` when humans need to watch or interact with workflow subagents directly:
+Use `lite` when lower overhead matters more than live process visibility:
 
 ```javascript
 await workflow("my-saved-workflow", { task: "..." });
@@ -123,7 +123,7 @@ Or pass the workflow tool parameter:
 ```json
 {
   "script": "export const meta = ...",
-  "subagentBackend": "process"
+  "subagentBackend": "lite"
 }
 ```
 
@@ -132,7 +132,7 @@ Settings can also set the default:
 ```json
 {
   "dynamic_workflows": {
-    "subagentBackend": "process"
+    "subagentBackend": "lite"
   }
 }
 ```
@@ -147,7 +147,7 @@ Settings can also set the default:
 | Default mode               | `worker`   |
 | Default output retry count | 3          |
 | Default background         | `true`     |
-| Default subagent backend   | `lite`     |
+| Default subagent backend   | `process`  |
 | Workflow nesting depth     | 1 level    |
 
 ### Saved Workflows

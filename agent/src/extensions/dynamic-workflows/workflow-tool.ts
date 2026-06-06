@@ -129,7 +129,7 @@ const workflowToolSchema = Type.Object({
   subagentBackend: Type.Optional(
     Type.Union([Type.Literal("lite"), Type.Literal("process")], {
       description:
-        "Runtime backend for workflow subagents. Default: lite. Use process to launch inspectable tmux/pty subagent panes when available.",
+        "Runtime backend for workflow subagents. Default: process. Use lite for lower-overhead in-process workflow subagents.",
     }),
   ),
 });

@@ -19,10 +19,6 @@ import webSearchExtension, { webSearchTool } from "../src/extensions/websearch.t
 import patchExtension from "../src/extensions/patch.ts";
 import handoffExtension from "../src/extensions/handoff.ts";
 import { createLiteLLMProviderRegistrations } from "../src/extensions/litellm.ts";
-import modelFamilySystemPromptExtension, {
-  buildModelFamilySystemPrompt,
-  extractPiDynamicTail,
-} from "../src/extensions/model-family-system-prompt.ts";
 import modesExtension from "../src/extensions/modes.ts";
 import interviewExtension from "../src/extensions/interview/index.ts";
 import gsdExtension from "../src/extensions/gsd/index.ts";
@@ -2134,183 +2130,6 @@ timedTest("LiteLLM provider registrations add the gemini provider via v1beta", (
   ).toBeTruthy();
 });
 
-timedTest(
-  "model family system prompt is selected per model family while preserving pi tail",
-  async () => {
-    const cwd = await createTempDir("agent-family-system-prompt-");
-    let session: TestSession | undefined;
-    const providers = createModelFamilyTestProviders();
-    const seenSystemPrompts: string[] = [];
-    const captureSystemPromptExtension = (pi: ExtensionAPI) => {
-      pi.on("before_agent_start", (event) => {
-        seenSystemPrompts.push(event.systemPrompt);
-        return;
-      });
-    };
-
-    try {
-      session = await createTestSession({
-        cwd,
-        extensionFactories: [
-          modelFamilySystemPromptExtension,
-          captureSystemPromptExtension,
-          providers.extensionFactory,
-        ],
-      });
-      await session.session.setModel(providers.getModel("gpt-5.4") as never);
-
-      providers.setResponses(fauxAssistantMessage("ok"));
-      await session.session.prompt("hello");
-      await session.session.agent.waitForIdle();
-
-      const initialPrompt = seenSystemPrompts.at(-1)!;
-      expect(initialPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "gpt-5.4"));
-      const initialTail = extractPiDynamicTail(initialPrompt);
-
-      await session.session.setModel(providers.getModel("gpt-5.4-mini") as never);
-      providers.setResponses(fauxAssistantMessage("ok"));
-      await session.session.prompt("hello again");
-      await session.session.agent.waitForIdle();
-      expect(seenSystemPrompts.at(-1)).toBe(initialPrompt);
-
-      await session.session.setModel(providers.getModel("gpt-5.4-codex") as never);
-      providers.setResponses(fauxAssistantMessage("ok"));
-      await session.session.prompt("hello codex");
-      await session.session.agent.waitForIdle();
-      const codexSystemPrompt = seenSystemPrompts.at(-1)!;
-      expect(codexSystemPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "gpt-5.4-codex"));
-      expect(extractPiDynamicTail(codexSystemPrompt)).toBe(initialTail);
-
-      await session.session.setModel(providers.getModel("gemini-2.5-pro") as never);
-      providers.setResponses(fauxAssistantMessage("ok"));
-      await session.session.prompt("hello gemini");
-      await session.session.agent.waitForIdle();
-      const geminiSystemPrompt = seenSystemPrompts.at(-1)!;
-      expect(geminiSystemPrompt).toBe(
-        buildModelFamilySystemPrompt(initialPrompt, "gemini-2.5-pro"),
-      );
-      expect(extractPiDynamicTail(geminiSystemPrompt)).toBe(initialTail);
-
-      await session.session.setModel(providers.getModel("kimi-k2.5") as never);
-      providers.setResponses(fauxAssistantMessage("ok"));
-      await session.session.prompt("hello kimi");
-      await session.session.agent.waitForIdle();
-      const kimiSystemPrompt = seenSystemPrompts.at(-1)!;
-      expect(kimiSystemPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "kimi-k2.5"));
-
-      await session.session.setModel(providers.getModel("router-1") as never);
-      providers.setResponses(fauxAssistantMessage("ok"));
-      await session.session.prompt("hello default");
-      await session.session.agent.waitForIdle();
-      const defaultSystemPrompt = seenSystemPrompts.at(-1)!;
-      expect(defaultSystemPrompt).toBe(buildModelFamilySystemPrompt(initialPrompt, "router-1"));
-      expect(extractPiDynamicTail(defaultSystemPrompt)).toBe(initialTail);
-    } finally {
-      session?.dispose();
-      providers.dispose();
-      await rm(cwd, { recursive: true, force: true });
-    }
-  },
-);
-
-timedTest(
-  "model family system prompt is used for provider requests after switching models",
-  async () => {
-    const cwd = await createTempDir("agent-family-system-prompt-provider-");
-    let session: TestSession | undefined;
-    const providers = createModelFamilyTestProviders();
-    const seenSystemPrompts: string[] = [];
-    const captureSystemPromptExtension = (pi: ExtensionAPI) => {
-      pi.on("before_agent_start", async (event) => {
-        seenSystemPrompts.push(event.systemPrompt);
-        return;
-      });
-    };
-
-    try {
-      session = await createTestSession({
-        cwd,
-        extensionFactories: [
-          modelFamilySystemPromptExtension,
-          captureSystemPromptExtension,
-          providers.extensionFactory,
-        ],
-      });
-      await session.session.setModel(providers.getModel("gpt-5.4") as never);
-      providers.setResponses(fauxAssistantMessage("ok"));
-
-      await session.session.prompt("hello");
-      await session.session.agent.waitForIdle();
-
-      await session.session.setModel(providers.getModel("gemini-2.5-pro") as never);
-      providers.setResponses(fauxAssistantMessage("ok"));
-
-      await session.session.prompt("hello again");
-      await session.session.agent.waitForIdle();
-
-      expect(seenSystemPrompts[0]).toBe(
-        buildModelFamilySystemPrompt(seenSystemPrompts[0]!, "gpt-5.4"),
-      );
-      expect(seenSystemPrompts[1]).toBe(
-        buildModelFamilySystemPrompt(seenSystemPrompts[0]!, "gemini-2.5-pro"),
-      );
-    } finally {
-      session?.dispose();
-      providers.dispose();
-      await rm(cwd, { recursive: true, force: true });
-    }
-  },
-);
-
-timedTest(
-  "mode changes switch provider request system prompt when selected mode changes model family",
-  async () => {
-    const cwd = await createTempDir("agent-family-system-prompt-modes-");
-    let session: TestSession | undefined;
-    const providers = createModelFamilyTestProviders();
-    const seenSystemPrompts: string[] = [];
-    const captureSystemPromptExtension = (pi: ExtensionAPI) => {
-      pi.on("before_agent_start", (event) => {
-        seenSystemPrompts.push(event.systemPrompt);
-        return;
-      });
-    };
-
-    await writeModelFamilyModesFile(cwd);
-
-    try {
-      session = await createTestSession({
-        cwd,
-        extensionFactories: [
-          modelFamilySystemPromptExtension,
-          captureSystemPromptExtension,
-          modesExtension,
-          providers.extensionFactory,
-        ],
-      });
-
-      providers.setResponses(fauxAssistantMessage("ok"));
-      await session.session.prompt("hello");
-      await session.session.agent.waitForIdle();
-      const gptPrompt = seenSystemPrompts.at(-1)!;
-
-      await session.session.prompt("/mode research");
-      await session.session.agent.waitForIdle();
-
-      providers.setResponses(fauxAssistantMessage("ok"));
-      await session.session.prompt("hello after mode change");
-      await session.session.agent.waitForIdle();
-
-      const currentPrompt = seenSystemPrompts.at(-1)!;
-      expect(currentPrompt).toBe(buildModelFamilySystemPrompt(gptPrompt, "gemini-2.5-pro"));
-    } finally {
-      session?.dispose();
-      providers.dispose();
-      await rm(cwd, { recursive: true, force: true });
-    }
-  },
-);
-
 timedTest("modes extension applies mode systemPrompt to active session on next turn", async () => {
   const cwd = await createTempDir("agent-mode-system-prompt-state-");
   let session: TestSession | undefined;
@@ -2382,11 +2201,7 @@ timedTest("interview tool is hidden by default and toggled by command", async ()
   try {
     session = await createTestSession({
       cwd,
-      extensionFactories: [
-        modelFamilySystemPromptExtension,
-        interviewExtension,
-        providers.extensionFactory,
-      ],
+      extensionFactories: [interviewExtension, providers.extensionFactory],
     });
 
     await session.session.prompt("hello");
@@ -2475,7 +2290,6 @@ timedTest(
       session = await createTestSession({
         cwd,
         extensionFactories: [
-          modelFamilySystemPromptExtension,
           modesExtension,
           interviewExtension,
           gsdExtension,
@@ -2512,7 +2326,6 @@ timedTest("/gsd debug launches replacement session without interview by default"
     session = await createTestSession({
       cwd,
       extensionFactories: [
-        modelFamilySystemPromptExtension,
         modesExtension,
         interviewExtension,
         gsdExtension,

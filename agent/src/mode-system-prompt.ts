@@ -1,4 +1,4 @@
-import { extractPiDynamicTail } from "./extensions/model-family-system-prompt.js";
+import { extractPiDynamicTail } from "./system-prompt-tail.js";
 import type { ModeSpec } from "./mode-utils.js";
 
 export function applyModeSystemPrompt(

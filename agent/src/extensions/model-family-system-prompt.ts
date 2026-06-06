@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { extractPiDynamicTail } from "../system-prompt-tail.js";
 
 export type ModelFamilySystemPrompt = "codex" | "gpt" | "gemini" | "kimi" | "default";
 
@@ -20,7 +21,6 @@ const promptTexts: Record<ModelFamilySystemPrompt, string> = {
   kimi: readFileSync(promptFiles.kimi, "utf8").trim(),
   default: readFileSync(promptFiles.default, "utf8").trim(),
 };
-const promptMarker = "Available tools:\n";
 const patchSymbol = Symbol.for("@shekohex/agent/model-family-system-prompt-patched");
 
 function readStringField(value: unknown): string | undefined {
@@ -98,11 +98,6 @@ export function resolveModelFamilySystemPrompt(
   }
 
   return "default";
-}
-
-export function extractPiDynamicTail(systemPrompt: string): string {
-  const markerIndex = systemPrompt.indexOf(promptMarker);
-  return markerIndex === -1 ? systemPrompt : systemPrompt.slice(markerIndex);
 }
 
 export function buildModelFamilySystemPrompt(

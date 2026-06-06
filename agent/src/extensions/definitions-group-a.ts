@@ -5,7 +5,6 @@ import glanceExtension from "./glance/index.js";
 import gitStateExtension from "./git-state.js";
 import litellmGatewayExtension from "./litellm.js";
 import modesExtension from "./modes.js";
-import modelFamilySystemPromptExtension from "./model-family-system-prompt.js";
 import openAIBetterExtension from "./openai-better/index.js";
 import openUsageExtension from "./openusage/index.js";
 import patchExtension from "./patch.js";
@@ -13,10 +12,6 @@ import webSearchExtension from "./websearch.js";
 import type { GroupedExtensionDefinition } from "./definitions.js";
 
 export const groupedExtensionsA: GroupedExtensionDefinition[] = [
-  {
-    id: "model-family-system-prompt",
-    factory: modelFamilySystemPromptExtension,
-  },
   { id: "bundled-resources", factory: bundledResourcesExtension },
   { id: "git-state", factory: gitStateExtension },
   { id: "coreui", factory: coreUIExtension },

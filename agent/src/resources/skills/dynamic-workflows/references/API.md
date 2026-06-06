@@ -2,18 +2,36 @@
 
 ## `workflow` Tool
 
-The `workflow` tool executes a deterministic JavaScript script that orchestrates subagents.
+The `workflow` tool executes a deterministic JavaScript script that orchestrates subagents. Provide exactly one script source: inline `script` or absolute-path `scriptFile`.
 
 ### Parameters
 
 ```typescript
 {
-  script: string;        // Required. Raw JavaScript, no Markdown fences.
+  script?: string;       // Raw JavaScript, no Markdown fences. Mutually exclusive with scriptFile.
+  scriptFile?: string;   // Absolute path to a JavaScript workflow file. Mutually exclusive with script.
   args?: unknown;        // Optional JSON value exposed as global `args`.
   background?: boolean;  // Default: true. Run in background, deliver result later.
   maxAgents?: number;    // Default: 1000. Hard cap on agents in this run.
   agentTimeoutMs?: number; // Default: 1800000 (30 minutes).
   subagentBackend?: "lite" | "process"; // Default: "process".
+}
+```
+
+Use `scriptFile` when a workflow file already exists:
+
+```json
+{
+  "scriptFile": "/home/coder/project/workflows/audit.workflow.js",
+  "args": { "scope": "src/extensions" }
+}
+```
+
+Use `script` when generating a one-off workflow inline:
+
+```json
+{
+  "script": "export const meta = { name: 'audit', description: 'Audit' };\nconst result = await agent('Audit code', { label: 'audit' });\nreturn result;"
 }
 ```
 

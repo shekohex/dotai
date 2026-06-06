@@ -14,7 +14,14 @@ The `workflow` tool runs a JavaScript harness that spawns and coordinates subage
 
 ## Quick Start
 
-If the `workflow` tool is not available, ask the user to run `/workflow on` to enable it. Then call the tool with a raw JavaScript script:
+If the `workflow` tool is not available, ask the user to run `/workflow on` to enable it. Then call the tool with exactly one script source:
+
+- `script`: raw JavaScript inline
+- `scriptFile`: absolute path to a JavaScript workflow file
+
+Prefer `scriptFile` when a workflow file already exists; do not rewrite it inline.
+
+Inline `script` example:
 
 ```javascript
 export const meta = {
@@ -56,12 +63,25 @@ Rules:
 
 | Parameter         | Type                  | Description                                                                                |
 | ----------------- | --------------------- | ------------------------------------------------------------------------------------------ |
-| `script`          | `string`              | **Required.** Raw JavaScript workflow.                                                     |
+| `script`          | `string`              | Raw JavaScript workflow. Mutually exclusive with `scriptFile`.                             |
+| `scriptFile`      | `string`              | Absolute path to JavaScript workflow file. Mutually exclusive with `script`.               |
 | `args`            | `unknown`             | Optional JSON value. Exposed inside the script as the global `args`.                       |
 | `background`      | `boolean`             | Default `true`. Returns immediately; result delivered when finished. Set `false` to block. |
 | `maxAgents`       | `number`              | Max agents allowed. Default `1000`.                                                        |
 | `agentTimeoutMs`  | `number`              | Timeout per agent. Default `1800000` (30 min).                                             |
 | `subagentBackend` | `"lite" \| "process"` | Subagent runtime. Default `process`; use `lite` for lower-overhead in-process agents.      |
+
+Examples:
+
+```json
+{ "scriptFile": "/home/coder/project/workflows/audit.workflow.js" }
+```
+
+```json
+{
+  "script": "export const meta = { name: 'audit', description: 'Audit' };\nconst r = await agent('Audit code', { label: 'audit' });\nreturn r;"
+}
+```
 
 ## Script Globals
 

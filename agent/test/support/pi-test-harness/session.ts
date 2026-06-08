@@ -15,9 +15,13 @@ import * as os from "node:os";
 import {
   createAgentSession,
   DefaultResourceLoader,
+  hasProjectTrustInputs,
+  ProjectTrustStore,
   SessionManager,
   SettingsManager,
   type AgentSessionEvent,
+  type LoadExtensionsResult,
+  type ProjectTrustEventResult,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { getModel } from "@earendil-works/pi-ai";
@@ -28,6 +32,23 @@ import { createEventCollector } from "./events.js";
 import { formatPlaybookDiagnostic } from "./diagnostics.js";
 import type { TestSessionOptions, TestSession, Turn, ToolCallRecord } from "./types.js";
 import { createTempDirSync } from "../../test-utils/temp-paths.ts";
+
+async function emitProjectTrustHandlers(
+  extensionsResult: LoadExtensionsResult,
+  cwd: string,
+  ctx: { cwd: string; mode: string; hasUI: boolean; ui: unknown },
+): Promise<ProjectTrustEventResult | undefined> {
+  for (const extension of extensionsResult.extensions) {
+    const handlers = extension.handlers.get("project_trust") ?? [];
+    for (const handler of handlers) {
+      const result = await handler({ type: "project_trust", cwd }, ctx as never);
+      if (result.trusted === "yes" || result.trusted === "no") {
+        return result;
+      }
+    }
+  }
+  return undefined;
+}
 
 export async function createTestSession(options: TestSessionOptions = {}): Promise<TestSession> {
   const propagateErrors = options.propagateErrors ?? true;
@@ -43,6 +64,13 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
     fs.mkdirSync(agentDir, { recursive: true });
   }
 
+  // Event collection
+  const events = createEventCollector();
+  let currentStep = 0;
+
+  // Mock UI context
+  const mockUI = createMockUIContext(options.mockUI, events.ui);
+
   // Build resource loader with extensions
   const settingsManager = SettingsManager.inMemory();
   const loader = new DefaultResourceLoader({
@@ -53,7 +81,29 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
     extensionFactories: options.extensionFactories,
     systemPromptOverride: options.systemPrompt ? () => options.systemPrompt! : undefined,
   });
-  await loader.reload();
+
+  await loader.reload(
+    hasProjectTrustInputs(cwd)
+      ? {
+          resolveProjectTrust: async ({ extensionsResult }) => {
+            const result = await emitProjectTrustHandlers(extensionsResult, cwd, {
+              cwd,
+              mode: "test",
+              hasUI: true,
+              ui: mockUI,
+            });
+            if (result !== undefined) {
+              const trusted = result.trusted === "yes";
+              if (result.remember === true) {
+                new ProjectTrustStore(agentDir).set(cwd, trusted);
+              }
+              return trusted;
+            }
+            return options.projectTrusted ?? true;
+          },
+        }
+      : undefined,
+  );
 
   // Use a real model definition (never actually called — playbook replaces streamFn)
   const playbookModel = getModel("openai", "gpt-4o");
@@ -86,10 +136,6 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
     const errors = extensionsResult.errors.map((e) => `  ${e.path}: ${e.error}`).join("\n");
     throw new Error(`Extension load errors:\n${errors}`);
   }
-
-  // Event collection
-  const events = createEventCollector();
-  let currentStep = 0;
 
   // Subscribe to session events
   session.subscribe((event: AgentSessionEvent) => {
@@ -137,9 +183,6 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 
   // Playbook state (initialized on run())
   let playbookState: PlaybookState | null = null;
-
-  // Mock UI context
-  const mockUI = createMockUIContext(options.mockUI, events.ui);
 
   // Inject mock UI context via bindExtensions
   await session.bindExtensions({

@@ -103,6 +103,9 @@ export interface TestSessionOptions {
   /** Mock UI responses */
   mockUI?: MockUIConfig;
 
+  /** Default project trust decision when project_trust handlers are undecided (default: true). */
+  projectTrusted?: boolean;
+
   /** Abort on real tool throw (default: true) */
   propagateErrors?: boolean;
 }

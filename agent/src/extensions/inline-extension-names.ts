@@ -17,7 +17,7 @@ type LoaderLike = {
   extensionsResult?: LoadExtensionsResult;
 };
 
-type ResourceLoaderReloadMethod = (this: DefaultResourceLoader) => Promise<void>;
+type ResourceLoaderReloadMethod = DefaultResourceLoader["reload"];
 
 function isResourceLoaderReloadMethod(value: unknown): value is ResourceLoaderReloadMethod {
   return typeof value === "function";
@@ -130,8 +130,9 @@ export function installInlineExtensionNamePatch(): void {
   }
   DefaultResourceLoader.prototype.reload = async function patchedReload(
     this: DefaultResourceLoader & LoaderLike,
+    ...args: Parameters<ResourceLoaderReloadMethod>
   ) {
-    await originalReload.call(this);
+    await originalReload.apply(this, args);
     renameInlineExtensionPaths(this);
   };
 

@@ -23,7 +23,7 @@ function writeObjectProperty(target: object, key: PropertyKey, value: unknown): 
   Reflect.set(target, key, value);
 }
 
-function isMethod(value: unknown): value is (this: DefaultResourceLoader) => Promise<void> {
+function isMethod(value: unknown): value is DefaultResourceLoader["reload"] {
   return typeof value === "function";
 }
 
@@ -74,6 +74,7 @@ export function installBundledResourcePaths(): void {
 
   loaderPrototype.reload = async function patchedReload(
     this: DefaultResourceLoader,
+    ...args: Parameters<DefaultResourceLoader["reload"]>
   ): Promise<void> {
     const state = readLoaderPatchState(this);
     if (state.__shekohexBundledResourcePathsInstalled !== true) {
@@ -95,7 +96,7 @@ export function installBundledResourcePaths(): void {
       writeObjectProperty(this, "__shekohexBundledResourcePathsInstalled", true);
     }
 
-    await Promise.resolve(originalReloadValue.call(this));
+    await Promise.resolve(originalReloadValue.apply(this, args));
   };
 
   writeObjectProperty(loaderPrototype, loaderPatchSymbol, true);

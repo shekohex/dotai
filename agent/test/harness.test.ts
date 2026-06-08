@@ -3957,3 +3957,32 @@ timedTest("/stash pop applies the latest entry and removes it from disk", async 
     await rm(agentDir, { recursive: true, force: true });
   }
 });
+
+timedTest("pi-test-harness emits project_trust before final resources load", async () => {
+  const cwd = await createTempDir("agent-harness-project-trust-");
+  await writeFile(join(cwd, "AGENTS.md"), "project instructions");
+
+  let projectTrustCalls = 0;
+  let sessionStartCalls = 0;
+  const trustExtension = (pi: ExtensionAPI) => {
+    pi.on("project_trust", (event) => {
+      projectTrustCalls += 1;
+      expect(event.cwd).toBe(cwd);
+      expect(sessionStartCalls).toBe(0);
+      return { trusted: "yes", remember: true };
+    });
+    pi.on("session_start", () => {
+      sessionStartCalls += 1;
+    });
+  };
+
+  const harness = await createTestSession({ cwd, extensionFactories: [trustExtension] });
+  try {
+    expect(projectTrustCalls).toBe(1);
+    expect(sessionStartCalls).toBe(1);
+    expect(JSON.parse(readFileSync(join(cwd, "trust.json"), "utf8"))[cwd]).toBe(true);
+  } finally {
+    harness.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

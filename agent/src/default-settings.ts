@@ -9,6 +9,7 @@ import { defaultInterviewSettings } from "./extensions/interview/settings.js";
 import { defaultOpenAIBetterSettings } from "./extensions/openai-better/settings.js";
 import { DEFAULT_CONFIG as defaultContextPruneSettings } from "./extensions/context-prune/types.js";
 import { defaultDynamicWorkflowSettings } from "./extensions/dynamic-workflows/settings.js";
+import { defaultSessionQuerySettings } from "./extensions/session-query/settings.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
 type TerminalSettings = NonNullable<AgentSettings["terminal"]> & { titleSpinner: boolean };
@@ -29,6 +30,7 @@ export type DefaultSettings = Omit<AgentSettings, "terminal"> & {
   interview: typeof defaultInterviewSettings;
   contextPrune: typeof defaultContextPruneSettings;
   dynamic_workflows: typeof defaultDynamicWorkflowSettings;
+  sessionQuery: typeof defaultSessionQuerySettings;
   openaiBetter: typeof defaultOpenAIBetterSettings;
 };
 
@@ -55,6 +57,7 @@ export const defaultSettings = {
     titleSpinner: true,
   },
   dynamic_workflows: defaultDynamicWorkflowSettings,
+  sessionQuery: defaultSessionQuerySettings,
   contextPrune: {
     ...defaultContextPruneSettings,
     tools: { ...defaultContextPruneSettings.tools },

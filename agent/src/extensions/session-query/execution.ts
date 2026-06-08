@@ -11,9 +11,13 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { errorMessage } from "../../utils/error-message.js";
 import { isRecord } from "../../utils/unknown-data.js";
-
-const QUERY_PROVIDER = "gemini" as const;
-const QUERY_MODEL = "gemini-3.1-flash-lite-preview" as const;
+import {
+  appendCurrentModelFallback,
+  DEFAULT_MODEL_FALLBACKS,
+  isAbortSignalAborted,
+  resolveModelFallbackAuth,
+  type ModelAuth,
+} from "../model-fallbacks.js";
 
 const QUERY_SYSTEM_PROMPT = `You are a session context assistant. Given the conversation history from a pi coding session and a question, provide a concise answer based on the session contents.
 
@@ -111,13 +115,34 @@ export async function executeSessionQueryRequest(
     };
   }
 
-  const model =
-    ctx.modelRegistry.find(QUERY_PROVIDER, QUERY_MODEL) ??
-    (isApiModel(ctx.model) ? ctx.model : undefined);
-  if (model === undefined) {
-    return errorResult("No model available to analyze the session.");
+  const fallbackModels = appendCurrentModelFallback(
+    DEFAULT_MODEL_FALLBACKS,
+    isApiModel(ctx.model) ? ctx.model : undefined,
+  );
+
+  for (const fallbackModel of fallbackModels) {
+    const modelAuth = await resolveModelFallbackAuth(ctx, fallbackModel, "Session query");
+    if (modelAuth === undefined) {
+      continue;
+    }
+    ctx.ui.notify(
+      `Session query: analyzing ${messages.length} messages with ${modelAuth.model.id}...`,
+      "info",
+    );
+    try {
+      return await runSessionQuery(modelAuth, messages, request, signal, onUpdate);
+    } catch (err) {
+      if (isAbortSignalAborted(signal)) {
+        return errorResult("Query was cancelled.");
+      }
+      ctx.ui.notify(
+        `Session query failed with ${modelAuth.model.id}: ${errorMessage(err)}. Trying next fallback`,
+        "warning",
+      );
+    }
   }
-  return runSessionQuery(model, messages, request, signal, onUpdate, ctx, errorResult);
+
+  return errorResult("Session query fallback list exhausted; no model could analyze the session.");
 }
 
 function loadSessionMessages(
@@ -156,44 +181,31 @@ function loadSessionMessages(
 }
 
 async function runSessionQuery(
-  model: Model<Api>,
+  modelAuth: ModelAuth,
   messages: SessionMessages,
   request: { sessionPath: string; question: string; sessionUuid: string },
   signal: AbortSignal | undefined,
   onUpdate: AgentToolUpdateCallback<unknown> | undefined,
-  ctx: ExtensionContext,
-  errorResult: (text: string) => {
-    content: Array<{ type: "text"; text: string }>;
-    details: unknown;
-  },
 ) {
   const conversationText = serializeConversation(convertToLlm(messages));
-  try {
-    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-    if (!auth.ok) {
-      return errorResult(`Auth failed: ${auth.error}`);
-    }
-    const userMessage: Message = {
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: `## Session Conversation\n\n${conversationText}\n\n## Question\n\n${request.question}`,
-        },
-      ],
-      timestamp: Date.now(),
-    };
-    const queryStream = stream(
-      model,
-      { systemPrompt: QUERY_SYSTEM_PROMPT, messages: [userMessage] },
-      { apiKey: auth.apiKey, headers: auth.headers, signal },
-    );
-    await emitSessionQueryPartials(queryStream, request, messages.length, onUpdate);
-    const response = await queryStream.result();
-    return finalizeSessionQueryResponse(response, request, messages.length);
-  } catch (err) {
-    return errorResult(`Error querying session: ${errorMessage(err)}`);
-  }
+  const userMessage: Message = {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: `## Session Conversation\n\n${conversationText}\n\n## Question\n\n${request.question}`,
+      },
+    ],
+    timestamp: Date.now(),
+  };
+  const queryStream = stream(
+    modelAuth.model,
+    { systemPrompt: QUERY_SYSTEM_PROMPT, messages: [userMessage] },
+    { apiKey: modelAuth.apiKey, headers: modelAuth.headers, signal },
+  );
+  await emitSessionQueryPartials(queryStream, request, messages.length, onUpdate);
+  const response = await queryStream.result();
+  return finalizeSessionQueryResponse(response, request, messages.length);
 }
 
 async function emitSessionQueryPartials(

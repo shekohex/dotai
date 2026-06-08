@@ -8,30 +8,22 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../utils/error-message.js";
 import {
+  DEFAULT_MODEL_FALLBACKS,
+  isAbortSignalAborted,
+  resolveModelFallbackAuth,
+  type ModelAuth,
+} from "./model-fallbacks.js";
+
+export { isAbortSignalAborted } from "./model-fallbacks.js";
+import {
   mergeCompactSanitizeStats,
   sanitizeMessagesForCompact,
 } from "./context-prune/compact-sanitizer.js";
 import { getContextPruneAPI } from "./context-prune/public-api.js";
 
 type CompactionPreparation = Parameters<typeof compact>[0];
-
-const COMPACTION_MODEL_FALLBACKS = [
-  { provider: "gemini", model: "gemini-3.1-flash-lite-preview" },
-  { provider: "gemini", model: "google-gemini-3.1-pro-preview" },
-  { provider: "openai-codex", model: "gpt-5.4-mini" },
-  { provider: "zai", model: "glm-5.1" },
-  { provider: "zai-coding-plan", model: "glm-5.1" },
-  { provider: "gemini", model: "gemini-2.5-pro" },
-  { provider: "opencode-go", model: "deepseek-v4-flash" },
-] as const;
 const SUMMARY_PREFIX =
   "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:";
-
-type CompactionModelAuth = {
-  model: NonNullable<ExtensionContext["model"]>;
-  apiKey: string;
-  headers?: Record<string, string>;
-};
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_before_compact", async (event, ctx) => {
@@ -44,12 +36,8 @@ export default function (pi: ExtensionAPI) {
       ...sanitizedPreparation.turnPrefixMessages,
     ];
 
-    for (const fallbackModel of COMPACTION_MODEL_FALLBACKS) {
-      const modelAuth = await resolveCompactionModelAndAuth(
-        ctx,
-        fallbackModel.provider,
-        fallbackModel.model,
-      );
+    for (const fallbackModel of DEFAULT_MODEL_FALLBACKS) {
+      const modelAuth = await resolveModelFallbackAuth(ctx, fallbackModel, "Compaction");
       if (!modelAuth) {
         continue;
       }
@@ -121,35 +109,8 @@ function sanitizePreparationForCompaction(
   };
 }
 
-async function resolveCompactionModelAndAuth(
-  ctx: ExtensionContext,
-  provider: string,
-  modelId: string,
-): Promise<CompactionModelAuth | undefined> {
-  const model = ctx.modelRegistry.find(provider, modelId);
-  if (!model) {
-    ctx.ui.notify(`Could not find ${provider}/${modelId} model, trying next fallback`, "warning");
-    return undefined;
-  }
-
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok) {
-    ctx.ui.notify(
-      `Compaction auth failed for ${model.id}: ${auth.error}. Trying next fallback`,
-      "warning",
-    );
-    return undefined;
-  }
-  if (auth.apiKey === undefined || auth.apiKey.length === 0) {
-    ctx.ui.notify(`No API key for ${model.id}, trying next fallback`, "warning");
-    return undefined;
-  }
-
-  return { model, apiKey: auth.apiKey, headers: auth.headers };
-}
-
 async function summarizeCompaction(
-  modelAuth: CompactionModelAuth,
+  modelAuth: ModelAuth,
   allMessages: Parameters<typeof convertToLlm>[0],
   previousSummary: string | undefined,
   customInstructions: string | undefined,
@@ -170,10 +131,6 @@ async function summarizeCompaction(
     .filter((item): item is { type: "text"; text: string } => item.type === "text")
     .map((item) => item.text)
     .join("\n");
-}
-
-export function isAbortSignalAborted(signal: AbortSignal | undefined): boolean {
-  return signal?.aborted === true;
 }
 
 export function buildSummaryMessages(

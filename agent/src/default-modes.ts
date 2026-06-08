@@ -15,7 +15,7 @@ export const defaultModes = {
   currentMode: "build",
   modes: {
     rush: {
-      provider: "opencode-go",
+      provider: "deepseek",
       modelId: "deepseek-v4-flash",
       thinkingLevel: "high",
       color: "warning",
@@ -75,8 +75,8 @@ export const defaultModes = {
       systemPromptMode: "replace",
     },
     "fast-review": {
-      provider: "opencode-go",
-      modelId: "deepseek-v4-flash",
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
       thinkingLevel: "high",
       color: "muted",
       tmuxTarget: "window",
@@ -99,7 +99,7 @@ export const defaultModes = {
       systemPromptMode: "append",
     },
     search: {
-      provider: "opencode-go",
+      provider: "deepseek",
       modelId: "deepseek-v4-flash",
       color: "borderMuted",
       thinkingLevel: "high",

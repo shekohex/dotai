@@ -32,9 +32,11 @@ import {
   applyUsage,
   clearEntry,
   goalWithLiveUsage,
+  GOAL_TOOL_NAME,
   reconstructGoal,
   sendVisibleGoalMessage,
   setEntry,
+  setGoalToolEnabled,
   updateGoalStatus,
 } from "./state.js";
 import { registerGoalTools } from "./tools.js";
@@ -58,7 +60,6 @@ interface GoalAccountingState {
 
 const GOAL_STATUS_REFRESH_INTERVAL_MS = 1_000;
 const CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT = 95;
-const GOAL_TOOL_NAME = "goal";
 const COMPACTION_RESUME_DELAY_MS = 150;
 const POST_AGENT_SETTLE_DELAY_MS = 150;
 
@@ -154,6 +155,7 @@ class GoalRuntime {
       this.toolRegistered = true;
     }
     this.toolEnabled = true;
+    setGoalToolEnabled(true);
     const activeTools = new Set([...this.pi.getActiveTools(), GOAL_TOOL_NAME]);
     this.pi.setActiveTools(
       Array.from(activeTools).toSorted((left, right) => left.localeCompare(right)),
@@ -162,6 +164,7 @@ class GoalRuntime {
 
   private disableTool(): void {
     this.toolEnabled = false;
+    setGoalToolEnabled(false);
     this.pi.setActiveTools(
       this.pi.getActiveTools().filter((toolName) => toolName !== GOAL_TOOL_NAME),
     );

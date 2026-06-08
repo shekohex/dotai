@@ -12,6 +12,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { describe, expect, test } from "vitest";
 import { groupedExtensionsC } from "../src/extensions/definitions-group-c.js";
 import goalExtension from "../src/extensions/goal/index.js";
+import { syncModeTools } from "../src/extensions/modes/tools.js";
 import { formatFooterStatus } from "../src/extensions/goal/format.js";
 import {
   blockGoal,
@@ -506,6 +507,23 @@ describe("goal extension", () => {
     await harness.runCommand("off");
 
     expect(harness.tools.has("goal")).toBe(true);
+    expect(harness.activeTools.includes("goal")).toBe(false);
+  });
+
+  test("mode sync does not re-add disabled goal tool", async () => {
+    const harness = createGoalHarness();
+    await harness.runCommand("on");
+    await harness.runCommand("off");
+    const fakePi = {
+      getActiveTools: () => harness.activeTools,
+      getAllTools: () => [{ name: "read" }, { name: "goal" }],
+      setActiveTools: (toolNames: string[]) => {
+        harness.activeTools.splice(0, harness.activeTools.length, ...toolNames);
+      },
+    };
+
+    syncModeTools(fakePi as never, {} as never, undefined);
+
     expect(harness.activeTools.includes("goal")).toBe(false);
   });
 

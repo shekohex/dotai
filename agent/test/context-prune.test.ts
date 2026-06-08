@@ -11,6 +11,11 @@ import {
   setContextPruneRuntime,
   type FlushResult,
 } from "../src/extensions/context-prune/public-api.js";
+import { syncModeTools } from "../src/extensions/modes/tools.js";
+import {
+  getWorkflowModeState,
+  setWorkflowModeAvailability,
+} from "../src/extensions/dynamic-workflows/workflow-editor.js";
 import {
   abortReason,
   createPruneAbortController,
@@ -130,6 +135,10 @@ function streamMock() {
 
 afterEach(() => {
   vi.clearAllMocks();
+  setWorkflowModeAvailability(getWorkflowModeState(), {
+    conversationEmpty: true,
+    toolEnabled: false,
+  });
 });
 
 function renderText(component: Text): string {
@@ -311,6 +320,94 @@ describe("context-prune settings", () => {
     }
     expect(activeTools).toEqual(["read"]);
     delete process.env.PI_CODING_AGENT_DIR;
+  });
+
+  test("mode sync does not re-add disabled context prune tools", async () => {
+    const agentDir = mkdtempSync(join(tmpdir(), "context-prune-mode-sync-tools-"));
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    vi.resetModules();
+    const { SETTINGS_PATH } = await import("../src/extensions/context-prune/config.js");
+    writeFileSync(
+      SETTINGS_PATH,
+      `${JSON.stringify({ contextPrune: { enabled: false, pruneOn: "agentic-auto" } })}\n`,
+      "utf-8",
+    );
+    const { default: contextPruneExtension } =
+      await import("../src/extensions/context-prune/index.js");
+    let activeTools = ["read", "context_prune", "context_tree_query"];
+    const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
+    const fakePi = {
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerMessageRenderer: vi.fn(),
+      getActiveTools: () => activeTools,
+      getAllTools: () => [
+        { name: "read" },
+        { name: "context_prune" },
+        { name: "context_tree_query" },
+      ],
+      setActiveTools: (toolNames: string[]) => {
+        activeTools = toolNames;
+      },
+      on: (eventName: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
+        handlers.set(eventName, [...(handlers.get(eventName) ?? []), handler]);
+      },
+    };
+    const ctx = {
+      ui: { setStatus: vi.fn() },
+      sessionManager: { getBranch: () => [] },
+    } as never;
+    contextPruneExtension(fakePi as never);
+    for (const handler of handlers.get("session_start") ?? []) {
+      await handler({}, ctx);
+    }
+
+    syncModeTools(fakePi as never, ctx, undefined);
+
+    expect(activeTools).toEqual(["read"]);
+    delete process.env.PI_CODING_AGENT_DIR;
+  });
+
+  test("mode sync does not re-add disabled workflow tool", () => {
+    setWorkflowModeAvailability(getWorkflowModeState(), {
+      conversationEmpty: false,
+      toolEnabled: false,
+    });
+    let activeTools = ["read"];
+    const fakePi = {
+      getActiveTools: () => activeTools,
+      getAllTools: () => [{ name: "read" }, { name: "workflow" }],
+      setActiveTools: (toolNames: string[]) => {
+        activeTools = toolNames;
+      },
+    };
+
+    syncModeTools(fakePi as never, {} as never, undefined);
+
+    expect(activeTools).toEqual(["read"]);
+  });
+
+  test("mode sync includes workflow tool only when workflow state enables it", () => {
+    setWorkflowModeAvailability(getWorkflowModeState(), {
+      conversationEmpty: true,
+      toolEnabled: true,
+    });
+    let activeTools = ["read"];
+    const fakePi = {
+      getActiveTools: () => activeTools,
+      getAllTools: () => [{ name: "read" }, { name: "workflow" }],
+      setActiveTools: (toolNames: string[]) => {
+        activeTools = toolNames;
+      },
+    };
+
+    syncModeTools(fakePi as never, {} as never, undefined);
+
+    expect(activeTools).toEqual(["read", "workflow"]);
+    setWorkflowModeAvailability(getWorkflowModeState(), {
+      conversationEmpty: false,
+      toolEnabled: false,
+    });
   });
 
   test("tool exposure settings strip individual active tools", async () => {

@@ -19,6 +19,18 @@ import {
 type DirectGoalStatusUpdate = Exclude<ThreadGoal["status"], "blocked">;
 type GoalLifecycleMessagePi = Pick<ExtensionAPI, "sendMessage">;
 
+export const GOAL_TOOL_NAME = "goal";
+
+let goalToolEnabled = false;
+
+export function isGoalToolEnabled(): boolean {
+  return goalToolEnabled;
+}
+
+export function setGoalToolEnabled(enabled: boolean): void {
+  goalToolEnabled = enabled;
+}
+
 export interface ApplyUsageOptions {
   expectedGoalId?: string | null;
   accountBudgetLimited?: boolean;

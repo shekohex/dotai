@@ -2293,6 +2293,32 @@ timedTest("LiteLLM provider registrations add the gemini provider via v1beta", (
   ).toBeTruthy();
 });
 
+timedTest("LiteLLM provider registrations route deepseek via LiteLLM v1", () => {
+  const registrations = createLiteLLMProviderRegistrations(
+    {
+      healthy: true,
+      label: "public",
+      origin: "https://litellm.example.test",
+      baseUrl: "https://litellm.example.test/v1",
+    },
+    "TEST_KEY",
+  );
+
+  const deepSeekRegistration = registrations.find(
+    (registration) => registration.provider === "deepseek",
+  );
+
+  expect(deepSeekRegistration).toBeTruthy();
+  expect(deepSeekRegistration.provider).toBe("deepseek");
+  expect(deepSeekRegistration.config.baseUrl).toBe("https://litellm.example.test/v1");
+  expect(deepSeekRegistration.config.apiKey).toBe("TEST_KEY");
+  expect(deepSeekRegistration.config.api).toBe("openai-completions");
+  expect(Array.isArray(deepSeekRegistration.config.models)).toBeTruthy();
+  expect(
+    deepSeekRegistration.config.models!.some((model) => model.id === "deepseek-v4-flash"),
+  ).toBeTruthy();
+});
+
 timedTest("modes extension applies mode systemPrompt to active session on next turn", async () => {
   const cwd = await createTempDir("agent-mode-system-prompt-state-");
   let session: TestSession | undefined;

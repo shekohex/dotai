@@ -24,6 +24,7 @@ const LITELLM_CANDIDATES: LiteLLMCandidate[] = [
 ];
 
 const CODEX_OPENAI_PROVIDER = "codex-openai";
+const DEEPSEEK_PROVIDER = "deepseek";
 const GEMINI_PROVIDER = "gemini";
 const ZAI_CODING_PLAN_PROVIDER = "zai-coding-plan";
 const LITELLM_AUTH_PROVIDER = "litellm";
@@ -73,6 +74,15 @@ export function createLiteLLMProviderRegistrations(
         apiKey,
         api: "openai-completions",
         models: createZaiCodingPlanModels(),
+      },
+    },
+    {
+      provider: DEEPSEEK_PROVIDER,
+      config: {
+        baseUrl: state.baseUrl,
+        apiKey,
+        api: "openai-completions",
+        models: createDeepSeekModels(),
       },
     },
   ];
@@ -173,6 +183,21 @@ function createCodexOpenAIModels(): ProviderModelConfig[] {
     id: model.id,
     name: model.name,
     api: "openai-responses",
+    reasoning: model.reasoning,
+    input: [...model.input],
+    cost: { ...model.cost },
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+    compat: model.compat,
+    headers: model.headers,
+  }));
+}
+
+function createDeepSeekModels(): ProviderModelConfig[] {
+  return getModels("deepseek").map((model) => ({
+    id: model.id,
+    name: model.name,
+    api: model.api,
     reasoning: model.reasoning,
     input: [...model.input],
     cost: { ...model.cost },

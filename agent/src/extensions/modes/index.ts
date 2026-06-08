@@ -35,6 +35,11 @@ import {
 } from "./orchestration.js";
 import { applyModeSystemPrompt } from "../../mode-system-prompt.js";
 import {
+  createModeFailoverRuntime,
+  handleModeAssistantMessageEnd,
+  restorePrimaryModelForMode,
+} from "./failover.js";
+import {
   ensureModesReady as ensureModesReadyRuntime,
   ensureRuntime as ensureRuntimeState,
   notifyConfigError as notifyConfigErrorState,
@@ -76,6 +81,7 @@ const runtime: ModeRuntime = {
   lastReportedError: undefined,
   lastStatusText: undefined,
 };
+const failoverRuntime = createModeFailoverRuntime();
 
 const MODE_ERROR_WIDGET_KEY = "mode-config-error";
 
@@ -237,6 +243,17 @@ export default function modesExtension(pi: ExtensionAPI): void {
     const spec = activeMode === undefined ? undefined : getModeSpec(runtime.data, activeMode);
     const systemPrompt = applyModeSystemPrompt(event.systemPrompt, spec);
     return systemPrompt === undefined ? undefined : { systemPrompt };
+  });
+  pi.on("before_agent_start", async (_event, ctx) => {
+    const activeMode = runtime.activeMode;
+    const spec = activeMode === undefined ? undefined : getModeSpec(runtime.data, activeMode);
+    await restorePrimaryModelForMode(pi, ctx, failoverRuntime, activeMode, spec);
+  });
+  pi.on("message_end", async (event, ctx) => {
+    if (event.message.role !== "assistant") return;
+    const activeMode = runtime.activeMode;
+    const spec = activeMode === undefined ? undefined : getModeSpec(runtime.data, activeMode);
+    await handleModeAssistantMessageEnd(pi, ctx, failoverRuntime, activeMode, spec, event.message);
   });
   registerModeLifecycleHandlers(pi, {
     resetRuntimeState: () => {

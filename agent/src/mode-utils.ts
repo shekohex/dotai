@@ -1,5 +1,6 @@
 export {
   ModeSpecSchema,
+  ModeModelCandidateSchema,
   ModesFileSchema,
   ThemeColorSchema,
   ThinkingLevelSchema,
@@ -8,6 +9,7 @@ export {
 export type {
   LoadedModesFile,
   ModeMap,
+  ModeModelCandidate,
   ModeSpec,
   ModesFile,
   ModesFileFor,

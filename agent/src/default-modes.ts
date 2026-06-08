@@ -22,6 +22,10 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["*", "!subagent"],
       description: "cheap fast exploration/rough implementation",
+      fallbacks: [
+        { provider: "opencode-go", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
+        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
+      ],
     },
     docs: {
       provider: "opencode-go",
@@ -31,6 +35,10 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["*"],
       description: "technical writing/docs/issues/PRs",
+      fallbacks: [
+        { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" },
+        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
+      ],
     },
     build: {
       provider: "openai-codex",
@@ -85,6 +93,7 @@ export const defaultModes = {
       description: "ultra-fast parallel correctness review",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
+      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" }],
     },
     commiter: {
       provider: "openai-codex",
@@ -107,6 +116,7 @@ export const defaultModes = {
       tools: ["read", "bash"],
       autoExit: true,
       description: "quick codebase/local-file answers",
+      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" }],
     },
     painter: {
       provider: "zai-coding-plan",

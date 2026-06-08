@@ -67,11 +67,18 @@ export const ThinkingLevelSchema = Type.Union([
 
 export const TmuxTargetSchema = Type.Union([Type.Literal("pane"), Type.Literal("window")]);
 
+export const ModeModelCandidateSchema = Type.Object({
+  provider: Type.String(),
+  modelId: Type.String(),
+  thinkingLevel: Type.Optional(ThinkingLevelSchema),
+});
+
 export const ModeSpecSchema = Type.Object({
   description: Type.Optional(Type.String()),
   provider: Type.Optional(Type.String()),
   modelId: Type.Optional(Type.String()),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
+  fallbacks: Type.Optional(Type.Array(ModeModelCandidateSchema)),
   color: Type.Optional(ThemeColorSchema),
   tools: Type.Optional(Type.Array(Type.String())),
   systemPrompt: Type.Optional(Type.String()),
@@ -89,6 +96,7 @@ export const ModesFileSchema = Type.Object({
 
 export type ThinkingLevel = Static<typeof ThinkingLevelSchema>;
 export type TmuxTarget = Static<typeof TmuxTargetSchema>;
+export type ModeModelCandidate = Static<typeof ModeModelCandidateSchema>;
 export type ModeSpec = Static<typeof ModeSpecSchema>;
 export type ModesFile = Static<typeof ModesFileSchema>;
 export type ModeMap = Record<string, ModeSpec>;

@@ -56,6 +56,43 @@ test("workflow tool accepts absolute scriptFile instead of inline script", async
   assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /run-file/);
 });
 
+test("workflow tool passes background execution limits to manager", async () => {
+  const script = [
+    "export const meta = { name: 'audit', description: 'Audit workflow' };",
+    "await agent('audit code');",
+  ].join("\n");
+
+  let executionOptions: unknown;
+  const manager = {
+    setExtensionContext() {},
+    startInBackground(_script: string, _args: unknown, exec: unknown) {
+      executionOptions = exec;
+      return { runId: "run-limits", promise: Promise.resolve({}) };
+    },
+  } as unknown as WorkflowManager;
+  const tool = createWorkflowTool({ manager });
+
+  await tool.execute(
+    "tool-call",
+    {
+      script,
+      background: true,
+      maxAgents: 7,
+      agentTimeoutMs: 21_600_000,
+      subagentBackend: "process",
+    },
+    undefined,
+    undefined,
+    {} as ExtensionContext,
+  );
+
+  assert.deepEqual(executionOptions, {
+    maxAgents: 7,
+    agentTimeoutMs: 21_600_000,
+    subagentBackend: "process",
+  });
+});
+
 test("workflow tool requires exactly one script source", () => {
   const tool = createWorkflowTool();
 

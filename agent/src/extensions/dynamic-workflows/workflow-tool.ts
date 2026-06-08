@@ -314,6 +314,8 @@ async function executeWorkflowTool(
 
   if (params.background ?? settings.backgroundDefault) {
     const { runId } = manager.startInBackground(script, params.args, {
+      maxAgents: params.maxAgents,
+      agentTimeoutMs: params.agentTimeoutMs,
       subagentBackend: params.subagentBackend,
     });
     return {

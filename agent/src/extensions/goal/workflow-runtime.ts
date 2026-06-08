@@ -44,7 +44,13 @@ interface GoalWorkflowManager {
   startInBackground(
     script: string,
     args?: unknown,
-    exec?: { subagentBackend?: "process"; runId?: string; displayName?: string },
+    exec?: {
+      agentTimeoutMs?: number;
+      maxAgents?: number;
+      subagentBackend?: "process";
+      runId?: string;
+      displayName?: string;
+    },
   ): { runId: string; promise: Promise<WorkflowRunResult> };
   resumeInBackground(
     runId: string,

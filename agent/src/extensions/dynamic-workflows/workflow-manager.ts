@@ -206,7 +206,10 @@ export class WorkflowManager extends EventEmitter {
   startInBackground(
     script: string,
     args?: unknown,
-    exec: Pick<ExecOptions, "subagentBackend" | "toolNames" | "runId" | "displayName"> = {},
+    exec: Pick<
+      ExecOptions,
+      "agentTimeoutMs" | "maxAgents" | "subagentBackend" | "toolNames" | "runId" | "displayName"
+    > = {},
   ): { runId: string; promise: Promise<WorkflowRunResult> } {
     const runId = exec.runId ?? generateRunId();
     const controller = new AbortController();

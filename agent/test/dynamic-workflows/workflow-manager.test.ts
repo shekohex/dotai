@@ -241,6 +241,28 @@ test(
 );
 
 test(
+  "startInBackground applies per-run agent timeout",
+  withTempCwd(async (cwd) => {
+    const manager = new WorkflowManager({
+      cwd,
+      agent: {
+        run() {
+          return new Promise(() => {});
+        },
+      },
+    });
+
+    const { promise } = manager.startInBackground(oneAgentScript, undefined, { agentTimeoutMs: 1 });
+
+    await promise;
+    const run = manager.listRuns().find((entry) => entry.workflowName === "tracked_demo");
+
+    assert.equal(run?.journal?.[0]?.status, "failed");
+    assert.match(run?.journal?.[0]?.error ?? "", /timed out after 1ms/);
+  }),
+);
+
+test(
   "resume starts fresh after persisted timeout failure omits child session refs",
   withTempCwd(async (cwd) => {
     const runsDir = join(cwd, ".pi", "workflows", "runs");

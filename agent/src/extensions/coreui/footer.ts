@@ -130,7 +130,10 @@ function buildWorkflowStatus(theme: Theme, state: CoreUIState): string {
   const phase =
     workflow.phase !== undefined && workflow.phase.length > 0 ? ` · ${workflow.phase}` : "";
   return theme.italic(
-    theme.fg("accent", `Workflow ${workflow.workflowName} ${workflow.elapsedSeconds}s${phase}`),
+    theme.fg(
+      "accent",
+      `Workflow ${workflow.workflowName} ${formatDuration(workflow.elapsedSeconds * 1000)}${phase}`,
+    ),
   );
 }
 

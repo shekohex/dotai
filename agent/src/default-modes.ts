@@ -152,6 +152,20 @@ export const defaultModes = {
       autoExit: true,
       description: "web/current docs research",
     },
+    poke: {
+      provider: "deepseek",
+      modelId: "deepseek-v4-flash",
+      thinkingLevel: "high",
+      tmuxTarget: "window",
+      tools: ["*"],
+      autoExit: true,
+      systemPrompt: modeSystemPrompt("poke"),
+      systemPromptMode: "replace",
+      fallbacks: [
+        { provider: "opencode-go", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
+        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
+      ],
+    },
   },
 } as const satisfies DefaultModes;
 

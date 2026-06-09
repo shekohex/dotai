@@ -26,18 +26,25 @@ You are completing the user's prompt text, not answering it.
 If the text before the cursor is a complete question or instruction for an assistant, return an empty response instead of answering.
 If there is no obvious next edit, return an empty response.`;
 
+const MAX_PREVIOUS_SUGGESTIONS_CHARS = 250;
+
 export type AiAutocompleteInput = {
   text: string;
   cursorOffset: number;
   cwd: string;
   assistantSummary?: string;
+  previousSuggestions?: string[];
+  trigger?: "eager" | "manual";
+  generationAttempt?: number;
   signal: AbortSignal;
 };
 
-export type AiAutocompleteResult = {
-  text: string;
+export type AutocompleteResponse = {
+  suggestions: string[];
   model?: string;
 };
+
+export type AiAutocompleteResult = AutocompleteResponse;
 
 export interface AiAutocompleteBackend {
   readonly id: string;
@@ -64,12 +71,12 @@ export function createPiAiAutocompleteBackend(
   return {
     id: "pi-ai",
     async complete(input) {
-      if (input.text.trim().length < settings.minInputChars) return { text: "" };
+      if (input.text.trim().length < settings.minInputChars) return { suggestions: [] };
 
       const context = buildFimContext(input, settings);
       const candidates = buildModelCandidates(settings.models, ctx.model);
       for (const candidate of candidates) {
-        if (isAbortSignalAborted(input.signal)) return { text: "" };
+        if (isAbortSignalAborted(input.signal)) return { suggestions: [] };
 
         const modelAuth = await resolveAutocompleteModelAuth(ctx, candidate);
         if (modelAuth === undefined) continue;
@@ -91,7 +98,7 @@ export function createPiAiAutocompleteBackend(
               signal: input.signal,
             },
           );
-          if (response.stopReason === "aborted") return { text: "" };
+          if (response.stopReason === "aborted") return { suggestions: [] };
           if (response.stopReason === "error") {
             ctx.ui.setStatus(
               "ai-autocomplete",
@@ -106,9 +113,12 @@ export function createPiAiAutocompleteBackend(
           const text = normalizeCompletion(extractText(response.content), context.suffix);
           if (text.length === 0) continue;
           ctx.ui.setStatus("ai-autocomplete", undefined);
-          return { text, model: `${modelAuth.model.provider}/${modelAuth.model.id}` };
+          return {
+            suggestions: [text],
+            model: `${modelAuth.model.provider}/${modelAuth.model.id}`,
+          };
         } catch (error) {
-          if (isAbortSignalAborted(input.signal)) return { text: "" };
+          if (isAbortSignalAborted(input.signal)) return { suggestions: [] };
           ctx.ui.setStatus(
             "ai-autocomplete",
             ctx.ui.theme.fg(
@@ -119,7 +129,7 @@ export function createPiAiAutocompleteBackend(
         }
       }
 
-      return { text: "" };
+      return { suggestions: [] };
     },
   };
 }
@@ -130,16 +140,28 @@ export function buildFimContext(
     AiAutocompleteSettings,
     "maxPrefixChars" | "maxSuffixChars" | "maxAssistantSummaryChars"
   >,
-): { prefix: string; suffix: string; cwd: string; assistantSummary?: string } {
+): {
+  prefix: string;
+  suffix: string;
+  cwd: string;
+  assistantSummary?: string;
+  previousSuggestions?: string;
+  trigger: "eager" | "manual";
+  generationAttempt: number;
+} {
   const cursorOffset = Math.max(0, Math.min(input.cursorOffset, input.text.length));
   const prefix = input.text.slice(0, cursorOffset).slice(-settings.maxPrefixChars);
   const suffix = input.text.slice(cursorOffset).slice(0, settings.maxSuffixChars);
   const assistantSummary = input.assistantSummary?.trim().slice(-settings.maxAssistantSummaryChars);
+  const previousSuggestions = formatPreviousSuggestions(input.previousSuggestions);
   return {
     prefix,
     suffix,
     cwd: input.cwd,
+    trigger: input.trigger ?? "eager",
+    generationAttempt: Math.max(1, input.generationAttempt ?? 1),
     ...(assistantSummary !== undefined && assistantSummary.length > 0 ? { assistantSummary } : {}),
+    ...(previousSuggestions.length > 0 ? { previousSuggestions } : {}),
   };
 }
 
@@ -148,10 +170,20 @@ export function buildFimPrompt(context: {
   suffix: string;
   cwd: string;
   assistantSummary?: string;
+  previousSuggestions?: string;
+  trigger?: "eager" | "manual";
+  generationAttempt?: number;
 }): string {
   const summarySection = buildAssistantSummarySection(context.assistantSummary);
+  const previousSuggestionsSection = buildPreviousSuggestionsSection(context.previousSuggestions);
+  const triggerSection = buildAutocompleteTriggerSection(
+    context.trigger,
+    context.generationAttempt,
+  );
   return `Working directory: ${context.cwd}
 ${summarySection}
+${previousSuggestionsSection}
+${triggerSection}
 
 Complete text at <cursor>.
 
@@ -171,10 +203,20 @@ export function buildZetaNextEditPrompt(context: {
   suffix: string;
   cwd: string;
   assistantSummary?: string;
+  previousSuggestions?: string;
+  trigger?: "eager" | "manual";
+  generationAttempt?: number;
 }): string {
   const summarySection = buildAssistantSummarySection(context.assistantSummary);
+  const previousSuggestionsSection = buildPreviousSuggestionsSection(context.previousSuggestions);
+  const triggerSection = buildAutocompleteTriggerSection(
+    context.trigger,
+    context.generationAttempt,
+  );
   return `Working directory: ${context.cwd}
 ${summarySection}
+${previousSuggestionsSection}
+${triggerSection}
 
 Predict the user's next edit. The edit must be an insertion at <cursor>.
 Use recent trajectory/context to infer intent. If no clear next edit exists, return empty output.
@@ -193,6 +235,45 @@ Return only the insertion text. Empty output is allowed.`;
 function buildAssistantSummarySection(assistantSummary: string | undefined): string {
   if (assistantSummary === undefined || assistantSummary.length === 0) return "";
   return `\n\nPrevious assistant/session summary:\n<summary>\n${assistantSummary}\n</summary>`;
+}
+
+function buildPreviousSuggestionsSection(previousSuggestions: string | undefined): string {
+  if (previousSuggestions === undefined || previousSuggestions.length === 0) return "";
+  return `\n\nPrevious suggestions for this cursor to avoid repeating:\n<previous_suggestions>\n${previousSuggestions}\n</previous_suggestions>\nReturn a different completion if possible.`;
+}
+
+function buildAutocompleteTriggerSection(
+  trigger: "eager" | "manual" | undefined,
+  generationAttempt: number | undefined,
+): string {
+  if (trigger !== "manual") return "";
+  const attempt = Math.max(1, generationAttempt ?? 1);
+  const retryInstruction =
+    attempt > 1
+      ? "\nThe user explicitly requested a fresh alternative. Avoid repeating the likely earlier completion."
+      : "";
+  return `\n\n<autocomplete_context>\n<trigger>manual</trigger>\n<generation_attempt>${attempt}</generation_attempt>\n</autocomplete_context>${retryInstruction}`;
+}
+
+export function formatPreviousSuggestions(previousSuggestions: string[] | undefined): string {
+  if (previousSuggestions === undefined) return "";
+  const formatted = previousSuggestions
+    .map((suggestion) => suggestion.trim())
+    .filter((suggestion) => suggestion.length > 0)
+    .map(
+      (suggestion) => `<suggestion>${escapeXml(suggestion).replaceAll("\n", "\\n")}</suggestion>`,
+    )
+    .join("\n");
+  return formatted.slice(0, MAX_PREVIOUS_SUGGESTIONS_CHARS);
+}
+
+function escapeXml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
 }
 
 export function normalizeCompletion(text: string, suffix: string): string {
@@ -227,18 +308,27 @@ export class DebouncedAiAutocompleteRunner {
 
   constructor(private readonly debounceMs: number) {}
 
-  schedule<T>(run: (signal: AbortSignal) => Promise<T>, onResult: (result: T) => void): void {
-    this.scheduleWithDelay(this.debounceMs, run, onResult);
+  schedule<T>(
+    run: (signal: AbortSignal) => Promise<T>,
+    onResult: (result: T) => void,
+    onSettled?: () => void,
+  ): void {
+    this.scheduleWithDelay(this.debounceMs, run, onResult, onSettled);
   }
 
-  runNow<T>(run: (signal: AbortSignal) => Promise<T>, onResult: (result: T) => void): void {
-    this.scheduleWithDelay(0, run, onResult);
+  runNow<T>(
+    run: (signal: AbortSignal) => Promise<T>,
+    onResult: (result: T) => void,
+    onSettled?: () => void,
+  ): void {
+    this.scheduleWithDelay(0, run, onResult, onSettled);
   }
 
   private scheduleWithDelay<T>(
     delayMs: number,
     run: (signal: AbortSignal) => Promise<T>,
     onResult: (result: T) => void,
+    onSettled?: () => void,
   ): void {
     this.cancel();
     const requestId = ++this.requestId;
@@ -250,7 +340,10 @@ export class DebouncedAiAutocompleteRunner {
         .then((result) => {
           if (requestId === this.requestId && !signal.aborted) onResult(result);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          if (requestId === this.requestId && !signal.aborted) onSettled?.();
+        });
     }, delayMs);
   }
 

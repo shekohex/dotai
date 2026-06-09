@@ -47,6 +47,9 @@ const ModeChangedEventSchema = Type.Object({
 type ModeChangedEventData = Static<typeof ModeChangedEventSchema>;
 
 const AI_AUTOCOMPLETE_SHORTCUT = Key.ctrl(Key.period);
+const AI_AUTOCOMPLETE_NEXT_SHORTCUT = Key.ctrl(Key.comma);
+const AI_AUTOCOMPLETE_PREVIOUS_SHORTCUT = Key.ctrlShift(Key.comma);
+const AI_AUTOCOMPLETE_PREVIOUS_ALTERNATE_SHORTCUT = Key.ctrl(Key.lessthan);
 
 function readCoreUIIdleState(ctx: ExtensionContext): boolean {
   try {
@@ -98,6 +101,7 @@ function registerSessionStartHandler(input: {
   state: ReturnType<typeof createCoreUIState>;
   aiAutocompleteSettings: AiAutocompleteSettings;
   setTriggerAutocomplete: (trigger: (() => void) | undefined) => void;
+  setCycleAutocompleteSuggestion: (cycle: ((direction: 1 | -1) => void) | undefined) => void;
   setCancelAutocomplete: (cancel: (() => void) | undefined) => void;
   ensureToolOverridesRegistered: (tools: ReturnType<ExtensionAPI["getActiveTools"]>) => void;
   refreshUsageMetrics: (ctx: ExtensionContext) => void;
@@ -121,6 +125,7 @@ function registerSessionStartHandler(input: {
               cwd: ctx.cwd,
               getAssistantSummary: () => getLatestAssistantSummary(ctx),
               setTriggerAutocomplete: input.setTriggerAutocomplete,
+              setCycleAutocompleteSuggestion: input.setCycleAutocompleteSuggestion,
               setCancelAutocomplete: input.setCancelAutocomplete,
             },
           ),
@@ -448,6 +453,7 @@ export default function coreUIExtension(pi: ExtensionAPI) {
   const bindings = createCoreUIBindings(pi);
   const aiAutocompleteSettings = getAiAutocompleteSettings();
   let triggerAutocomplete: (() => void) | undefined;
+  let cycleAutocompleteSuggestion: ((direction: 1 | -1) => void) | undefined;
   let cancelAutocomplete: (() => void) | undefined;
 
   const triggerCurrentAutocomplete = (): void => {
@@ -456,11 +462,35 @@ export default function coreUIExtension(pi: ExtensionAPI) {
   const cancelCurrentAutocomplete = (): void => {
     cancelAutocomplete?.();
   };
+  const cycleCurrentAutocompleteSuggestion = (direction: 1 | -1): void => {
+    cycleAutocompleteSuggestion?.(direction);
+  };
 
   pi.registerShortcut(AI_AUTOCOMPLETE_SHORTCUT, {
     description: "Trigger AI autocomplete",
     handler: () => {
       triggerCurrentAutocomplete();
+    },
+  });
+
+  pi.registerShortcut(AI_AUTOCOMPLETE_NEXT_SHORTCUT, {
+    description: "Cycle to next AI autocomplete suggestion",
+    handler: () => {
+      cycleCurrentAutocompleteSuggestion(1);
+    },
+  });
+
+  pi.registerShortcut(AI_AUTOCOMPLETE_PREVIOUS_SHORTCUT, {
+    description: "Cycle to previous AI autocomplete suggestion",
+    handler: () => {
+      cycleCurrentAutocompleteSuggestion(-1);
+    },
+  });
+
+  pi.registerShortcut(AI_AUTOCOMPLETE_PREVIOUS_ALTERNATE_SHORTCUT, {
+    description: "Cycle to previous AI autocomplete suggestion",
+    handler: () => {
+      cycleCurrentAutocompleteSuggestion(-1);
     },
   });
 
@@ -480,6 +510,9 @@ export default function coreUIExtension(pi: ExtensionAPI) {
     aiAutocompleteSettings,
     setTriggerAutocomplete: (trigger) => {
       triggerAutocomplete = trigger;
+    },
+    setCycleAutocompleteSuggestion: (cycle) => {
+      cycleAutocompleteSuggestion = cycle;
     },
     setCancelAutocomplete: (cancel) => {
       cancelAutocomplete = cancel;

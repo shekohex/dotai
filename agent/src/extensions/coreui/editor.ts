@@ -1,7 +1,13 @@
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import type { ExtensionContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
-import { CURSOR_MARKER, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  CURSOR_MARKER,
+  Key,
+  matchesKey,
+  truncateToWidth,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 import type { AiAutocompleteBackend, AiAutocompleteResult } from "./ai-autocomplete-backend.js";
 import { DebouncedAiAutocompleteRunner } from "./ai-autocomplete-backend.js";
 import type { AiAutocompleteSettings } from "./ai-autocomplete-settings.js";
@@ -39,7 +45,6 @@ const CURSOR_SHAPES: Record<CursorShape, string> = {
   "blinking-bar": "\u001B[5 q",
   "steady-bar": "\u001B[6 q",
 };
-
 const CORE_PROMPT_EDITOR_CONFIG: CorePromptEditorConfig = {
   paddingX: 1,
   paddingY: 1,
@@ -52,6 +57,19 @@ const CORE_PROMPT_EDITOR_CONFIG: CorePromptEditorConfig = {
   cursorShape: "steady-bar",
 };
 
+type AiSuggestionLog = {
+  suggestions: string[];
+  selectedIndex: number;
+  sourceText: string;
+  cursorOffset: number;
+};
+
+type ManualAutocompleteRequest = {
+  sourceText: string;
+  cursorOffset: number;
+  generationAttempt: number;
+};
+
 export function createCorePromptEditorFactory(
   getTheme: () => ExtensionContext["ui"]["theme"],
   isIdle: () => boolean,
@@ -61,6 +79,7 @@ export function createCorePromptEditorFactory(
     cwd: string;
     getAssistantSummary?: () => string | undefined;
     setTriggerAutocomplete?: (trigger: (() => void) | undefined) => void;
+    setCycleAutocompleteSuggestion?: (cycle: ((direction: 1 | -1) => void) | undefined) => void;
     setCancelAutocomplete?: (cancel: (() => void) | undefined) => void;
   },
 ): (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => CorePromptEditor {
@@ -79,6 +98,8 @@ class CorePromptEditor extends CustomEditor {
   private onSubmitHandler: ((text: string) => void) | undefined;
   private onChangeHandler: ((text: string) => void) | undefined;
   private workflowAnimationTimer: ReturnType<typeof setInterval> | undefined;
+  private aiAutocompleteGenerating = false;
+  private manualAutocompleteRequest: ManualAutocompleteRequest | undefined;
   private readonly aiAutocomplete:
     | {
         backend: AiAutocompleteBackend;
@@ -86,11 +107,12 @@ class CorePromptEditor extends CustomEditor {
         cwd: string;
         getAssistantSummary?: () => string | undefined;
         setTriggerAutocomplete?: (trigger: (() => void) | undefined) => void;
+        setCycleAutocompleteSuggestion?: (cycle: ((direction: 1 | -1) => void) | undefined) => void;
         setCancelAutocomplete?: (cancel: (() => void) | undefined) => void;
         runner: DebouncedAiAutocompleteRunner;
       }
     | undefined;
-  private aiCompletion: { text: string; sourceText: string; cursorOffset: number } | undefined;
+  private aiSuggestionLog: AiSuggestionLog | undefined;
 
   constructor(
     tui: TUI,
@@ -104,6 +126,7 @@ class CorePromptEditor extends CustomEditor {
       cwd: string;
       getAssistantSummary?: () => string | undefined;
       setTriggerAutocomplete?: (trigger: (() => void) | undefined) => void;
+      setCycleAutocompleteSuggestion?: (cycle: ((direction: 1 | -1) => void) | undefined) => void;
       setCancelAutocomplete?: (cancel: (() => void) | undefined) => void;
     },
   ) {
@@ -122,6 +145,9 @@ class CorePromptEditor extends CustomEditor {
     this.aiAutocomplete?.setTriggerAutocomplete?.(() => {
       this.triggerAiAutocomplete();
     });
+    this.aiAutocomplete?.setCycleAutocompleteSuggestion?.((direction) => {
+      this.cycleAiAutocompleteSuggestion(direction);
+    });
     this.aiAutocomplete?.setCancelAutocomplete?.(() => {
       this.cancelAiAutocomplete();
     });
@@ -135,8 +161,11 @@ class CorePromptEditor extends CustomEditor {
   dispose(): void {
     this.stopPlaceholderRotation();
     this.stopWorkflowAnimation();
+    this.stopAiAutocompleteGeneration();
+    this.manualAutocompleteRequest = undefined;
     this.aiAutocomplete?.runner.cancel();
     this.aiAutocomplete?.setTriggerAutocomplete?.(undefined);
+    this.aiAutocomplete?.setCycleAutocompleteSuggestion?.(undefined);
     this.aiAutocomplete?.setCancelAutocomplete?.(undefined);
   }
 
@@ -145,14 +174,36 @@ class CorePromptEditor extends CustomEditor {
       return;
     }
 
+    if (matchesAiAutocompleteTriggerKey(data)) {
+      this.triggerAiAutocomplete();
+      return;
+    }
+
     if (data === "\t" && !this.isShowingAutocomplete() && this.acceptAiCompletion()) {
       return;
     }
 
-    if (data === "\u001B" && this.aiCompletion !== undefined) {
-      this.clearAiCompletion();
+    if (matchesAiAutocompleteCycleKey(data, 1)) {
+      this.cycleAiAutocompleteSuggestion(1);
       return;
     }
+
+    if (matchesAiAutocompleteCycleKey(data, -1)) {
+      this.cycleAiAutocompleteSuggestion(-1);
+      return;
+    }
+
+    if (
+      data === "\u001B" &&
+      (this.aiSuggestionLog !== undefined || this.aiAutocompleteGenerating)
+    ) {
+      this.cancelPendingAiAutocompleteRequest();
+      this.clearAiSuggestionLog();
+      return;
+    }
+
+    this.cancelPendingAiAutocompleteRequest();
+    this.clearAiSuggestionLog();
 
     const workflowModeState = getWorkflowModeState();
     syncWorkflowModeState(workflowModeState, this.getText());
@@ -354,8 +405,9 @@ class CorePromptEditor extends CustomEditor {
   };
 
   private readonly handleChange = (text: string): void => {
+    this.cancelPendingAiAutocompleteRequest();
     this.currentText = text;
-    this.clearAiCompletion(false);
+    this.clearAiSuggestionLog(false);
 
     if (text.length > 0) {
       this.stopPlaceholderRotation();
@@ -377,62 +429,101 @@ class CorePromptEditor extends CustomEditor {
     }
 
     if (!this.isCursorAtTextEnd()) {
-      this.clearAiCompletion();
+      this.clearAiSuggestionLog();
       return;
     }
 
-    this.clearAiCompletion(false);
+    if (!this.isAiSuggestionLogValid()) {
+      this.clearAiSuggestionLog(false);
+    }
     const text = this.getText();
     const cursorOffset = this.getCursorOffset();
+    const previousSuggestions = this.getCurrentAiSuggestions();
+    const generationAttempt = this.getNextManualGenerationAttempt(text, cursorOffset);
+    this.manualAutocompleteRequest = { sourceText: text, cursorOffset, generationAttempt };
     this.aiAutocomplete.runner.runNow(
-      (signal) =>
-        this.aiAutocomplete!.backend.complete({
+      (signal) => {
+        this.startAiAutocompleteGeneration();
+        return this.aiAutocomplete!.backend.complete({
           text,
           cursorOffset,
           cwd: this.aiAutocomplete!.cwd,
           assistantSummary: this.aiAutocomplete!.settings.includeAssistantSummary
             ? this.aiAutocomplete!.getAssistantSummary?.()
             : undefined,
+          previousSuggestions,
+          trigger: "manual",
+          generationAttempt,
           signal,
-        }),
+        });
+      },
       (result) => {
         this.applyAiAutocompleteResult(result, text, cursorOffset);
+        this.stopAiAutocompleteGeneration();
+      },
+      () => {
+        this.stopAiAutocompleteGeneration();
       },
     );
   }
 
   private cancelAiAutocomplete(): void {
+    this.cancelPendingAiAutocompleteRequest();
+    this.clearAiSuggestionLog();
+  }
+
+  private cancelPendingAiAutocompleteRequest(): void {
     this.aiAutocomplete?.runner.cancel();
-    this.clearAiCompletion();
+    this.stopAiAutocompleteGeneration();
+    this.manualAutocompleteRequest = undefined;
   }
 
   private scheduleAiAutocomplete(text: string): void {
     if (this.aiAutocomplete === undefined || !this.aiAutocomplete.settings.enabled) {
       this.aiAutocomplete?.runner.cancel();
+      this.stopAiAutocompleteGeneration();
       return;
     }
 
     if (!this.isCursorAtTextEnd()) {
       this.aiAutocomplete.runner.cancel();
+      this.stopAiAutocompleteGeneration();
       return;
     }
 
     const cursorOffset = this.getCursorOffset();
     this.aiAutocomplete.runner.schedule(
-      (signal) =>
-        this.aiAutocomplete!.backend.complete({
+      (signal) => {
+        this.startAiAutocompleteGeneration();
+        return this.aiAutocomplete!.backend.complete({
           text,
           cursorOffset,
           cwd: this.aiAutocomplete!.cwd,
           assistantSummary: this.aiAutocomplete!.settings.includeAssistantSummary
             ? this.aiAutocomplete!.getAssistantSummary?.()
             : undefined,
+          previousSuggestions: this.getCurrentAiSuggestions(),
+          trigger: "eager",
+          generationAttempt: 1,
           signal,
-        }),
+        });
+      },
       (result) => {
         this.applyAiAutocompleteResult(result, text, cursorOffset);
+        this.stopAiAutocompleteGeneration();
+      },
+      () => {
+        this.stopAiAutocompleteGeneration();
       },
     );
+  }
+
+  private startAiAutocompleteGeneration(): void {
+    this.aiAutocompleteGenerating = true;
+  }
+
+  private stopAiAutocompleteGeneration(): void {
+    this.aiAutocompleteGenerating = false;
   }
 
   private applyAiAutocompleteResult(
@@ -440,48 +531,112 @@ class CorePromptEditor extends CustomEditor {
     sourceText: string,
     cursorOffset: number,
   ): void {
-    if (!result.text || this.getText() !== sourceText || this.getCursorOffset() !== cursorOffset) {
+    const newSuggestions = result.suggestions.filter((suggestion) => suggestion.length > 0);
+    if (
+      newSuggestions.length === 0 ||
+      this.getText() !== sourceText ||
+      this.getCursorOffset() !== cursorOffset
+    ) {
       return;
     }
 
-    this.aiCompletion = { text: result.text, sourceText, cursorOffset };
+    const previousSuggestions =
+      this.aiSuggestionLog !== undefined &&
+      this.aiSuggestionLog.sourceText === sourceText &&
+      this.aiSuggestionLog.cursorOffset === cursorOffset
+        ? this.aiSuggestionLog.suggestions
+        : [];
+    const newSuggestionSet = new Set(newSuggestions);
+    const suggestions = [
+      ...previousSuggestions.filter((text) => !newSuggestionSet.has(text)),
+      ...newSuggestions,
+    ];
+    this.aiSuggestionLog = {
+      suggestions,
+      selectedIndex: suggestions.length - 1,
+      sourceText,
+      cursorOffset,
+    };
+    this.tui.requestRender();
+  }
+
+  private cycleAiAutocompleteSuggestion(direction: 1 | -1): void {
+    if (this.aiSuggestionLog === undefined) {
+      return;
+    }
+    if (!this.isAiSuggestionLogValid()) {
+      this.clearAiSuggestionLog();
+      return;
+    }
+
+    const count = this.aiSuggestionLog.suggestions.length;
+    if (count < 2) return;
+
+    this.aiSuggestionLog.selectedIndex =
+      (this.aiSuggestionLog.selectedIndex + direction + count) % count;
     this.tui.requestRender();
   }
 
   private acceptAiCompletion(): boolean {
-    if (this.aiCompletion === undefined) {
+    if (this.aiSuggestionLog === undefined) {
       return false;
     }
 
-    if (!this.isCursorAtTextEnd()) {
-      this.clearAiCompletion();
+    if (!this.isAiSuggestionLogValid()) {
+      this.clearAiSuggestionLog();
       return false;
     }
 
-    if (
-      this.getText() !== this.aiCompletion.sourceText ||
-      this.getCursorOffset() !== this.aiCompletion.cursorOffset
-    ) {
-      this.clearAiCompletion();
-      return false;
-    }
-
-    const text = this.aiCompletion.text;
-    this.clearAiCompletion(false);
+    const text = this.aiSuggestionLog.suggestions[this.aiSuggestionLog.selectedIndex];
+    if (text === undefined) return false;
+    this.cancelPendingAiAutocompleteRequest();
+    this.clearAiSuggestionLog(false);
     this.insertTextAtCursor(text);
     return true;
   }
 
-  private clearAiCompletion(render = true): void {
-    if (this.aiCompletion === undefined) {
+  private isAiSuggestionLogValid(): boolean {
+    return (
+      this.aiSuggestionLog !== undefined &&
+      this.isCursorAtTextEnd() &&
+      this.getText() === this.aiSuggestionLog.sourceText &&
+      this.getCursorOffset() === this.aiSuggestionLog.cursorOffset
+    );
+  }
+
+  private getCurrentAiSuggestions(): string[] | undefined {
+    return this.isAiSuggestionLogValid() ? this.aiSuggestionLog?.suggestions : undefined;
+  }
+
+  private getNextManualGenerationAttempt(sourceText: string, cursorOffset: number): number {
+    const previousSuggestions = this.getCurrentAiSuggestions();
+    if (previousSuggestions !== undefined) return previousSuggestions.length + 1;
+
+    if (
+      this.manualAutocompleteRequest !== undefined &&
+      this.manualAutocompleteRequest.sourceText === sourceText &&
+      this.manualAutocompleteRequest.cursorOffset === cursorOffset
+    ) {
+      return this.manualAutocompleteRequest.generationAttempt + 1;
+    }
+
+    return 1;
+  }
+
+  private clearAiSuggestionLog(render = true): void {
+    if (this.aiSuggestionLog === undefined) {
       return;
     }
-    this.aiCompletion = undefined;
+    this.aiSuggestionLog = undefined;
     if (render) this.tui.requestRender();
   }
 
   private applyInlineAiCompletionHint(lines: string[], _width: number, _paddingX: number): void {
-    if (this.aiCompletion === undefined || !this.isCursorAtTextEnd()) {
+    if (this.aiSuggestionLog === undefined) {
+      return;
+    }
+    if (!this.isAiSuggestionLogValid()) {
+      this.clearAiSuggestionLog();
       return;
     }
 
@@ -501,8 +656,11 @@ class CorePromptEditor extends CustomEditor {
     const availableWidth = visibleWidth(afterHint);
     if (availableWidth === 0) return;
 
+    const text = this.aiSuggestionLog.suggestions[this.aiSuggestionLog.selectedIndex];
+    if (text === undefined) return;
+
     const hint = truncateToWidth(
-      this.getTheme().fg("dim", this.aiCompletion.text),
+      this.getTheme().fg("dim", getInlineAiCompletionPreview(text)),
       availableWidth,
       "…",
     );
@@ -562,4 +720,18 @@ class CorePromptEditor extends CustomEditor {
 
     this.insertTextAtCursor(createPasteMarker(pasteId, filtered, CORE_PROMPT_EDITOR_CONFIG));
   }
+}
+
+function getInlineAiCompletionPreview(text: string): string {
+  const [firstLine = ""] = text.split(/\r\n?|\n/u);
+  return text.includes("\n") || text.includes("\r") ? `${firstLine}…` : firstLine;
+}
+
+function matchesAiAutocompleteTriggerKey(data: string): boolean {
+  return matchesKey(data, Key.ctrl(Key.period));
+}
+
+function matchesAiAutocompleteCycleKey(data: string, direction: 1 | -1): boolean {
+  if (direction === 1) return matchesKey(data, Key.ctrl(Key.comma));
+  return matchesKey(data, Key.ctrlShift(Key.comma)) || matchesKey(data, Key.ctrl(Key.lessthan));
 }

@@ -3960,7 +3960,7 @@ timedTest("/stash pop applies the latest entry and removes it from disk", async 
 
 timedTest("pi-test-harness emits project_trust before final resources load", async () => {
   const cwd = await createTempDir("agent-harness-project-trust-");
-  await writeFile(join(cwd, "AGENTS.md"), "project instructions");
+  await mkdir(join(cwd, ".pi"), { recursive: true });
 
   let projectTrustCalls = 0;
   let sessionStartCalls = 0;

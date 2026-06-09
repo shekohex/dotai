@@ -714,6 +714,34 @@ describe("gsd plan-phase slice 1", () => {
     expect(execFileSyncMock).toHaveBeenCalledTimes(2);
   });
 
+  it("helper command failures warn but do not block successful finalization", async () => {
+    const root = createRoot();
+    const spawn = createSpawn(root, { checkerApprovals: [true] });
+    setGsdSubagentSdkFactoryForTests(() => ({ spawn }) as never);
+    execFileSyncMock.mockImplementationOnce(() => {
+      throw new Error("annotate crashed");
+    });
+    const ctx = createContext(root);
+
+    await handleGsdPlanPhase(createPi(), ctx, {
+      subcommand: "plan-phase",
+      phase: "1",
+    });
+
+    const state = readFileSync(join(root, ".planning", "STATE.md"), "utf8");
+    expect(state).toContain("current_phase: 1");
+    expect(state).toContain("current_plan: 01-01");
+    expect(state).toContain("status: Ready to execute");
+    expect(execFileSyncMock).toHaveBeenCalledTimes(2);
+    expect(ctx.ui.notify).toHaveBeenCalledWith("Planned 1 plan(s); check approved", "info");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Plan helper failed (annotate-dependencies); continuing: annotate crashed",
+      ),
+      "warning",
+    );
+  });
+
   it("failure path does not advance state", async () => {
     const root = createRoot();
     writeFileSync(

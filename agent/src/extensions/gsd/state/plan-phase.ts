@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { errorMessage } from "../../../utils/error-message.js";
 import { resolvePlanningDir } from "../shared.js";
 import { parseMarkdownFrontmatter } from "./markdown.js";
 import { readPlanningConfig } from "./read.js";
@@ -414,26 +415,35 @@ export function runPlanPhaseSuccessHelpers(input: {
   cwd: string;
   phase: RoadmapPhase;
   phaseDir: string;
-}): void {
+}): string[] {
   const toolPath = join(input.cwd, "src", "resources", "gsd", "bin", "gsd-tools.cjs");
   const bundledToolPath = join(process.cwd(), "src", "resources", "gsd", "bin", "gsd-tools.cjs");
   const resolvedToolPath = existsSync(toolPath) ? toolPath : bundledToolPath;
-  execFileSync(
-    process.execPath,
-    [resolvedToolPath, "roadmap", "annotate-dependencies", input.phase.number],
+  const warnings: string[] = [];
+  const helpers = [
     {
-      cwd: input.cwd,
-      stdio: "pipe",
+      name: "annotate-dependencies",
+      args: [resolvedToolPath, "roadmap", "annotate-dependencies", input.phase.number],
     },
-  );
-  execFileSync(
-    process.execPath,
-    [resolvedToolPath, "gap-analysis", "--phase-dir", input.phaseDir],
     {
-      cwd: input.cwd,
-      stdio: "pipe",
+      name: "gap-analysis",
+      args: [resolvedToolPath, "gap-analysis", "--phase-dir", input.phaseDir],
     },
-  );
+  ];
+
+  for (const helper of helpers) {
+    try {
+      execFileSync(process.execPath, helper.args, {
+        cwd: input.cwd,
+        stdio: "pipe",
+      });
+    } catch (error) {
+      const message = errorMessage(error);
+      warnings.push(`Plan helper failed (${helper.name}); continuing: ${message}`);
+    }
+  }
+
+  return warnings;
 }
 
 export { PlanCheckerResultSchema };

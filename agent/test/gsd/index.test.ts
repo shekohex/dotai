@@ -1,8 +1,12 @@
 import { cp, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import gsdExtension from "../../src/extensions/gsd/index.ts";
+import {
+  listGsdSubagents,
+  setGsdSubagentSdkFactoryForTests,
+} from "../../src/extensions/gsd/subagents.ts";
 import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 type RegisteredCommand = {
@@ -42,6 +46,7 @@ async function copyFixture(name: string): Promise<string> {
 function createCommandContext(
   cwd: string,
   notifications: Array<{ message: string; level: string }>,
+  sessionId = "parent-session-id",
 ) {
   return {
     cwd,
@@ -50,6 +55,9 @@ function createCommandContext(
       notify(message: string, level: string) {
         notifications.push({ message, level });
       },
+    },
+    sessionManager: {
+      getSessionId: () => sessionId,
     },
   };
 }
@@ -139,4 +147,42 @@ test("registers both codebase-map and intel-refresh message renderers", () => {
   expect(fakePi.messageRenderers.has("gsd-help")).toBe(true);
   expect(fakePi.messageRenderers.has("gsd-codebase-map-summary")).toBe(true);
   expect(fakePi.messageRenderers.has("gsd-intel-refresh-summary")).toBe(true);
+});
+
+test("session_shutdown disposes only matching session-scoped GSD SDK", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const disposeFirst = vi.fn();
+  const disposeSecond = vi.fn();
+  const sdkFactory = vi
+    .fn()
+    .mockReturnValueOnce({ list: () => [{ name: "gsd-first" }], dispose: disposeFirst })
+    .mockReturnValueOnce({ list: () => [{ name: "gsd-second" }], dispose: disposeSecond });
+
+  setGsdSubagentSdkFactoryForTests(sdkFactory as never);
+  gsdExtension(fakePi as ExtensionAPI);
+
+  const firstContext = createCommandContext(
+    createTempDirSync("agent-gsd-index-first-"),
+    notifications,
+    "first",
+  );
+  const secondContext = createCommandContext(
+    createTempDirSync("agent-gsd-index-second-"),
+    notifications,
+    "second",
+  );
+
+  expect(listGsdSubagents(fakePi as ExtensionAPI, firstContext as never)).toHaveLength(1);
+  expect(listGsdSubagents(fakePi as ExtensionAPI, secondContext as never)).toHaveLength(1);
+
+  await emitHandlersWithResult(fakePi, "session_shutdown", {}, firstContext);
+
+  expect(disposeFirst).toHaveBeenCalledTimes(1);
+  expect(disposeSecond).toHaveBeenCalledTimes(0);
+  expect(listGsdSubagents(fakePi as ExtensionAPI, secondContext as never)).toHaveLength(1);
+  expect(sdkFactory).toHaveBeenCalledTimes(2);
+
+  setGsdSubagentSdkFactoryForTests(undefined);
+  expect(disposeSecond).toHaveBeenCalledTimes(1);
 });

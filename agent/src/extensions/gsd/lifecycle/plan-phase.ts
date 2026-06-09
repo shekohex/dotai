@@ -267,8 +267,8 @@ function finalizeSuccessfulPlanPhase(input: {
   phase: ReturnType<typeof resolveRoadmapPhase>;
   current: PlanPhaseArtifacts["current"];
   validPlans: ReturnType<typeof validateCanonicalPlanArtifacts>;
-}): void {
-  runPlanPhaseSuccessHelpers({
+}): string[] {
+  const warnings = runPlanPhaseSuccessHelpers({
     cwd: input.cwd,
     phase: input.phase,
     phaseDir: input.current.phaseDir,
@@ -279,6 +279,13 @@ function finalizeSuccessfulPlanPhase(input: {
     phasePrefix: input.current.phaseFilePrefix,
     validPlans: input.validPlans,
   });
+  return warnings;
+}
+
+function notifyPlanPhaseHelperWarnings(ctx: ExtensionCommandContext, warnings: string[]): void {
+  for (const warning of warnings) {
+    ctx.ui.notify(warning, "warning");
+  }
 }
 
 export async function handleGsdPlanPhase(
@@ -359,8 +366,14 @@ export async function handleGsdPlanPhase(
       await runPlanner(pi, ctx, currentArtifacts, latestIssues);
       validatedPlans = validateCanonicalPlanArtifacts(current.phaseDir, current.phaseFilePrefix);
       if (args.skipVerify === true) {
-        finalizeSuccessfulPlanPhase({ cwd: ctx.cwd, phase, current, validPlans: validatedPlans });
+        const warnings = finalizeSuccessfulPlanPhase({
+          cwd: ctx.cwd,
+          phase,
+          current,
+          validPlans: validatedPlans,
+        });
         ctx.ui.notify(`Planned ${validatedPlans.length} plan(s); verification skipped`, "info");
+        notifyPlanPhaseHelperWarnings(ctx, warnings);
         return;
       }
       const rawResult = await spawnStructuredRole(
@@ -380,8 +393,14 @@ export async function handleGsdPlanPhase(
       }
       writePlanCheckReport(current.phaseDir, current.phaseFilePrefix, rawResult, iteration);
       if (rawResult.approved) {
-        finalizeSuccessfulPlanPhase({ cwd: ctx.cwd, phase, current, validPlans: validatedPlans });
+        const warnings = finalizeSuccessfulPlanPhase({
+          cwd: ctx.cwd,
+          phase,
+          current,
+          validPlans: validatedPlans,
+        });
         ctx.ui.notify(`Planned ${validatedPlans.length} plan(s); check approved`, "info");
+        notifyPlanPhaseHelperWarnings(ctx, warnings);
         return;
       }
       latestIssues = rawResult.issues.map((issue) => `${issue.severity}: ${issue.description}`);

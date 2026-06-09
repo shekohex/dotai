@@ -5,6 +5,7 @@ import { syncBuiltInGsdModes } from "./modes.js";
 import { getGsdSettings } from "./settings.js";
 import { rememberGsdCwd } from "./state/cwd.js";
 import { detectExistingPlanning } from "./state/detect.js";
+import { disposeGsdSubagentSdkForSession } from "./subagents.js";
 import { registerGsdMessageRenderers } from "./ui/messages.js";
 import { applyPendingGsdWorkflowLaunch } from "./workflow-launch.js";
 
@@ -38,6 +39,10 @@ export default function gsdExtension(pi: ExtensionAPI): void {
       }
     }
     return systemPrompt === undefined ? undefined : { systemPrompt };
+  });
+
+  pi.on("session_shutdown", (_event, ctx) => {
+    disposeGsdSubagentSdkForSession(ctx);
   });
 
   registerGsdCommands(pi);

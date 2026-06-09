@@ -57,6 +57,7 @@ type SpawnSdkFactory = (pi: ExtensionAPI) => SpawnSdk;
 type SessionScopedSdkEntry = {
   sdk: SpawnSdk;
 };
+type SessionScopedSdkContext = Pick<ExtensionCommandContext, "cwd" | "sessionManager">;
 
 export type SpawnRoleResult = {
   sessionId: string;
@@ -95,7 +96,17 @@ function clearSessionScopedSdks(): void {
   sessionScopedSdks.clear();
 }
 
-function readParentSessionId(ctx: ExtensionCommandContext): string {
+export function disposeGsdSubagentSdkForSession(ctx: SessionScopedSdkContext): void {
+  const sessionId = readParentSessionId(ctx);
+  const entry = sessionScopedSdks.get(sessionId);
+  if (entry === undefined) {
+    return;
+  }
+  entry.sdk.dispose?.();
+  sessionScopedSdks.delete(sessionId);
+}
+
+function readParentSessionId(ctx: SessionScopedSdkContext): string {
   return ctx.sessionManager?.getSessionId?.() ?? `cwd:${ctx.cwd}`;
 }
 

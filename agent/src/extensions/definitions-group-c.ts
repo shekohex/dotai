@@ -3,7 +3,7 @@ import cacheGraphExtension from "./cache-graph/index.js";
 import contextPruneExtension from "./context-prune/index.js";
 import executorExtension from "./executor/index.js";
 import goalExtension from "./goal/index.js";
-// import gsdExtension from "./gsd/index.js";
+import gsdExtension from "./gsd/index.js";
 import interviewExtension from "./interview/index.js";
 import mermaidExtension from "./mermaid.js";
 import notifyExtension from "./notify/index.js";
@@ -25,8 +25,7 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "prompt-stash", factory: promptStashExtension },
   { id: "interview", factory: interviewExtension },
   { id: "plannotator", factory: plannotatorExtension },
-  // Disabled for not being used for now.
-  // { id: "gsd", factory: gsdExtension },
+  { id: "gsd", factory: gsdExtension },
   { id: "terminal-tmux-ui", factory: terminalTmuxUiExtension },
   { id: "pi-osc", factory: piOscExtension },
   { id: "warp", factory: warpExtension },

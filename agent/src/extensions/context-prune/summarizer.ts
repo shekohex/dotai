@@ -11,6 +11,7 @@ import type {
 } from "./types.js";
 import { serializeBatchForSummarizer } from "./batch-capture.js";
 import { errorMessage, isTextContent } from "./guards.js";
+import { modelForOpenAIResponses } from "../model-fallbacks.js";
 
 const RATE_LIMIT_FALLBACK_DELAY_MS = 2000;
 const MIN_RATE_LIMIT_DELAY_MS = 250;
@@ -125,18 +126,6 @@ function isRateLimitError(error: unknown): boolean {
   );
 }
 
-function modelForSummarizer(model: Model<Api>): Model<Api> {
-  if (model.provider !== "gemini") return model;
-
-  const baseUrl =
-    model.baseUrl
-      .replace(/\/v1beta\/?$/, "")
-      .replace(/\/v1\/?$/, "")
-      .replace(/\/+$/, "") + "/v1";
-
-  return { ...model, api: "openai-responses", baseUrl, reasoning: false };
-}
-
 function receivedTextChars(message: AssistantMessage): number {
   return message.content.reduce((sum, content) => {
     return isTextContent(content) ? sum + content.text.length : sum;
@@ -221,7 +210,7 @@ async function trySummarizeWithModel(
 
     // Pass the abort signal so the underlying fetch is cancelled immediately
     // when the user presses Esc while the tool is running.
-    const streamModel = modelForSummarizer(model);
+    const streamModel = modelForOpenAIResponses(model);
     const responseStream = stream(
       streamModel,
       {

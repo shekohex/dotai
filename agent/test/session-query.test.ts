@@ -160,11 +160,21 @@ describe("session-query extension", () => {
     const models = new Map([
       [
         "gemini/gemini-3.1-flash-lite-preview",
-        { provider: "gemini", id: "gemini-3.1-flash-lite-preview", api: "api" },
+        {
+          provider: "gemini",
+          id: "gemini-3.1-flash-lite-preview",
+          api: "gemini",
+          baseUrl: "https://litellm.example.test/v1beta",
+        },
       ],
       [
         "gemini/google-gemini-3.1-pro-preview",
-        { provider: "gemini", id: "google-gemini-3.1-pro-preview", api: "api" },
+        {
+          provider: "gemini",
+          id: "google-gemini-3.1-pro-preview",
+          api: "gemini",
+          baseUrl: "https://litellm.example.test/v1beta",
+        },
       ],
     ]);
     vi.mocked(stream).mockImplementation((model) => {
@@ -200,6 +210,14 @@ describe("session-query extension", () => {
     expect(vi.mocked(stream).mock.calls.map(([model]) => model.id)).toEqual([
       "gemini-3.1-flash-lite-preview",
       "google-gemini-3.1-pro-preview",
+    ]);
+    expect(vi.mocked(stream).mock.calls.map(([model]) => model.api)).toEqual([
+      "openai-responses",
+      "openai-responses",
+    ]);
+    expect(vi.mocked(stream).mock.calls.map(([model]) => model.baseUrl)).toEqual([
+      "https://litellm.example.test/v1",
+      "https://litellm.example.test/v1",
     ]);
     expect(result.content[0]?.text).toBe("Changed src/main.ts.");
   });

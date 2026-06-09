@@ -30,6 +30,18 @@ export function modelKey(model: { provider: string; id: string }): string {
   return `${model.provider}/${model.id}`;
 }
 
+export function modelForOpenAIResponses(model: Model<Api>): Model<Api> {
+  if (model.provider !== "gemini") return model;
+
+  const baseUrl =
+    model.baseUrl
+      .replace(/\/v1beta\/?$/, "")
+      .replace(/\/v1\/?$/, "")
+      .replace(/\/+$/, "") + "/v1";
+
+  return { ...model, api: "openai-responses", baseUrl, reasoning: false };
+}
+
 export function appendCurrentModelFallback(
   candidates: readonly ModelFallbackCandidate[],
   currentModel: Model<Api> | undefined,

@@ -10,6 +10,7 @@ import { errorMessage } from "../utils/error-message.js";
 import {
   DEFAULT_MODEL_FALLBACKS,
   isAbortSignalAborted,
+  modelForOpenAIResponses,
   resolveModelFallbackAuth,
   type ModelAuth,
 } from "./model-fallbacks.js";
@@ -117,7 +118,7 @@ async function summarizeCompaction(
   signal: AbortSignal | undefined,
 ): Promise<string> {
   const response = await complete(
-    modelAuth.model,
+    modelForOpenAIResponses(modelAuth.model),
     { messages: buildSummaryMessages(allMessages, previousSummary, customInstructions) },
     {
       apiKey: modelAuth.apiKey,

@@ -64,14 +64,7 @@ describe("ensureBuiltInGsdModes", () => {
 
     expect(built.modes["gsd-executor"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-executor"]?.modelId).toBe("gpt-5.5");
-    expect(built.modes["gsd-executor"]?.tools).toEqual([
-      "read",
-      "bash",
-      "edit",
-      "write",
-      "websearch",
-      "execute",
-    ]);
+    expect(built.modes["gsd-executor"]?.tools).toEqual(["*"]);
 
     expect(built.modes["gsd-verifier"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-verifier"]?.modelId).toBe("gpt-5.5");

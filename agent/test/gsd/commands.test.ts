@@ -1629,7 +1629,7 @@ test("gsd autocomplete shows dynamic subcommand hints", async () => {
       }),
       expect.objectContaining({
         value: "health",
-        description: expect.stringContaining("issues"),
+        description: expect.stringContaining("broken"),
       }),
       expect.objectContaining({
         value: "debug",

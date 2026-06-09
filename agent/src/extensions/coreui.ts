@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Key } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import { ThemeColorSchema, type ThemeColor } from "../mode-utils.js";
@@ -17,6 +18,7 @@ import {
   applyCoreUIWorkingIndicator,
   bindCoreUI,
   calculateTotalCost,
+  createAiAutocompleteBackend,
   createCorePromptEditorFactory,
   createCoreUIState,
   createProjectInfoRefresher,
@@ -26,6 +28,12 @@ import {
   startCoreUIWorkingMessageShimmer,
   stopCoreUIWorkingMessageShimmer,
 } from "./coreui/index.js";
+import { getAiAutocompleteSettings } from "./coreui/ai-autocomplete-settings.js";
+import {
+  saveAiAutocompleteSettings,
+  type AiAutocompleteSettings,
+} from "./coreui/ai-autocomplete-settings.js";
+import { getLatestAssistantSummary } from "./session-launch-utils.js";
 
 const ModeChangedEventSchema = Type.Object({
   mode: Type.Optional(Type.String()),
@@ -37,6 +45,8 @@ const ModeChangedEventSchema = Type.Object({
 });
 
 type ModeChangedEventData = Static<typeof ModeChangedEventSchema>;
+
+const AI_AUTOCOMPLETE_SHORTCUT = Key.ctrl(Key.period);
 
 function readCoreUIIdleState(ctx: ExtensionContext): boolean {
   try {
@@ -86,6 +96,9 @@ function requestRenderSafely(requestRender: (() => void) | undefined): void {
 function registerSessionStartHandler(input: {
   pi: ExtensionAPI;
   state: ReturnType<typeof createCoreUIState>;
+  aiAutocompleteSettings: AiAutocompleteSettings;
+  setTriggerAutocomplete: (trigger: (() => void) | undefined) => void;
+  setCancelAutocomplete: (cancel: (() => void) | undefined) => void;
   ensureToolOverridesRegistered: (tools: ReturnType<ExtensionAPI["getActiveTools"]>) => void;
   refreshUsageMetrics: (ctx: ExtensionContext) => void;
   refreshProjectInfo: (ctx: ExtensionContext, force: boolean) => void;
@@ -102,6 +115,14 @@ function registerSessionStartHandler(input: {
           createCorePromptEditorFactory(
             () => theme,
             () => readCoreUIIdleState(ctx),
+            {
+              backend: createAiAutocompleteBackend(ctx, input.aiAutocompleteSettings),
+              settings: input.aiAutocompleteSettings,
+              cwd: ctx.cwd,
+              getAssistantSummary: () => getLatestAssistantSummary(ctx),
+              setTriggerAutocomplete: input.setTriggerAutocomplete,
+              setCancelAutocomplete: input.setCancelAutocomplete,
+            },
           ),
         );
         bindCoreUI(ctx, input.pi, input.state, (nextRequestRender) => {
@@ -113,6 +134,128 @@ function registerSessionStartHandler(input: {
     } catch (error) {
       ignoreStaleSessionReplacementError(error);
     }
+  });
+}
+
+function registerAutocompleteCommand(
+  pi: ExtensionAPI,
+  settings: AiAutocompleteSettings,
+  triggerAutocomplete: () => void,
+  cancelAutocomplete: () => void,
+  requestRender: () => void,
+): void {
+  const persistSettings = async (): Promise<void> => {
+    await saveAiAutocompleteSettings(settings);
+    requestRender();
+  };
+
+  const tryPersistSettings = async (ctx: ExtensionContext): Promise<boolean> => {
+    try {
+      await persistSettings();
+      return true;
+    } catch (error) {
+      ctx.ui.notify(`Failed to save autocomplete settings: ${String(error)}`, "error");
+      return false;
+    }
+  };
+  const updateSettings = async (
+    ctx: ExtensionContext,
+    update: () => void,
+    options?: { cancelPendingAutocomplete?: boolean },
+  ): Promise<boolean> => {
+    const previous = { ...settings, models: [...settings.models] };
+    update();
+    if (options?.cancelPendingAutocomplete === true) {
+      cancelAutocomplete();
+    }
+    if (await tryPersistSettings(ctx)) return true;
+    Object.assign(settings, previous);
+    return false;
+  };
+
+  pi.registerCommand("autocomplete", {
+    description: "Configure AI autocomplete. Usage: /autocomplete status|on|off|eager|lazy",
+    getArgumentCompletions(prefix) {
+      const trimmed = prefix.trim();
+      return [
+        { value: "status", label: "status", description: "Show AI autocomplete status" },
+        { value: "on", label: "on", description: "Enable AI autocomplete" },
+        { value: "off", label: "off", description: "Disable AI autocomplete" },
+        { value: "eager", label: "eager", description: "Enable and trigger while typing" },
+        {
+          value: "lazy",
+          label: "lazy",
+          description: `Enable and trigger only with ${AI_AUTOCOMPLETE_SHORTCUT}`,
+        },
+        { value: "trigger", label: "trigger", description: "Trigger AI autocomplete now" },
+      ].filter((item) => item.value.startsWith(trimmed));
+    },
+    async handler(args, ctx) {
+      const command = args.trim();
+      if (command === "on") {
+        if (
+          !(await updateSettings(ctx, () => {
+            settings.enabled = true;
+          }))
+        )
+          return;
+        ctx.ui.notify("AI autocomplete enabled.", "info");
+        return;
+      }
+      if (command === "off") {
+        if (
+          !(await updateSettings(
+            ctx,
+            () => {
+              settings.enabled = false;
+            },
+            { cancelPendingAutocomplete: true },
+          ))
+        )
+          return;
+        ctx.ui.notify("AI autocomplete disabled.", "info");
+        return;
+      }
+      if (command === "eager") {
+        if (
+          !(await updateSettings(ctx, () => {
+            settings.enabled = true;
+            settings.mode = "eager";
+          }))
+        )
+          return;
+        ctx.ui.notify("AI autocomplete set to eager mode.", "info");
+        return;
+      }
+      if (command === "lazy") {
+        if (
+          !(await updateSettings(
+            ctx,
+            () => {
+              settings.enabled = true;
+              settings.mode = "lazy";
+            },
+            { cancelPendingAutocomplete: true },
+          ))
+        )
+          return;
+        ctx.ui.notify(`AI autocomplete set to lazy mode (${AI_AUTOCOMPLETE_SHORTCUT}).`, "info");
+        return;
+      }
+      if (command === "status" || command === "") {
+        ctx.ui.notify(
+          `AI autocomplete: ${settings.enabled ? "enabled" : "disabled"}, mode: ${settings.mode}, trigger: ${AI_AUTOCOMPLETE_SHORTCUT}`,
+          "info",
+        );
+        return;
+      }
+      if (command === "trigger") {
+        triggerAutocomplete();
+        return;
+      }
+
+      ctx.ui.notify("Usage: /autocomplete status|on|off|eager|lazy|trigger", "warning");
+    },
   });
 }
 
@@ -303,10 +446,44 @@ function createCoreUIBindings(pi: ExtensionAPI): {
 export default function coreUIExtension(pi: ExtensionAPI) {
   const ensureToolOverridesRegistered = registerCoreUIToolOverrides(pi);
   const bindings = createCoreUIBindings(pi);
+  const aiAutocompleteSettings = getAiAutocompleteSettings();
+  let triggerAutocomplete: (() => void) | undefined;
+  let cancelAutocomplete: (() => void) | undefined;
+
+  const triggerCurrentAutocomplete = (): void => {
+    triggerAutocomplete?.();
+  };
+  const cancelCurrentAutocomplete = (): void => {
+    cancelAutocomplete?.();
+  };
+
+  pi.registerShortcut(AI_AUTOCOMPLETE_SHORTCUT, {
+    description: "Trigger AI autocomplete",
+    handler: () => {
+      triggerCurrentAutocomplete();
+    },
+  });
+
+  registerAutocompleteCommand(
+    pi,
+    aiAutocompleteSettings,
+    triggerCurrentAutocomplete,
+    cancelCurrentAutocomplete,
+    () => {
+      requestRenderSafely(bindings.getRequestRender());
+    },
+  );
 
   registerSessionStartHandler({
     pi,
     state: bindings.state,
+    aiAutocompleteSettings,
+    setTriggerAutocomplete: (trigger) => {
+      triggerAutocomplete = trigger;
+    },
+    setCancelAutocomplete: (cancel) => {
+      cancelAutocomplete = cancel;
+    },
     ensureToolOverridesRegistered,
     refreshUsageMetrics: bindings.refreshUsageMetrics,
     refreshProjectInfo: bindings.refreshProjectInfo,

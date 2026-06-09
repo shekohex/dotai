@@ -50,6 +50,7 @@ timedTest("coreui editor placeholder timer ignores stale replacement context", (
       getActiveTools: () => [],
       registerTool: () => {},
       registerCommand: () => {},
+      registerShortcut: () => {},
       getThinkingLevel: () => "medium",
       exec: async () => ({ stdout: "", stderr: "", exitCode: 0, cancelled: false }),
     } as unknown as ExtensionAPI;

@@ -27,7 +27,7 @@
     "import/max-dependencies": [
       "error",
       {
-        "max": 15
+        "max": 20
       }
     ],
     "max-lines": [

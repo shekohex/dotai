@@ -1,4 +1,8 @@
 export { createCorePromptEditorFactory } from "./editor.js";
+export {
+  createAiAutocompleteBackend,
+  DebouncedAiAutocompleteRunner,
+} from "./ai-autocomplete-backend.js";
 export { bindCoreUI } from "./footer.js";
 export { createProjectInfoRefresher } from "./project-info.js";
 export { registerCoreUIToolOverrides } from "./tools.js";

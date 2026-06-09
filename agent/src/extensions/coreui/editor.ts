@@ -2,6 +2,9 @@ import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import type { ExtensionContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 import { CURSOR_MARKER, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { AiAutocompleteBackend, AiAutocompleteResult } from "./ai-autocomplete-backend.js";
+import { DebouncedAiAutocompleteRunner } from "./ai-autocomplete-backend.js";
+import type { AiAutocompleteSettings } from "./ai-autocomplete-settings.js";
 import {
   colorizeWorkflowLines,
   disarmWorkflowMode,
@@ -27,6 +30,7 @@ import { pickRandomWelcomeMessage } from "./whimsical.js";
 const PASTE_START = "\u001B[200~";
 const PASTE_END = "\u001B[201~";
 const CURSOR = "\u001B[7m \u001B[27m";
+const EDITOR_CURSOR = "\u001B[7m \u001B[0m";
 const CURSOR_SHAPES: Record<CursorShape, string> = {
   "blinking-block": "\u001B[1 q",
   "steady-block": "\u001B[2 q",
@@ -51,9 +55,17 @@ const CORE_PROMPT_EDITOR_CONFIG: CorePromptEditorConfig = {
 export function createCorePromptEditorFactory(
   getTheme: () => ExtensionContext["ui"]["theme"],
   isIdle: () => boolean,
+  aiAutocomplete?: {
+    backend: AiAutocompleteBackend;
+    settings: AiAutocompleteSettings;
+    cwd: string;
+    getAssistantSummary?: () => string | undefined;
+    setTriggerAutocomplete?: (trigger: (() => void) | undefined) => void;
+    setCancelAutocomplete?: (cancel: (() => void) | undefined) => void;
+  },
 ): (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => CorePromptEditor {
   return (tui, theme, keybindings) =>
-    new CorePromptEditor(tui, theme, keybindings, getTheme, isIdle);
+    new CorePromptEditor(tui, theme, keybindings, getTheme, isIdle, aiAutocomplete);
 }
 
 class CorePromptEditor extends CustomEditor {
@@ -67,6 +79,18 @@ class CorePromptEditor extends CustomEditor {
   private onSubmitHandler: ((text: string) => void) | undefined;
   private onChangeHandler: ((text: string) => void) | undefined;
   private workflowAnimationTimer: ReturnType<typeof setInterval> | undefined;
+  private readonly aiAutocomplete:
+    | {
+        backend: AiAutocompleteBackend;
+        settings: AiAutocompleteSettings;
+        cwd: string;
+        getAssistantSummary?: () => string | undefined;
+        setTriggerAutocomplete?: (trigger: (() => void) | undefined) => void;
+        setCancelAutocomplete?: (cancel: (() => void) | undefined) => void;
+        runner: DebouncedAiAutocompleteRunner;
+      }
+    | undefined;
+  private aiCompletion: { text: string; sourceText: string; cursorOffset: number } | undefined;
 
   constructor(
     tui: TUI,
@@ -74,13 +98,33 @@ class CorePromptEditor extends CustomEditor {
     keybindings: KeybindingsManager,
     getTheme: () => Theme,
     isIdle: () => boolean,
+    aiAutocomplete?: {
+      backend: AiAutocompleteBackend;
+      settings: AiAutocompleteSettings;
+      cwd: string;
+      getAssistantSummary?: () => string | undefined;
+      setTriggerAutocomplete?: (trigger: (() => void) | undefined) => void;
+      setCancelAutocomplete?: (cancel: (() => void) | undefined) => void;
+    },
   ) {
     super(tui, theme, keybindings, {
       paddingX: CORE_PROMPT_EDITOR_CONFIG.paddingX,
     });
     this.getTheme = getTheme;
     this.isIdle = isIdle;
+    this.aiAutocomplete = aiAutocomplete
+      ? {
+          ...aiAutocomplete,
+          runner: new DebouncedAiAutocompleteRunner(aiAutocomplete.settings.debounceMs),
+        }
+      : undefined;
     this.installCallbackHooks();
+    this.aiAutocomplete?.setTriggerAutocomplete?.(() => {
+      this.triggerAiAutocomplete();
+    });
+    this.aiAutocomplete?.setCancelAutocomplete?.(() => {
+      this.cancelAiAutocomplete();
+    });
     this.startPlaceholderRotation();
   }
 
@@ -91,10 +135,22 @@ class CorePromptEditor extends CustomEditor {
   dispose(): void {
     this.stopPlaceholderRotation();
     this.stopWorkflowAnimation();
+    this.aiAutocomplete?.runner.cancel();
+    this.aiAutocomplete?.setTriggerAutocomplete?.(undefined);
+    this.aiAutocomplete?.setCancelAutocomplete?.(undefined);
   }
 
   override handleInput(data: string): void {
     if (!data) {
+      return;
+    }
+
+    if (data === "\t" && !this.isShowingAutocomplete() && this.acceptAiCompletion()) {
+      return;
+    }
+
+    if (data === "\u001B" && this.aiCompletion !== undefined) {
+      this.clearAiCompletion();
       return;
     }
 
@@ -176,6 +232,8 @@ class CorePromptEditor extends CustomEditor {
       this.applyPlaceholder(lines, width, paddingX);
     }
 
+    this.applyInlineAiCompletionHint(lines, width, paddingX);
+
     const workflowModeState = getWorkflowModeState();
     syncWorkflowModeState(workflowModeState, this.getText());
     this.reconcileWorkflowAnimation(workflowModeState.active);
@@ -198,6 +256,16 @@ class CorePromptEditor extends CustomEditor {
     return (
       lines.slice(0, line).join("\n") + (line > 0 ? "\n" : "") + (lines[line] ?? "").slice(0, col)
     );
+  }
+
+  private getCursorOffset(): number {
+    return this.getTextBeforeCursor().length;
+  }
+
+  private isCursorAtTextEnd(): boolean {
+    const lines = this.getLines();
+    const cursor = this.getCursor();
+    return cursor.line === lines.length - 1 && cursor.col === (lines.at(-1) ?? "").length;
   }
 
   private reconcileWorkflowAnimation(active: boolean): void {
@@ -287,6 +355,7 @@ class CorePromptEditor extends CustomEditor {
 
   private readonly handleChange = (text: string): void => {
     this.currentText = text;
+    this.clearAiCompletion(false);
 
     if (text.length > 0) {
       this.stopPlaceholderRotation();
@@ -295,7 +364,152 @@ class CorePromptEditor extends CustomEditor {
     }
 
     this.onChangeHandler?.(text);
+    if (this.aiAutocomplete?.settings.mode === "eager") {
+      this.scheduleAiAutocomplete(text);
+    } else {
+      this.aiAutocomplete?.runner.cancel();
+    }
   };
+
+  private triggerAiAutocomplete(): void {
+    if (this.aiAutocomplete === undefined || !this.aiAutocomplete.settings.enabled) {
+      return;
+    }
+
+    if (!this.isCursorAtTextEnd()) {
+      this.clearAiCompletion();
+      return;
+    }
+
+    this.clearAiCompletion(false);
+    const text = this.getText();
+    const cursorOffset = this.getCursorOffset();
+    this.aiAutocomplete.runner.runNow(
+      (signal) =>
+        this.aiAutocomplete!.backend.complete({
+          text,
+          cursorOffset,
+          cwd: this.aiAutocomplete!.cwd,
+          assistantSummary: this.aiAutocomplete!.settings.includeAssistantSummary
+            ? this.aiAutocomplete!.getAssistantSummary?.()
+            : undefined,
+          signal,
+        }),
+      (result) => {
+        this.applyAiAutocompleteResult(result, text, cursorOffset);
+      },
+    );
+  }
+
+  private cancelAiAutocomplete(): void {
+    this.aiAutocomplete?.runner.cancel();
+    this.clearAiCompletion();
+  }
+
+  private scheduleAiAutocomplete(text: string): void {
+    if (this.aiAutocomplete === undefined || !this.aiAutocomplete.settings.enabled) {
+      this.aiAutocomplete?.runner.cancel();
+      return;
+    }
+
+    if (!this.isCursorAtTextEnd()) {
+      this.aiAutocomplete.runner.cancel();
+      return;
+    }
+
+    const cursorOffset = this.getCursorOffset();
+    this.aiAutocomplete.runner.schedule(
+      (signal) =>
+        this.aiAutocomplete!.backend.complete({
+          text,
+          cursorOffset,
+          cwd: this.aiAutocomplete!.cwd,
+          assistantSummary: this.aiAutocomplete!.settings.includeAssistantSummary
+            ? this.aiAutocomplete!.getAssistantSummary?.()
+            : undefined,
+          signal,
+        }),
+      (result) => {
+        this.applyAiAutocompleteResult(result, text, cursorOffset);
+      },
+    );
+  }
+
+  private applyAiAutocompleteResult(
+    result: AiAutocompleteResult,
+    sourceText: string,
+    cursorOffset: number,
+  ): void {
+    if (!result.text || this.getText() !== sourceText || this.getCursorOffset() !== cursorOffset) {
+      return;
+    }
+
+    this.aiCompletion = { text: result.text, sourceText, cursorOffset };
+    this.tui.requestRender();
+  }
+
+  private acceptAiCompletion(): boolean {
+    if (this.aiCompletion === undefined) {
+      return false;
+    }
+
+    if (!this.isCursorAtTextEnd()) {
+      this.clearAiCompletion();
+      return false;
+    }
+
+    if (
+      this.getText() !== this.aiCompletion.sourceText ||
+      this.getCursorOffset() !== this.aiCompletion.cursorOffset
+    ) {
+      this.clearAiCompletion();
+      return false;
+    }
+
+    const text = this.aiCompletion.text;
+    this.clearAiCompletion(false);
+    this.insertTextAtCursor(text);
+    return true;
+  }
+
+  private clearAiCompletion(render = true): void {
+    if (this.aiCompletion === undefined) {
+      return;
+    }
+    this.aiCompletion = undefined;
+    if (render) this.tui.requestRender();
+  }
+
+  private applyInlineAiCompletionHint(lines: string[], _width: number, _paddingX: number): void {
+    if (this.aiCompletion === undefined || !this.isCursorAtTextEnd()) {
+      return;
+    }
+
+    const markerIndex = lines.findIndex(
+      (line) => line.includes(CURSOR_MARKER) || line.includes(EDITOR_CURSOR),
+    );
+    if (markerIndex === -1) return;
+
+    const line = lines[markerIndex] ?? "";
+    const markerStart = line.indexOf(CURSOR_MARKER);
+    const cursorIndex = line.indexOf(EDITOR_CURSOR, markerStart === -1 ? 0 : markerStart);
+    if (cursorIndex === -1) return;
+
+    const hintStart = cursorIndex + EDITOR_CURSOR.length;
+    const beforeHint = line.slice(0, hintStart);
+    const afterHint = line.slice(hintStart);
+    const availableWidth = visibleWidth(afterHint);
+    if (availableWidth === 0) return;
+
+    const hint = truncateToWidth(
+      this.getTheme().fg("dim", this.aiCompletion.text),
+      availableWidth,
+      "…",
+    );
+    const hintWidth = visibleWidth(hint);
+    lines[markerIndex] =
+      `${beforeHint}${hint}${" ".repeat(Math.max(0, visibleWidth(afterHint) - hintWidth))}`;
+  }
 
   private startPlaceholderRotation(): void {
     if (this.currentText.length > 0) {

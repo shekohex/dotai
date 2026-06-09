@@ -33,6 +33,7 @@ timedTest("coreui applies custom pastel working indicator", () => {
     getActiveTools: () => [],
     registerTool: () => {},
     registerCommand: () => {},
+    registerShortcut: () => {},
     getThinkingLevel: () => "medium",
     exec: async () => ({ stdout: "", stderr: "", exitCode: 0, cancelled: false }),
   } as unknown as ExtensionAPI;

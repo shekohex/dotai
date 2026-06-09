@@ -64,6 +64,17 @@ export function getConversationMessages(ctx: ExtensionContext) {
     .map((entry) => entry.message);
 }
 
+export function getLatestAssistantSummary(ctx: ExtensionContext): string | undefined {
+  const messages = getConversationMessages(ctx);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "assistant") continue;
+    const text = extractMessageText(message.content);
+    return text.length > 0 ? text : undefined;
+  }
+  return undefined;
+}
+
 export function parseModelOverride(
   value: string,
 ): { provider: string; modelId: string } | undefined {

@@ -4,6 +4,7 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { Static, TSchema } from "typebox";
+import { Value } from "typebox/value";
 
 import { createTextComponent } from "../extensions/coreui/tools-render.js";
 import { isStaleSessionReplacementContextError } from "../extensions/session-replacement.js";
@@ -29,8 +30,9 @@ type BootstrapAwareExtensionApi = ExtensionAPI & {
 };
 
 type StructuredOutputToolDetails = {
-  captured: true;
+  captured: boolean;
   keys: string[];
+  error?: string;
 };
 
 export type StructuredOutputCaptureHandler<TSchemaValue extends TSchema> = (
@@ -91,10 +93,28 @@ function parseStructuredOutputToolDetails(value: unknown): StructuredOutputToolD
   }
   const captured = record.captured;
   const keys = record.keys;
-  if (captured !== true || !Array.isArray(keys) || !keys.every((key) => typeof key === "string")) {
+  if (
+    typeof captured !== "boolean" ||
+    !Array.isArray(keys) ||
+    !keys.every((key) => typeof key === "string")
+  ) {
     return undefined;
   }
-  return { captured: true, keys };
+  const error = typeof record.error === "string" ? record.error : undefined;
+  return { captured, keys, error };
+}
+
+function formatStructuredOutputValidationError<TSchemaValue extends TSchema>(
+  schema: TSchemaValue,
+  params: unknown,
+): string {
+  const firstError = [...Value.Errors(schema, params)][0];
+  if (firstError === undefined) {
+    return "Structured output does not match schema.";
+  }
+  const errorPath = "path" in firstError ? firstError.path : undefined;
+  const path = typeof errorPath === "string" && errorPath.length > 0 ? errorPath : "/";
+  return `Structured output does not match schema at ${path}: ${firstError.message}`;
 }
 
 function renderStructuredOutputResult(
@@ -140,6 +160,14 @@ export function createStructuredOutputTool<TSchemaValue extends TSchema>(
       "Submit the final structured JSON response. Use this tool exactly once as the final action.",
     parameters: schema,
     execute(_toolCallId, params: Static<TSchemaValue>, _signal, _onUpdate, ctx) {
+      if (!Value.Check(schema, params)) {
+        const error = formatStructuredOutputValidationError(schema, params);
+        return Promise.resolve({
+          content: [{ type: "text" as const, text: error }],
+          details: { captured: false as const, keys: listStructuredKeys(params), error },
+          isError: true,
+        });
+      }
       onCapture(params, ctx);
       return Promise.resolve({
         content: [{ type: "text" as const, text: "Structured output captured." }],

@@ -203,10 +203,11 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
       completedAt: now,
     };
 
+    await this.hooks.persistState(terminal);
+
     this.states.set(terminal.sessionId, terminal);
     this.activeSessionIds.delete(terminal.sessionId);
     cleanupSubagentPersistenceArtifacts(terminal.sessionId);
-    await this.hooks.persistState(terminal);
     this.stopPollingIfIdle();
 
     const structuredErrorText = formatStructuredOutputError(terminal.structuredError);

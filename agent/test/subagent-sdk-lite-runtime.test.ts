@@ -7,6 +7,7 @@ import { createLiteSessionResources } from "../src/subagent-sdk/lite-session-res
 import { buildLiteResumePrompt } from "../src/subagent-sdk/lite-resume-prompt.ts";
 import { LiteRuntime } from "../src/subagent-sdk/lite-runtime.ts";
 import { STRUCTURED_OUTPUT_TOOL_NAME } from "../src/subagent-sdk/bootstrap-core.ts";
+import { createStructuredOutputTool } from "../src/subagent-sdk/bootstrap.ts";
 import { readChildSessionOutcome } from "../src/subagent-sdk/persistence.ts";
 import type { RuntimeSubagent } from "../src/subagent-sdk/types.ts";
 import { createTempDir } from "./test-utils/temp-paths.ts";
@@ -258,5 +259,83 @@ test("lite StructuredOutput tool persists structured output to child session", a
   await expect(readChildSessionOutcome(sessionPath)).resolves.toMatchObject({
     failed: false,
     structured: { answer: "persisted" },
+  });
+});
+
+test("lite StructuredOutput rejects invalid schema shape so runtime retries", async () => {
+  const schema = Type.Object({ answer: Type.String() });
+  const structuredCapture: { value?: unknown } = {};
+  const structuredOutputTool = createStructuredOutputTool(schema, (params) => {
+    structuredCapture.value = params;
+  });
+  const promptCalls: string[] = [];
+  const runtime = new LiteRuntime({} as never, {
+    kind: "lite",
+    hooks: {
+      persistState() {
+        return Promise.resolve();
+      },
+      persistMessage() {
+        return Promise.resolve();
+      },
+      emitStatusMessage() {},
+      renderWidget() {},
+    },
+  });
+  const sessionId = "lite-structured-retry";
+  const state = createRuntimeSubagent({
+    sessionId,
+    outputFormat: { type: "json_schema", schema, retryCount: 2 },
+  });
+  const fakeSession = {
+    async prompt(prompt: string) {
+      promptCalls.push(prompt);
+      await structuredOutputTool.execute(
+        `tool-call-${promptCalls.length}`,
+        promptCalls.length === 1 ? ({ answer: 123 } as never) : { answer: "ok" },
+        undefined,
+        undefined,
+        { shutdown() {} } as never,
+      );
+    },
+    getLastAssistantText() {
+      return "done";
+    },
+    getSessionStats() {
+      return {
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        cost: 0,
+      };
+    },
+    dispose() {},
+  };
+  const live = {
+    session: fakeSession,
+    unsubscribe() {},
+    structuredCapture,
+    abortController: new AbortController(),
+  };
+  const harness = runtime as unknown as {
+    states: Map<string, RuntimeSubagent>;
+    sessions: Map<string, typeof live>;
+    runPromptWithStructuredRetries(
+      sessionId: string,
+      prompt: string,
+      live: typeof live,
+    ): Promise<void>;
+    completeSession(sessionId: string, live: typeof live): Promise<void>;
+  };
+  harness.states.set(sessionId, state);
+  harness.sessions.set(sessionId, live);
+
+  await harness.runPromptWithStructuredRetries(sessionId, "initial", live);
+  await harness.completeSession(sessionId, live);
+
+  expect(promptCalls).toHaveLength(2);
+  expect(promptCalls[1]).toMatch(/Retries left: 1/u);
+  expect(harness.states.get(sessionId)).toMatchObject({
+    status: "completed",
+    structured: { answer: "ok" },
+    structuredError: undefined,
   });
 });

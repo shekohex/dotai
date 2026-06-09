@@ -3171,6 +3171,75 @@ timedTest("SubagentRuntime removes temp persistence artifacts after completion",
   }
 });
 
+timedTest(
+  "SubagentRuntime keeps temp persistence artifacts when terminal persist fails",
+  async () => {
+    const fakePi = new FakePi();
+    const fakeMux = new FakeMuxAdapter();
+    const runtime = new SubagentRuntime(
+      fakePi as unknown as ExtensionAPI,
+      fakeMux,
+      () => "pi --no-session fake",
+    );
+
+    try {
+      const ctx = createFakeContext({ cwd: process.cwd(), sessionFile: "/tmp/parent.jsonl" });
+      const started = await runtime.spawn(
+        {
+          name: "worker-persist-fails",
+          task: "Inspect the failing tests",
+          persisted: false,
+        },
+        ctx,
+      );
+      const sessionId = started.state.sessionId;
+
+      await fs.mkdir(path.dirname(getParentInjectedInputMarkerPath(sessionId)), {
+        recursive: true,
+      });
+      await fs.writeFile(
+        getParentInjectedInputMarkerPath(sessionId),
+        JSON.stringify({ expiresAt: Date.now() + 5_000 }),
+        "utf8",
+      );
+      activateAutoExitTimeoutMode(sessionId);
+      writeEphemeralChildSessionOutcome(sessionId, {
+        summary: "Done",
+        failed: false,
+      });
+
+      const originalAppendEntry = fakePi.appendEntry.bind(fakePi);
+      fakePi.appendEntry = (customType: string, data?: unknown): void => {
+        if (
+          customType === SUBAGENT_STATE_ENTRY &&
+          typeof data === "object" &&
+          data !== null &&
+          "status" in data &&
+          data.status === "completed"
+        ) {
+          throw new Error("persist failed");
+        }
+        originalAppendEntry(customType, data);
+      };
+
+      await expect(
+        (
+          runtime as unknown as { finalizeInactiveSubagent(state: RuntimeSubagent): Promise<void> }
+        ).finalizeInactiveSubagent(started.state),
+      ).rejects.toThrow("persist failed");
+
+      await expect(fs.stat(getParentInjectedInputMarkerPath(sessionId))).resolves.toBeTruthy();
+      await expect(fs.stat(getAutoExitTimeoutModeMarkerPath(sessionId))).resolves.toBeTruthy();
+      await expect(fs.stat(getEphemeralChildOutcomePath(sessionId))).resolves.toBeTruthy();
+    } finally {
+      runtime.dispose();
+      for (const state of runtime.listStates()) {
+        cleanupSubagentPersistenceArtifacts(state.sessionId);
+      }
+    }
+  },
+);
+
 timedTest("readChildSessionOutcome extracts the last assistant summary", async () => {
   const dir = await createTempDir("agent-subagent-outcome-");
   const sessionPath = path.join(dir, "child.jsonl");

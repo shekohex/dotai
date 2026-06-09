@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { execFileSync } from "node:child_process";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
@@ -206,6 +206,13 @@ export function computeLocalHealthSummary(cwd: string): HealthSummary {
       message: "REQUIREMENTS.md not found",
     });
   }
+  for (const issue of snapshot.readIssues) {
+    issues.push({
+      severity: "warning",
+      code: "WLOCAL_FRONTMATTER",
+      message: formatPlanningReadIssue(cwd, issue),
+    });
+  }
   if (snapshot.phases.length === 0 && roadmapPhases.length === 0) {
     issues.push({ severity: "warning", code: "WLOCAL_PHASES", message: "No phases found" });
   }
@@ -258,6 +265,11 @@ export function computeLocalHealthSummary(cwd: string): HealthSummary {
     healthy: status !== "broken",
     issues,
   };
+}
+
+function formatPlanningReadIssue(cwd: string, issue: { path: string; message: string }): string {
+  const path = relative(cwd, issue.path) || issue.path;
+  return `${path}: ${issue.message}`;
 }
 
 export function deriveHealthContextWindow(cwd: string): {

@@ -645,6 +645,14 @@ function getMapCodebaseCompletions(
 }
 
 export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | null {
+  try {
+    return getGsdArgumentCompletionsUnsafe(prefix);
+  } catch {
+    return getFallbackArgumentCompletions(prefix, ".planning warning: run /gsd health");
+  }
+}
+
+function getGsdArgumentCompletionsUnsafe(prefix: string): AutocompleteItem[] | null {
   const cwd = getLastKnownGsdCwd();
   const items = subcommands.map((item) => {
     const hint = cwd === undefined ? undefined : getGsdSubcommandHint(cwd, item.value);
@@ -733,5 +741,32 @@ export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | 
     return getFlagItems(subcommand, `${subcommand} `);
   }
 
+  return filterItems(getFlagItems(subcommand, `${subcommand} `), token);
+}
+
+function getFallbackArgumentCompletions(
+  prefix: string,
+  warning: string,
+): AutocompleteItem[] | null {
+  const items = subcommands.map((item) => ({
+    value: item.value,
+    label: item.value,
+    description: `${item.description} • ${warning}`,
+  }));
+  const { trimmed, token, trailingSpace } = getTrailingToken(prefix);
+  if (trimmed.length === 0) {
+    return items;
+  }
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0 || (tokens.length === 1 && !trailingSpace)) {
+    return filterItems(items, token);
+  }
+  const subcommand = subcommands.find((item) => item.value === tokens[0])?.value;
+  if (subcommand === undefined) {
+    return filterItems(items, token);
+  }
+  if (trailingSpace) {
+    return getFlagItems(subcommand, `${subcommand} `);
+  }
   return filterItems(getFlagItems(subcommand, `${subcommand} `), token);
 }

@@ -1,6 +1,6 @@
 import { Value } from "typebox/value";
 import type { TObject, Static } from "typebox";
-import { parseDocument } from "yaml";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { asRecord } from "../../../utils/unknown-data.js";
 
 type FrontmatterResult<TSchema extends TObject> = {
@@ -29,14 +29,18 @@ export function parseMarkdownFrontmatter<TSchema extends TObject>(
     throw new Error("Unterminated frontmatter");
   }
 
-  const raw = lines.slice(1, closingLine).join("\n");
-  const body = lines.slice(closingLine + 1).join("\n");
-  const document = parseDocument(raw, { prettyErrors: false });
-  if (document.errors.length > 0) {
-    throw new Error(`Invalid frontmatter: ${document.errors[0]?.message ?? "unknown"}`);
+  let parsed: unknown;
+  let body: string;
+  try {
+    const result = parseFrontmatter(normalized);
+    parsed = result.frontmatter;
+    body = result.body;
+  } catch (error) {
+    throw new Error(`Invalid frontmatter: ${error instanceof Error ? error.message : "unknown"}`, {
+      cause: error,
+    });
   }
 
-  const parsed = document.toJS() as unknown;
   const candidate = asRecord(parsed);
   if (candidate === undefined) {
     throw new Error("Invalid frontmatter: must be object");

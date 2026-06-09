@@ -26,6 +26,7 @@ export type PlanningSnapshot = {
   config?: PlanningConfig;
   state?: StateFrontmatter;
   stateBody?: string;
+  readIssues: PlanningReadIssue[];
   roadmap?: string;
   project?: string;
   requirements?: string;
@@ -33,6 +34,11 @@ export type PlanningSnapshot = {
   milestones: string[];
   pendingTodos: string[];
   phases: PhaseSnapshot[];
+};
+
+export type PlanningReadIssue = {
+  path: string;
+  message: string;
 };
 
 export type PhaseSnapshot = {
@@ -67,14 +73,18 @@ export function readPlanningConfig(cwd: string): PlanningConfig | undefined {
 
 export function readStateFrontmatter(
   cwd: string,
-): { frontmatter: StateFrontmatter; body: string } | undefined {
+): { frontmatter: StateFrontmatter; body: string; issue?: PlanningReadIssue } | undefined {
   const statePath = join(resolvePlanningDir(cwd), "STATE.md");
   if (!existsSync(statePath)) {
     return undefined;
   }
   const content = readFileSync(statePath, "utf8");
   if (content.startsWith("---\n")) {
-    return parseMarkdownFrontmatter(content, StateFrontmatterSchema);
+    try {
+      return parseMarkdownFrontmatter(content, StateFrontmatterSchema);
+    } catch (error) {
+      return { frontmatter: {}, body: content, issue: createFrontmatterIssue(statePath, error) };
+    }
   }
   const loose = readLooseKeyValueSection(content);
   const candidate: Record<string, unknown> = {};
@@ -94,6 +104,7 @@ export function readPlanningSnapshot(cwd: string): PlanningSnapshot {
   const milestonesDir = join(planningDir, "milestones");
   const pendingTodosDir = join(planningDir, "todos", "pending");
   const state = readStateFrontmatter(cwd);
+  const readIssues = state?.issue === undefined ? [] : [state.issue];
   const roadmapPath = join(planningDir, "ROADMAP.md");
   const projectPath = join(planningDir, "PROJECT.md");
   const requirementsPath = join(planningDir, "REQUIREMENTS.md");
@@ -102,6 +113,7 @@ export function readPlanningSnapshot(cwd: string): PlanningSnapshot {
     config: readPlanningConfig(cwd),
     state: state?.frontmatter,
     stateBody: state?.body,
+    readIssues,
     roadmap: existsSync(roadmapPath) ? readFileSync(roadmapPath, "utf8") : undefined,
     project: existsSync(projectPath) ? readFileSync(projectPath, "utf8") : undefined,
     requirements: existsSync(requirementsPath) ? readFileSync(requirementsPath, "utf8") : undefined,
@@ -126,12 +138,16 @@ export function readPlanningSnapshot(cwd: string): PlanningSnapshot {
     phases: existsSync(phasesDir)
       ? readdirSync(phasesDir, { withFileTypes: true })
           .filter((entry) => entry.isDirectory())
-          .map((entry) => readPhaseSnapshot(join(phasesDir, entry.name), entry.name))
+          .map((entry) => readPhaseSnapshot(join(phasesDir, entry.name), entry.name, readIssues))
       : [],
   };
 }
 
-function readPhaseSnapshot(phasePath: string, phaseId: string): PhaseSnapshot {
+function readPhaseSnapshot(
+  phasePath: string,
+  phaseId: string,
+  readIssues: PlanningReadIssue[],
+): PhaseSnapshot {
   const entries = existsSync(phasePath) ? readdirSync(phasePath) : [];
   const plans: PlanFile[] = [];
   const summaries: string[] = [];
@@ -145,7 +161,13 @@ function readPhaseSnapshot(phasePath: string, phaseId: string): PhaseSnapshot {
     const filePath = join(phasePath, fileName);
     if (fileName.endsWith("-PLAN.md")) {
       const content = readFileSync(filePath, "utf8");
-      const parsed = parseMarkdownFrontmatter(content, PlanFrontmatterSchema);
+      let parsed: ReturnType<typeof parseMarkdownFrontmatter<typeof PlanFrontmatterSchema>>;
+      try {
+        parsed = parseMarkdownFrontmatter(content, PlanFrontmatterSchema);
+      } catch (error) {
+        readIssues.push(createFrontmatterIssue(filePath, error));
+        continue;
+      }
       plans.push({
         path: filePath,
         fileName,
@@ -194,6 +216,14 @@ function readPhaseSnapshot(phasePath: string, phaseId: string): PhaseSnapshot {
     uats,
     context,
     research,
+  };
+}
+
+function createFrontmatterIssue(path: string, error: unknown): PlanningReadIssue {
+  const detail = error instanceof Error ? error.message : "unknown error";
+  return {
+    path,
+    message: `invalid frontmatter (${detail}); fix YAML value types or remove invalid field`,
   };
 }
 

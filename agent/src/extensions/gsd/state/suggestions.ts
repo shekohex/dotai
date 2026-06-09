@@ -112,7 +112,11 @@ export function getGsdSubcommandHint(cwd: string, subcommand: string): string | 
       if (health.status === "healthy") {
         return "healthy";
       }
-      return `${health.status} • ${health.issues.length} issues`;
+      const firstIssue = health.issues[0];
+      if (firstIssue === undefined) {
+        return health.status;
+      }
+      return `${health.status} • ${firstIssue.code}: ${firstIssue.message}`;
     }
     default:
       return undefined;

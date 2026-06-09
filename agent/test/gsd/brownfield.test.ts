@@ -2,11 +2,13 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { computeHealth, computeLocalHealthSummary } from "../../src/extensions/gsd/state/health.js";
+import { getGsdArgumentCompletions } from "../../src/extensions/gsd/autocomplete.js";
 import { computeProgress } from "../../src/extensions/gsd/state/progress.js";
 import { readPlanningSnapshot } from "../../src/extensions/gsd/state/read.js";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.js";
 import { computeStats, computeStructuredStats } from "../../src/extensions/gsd/state/stats.js";
 import { detectExistingPlanning } from "../../src/extensions/gsd/state/detect.js";
+import { rememberGsdCwd } from "../../src/extensions/gsd/state/cwd.js";
 import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 const fixtures = join(import.meta.dirname, "fixtures");
@@ -20,6 +22,87 @@ describe("brownfield continuation", () => {
       expect(result.projectName).toBe("Brownfield Demo");
       expect(result.phaseCount).toBe(2);
     }
+  });
+
+  it("does not throw autocomplete when brownfield plan frontmatter has non-string values", () => {
+    const root = createTempDirSync("agent-gsd-autocomplete-bad-plan-frontmatter-");
+    mkdirSync(join(root, ".planning", "phases", "1-setup"), { recursive: true });
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(
+      join(root, ".planning", "ROADMAP.md"),
+      `# Roadmap: Demo
+
+### Phase 1: Setup
+Plans:
+- [ ] 01-01: Bad frontmatter
+`,
+    );
+    writeFileSync(
+      join(root, ".planning", "phases", "1-setup", "01-01-PLAN.md"),
+      `---
+phase: 01
+plan: 01
+type:
+  nested: invalid
+wave: 1
+depends_on: []
+files_modified: []
+autonomous: true
+must_haves: []
+---
+# Plan
+`,
+    );
+    rememberGsdCwd(root);
+
+    expect(() => getGsdArgumentCompletions("")).not.toThrow();
+    expect(getGsdArgumentCompletions("")?.some((item) => item.value === "next")).toBe(true);
+    expect(computeLocalHealthSummary(root).issues).toContainEqual(
+      expect.objectContaining({
+        code: "WLOCAL_FRONTMATTER",
+        message: expect.stringContaining(
+          ".planning/phases/1-setup/01-01-PLAN.md: invalid frontmatter",
+        ),
+      }),
+    );
+    expect(computeLocalHealthSummary(root).issues).toContainEqual(
+      expect.objectContaining({
+        code: "WLOCAL_FRONTMATTER",
+        message: expect.stringContaining("fix YAML value types or remove invalid field"),
+      }),
+    );
+  });
+
+  it("does not throw autocomplete when STATE frontmatter has invalid string fields", () => {
+    const root = createTempDirSync("agent-gsd-autocomplete-bad-state-frontmatter-");
+    mkdirSync(join(root, ".planning"), { recursive: true });
+    writeFileSync(join(root, ".planning", "PROJECT.md"), "# Demo\n");
+    writeFileSync(
+      join(root, ".planning", "STATE.md"),
+      `---
+current_plan:
+  nested: invalid
+status: Ready
+---
+State body
+`,
+    );
+    rememberGsdCwd(root);
+
+    expect(() => getGsdArgumentCompletions("")).not.toThrow();
+    expect(getGsdArgumentCompletions("")?.some((item) => item.value === "progress")).toBe(true);
+    expect(computeLocalHealthSummary(root).issues).toContainEqual(
+      expect.objectContaining({
+        code: "WLOCAL_FRONTMATTER",
+        message: expect.stringContaining(".planning/STATE.md: invalid frontmatter"),
+      }),
+    );
+    expect(computeLocalHealthSummary(root).issues).toContainEqual(
+      expect.objectContaining({
+        code: "WLOCAL_FRONTMATTER",
+        message: expect.stringContaining("fix YAML value types or remove invalid field"),
+      }),
+    );
   });
 
   it("computes progress from existing .planning files", () => {

@@ -74,7 +74,7 @@ async function renderCustomComponent(
 
 describe("gsd local health summary paths", () => {
   it("autocomplete health hint uses local summary instead of bundled validator", () => {
-    expect(getGsdSubcommandHint(createRoot(), "health")).toBe("degraded • 1 issues");
+    expect(getGsdSubcommandHint(createRoot(), "health")).toBe("degraded • WLOCAL: local summary");
   });
 
   it("dashboard refresh uses local summary instead of bundled validator", async () => {

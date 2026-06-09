@@ -13,6 +13,7 @@ import {
 import { parseNotifyActionResponseEvent, parseNotifyPublishEvent } from "./events.js";
 import { registerNotifyCommands } from "./commands.js";
 import { resolveNotifySettings } from "./settings.js";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import {
   NOTIFY_ACTION_INVOKED_EVENT,
   NOTIFY_ACTION_RESPONSE_EVENT,
@@ -143,6 +144,40 @@ function splitLines(buffer: string): { lines: string[]; rest: string } {
   return { lines: parts, rest };
 }
 
+function hasInteractiveUi(ctx: ExtensionContext | undefined): boolean {
+  if (ctx === undefined) return false;
+  try {
+    return ctx.hasUI;
+  } catch (error) {
+    if (isStaleSessionReplacementContextError(error)) return false;
+    throw error;
+  }
+}
+
+function notifySafely(
+  ctx: ExtensionContext | undefined,
+  message: string,
+  level: "info" | "warning" | "error",
+): void {
+  if (!hasInteractiveUi(ctx)) return;
+  try {
+    ctx?.ui.notify(message, level);
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) throw error;
+  }
+}
+
+async function resolveNotifyCredentialSafely(
+  ctx: ExtensionContext | undefined,
+): Promise<string | undefined> {
+  try {
+    return await resolveNotifyCredential(ctx);
+  } catch (error) {
+    if (!isStaleSessionReplacementContextError(error)) throw error;
+    return resolveNotifyCredential();
+  }
+}
+
 class NotifyRuntime {
   private currentCtx: ExtensionContext | undefined;
   private readonly settings: ResolvedNotifySettings;
@@ -210,17 +245,16 @@ class NotifyRuntime {
     const payload = parseNotifyPublishEvent(data);
     const ctx = this.currentCtx;
     if (payload === null) {
-      ctx?.ui.notify("notify publish event invalid", "warning");
+      notifySafely(ctx, "notify publish event invalid", "warning");
       return;
     }
     try {
       const outcome = await this.publishPayload(payload, ctx);
-      const hasInteractiveUi = ctx !== undefined && ctx.hasUI;
-      if (hasInteractiveUi && outcome.failures.length > 0) {
-        ctx.ui.notify(`notify failed: ${outcome.failures[0]?.error ?? "unknown"}`, "error");
+      if (outcome.failures.length > 0) {
+        notifySafely(ctx, `notify failed: ${outcome.failures[0]?.error ?? "unknown"}`, "error");
       }
     } catch (error) {
-      ctx?.ui.notify(`notify failed: ${errorMessage(error)}`, "error");
+      notifySafely(ctx, `notify failed: ${errorMessage(error)}`, "error");
     }
   }
 
@@ -229,7 +263,7 @@ class NotifyRuntime {
     ctx?: ExtensionContext,
   ): Promise<PublishOutcome> {
     const preparedPayload = await this.preparePayload(payload);
-    const credential = await resolveNotifyCredential(ctx);
+    const credential = await resolveNotifyCredentialSafely(ctx);
     const auth = createNotifyAuthHeaders(credential, this.settings.allowAnonymous);
     if (!auth.configured && !this.settings.allowAnonymous) {
       const failure: NotifyPublishFailure = {

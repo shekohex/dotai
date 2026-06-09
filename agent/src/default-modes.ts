@@ -25,6 +25,7 @@ export const defaultModes = {
       fallbacks: [
         { provider: "opencode-go", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
         { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
       ],
     },
     docs: {
@@ -38,6 +39,7 @@ export const defaultModes = {
       fallbacks: [
         { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" },
         { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
       ],
     },
     build: {
@@ -81,6 +83,7 @@ export const defaultModes = {
       description: "fast cheap correctness review",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
+      fallbacks: [{ provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" }],
     },
     "fast-review": {
       provider: "deepseek",
@@ -93,7 +96,10 @@ export const defaultModes = {
       description: "ultra-fast parallel correctness review",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
-      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" }],
+      fallbacks: [
+        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
+      ],
     },
     commiter: {
       provider: "openai-codex",
@@ -116,7 +122,10 @@ export const defaultModes = {
       tools: ["read", "bash"],
       autoExit: true,
       description: "quick codebase/local-file answers",
-      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" }],
+      fallbacks: [
+        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
+      ],
     },
     painter: {
       provider: "zai-coding-plan",
@@ -126,6 +135,7 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["*"],
       description: "frontend/UI/UX polish",
+      fallbacks: [{ provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" }],
     },
     ask: {
       provider: "openai-codex",
@@ -151,6 +161,7 @@ export const defaultModes = {
       tools: ["read", "bash", "websearch"],
       autoExit: true,
       description: "web/current docs research",
+      fallbacks: [{ provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" }],
     },
     poke: {
       provider: "deepseek",
@@ -164,6 +175,7 @@ export const defaultModes = {
       fallbacks: [
         { provider: "opencode-go", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
         { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
       ],
     },
   },

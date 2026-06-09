@@ -96,10 +96,21 @@ function requestRenderSafely(requestRender: (() => void) | undefined): void {
   }
 }
 
+function getLatestAssistantSummarySafely(ctx: ExtensionContext): string | undefined {
+  try {
+    return getLatestAssistantSummary(ctx);
+  } catch (error) {
+    ignoreStaleSessionReplacementError(error);
+    return undefined;
+  }
+}
+
 function registerSessionStartHandler(input: {
   pi: ExtensionAPI;
   state: ReturnType<typeof createCoreUIState>;
   aiAutocompleteSettings: AiAutocompleteSettings;
+  setAutocompleteContext: (ctx: ExtensionContext) => void;
+  getAutocompleteContext: () => ExtensionContext | undefined;
   setTriggerAutocomplete: (trigger: (() => void) | undefined) => void;
   setCycleAutocompleteSuggestion: (cycle: ((direction: 1 | -1) => void) | undefined) => void;
   setCancelAutocomplete: (cancel: (() => void) | undefined) => void;
@@ -110,6 +121,7 @@ function registerSessionStartHandler(input: {
 }): void {
   input.pi.on("session_start", (_event, ctx) => {
     try {
+      input.setAutocompleteContext(ctx);
       input.ensureToolOverridesRegistered(input.pi.getActiveTools());
       input.state.cwd = ctx.cwd;
       if (ctx.hasUI) {
@@ -120,10 +132,16 @@ function registerSessionStartHandler(input: {
             () => theme,
             () => readCoreUIIdleState(ctx),
             {
-              backend: createAiAutocompleteBackend(ctx, input.aiAutocompleteSettings),
+              backend: createAiAutocompleteBackend(
+                input.getAutocompleteContext,
+                input.aiAutocompleteSettings,
+              ),
               settings: input.aiAutocompleteSettings,
               cwd: ctx.cwd,
-              getAssistantSummary: () => getLatestAssistantSummary(ctx),
+              getAssistantSummary: () => {
+                const activeContext = input.getAutocompleteContext();
+                return activeContext ? getLatestAssistantSummarySafely(activeContext) : undefined;
+              },
               setTriggerAutocomplete: input.setTriggerAutocomplete,
               setCycleAutocompleteSuggestion: input.setCycleAutocompleteSuggestion,
               setCancelAutocomplete: input.setCancelAutocomplete,
@@ -452,6 +470,7 @@ export default function coreUIExtension(pi: ExtensionAPI) {
   const ensureToolOverridesRegistered = registerCoreUIToolOverrides(pi);
   const bindings = createCoreUIBindings(pi);
   const aiAutocompleteSettings = getAiAutocompleteSettings();
+  let autocompleteContext: ExtensionContext | undefined;
   let triggerAutocomplete: (() => void) | undefined;
   let cycleAutocompleteSuggestion: ((direction: 1 | -1) => void) | undefined;
   let cancelAutocomplete: (() => void) | undefined;
@@ -508,6 +527,10 @@ export default function coreUIExtension(pi: ExtensionAPI) {
     pi,
     state: bindings.state,
     aiAutocompleteSettings,
+    setAutocompleteContext: (ctx) => {
+      autocompleteContext = ctx;
+    },
+    getAutocompleteContext: () => autocompleteContext,
     setTriggerAutocomplete: (trigger) => {
       triggerAutocomplete = trigger;
     },

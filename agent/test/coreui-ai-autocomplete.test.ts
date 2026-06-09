@@ -270,6 +270,25 @@ describe("coreui ai autocomplete backend", () => {
     vi.useRealTimers();
   });
 
+  test("debounced runner catches synchronous callback errors", async () => {
+    vi.useFakeTimers();
+    const runner = new DebouncedAiAutocompleteRunner(10);
+
+    expect(() => {
+      runner.schedule(
+        () => {
+          throw new Error("stale after session replacement or reload");
+        },
+        () => undefined,
+      );
+      vi.advanceTimersByTime(10);
+    }).not.toThrow();
+
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.useRealTimers();
+  });
+
   test("core editor renders and accepts backend completion", async () => {
     initTheme("dark");
     vi.useFakeTimers();

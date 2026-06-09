@@ -6,6 +6,7 @@ import {
   modelForOpenAIResponses,
   type ModelFallbackCandidate,
 } from "../model-fallbacks.js";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import type { AiAutocompleteSettings } from "./ai-autocomplete-settings.js";
 
 const AI_AUTOCOMPLETE_SYSTEM_PROMPT = `You are an inline autocomplete engine.
@@ -58,14 +59,14 @@ type ModelAuth = {
 };
 
 export function createAiAutocompleteBackend(
-  ctx: ExtensionContext,
+  ctx: ExtensionContext | (() => ExtensionContext | undefined),
   settings: AiAutocompleteSettings,
 ): AiAutocompleteBackend {
   return createPiAiAutocompleteBackend(ctx, settings);
 }
 
 export function createPiAiAutocompleteBackend(
-  ctx: ExtensionContext,
+  ctx: ExtensionContext | (() => ExtensionContext | undefined),
   settings: AiAutocompleteSettings,
 ): AiAutocompleteBackend {
   return {
@@ -73,15 +74,24 @@ export function createPiAiAutocompleteBackend(
     async complete(input) {
       if (input.text.trim().length < settings.minInputChars) return { suggestions: [] };
 
+      const activeContext = resolveAutocompleteContext(ctx);
+      if (activeContext === undefined) return { suggestions: [] };
+
       const context = buildFimContext(input, settings);
-      const candidates = buildModelCandidates(settings.models, ctx.model);
+      let candidates: ModelFallbackCandidate[];
+      try {
+        candidates = buildModelCandidates(settings.models, activeContext.model);
+      } catch (error) {
+        if (isStaleSessionReplacementContextError(error)) return { suggestions: [] };
+        throw error;
+      }
       for (const candidate of candidates) {
         if (isAbortSignalAborted(input.signal)) return { suggestions: [] };
 
-        const modelAuth = await resolveAutocompleteModelAuth(ctx, candidate);
-        if (modelAuth === undefined) continue;
-
         try {
+          const modelAuth = await resolveAutocompleteModelAuth(activeContext, candidate);
+          if (modelAuth === undefined) continue;
+
           const response = await complete(
             modelForOpenAIResponses(modelAuth.model),
             {
@@ -100,9 +110,9 @@ export function createPiAiAutocompleteBackend(
           );
           if (response.stopReason === "aborted") return { suggestions: [] };
           if (response.stopReason === "error") {
-            ctx.ui.setStatus(
+            activeContext.ui.setStatus(
               "ai-autocomplete",
-              ctx.ui.theme.fg(
+              activeContext.ui.theme.fg(
                 "warning",
                 `autocomplete:${candidate.provider}/${candidate.model} failed: ${response.errorMessage ?? "provider error"}`,
               ),
@@ -112,16 +122,17 @@ export function createPiAiAutocompleteBackend(
 
           const text = normalizeCompletion(extractText(response.content), context.suffix);
           if (text.length === 0) continue;
-          ctx.ui.setStatus("ai-autocomplete", undefined);
+          activeContext.ui.setStatus("ai-autocomplete", undefined);
           return {
             suggestions: [text],
             model: `${modelAuth.model.provider}/${modelAuth.model.id}`,
           };
         } catch (error) {
           if (isAbortSignalAborted(input.signal)) return { suggestions: [] };
-          ctx.ui.setStatus(
+          if (isStaleSessionReplacementContextError(error)) return { suggestions: [] };
+          activeContext.ui.setStatus(
             "ai-autocomplete",
-            ctx.ui.theme.fg(
+            activeContext.ui.theme.fg(
               "warning",
               `autocomplete:${candidate.provider}/${candidate.model} failed: ${errorMessage(error)}`,
             ),
@@ -132,6 +143,12 @@ export function createPiAiAutocompleteBackend(
       return { suggestions: [] };
     },
   };
+}
+
+function resolveAutocompleteContext(
+  ctx: ExtensionContext | (() => ExtensionContext | undefined),
+): ExtensionContext | undefined {
+  return typeof ctx === "function" ? ctx() : ctx;
 }
 
 export function buildFimContext(
@@ -336,7 +353,13 @@ export class DebouncedAiAutocompleteRunner {
     const signal = this.controller.signal;
     this.timer = setTimeout(() => {
       this.timer = undefined;
-      void run(signal)
+      let resultPromise: Promise<T>;
+      try {
+        resultPromise = run(signal);
+      } catch (error) {
+        resultPromise = Promise.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+      void resultPromise
         .then((result) => {
           if (requestId === this.requestId && !signal.aborted) onResult(result);
         })

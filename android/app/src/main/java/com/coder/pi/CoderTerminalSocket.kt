@@ -41,7 +41,11 @@ class CoderTerminalSocket(
                 }.onFailure {
                     if (!closing.get()) {
                         SentryBreadcrumbs.terminal("socket receive failed", mapOf("error" to CoderTerminalSession.safeTerminalError(it)), SentryLevel.ERROR)
-                        SentryAppLogger.error("terminal socket receive failed", throwable = it)
+                        if (AppFailureClassifier.isTransientNetwork(it)) {
+                            SentryAppLogger.warn("terminal socket receive failed; connection closed", throwable = it)
+                        } else {
+                            SentryAppLogger.error("terminal socket receive failed", throwable = it)
+                        }
                     }
                 }
                 if (!closing.get() && closedNotified.compareAndSet(false, true)) onClosed?.invoke()

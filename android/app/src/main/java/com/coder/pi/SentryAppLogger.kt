@@ -6,7 +6,6 @@ import io.sentry.SentryAttributes
 import io.sentry.SentryLevel
 import io.sentry.SentryLogLevel
 import io.sentry.logger.SentryLogParameters
-import kotlinx.coroutines.CancellationException
 
 object SentryAppLogger {
     private const val Tag = "CoderPi"
@@ -34,7 +33,7 @@ object SentryAppLogger {
         capture: Boolean = true,
     ) {
         log(SentryLogLevel.ERROR, message, attributes, throwable)
-        if (capture && throwable != null && throwable !is CancellationException) {
+        if (capture && throwable != null && AppFailureClassifier.shouldCapture(throwable)) {
             Sentry.captureException(throwable)
         }
     }

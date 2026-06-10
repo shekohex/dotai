@@ -439,14 +439,27 @@ fun CoderApp(
                 }
             }.onSuccess {
                 SentryBreadcrumbs.app("saved session restored", mapOf("userId" to it.user.id))
+                sessionStore.saveSession(it.baseUrl, it.token, it.user)
                 SentrySessionContext.applySession(it)
                 authState = AuthState.LoggedIn(it)
             }.onFailure {
                 SentryBreadcrumbs.app("saved session restore failed", mapOf("error" to safeUserError(it, "unknown")))
-                SentryAppLogger.error("saved session restore failed", mapOf("baseUrl" to saved.first), it)
-                sessionStore.clearSession()
-                SentrySessionContext.clearSession()
-                authState = AuthState.LoggedOut
+                val cachedUser = sessionStore.loadCachedUser()
+                if (AppFailureClassifier.isTransientNetwork(it) && cachedUser != null) {
+                    val session = CoderSession(saved.first, saved.second, cachedUser)
+                    SentryAppLogger.warn("saved session restore deferred; network unavailable", mapOf("baseUrl" to saved.first), it)
+                    SentrySessionContext.applySession(session)
+                    authState = AuthState.LoggedIn(session)
+                } else if (AppFailureClassifier.isTransientNetwork(it)) {
+                    SentryAppLogger.warn("saved session restore deferred; no cached user", mapOf("baseUrl" to saved.first), it)
+                    SentrySessionContext.clearSession()
+                    authState = AuthState.TokenInput(saved.first)
+                } else {
+                    SentryAppLogger.error("saved session restore failed", mapOf("baseUrl" to saved.first), it)
+                    sessionStore.clearSession()
+                    SentrySessionContext.clearSession()
+                    authState = AuthState.LoggedOut
+                }
             }
         }
     }
@@ -549,7 +562,7 @@ fun CoderApp(
                                         api.close()
                                     }
                                 }.onSuccess { user ->
-                                    sessionStore.saveSession(baseUrl, token)
+                                    sessionStore.saveSession(baseUrl, token, user)
                                     val session = CoderSession(baseUrl, token, user)
                                     SentrySessionContext.applySession(session)
                                     authState = AuthState.LoggedIn(session)
@@ -806,8 +819,13 @@ private fun TokenScreen(
                 SentryBreadcrumbs.app("token login submitted")
                 runCatching { onToken(baseUrl, token) }.onFailure {
                     SentryBreadcrumbs.app("token login failed", mapOf("error" to safeUserError(it, "Invalid token")))
-                    SentryAppLogger.error("token login failed", mapOf("baseUrl" to baseUrl), it)
-                    error = "Invalid token"
+                    if (AppFailureClassifier.isTransientNetwork(it)) {
+                        SentryAppLogger.warn("token login failed; network unavailable", mapOf("baseUrl" to baseUrl), it)
+                        error = "Network unavailable"
+                    } else {
+                        SentryAppLogger.error("token login failed", mapOf("baseUrl" to baseUrl), it)
+                        error = "Invalid token"
+                    }
                 }
             }
         }
@@ -889,7 +907,11 @@ private fun CoderHomeScreen(
                         onSessionExpired()
                     } else {
                         SentryBreadcrumbs.api("workspace refresh failed", mapOf("error" to safeUserError(failure, "unknown")))
-                        SentryAppLogger.error("workspace refresh failed", throwable = failure)
+                        if (AppFailureClassifier.isTransientNetwork(failure)) {
+                            SentryAppLogger.warn("workspace refresh failed; network unavailable", throwable = failure)
+                        } else {
+                            SentryAppLogger.error("workspace refresh failed", throwable = failure)
+                        }
                         error = safeUserError(failure, "Could not load workspaces")
                         sessionStore.appendDebugLog("workspace refresh failed ${error ?: "unknown"}")
                     }
@@ -977,7 +999,11 @@ private fun CoderHomeScreen(
                         runCatching { api.tmuxSessions(agent.id, UUID.randomUUID().toString()) }
                             .onFailure {
                                 SentryBreadcrumbs.api("tmux session load failed", mapOf("agentId" to agent.id, "error" to safeUserError(it, "unknown")))
-                                SentryAppLogger.error("tmux session load failed", mapOf("agentId" to agent.id), it)
+                                if (AppFailureClassifier.isTransientNetwork(it)) {
+                                    SentryAppLogger.warn("tmux session load failed; network unavailable", mapOf("agentId" to agent.id), it)
+                                } else {
+                                    SentryAppLogger.error("tmux session load failed", mapOf("agentId" to agent.id), it)
+                                }
                             }
                             .getOrDefault(emptyList())
                     tmuxLoading = null
@@ -1717,7 +1743,11 @@ private fun openWorkspace(
             runCatching { api.tmuxSessions(agent.id, UUID.randomUUID().toString()) }
                 .onFailure {
                     SentryBreadcrumbs.api("tmux session load failed", mapOf("agentId" to agent.id, "error" to safeUserError(it, "unknown")))
-                    SentryAppLogger.error("tmux session load failed", mapOf("agentId" to agent.id), it)
+                    if (AppFailureClassifier.isTransientNetwork(it)) {
+                        SentryAppLogger.warn("tmux session load failed; network unavailable", mapOf("agentId" to agent.id), it)
+                    } else {
+                        SentryAppLogger.error("tmux session load failed", mapOf("agentId" to agent.id), it)
+                    }
                 }
                 .getOrDefault(emptyList())
         SentryBreadcrumbs.api("tmux session load succeeded", mapOf("agentId" to agent.id, "count" to sessions.size))

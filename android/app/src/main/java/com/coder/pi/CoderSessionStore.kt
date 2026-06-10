@@ -29,6 +29,38 @@ class CoderSessionStore(
         securePreferences.edit { putString("base_url", baseUrl).putString("token", token) }
     }
 
+    fun saveSession(
+        baseUrl: String,
+        token: String,
+        user: CoderUser,
+    ) {
+        securePreferences.edit {
+            putString("base_url", baseUrl)
+                .putString("token", token)
+                .putString("user_id", user.id)
+                .putString("user_username", user.username)
+                .putString("user_email", user.email)
+                .putString("user_name", user.name)
+                .putString("user_avatar_url", user.avatarUrl)
+        }
+    }
+
+    fun loadCachedUser(): CoderUser? {
+        val id = securePreferences.getString("user_id", null)
+        val username = securePreferences.getString("user_username", null)
+        return if (id.isNullOrBlank() || username.isNullOrBlank()) {
+            null
+        } else {
+            CoderUser(
+                id = id,
+                username = username,
+                email = securePreferences.getString("user_email", "").orEmpty(),
+                name = securePreferences.getString("user_name", null),
+                avatarUrl = securePreferences.getString("user_avatar_url", null),
+            )
+        }
+    }
+
     fun clearSession() {
         securePreferences.edit { clear() }
     }

@@ -78,7 +78,11 @@ class CoderTerminalSession(
                 SentryBreadcrumbs.terminal("socket connected", mapOf("columns" to initialWidth, "rows" to initialHeight))
             }.onFailure {
                 SentryBreadcrumbs.terminal("socket connect failed", mapOf("reconnecting" to reconnecting, "attempt" to reconnectAttempts, "error" to safeTerminalError(it)), SentryLevel.ERROR)
-                SentryAppLogger.error("terminal socket connect failed", mapOf("agentId" to agentId, "attempt" to reconnectAttempts, "reconnecting" to reconnecting), it)
+                if (AppFailureClassifier.isTransientNetwork(it)) {
+                    SentryAppLogger.warn("terminal socket connect failed; will reconnect", mapOf("agentId" to agentId, "attempt" to reconnectAttempts, "reconnecting" to reconnecting), it)
+                } else {
+                    SentryAppLogger.error("terminal socket connect failed", mapOf("agentId" to agentId, "attempt" to reconnectAttempts, "reconnecting" to reconnecting), it)
+                }
                 if (!stopped) {
                     scheduleReconnect()
                 } else {

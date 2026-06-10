@@ -64,7 +64,6 @@ type CreateReviewExecutorInput = {
   }) => string;
   clearReviewState: (ctx: ExtensionContext) => void;
   persistReviewState: (state: { active: boolean }) => void;
-  syncReviewWidget: (ctx: ExtensionContext) => void;
   formatErrorMessage: (error: unknown) => string;
 };
 
@@ -120,12 +119,7 @@ export function createReviewExecutor(input: CreateReviewExecutorInput) {
               createdAt: new Date().toISOString(),
             });
           },
-          setReviewMarker: (markerCtx, _targetLabel, reviewPointId) => {
-            if (reviewPointId === undefined || reviewPointId.length === 0) {
-              return;
-            }
-            markerApi.applyMarker(markerCtx, reviewPointId, "Review marker set for /end");
-          },
+          getReviewMarkerId: (markerCtx) => markerApi.getSemanticLeafId(markerCtx),
         }),
       startReviewRun: (runInput) =>
         startReviewRun(runInput, {
@@ -135,7 +129,12 @@ export function createReviewExecutor(input: CreateReviewExecutorInput) {
             restoreCheckoutTarget(input.pi, checkoutToRestore),
           clearReviewState: input.clearReviewState,
           persistReviewState: input.persistReviewState,
-          syncReviewWidget: input.syncReviewWidget,
+          setReviewMarker: (markerCtx, _targetLabel, reviewMarkerId) => {
+            if (reviewMarkerId === undefined || reviewMarkerId.length === 0) {
+              return;
+            }
+            markerApi.applyMarker(markerCtx, reviewMarkerId, "Review marker set for /end");
+          },
           formatErrorMessage: input.formatErrorMessage,
         }),
     });

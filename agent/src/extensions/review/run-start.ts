@@ -25,6 +25,7 @@ type StartReviewRunInput = {
   targetLabel: string;
   fullPrompt: string;
   branchAnchorId: string | undefined;
+  reviewMarkerId: string | undefined;
   checkoutToRestore: ReviewCheckoutTarget | undefined;
 };
 
@@ -45,7 +46,11 @@ type StartReviewRunDeps = {
     branchAnchorId: string | undefined;
     checkoutToRestore: ReviewCheckoutTarget | undefined;
   }) => void;
-  syncReviewWidget: (ctx: ExtensionCommandContext) => void;
+  setReviewMarker: (
+    ctx: ExtensionCommandContext,
+    targetLabel: string,
+    reviewMarkerId: string | undefined,
+  ) => void;
   formatErrorMessage: (error: unknown) => string;
 };
 
@@ -79,7 +84,6 @@ function persistStartedReviewState(
     branchAnchorId: input.branchAnchorId,
     checkoutToRestore: input.checkoutToRestore,
   });
-  deps.syncReviewWidget(input.ctx);
 }
 
 async function handleReviewRunStartFailure(
@@ -117,6 +121,7 @@ export async function startReviewRun(
 
     applyStartedReviewState(input, started.value.handle.sessionId, deps);
     persistStartedReviewState(input, started.value.handle.sessionId, deps);
+    deps.setReviewMarker(input.ctx, input.targetLabel, input.reviewMarkerId);
     return true;
   } catch (error) {
     return handleReviewRunStartFailure(input, deps, error);

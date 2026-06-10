@@ -18,7 +18,6 @@ export type ReviewRuntimeState = {
   customInstructions: string | undefined;
   completionNotifiedSessionId: string | undefined;
   commandActions: ReviewCommandActions | undefined;
-  lastWidgetMessage: string | undefined;
 };
 
 type RuntimeStateDeps<TChildState> = {
@@ -34,15 +33,6 @@ type RuntimeStateDeps<TChildState> = {
     branchEntries: Array<{ id?: string }>,
   ) => state is ReviewSessionState;
   resetSdk: () => void;
-  setReviewWidget: (
-    ctx: ExtensionContext,
-    options:
-      | undefined
-      | {
-          targetLabel?: string;
-          statusText?: string;
-        },
-  ) => void;
   readChildState: () => TChildState;
   isChildSession: (state: TChildState, ctx: ExtensionContext) => boolean;
   isTerminalReviewStatus: (status: string) => status is "completed" | "failed" | "cancelled";
@@ -81,65 +71,6 @@ export function readTrackedReviewState(
   return session?.getState();
 }
 
-export function reviewStatusText(state: RuntimeSubagent | undefined): string | undefined {
-  if (!state) {
-    return undefined;
-  }
-
-  if (state.status === "running") {
-    return "running";
-  }
-  if (state.status === "idle") {
-    return "waiting for completion summary";
-  }
-  if (state.status === "completed") {
-    return "completing";
-  }
-  if (state.status === "failed") {
-    return "failed, review output captured";
-  }
-  if (state.status === "cancelled") {
-    return "cancelled";
-  }
-
-  return state.status;
-}
-
-export function syncReviewWidget(
-  ctx: ExtensionContext,
-  runtime: ReviewRuntimeState,
-  trackedState: RuntimeSubagent | undefined,
-  setReviewWidget: RuntimeStateDeps<unknown>["setReviewWidget"],
-): void {
-  try {
-    if (!runtime.active) {
-      if (runtime.lastWidgetMessage === undefined) {
-        return;
-      }
-      runtime.lastWidgetMessage = undefined;
-      setReviewWidget(ctx, undefined);
-      return;
-    }
-
-    const statusText = reviewStatusText(trackedState);
-    const nextWidgetMessage = ["Review session active", runtime.targetLabel, statusText]
-      .filter((value): value is string => value !== undefined && value.length > 0)
-      .join(" · ");
-    if (runtime.lastWidgetMessage === nextWidgetMessage) {
-      return;
-    }
-    runtime.lastWidgetMessage = nextWidgetMessage;
-    setReviewWidget(ctx, {
-      targetLabel: runtime.targetLabel,
-      statusText,
-    });
-  } catch (error) {
-    if (!isStaleSessionReplacementContextError(error)) {
-      throw error;
-    }
-  }
-}
-
 function applyReviewState<TChildState>(
   ctx: ExtensionContext,
   deps: RuntimeStateDeps<TChildState>,
@@ -164,12 +95,6 @@ function applyReviewState<TChildState>(
   if (activeState?.active !== true) {
     deps.runtime.completionNotifiedSessionId = undefined;
   }
-  syncReviewWidget(
-    ctx,
-    deps.runtime,
-    readTrackedReviewState(deps.runtime, deps.sdk),
-    deps.setReviewWidget,
-  );
 }
 
 async function restoreTrackedReviewSubagent<TChildState>(
@@ -205,7 +130,6 @@ export async function applyAllReviewState<TChildState>(
     applyReviewState(ctx, deps);
     await restoreTrackedReviewSubagent(ctx, deps);
     const trackedState = readTrackedReviewState(deps.runtime, deps.sdk);
-    syncReviewWidget(ctx, deps.runtime, trackedState, deps.setReviewWidget);
     if (!deps.runtime.active || !isTrackedReviewTerminal(trackedState) || !trackedState) {
       return;
     }
@@ -237,7 +161,5 @@ export function clearReviewState<TChildState>(
   deps.runtime.checkoutToRestore = undefined;
   deps.runtime.completionNotifiedSessionId = undefined;
   deps.runtime.commandActions = undefined;
-  deps.runtime.lastWidgetMessage = undefined;
   deps.persistReviewState({ active: false });
-  syncReviewWidget(ctx, deps.runtime, undefined, deps.setReviewWidget);
 }

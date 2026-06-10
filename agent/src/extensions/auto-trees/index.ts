@@ -183,7 +183,9 @@ export default function autoTreesExtension(pi: ExtensionAPI) {
         return;
       }
 
-      markerApi.applyMarker(ctx, nextMarkerId, "Increment summarized and marker advanced");
+      markerApi.applyMarker(ctx, nextMarkerId, "Increment summarized and marker advanced", {
+        previousMarkerId: markerId,
+      });
     },
   });
 }

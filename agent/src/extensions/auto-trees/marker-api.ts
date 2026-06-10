@@ -14,7 +14,12 @@ export type MarkerApiOptions = {
 export type MarkerApi = {
   readState(ctx: ExtensionContext): MarkerState | undefined;
   getSemanticLeafId(ctx: ExtensionContext): string | undefined;
-  applyMarker(ctx: ExtensionContext, nextMarkerId: string, notifyMessage?: string): MarkerState;
+  applyMarker(
+    ctx: ExtensionContext,
+    nextMarkerId: string,
+    notifyMessage?: string,
+    options?: { previousMarkerId?: string },
+  ): MarkerState;
   markCurrent(ctx: ExtensionContext, notifyMessage?: string): MarkerState | undefined;
 };
 
@@ -70,9 +75,12 @@ export function createMarkerApi(pi: ExtensionAPI, options: MarkerApiOptions): Ma
     ctx: ExtensionContext,
     nextMarkerId: string,
     notifyMessage?: string,
+    markerOptions?: { previousMarkerId?: string },
   ): MarkerState => {
     const previousMarkerId =
-      markerId ?? readMarkerStateFromBranch(ctx, options.stateEntryType)?.markerId;
+      markerOptions?.previousMarkerId ??
+      markerId ??
+      readMarkerStateFromBranch(ctx, options.stateEntryType)?.markerId;
 
     if (
       previousMarkerId !== undefined &&

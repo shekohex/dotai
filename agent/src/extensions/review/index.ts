@@ -3,7 +3,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { isChildSession, readChildState, type RuntimeSubagent } from "../../subagent-sdk/index.js";
+import { isChildSession, readChildState } from "../../subagent-sdk/index.js";
 import { copyTextToClipboard } from "../../utils/clipboard.js";
 import { errorMessage } from "../../utils/error-message.js";
 import {
@@ -34,12 +34,9 @@ import {
   createReviewSubagentSdk,
   finalizeReviewRun,
   persistReviewSettings as persistReviewSettingsWithRuntime,
-  readTrackedReviewState,
   registerReviewHandlers,
   setReviewCustomInstructions as setReviewCustomInstructionsWithRuntime,
-  setReviewWidget,
   subscribeReviewSdkEvents,
-  syncReviewWidget as syncReviewWidgetWithRuntime,
   type CreateReviewExtensionOptions,
   type ReviewCheckoutTarget,
   type ReviewRuntimeState,
@@ -81,7 +78,6 @@ const runtime: ReviewRuntimeState = {
   customInstructions: undefined,
   completionNotifiedSessionId: undefined,
   commandActions: undefined,
-  lastWidgetMessage: undefined,
 };
 
 function initializeReviewRuntime(
@@ -161,7 +157,6 @@ function attachSdkEvents(): void {
   stopSdkEvents = subscribeReviewSdkEvents({
     runtime,
     sdk,
-    syncReviewWidget,
     isTerminalReviewStatus,
     finalizeReview: (eventCtx, eventStatus, eventSummary) =>
       finalizeReview(eventCtx, eventStatus, eventSummary),
@@ -186,14 +181,6 @@ function setReviewCustomInstructions(instructions: string | undefined): void {
   setReviewCustomInstructionsWithRuntime(runtime, instructions, persistReviewSettings);
 }
 
-function trackedReviewState(): RuntimeSubagent | undefined {
-  return readTrackedReviewState(runtime, sdk);
-}
-
-function syncReviewWidget(ctx: ExtensionContext): void {
-  syncReviewWidgetWithRuntime(ctx, runtime, trackedReviewState(), setReviewWidget);
-}
-
 async function applyAllReviewState(ctx: ExtensionContext): Promise<void> {
   await applyAllReviewStateWithDeps(ctx, {
     runtime,
@@ -202,7 +189,6 @@ async function applyAllReviewState(ctx: ExtensionContext): Promise<void> {
     getReviewState,
     isReviewStateActiveOnBranch,
     resetSdk,
-    setReviewWidget,
     readChildState,
     isChildSession,
     isTerminalReviewStatus,
@@ -228,7 +214,6 @@ function clearReviewState(ctx: ExtensionContext): void {
     getReviewState,
     isReviewStateActiveOnBranch,
     resetSdk,
-    setReviewWidget,
     readChildState,
     isChildSession,
     isTerminalReviewStatus,
@@ -257,7 +242,6 @@ function reviewExtension(
     buildReviewTaskPrompt,
     clearReviewState,
     persistReviewState,
-    syncReviewWidget,
     formatErrorMessage,
   });
   registerReviewHandlers({

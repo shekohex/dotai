@@ -2,7 +2,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
-import { REVIEW_SETTINGS_TYPE, REVIEW_STATE_TYPE, REVIEW_WIDGET_KEY } from "./constants.js";
+import { REVIEW_SETTINGS_TYPE, REVIEW_STATE_TYPE } from "./constants.js";
 import type { ReviewSessionState, ReviewSettingsState } from "./types.js";
 
 const ReviewSessionStateSchema = Type.Object(
@@ -49,30 +49,6 @@ function readReviewSettingsState(value: unknown): ReviewSettingsState | undefine
   return {
     customInstructions,
   };
-}
-
-export function setReviewWidget(
-  ctx: ExtensionContext,
-  options:
-    | undefined
-    | {
-        targetLabel?: string;
-        statusText?: string;
-      },
-): void {
-  if (!ctx.hasUI) {
-    return;
-  }
-
-  if (!options) {
-    ctx.ui.setWidget(REVIEW_WIDGET_KEY, undefined);
-    return;
-  }
-
-  const message = ["Review session active", options.targetLabel, options.statusText]
-    .filter((value): value is string => value !== undefined && value.length > 0)
-    .join(" · ");
-  ctx.ui.setWidget(REVIEW_WIDGET_KEY, [message]);
 }
 
 export function isTerminalReviewStatus(

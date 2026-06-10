@@ -3,7 +3,6 @@ import type { AutocompleteItem } from "@earendil-works/pi-tui";
 export const REVIEW_STATE_TYPE = "review-session";
 export const REVIEW_ANCHOR_TYPE = "review-anchor";
 export const REVIEW_SETTINGS_TYPE = "review-settings";
-export const REVIEW_WIDGET_KEY = "review";
 
 export const GH_SETUP_INSTRUCTIONS =
   "Install GitHub CLI (`gh`) from https://cli.github.com/ (macOS: `brew install gh`), then sign in with `gh auth login` and verify with `gh auth status`.";

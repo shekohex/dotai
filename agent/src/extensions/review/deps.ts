@@ -46,9 +46,7 @@ export {
   isTrackedReviewTerminal,
   persistReviewSettings,
   readTrackedReviewState,
-  reviewStatusText,
   setReviewCustomInstructions,
-  syncReviewWidget,
 } from "./runtime-state.js";
 export type { ReviewRuntimeState } from "./runtime-state.js";
 export {
@@ -61,7 +59,6 @@ export {
   getReviewState,
   isReviewStateActiveOnBranch,
   isTerminalReviewStatus,
-  setReviewWidget,
 } from "./state.js";
 export type {
   CreateReviewExtensionOptions,

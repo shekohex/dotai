@@ -11,6 +11,7 @@ export type PreparedReviewRunInput = {
   targetLabel: string;
   fullPrompt: string;
   branchAnchorId: string | undefined;
+  reviewMarkerId: string | undefined;
   checkoutToRestore: ReviewCheckoutTarget | undefined;
 };
 
@@ -37,11 +38,7 @@ type PrepareReviewRunInputDeps<Message = unknown> = {
   }) => string;
   getCustomInstructions: () => string | undefined;
   appendReviewAnchor: (targetLabel: string) => void;
-  setReviewMarker: (
-    ctx: ExtensionCommandContext,
-    targetLabel: string,
-    reviewPointId: string | undefined,
-  ) => void;
+  getReviewMarkerId: (ctx: ExtensionCommandContext) => string | undefined;
 };
 
 type ExecuteReviewDeps = {
@@ -63,7 +60,7 @@ export async function prepareReviewRunInput<Message>(
   deps: PrepareReviewRunInputDeps<Message>,
 ): Promise<PreparedReviewRunInput | null> {
   const checkoutToRestore = target.type === "pullRequest" ? target.checkoutToRestore : undefined;
-  const reviewPointId = ctx.sessionManager.getLeafId() ?? undefined;
+  const reviewMarkerId = deps.getReviewMarkerId(ctx);
   const prompt = await deps.buildReviewPrompt(target);
   const targetLabel = deps.getUserFacingHint(target);
   const generatedHandoffPrompt = await deps.resolveGeneratedReviewHandoffPrompt({
@@ -88,11 +85,11 @@ export async function prepareReviewRunInput<Message>(
   });
   deps.appendReviewAnchor(targetLabel);
   const branchAnchorId = ctx.sessionManager.getLeafId() ?? undefined;
-  deps.setReviewMarker(ctx, targetLabel, reviewPointId);
   return {
     targetLabel,
     fullPrompt,
     branchAnchorId,
+    reviewMarkerId,
     checkoutToRestore,
   };
 }
@@ -120,6 +117,7 @@ export async function executeReview(
     targetLabel: runInput.targetLabel,
     fullPrompt: runInput.fullPrompt,
     branchAnchorId: runInput.branchAnchorId,
+    reviewMarkerId: runInput.reviewMarkerId,
     checkoutToRestore: runInput.checkoutToRestore,
   });
 }

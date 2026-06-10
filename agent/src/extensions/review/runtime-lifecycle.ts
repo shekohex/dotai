@@ -47,7 +47,6 @@ export function createReviewSubagentSdk(
 type SubscribeReviewSdkEventsInput = {
   runtime: ReviewRuntimeState;
   sdk: ReturnType<typeof createSubagentSDK>;
-  syncReviewWidget: (ctx: ExtensionContext) => void;
   isTerminalReviewStatus: (status: string) => status is ReviewTerminalStatus;
   finalizeReview: (
     ctx: ExtensionContext,
@@ -72,7 +71,6 @@ export function subscribeReviewSdkEvents(input: SubscribeReviewSdkEventsInput): 
     }
 
     try {
-      input.syncReviewWidget(ctx);
       if (
         input.isTerminalReviewStatus(event.state.status) &&
         input.runtime.completionNotifiedSessionId !== event.state.sessionId

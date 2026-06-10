@@ -1318,20 +1318,38 @@ function getRoadmapPhaseInternal(cwd, phaseNum) {
 // ─── Agent installation validation (#1371) ───────────────────────────────────
 
 /**
- * Resolve the agents directory from the GSD install location. gsd-tools.cjs lives at
- * <configDir>/get-shit-done/bin/gsd-tools.cjs, so agents/ is at <configDir>/agents/.
+ * Resolve the agents directory from the GSD install location. In the packaged agent layout,
+ * core.cjs lives at resources/gsd/bin/lib/core.cjs and agents live at resources/gsd/agents/. Older
+ * installs placed agents at resources/agents/.
  *
  * GSD_AGENTS_DIR env var overrides the default path. Used in tests and for installs where the
- * agents directory is not co-located with gsd-tools.cjs.
+ * agents directory is not co-located with core.cjs.
  *
+ * @param {string} baseDir - Directory containing core.cjs. Defaults to this module directory.
  * @returns {string} Absolute path to the agents directory
  */
-function getAgentsDir() {
+function resolveAgentsDir(baseDir = __dirname) {
   if (process.env.GSD_AGENTS_DIR) {
     return process.env.GSD_AGENTS_DIR;
   }
-  // __dirname is get-shit-done/bin/lib/ → go up 3 levels to configDir
-  return path.join(__dirname, "..", "..", "..", "agents");
+
+  // Packaged layout: resources/gsd/bin/lib/ → resources/gsd/agents/.
+  const packagedAgentsDir = path.join(baseDir, "..", "..", "agents");
+  if (fs.existsSync(packagedAgentsDir)) {
+    return packagedAgentsDir;
+  }
+
+  // Backward-compatible layout: resources/gsd/bin/lib/ → resources/agents/.
+  const legacyAgentsDir = path.join(baseDir, "..", "..", "..", "agents");
+  if (fs.existsSync(legacyAgentsDir)) {
+    return legacyAgentsDir;
+  }
+
+  return packagedAgentsDir;
+}
+
+function getAgentsDir() {
+  return resolveAgentsDir();
 }
 
 /**
@@ -1341,6 +1359,7 @@ function getAgentsDir() {
  * Recognises both standard format (gsd-planner.md) and Copilot format (gsd-planner.agent.md).
  * Copilot renames agent files during install (#1512).
  *
+ * @param {string} agentsDir - Directory to scan. Defaults to resolved install location.
  * @returns {{
  *   agents_installed: boolean;
  *   missing_agents: string[];
@@ -1348,8 +1367,7 @@ function getAgentsDir() {
  *   agents_dir: string;
  * }}
  */
-function checkAgentsInstalled() {
-  const agentsDir = getAgentsDir();
+function checkAgentsInstalled(agentsDir = getAgentsDir()) {
   const expectedAgents = Object.keys(MODEL_PROFILES);
   const installed = [];
   const missing = [];
@@ -2189,6 +2207,7 @@ module.exports = {
   filterSummaryFiles,
   getPhaseFileStats,
   readSubdirectories,
+  resolveAgentsDir,
   getAgentsDir,
   checkAgentsInstalled,
   atomicWriteFileSync,

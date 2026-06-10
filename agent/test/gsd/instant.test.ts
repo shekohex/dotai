@@ -1,11 +1,26 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { handleGsdHealth } from "../../src/extensions/gsd/instant/health.js";
 import { handleGsdStats } from "../../src/extensions/gsd/instant/stats.js";
 import { computeStructuredStats } from "../../src/extensions/gsd/state/stats.js";
 import { createTempDirSync } from "../test-utils/temp-paths.ts";
+
+const require = createRequire(import.meta.url);
+const gsdCore = require("../../src/resources/gsd/bin/lib/core.cjs") as {
+  checkAgentsInstalled: (agentsDir?: string) => {
+    agents_installed: boolean;
+    missing_agents: string[];
+    installed_agents: string[];
+    agents_dir: string;
+  };
+  resolveAgentsDir: (baseDir?: string) => string;
+};
+const gsdModelProfiles = require("../../src/resources/gsd/bin/lib/model-profiles.cjs") as {
+  MODEL_PROFILES: Record<string, unknown>;
+};
 
 const fixtures = join(import.meta.dirname, "fixtures");
 const brownfieldRoot = join(fixtures, "brownfield-v1");
@@ -1086,6 +1101,45 @@ Plans:
     expect(notifications.at(-1)?.message).toContain("Health degraded");
   });
 
+  it("resolves packaged GSD agents under resources/gsd/agents", () => {
+    const root = createTempDirSync("agent-gsd-packaged-agents-");
+    const libDir = join(root, "dist", "resources", "gsd", "bin", "lib");
+    const agentsDir = join(root, "dist", "resources", "gsd", "agents");
+    mkdirSync(libDir, { recursive: true });
+    mkdirSync(agentsDir, { recursive: true });
+
+    for (const agentName of Object.keys(gsdModelProfiles.MODEL_PROFILES)) {
+      writeFileSync(join(agentsDir, `${agentName}.md`), `# ${agentName}\n`);
+    }
+
+    expect(gsdCore.resolveAgentsDir(libDir)).toBe(agentsDir);
+
+    const agentStatus = gsdCore.checkAgentsInstalled(agentsDir);
+    expect(agentStatus.agents_installed).toBe(true);
+    expect(agentStatus.installed_agents).toContain("gsd-planner");
+    expect(agentStatus.missing_agents).toEqual([]);
+  });
+
+  it("keeps GSD_AGENTS_DIR override above packaged resolver", () => {
+    const root = createTempDirSync("agent-gsd-agents-env-override-");
+    const libDir = join(root, "dist", "resources", "gsd", "bin", "lib");
+    const overrideDir = join(root, "custom-agents");
+    mkdirSync(libDir, { recursive: true });
+    mkdirSync(overrideDir, { recursive: true });
+
+    const previousAgentsDir = process.env.GSD_AGENTS_DIR;
+    process.env.GSD_AGENTS_DIR = overrideDir;
+    try {
+      expect(gsdCore.resolveAgentsDir(libDir)).toBe(overrideDir);
+    } finally {
+      if (previousAgentsDir === undefined) {
+        delete process.env.GSD_AGENTS_DIR;
+      } else {
+        process.env.GSD_AGENTS_DIR = previousAgentsDir;
+      }
+    }
+  });
+
   it("health reports missing PROJECT.md as non-green", () => {
     const root = createTempDirSync("agent-gsd-health-missing-project-");
     mkdirSync(join(root, ".planning", "phases"), { recursive: true });
@@ -1113,14 +1167,9 @@ Plans:
 
     expect(notifications.at(-1)?.level).toBe("warning");
     expect(notifications.at(-1)?.message).toBe(
-      [
-        "Health broken errors=1 warnings=1 info=0",
-        "ERROR E002: PROJECT.md not found",
-        "WARNING W010: No GSD agents found in " +
-          `${join(import.meta.dirname, "../../src/resources/agents")} — ` +
-          'Task(subagent_type="gsd-*") will fall back to general-purpose',
-      ].join("\n"),
+      ["Health broken errors=1 warnings=0 info=0", "ERROR E002: PROJECT.md not found"].join("\n"),
     );
+    expect(notifications.at(-1)?.message).not.toContain("W010");
   });
 
   it("health reports malformed config as structured output instead of crashing", () => {

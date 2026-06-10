@@ -41,7 +41,7 @@ export const defaultSettings = {
   defaultModel: "gpt-5.5",
   hideThinkingBlock: true,
   defaultThinkingLevel: "low",
-  transport: "websocket-cached",
+  transport: "sse",
   quietStartup: true,
   editorPaddingX: 0,
   collapseChangelog: true,

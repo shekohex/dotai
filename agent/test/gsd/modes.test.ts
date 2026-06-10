@@ -57,6 +57,7 @@ describe("ensureBuiltInGsdModes", () => {
     expect(built.modes["gsd-planner"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-planner"]?.modelId).toBe("gpt-5.5");
     expect(built.modes["gsd-planner"]?.tools).toEqual(["read", "bash", "websearch", "interview"]);
+    expect(built.modes["gsd-planner"]?.tmuxTarget).toBe("window");
 
     expect(built.modes["gsd-phase-researcher"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-phase-researcher"]?.modelId).toBe("gpt-5.4-mini");
@@ -94,6 +95,7 @@ describe("ensureBuiltInGsdModes", () => {
     ]);
 
     for (const spec of Object.values(built.modes)) {
+      expect(spec.tmuxTarget).toBe("window");
       expect(spec.tools?.includes("glob")).toBeFalsy();
       expect(spec.tools?.includes("grep")).toBeFalsy();
     }

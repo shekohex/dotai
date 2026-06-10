@@ -59,6 +59,7 @@ describe("gsd subagents", () => {
     expect(result.plans).toHaveLength(1);
     expect(spawn.mock.calls[0]?.[0]?.mode).toBe("gsd-planner");
     expect(spawn.mock.calls[0]?.[0]?.task).toBe("plan");
+    expect(spawn.mock.calls[0]?.[0]?.contextPrune).toEqual({ enabled: false });
   });
 
   it("spawnStructuredRole validates arbitrary schema output", async () => {
@@ -82,6 +83,7 @@ describe("gsd subagents", () => {
     expect(result).toEqual({ answer: "ok" });
     expect(spawn.mock.calls[0]?.[0]?.mode).toBe("gsd-verifier");
     expect(spawn.mock.calls[0]?.[0]?.task).toBe("verify");
+    expect(spawn.mock.calls[0]?.[0]?.contextPrune).toEqual({ enabled: false });
   });
 
   it("spawnRole waits for completion", async () => {
@@ -111,6 +113,7 @@ describe("gsd subagents", () => {
     expect(captureOutput).toHaveBeenCalledWith(80);
     expect(spawn.mock.calls[0]?.[0]?.mode).toBe("gsd-executor");
     expect(spawn.mock.calls[0]?.[0]?.task).toBe("execute");
+    expect(spawn.mock.calls[0]?.[0]?.contextPrune).toEqual({ enabled: false });
     expect(result).toEqual({
       sessionId: "session-id",
       summary: "done",

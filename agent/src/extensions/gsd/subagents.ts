@@ -205,6 +205,7 @@ async function spawnStructuredRoleInternal<TSchema extends TSchemaBase>(
         schema,
         retryCount,
       },
+      contextPrune: { enabled: false },
     },
     ctx,
   );
@@ -240,6 +241,7 @@ export async function startRole(
       task,
       mode: resolveRoleModeName(role),
       completion: options?.completion,
+      contextPrune: { enabled: false },
     },
     ctx,
   );

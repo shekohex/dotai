@@ -13,6 +13,7 @@ import { listGsdRoles, resolveRoleBuiltInModeSpec, resolveRoleModeName } from ".
 function buildRoleModeSpec(role: GsdRole) {
   return {
     ...resolveRoleBuiltInModeSpec(role),
+    tmuxTarget: "window" as const,
     systemPrompt: loadBundledPrompt(role),
   };
 }

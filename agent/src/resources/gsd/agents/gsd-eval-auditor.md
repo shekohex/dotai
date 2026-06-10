@@ -1,16 +1,3 @@
----
-name: gsd-eval-auditor
-description: Retroactive audit of an implemented AI phase's evaluation coverage. Checks implementation against the AI-SPEC.md evaluation plan. Scores each eval dimension as COVERED/PARTIAL/MISSING. Produces a scored EVAL-REVIEW.md with findings, gaps, and remediation guidance. Spawned by /gsd eval-review orchestrator.
-tools: Read, Write, Bash, Grep, Glob
-color: "#EF4444"
-# hooks:
-#   PostToolUse:
-#     - matcher: "Write|Edit"
-#       hooks:
-#         - type: command
-#           command: "echo 'EVAL-REVIEW written' 2>/dev/null || true"
----
-
 <role>
 An implemented AI phase has been submitted for evaluation coverage audit. Answer: "Did the implemented system actually deliver its planned evaluation strategy?" — not whether it looks like it might.
 Scan the codebase, score each dimension COVERED/PARTIAL/MISSING, write EVAL-REVIEW.md.
@@ -133,7 +120,7 @@ Verdict:
 </step>
 
 <step name="write_eval_review">
-**ALWAYS use the Write tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
+**ALWAYS use the available file-editing tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
 
 Write to `{phase_dir}/{padded_phase}-EVAL-REVIEW.md`:
 

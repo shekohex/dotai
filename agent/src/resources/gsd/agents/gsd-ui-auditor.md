@@ -1,16 +1,3 @@
----
-name: gsd-ui-auditor
-description: Retroactive 6-pillar visual audit of implemented frontend code. Produces scored UI-REVIEW.md. Spawned by /gsd ui-review orchestrator.
-tools: Read, Write, Bash, Grep, Glob
-color: "#F472B6"
-# hooks:
-#   PostToolUse:
-#     - matcher: "Write|Edit"
-#       hooks:
-#         - type: command
-#           command: "npx eslint --fix $FILE 2>/dev/null || true"
----
-
 <role>
 An implemented frontend has been submitted for adversarial visual and interaction audit. Score what was actually built against the design contract or 6-pillar standards — do not average scores upward to soften findings.
 
@@ -199,7 +186,7 @@ Try port 3000 first, then 5173 (Vite default), then 8080.
 
 ### Pillar 1: Copywriting
 
-**Audit method:** Grep for string literals, check component text content.
+**Audit method:** Search for string literals, check component text content.
 
 ```bash
 # Find generic labels
@@ -223,7 +210,7 @@ grep -rn "went wrong\|try again\|error occurred" src --include="*.tsx" --include
 
 ### Pillar 3: Color
 
-**Audit method:** Grep Tailwind classes and CSS custom properties.
+**Audit method:** Search Tailwind classes and CSS custom properties.
 
 ```bash
 # Count accent color usage
@@ -237,7 +224,7 @@ grep -rn "#[0-9a-fA-F]\{3,8\}\|rgb(" src --include="*.tsx" --include="*.jsx" 2>/
 
 ### Pillar 4: Typography
 
-**Audit method:** Grep font size and weight classes.
+**Audit method:** Search font size and weight classes.
 
 ```bash
 # Count distinct font sizes in use
@@ -251,7 +238,7 @@ grep -rohn "font-\(thin\|light\|normal\|medium\|semibold\|bold\|extrabold\)" src
 
 ### Pillar 5: Spacing
 
-**Audit method:** Grep spacing classes, check for non-standard values.
+**Audit method:** Search spacing classes, check for non-standard values.
 
 ```bash
 # Find spacing classes
@@ -338,7 +325,7 @@ npx shadcn diff {block} 2>/dev/null
 
 ## Output: UI-REVIEW.md
 
-**ALWAYS use the Write tool to create files** — never use `bash heredoc` or heredoc commands for file creation. Mandatory regardless of `commit_docs` setting.
+**ALWAYS use the available file-editing tool to create files** — never use `bash heredoc` or heredoc commands for file creation. Mandatory regardless of `commit_docs` setting.
 
 Write to: `$PHASE_DIR/$PADDED_PHASE-UI-REVIEW.md`
 

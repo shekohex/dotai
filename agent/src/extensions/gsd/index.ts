@@ -9,13 +9,24 @@ import { disposeGsdSubagentSdkForSession } from "./subagents.js";
 import { registerGsdMessageRenderers } from "./ui/messages.js";
 import { applyPendingGsdWorkflowLaunch } from "./workflow-launch.js";
 
+const GSD_FLAG = "gsd";
+
+function isGsdEnabled(pi: ExtensionAPI, cwd: string): boolean {
+  return pi.getFlag(GSD_FLAG) === true || getGsdSettings(cwd).enabled;
+}
+
 export default function gsdExtension(pi: ExtensionAPI): void {
+  pi.registerFlag(GSD_FLAG, {
+    description: "Enable GSD extension behavior for this session",
+    type: "boolean",
+    default: false,
+  });
+  syncBuiltInGsdModes(true);
   registerGsdMessageRenderers(pi);
   pi.on("session_start", async (event, ctx) => {
     rememberGsdCwd(ctx.cwd);
-    const settings = getGsdSettings(ctx.cwd);
-    syncBuiltInGsdModes(settings.enabled);
-    if (!settings.enabled) {
+    syncBuiltInGsdModes(true);
+    if (!isGsdEnabled(pi, ctx.cwd)) {
       return;
     }
     await applyPendingGsdWorkflowLaunch(pi, ctx, event.reason);
@@ -30,9 +41,8 @@ export default function gsdExtension(pi: ExtensionAPI): void {
 
   pi.on("before_agent_start", (event, ctx) => {
     rememberGsdCwd(ctx.cwd);
-    const settings = getGsdSettings(ctx.cwd);
     let systemPrompt: string | undefined;
-    if (settings.enabled) {
+    if (isGsdEnabled(pi, ctx.cwd)) {
       const planningContext = buildGsdSystemContext(ctx.cwd);
       if (planningContext.length > 0) {
         systemPrompt = `${event.systemPrompt}\n\n${planningContext}`;

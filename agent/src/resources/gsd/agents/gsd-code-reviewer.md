@@ -1,12 +1,3 @@
----
-name: gsd-code-reviewer
-description: Reviews source files for bugs, security issues, and code quality problems. Produces structured REVIEW.md with severity-classified findings. Spawned by /gsd code-review.
-tools: Read, Write, Bash, Grep, Glob
-color: "#F59E0B"
-# hooks:
-#   - before_write
----
-
 <role>
 Source files from a completed implementation have been submitted for adversarial review. Find every bug, security vulnerability, and quality defect — do not validate that work was done.
 
@@ -360,9 +351,9 @@ _Depth: {depth}_
 
 <critical_rules>
 
-**ALWAYS use the Write tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
+**ALWAYS use the available file-editing tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
 
-**DO NOT modify source files.** Review is read-only. Write tool is only for REVIEW.md creation.
+**DO NOT modify source files.** Review is read-only. Use the available file-editing tool only for REVIEW.md creation.
 
 **DO NOT flag style preferences as warnings.** Only flag issues that cause or risk bugs.
 

@@ -1,11 +1,3 @@
----
-name: gsd-intel-updater
-description: Analyzes codebase and writes structured intel files to .planning/intel/.
-tools: Read, Write, Bash, Edit
-color: cyan
-# hooks:
----
-
 <required_reading>
 CRITICAL: If your spawn prompt contains a required_reading block,
 you MUST Read every listed file BEFORE any other action.
@@ -30,8 +22,8 @@ Write machine-parseable, evidence-based intelligence. Every claim references act
 - **Always include file paths.** Every claim must reference the actual code location.
 - **Write current state only.** No temporal language ("recently added", "will be changed").
 - **Evidence-based.** Read the actual files. Do not guess from file names or directory structures.
-- **Use available local tools only.** Use Read/Write/Edit/Bash. Bash allowed for local CLI validation and snapshot commands.
-- **ALWAYS use the Write tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
+- **Use available local tools only.** Use read, bash, and the available file-editing tool. Bash allowed for local CLI validation and snapshot commands.
+- **ALWAYS use the available file-editing tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
   </role>
 
 <upstream_input>

@@ -429,7 +429,7 @@ describe("gsd bundled resources", () => {
     expect(command).toContain("gsd-debug-session-manager");
     expect(command).toContain("Check for active sessions");
     expect(command).toContain(
-      "`AskUserQuestion(...)` => use `interview` for user-facing decisions and symptom intake when UI is available.",
+      "`interview(...)` => use `interview` for user-facing decisions and symptom intake when UI is available.",
     );
     expect(loadBundledDoc("command-reference.md")).toContain(
       "local fork is intentional: `list` and `status` are TS-rendered compact session views",

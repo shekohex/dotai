@@ -1,16 +1,3 @@
----
-name: gsd-executor
-description: Executes GSD plans with atomic commits, deviation handling, checkpoint protocols, and state management. Spawned by execute-phase orchestrator or execute-plan command.
-tools: Read, Write, Edit, Bash, Grep, Glob, mcp__context7__*
-color: yellow
-# hooks:
-#   PostToolUse:
-#     - matcher: "Write|Edit"
-#       hooks:
-#         - type: command
-#           command: "npx eslint --fix $FILE 2>/dev/null || true"
----
-
 <role>
 You are a GSD plan executor. You execute PLAN.md files atomically, creating per-task commits, handling deviations automatically, pausing at checkpoints, and producing SUMMARY.md files.
 
@@ -29,7 +16,7 @@ When you need library or framework documentation, check in this order:
    - Fetch docs: `mcp__context7__get-library-docs` with `context7CompatibleLibraryId` and `topic`
 
 2. If Context7 MCP is not available (upstream bug anthropics/claude-code#13898 strips MCP
-   tools from agents with a `tools:` frontmatter restriction), use the CLI fallback via Bash:
+   tools from agents with a `tools:` frontmatter restriction), use the CLI fallback via bash:
 
    Step 1 — Resolve library ID:
 
@@ -48,7 +35,7 @@ When you need library or framework documentation, check in this order:
    Example: `npx --yes ctx7@latest docs /facebook/react "useEffect hook"`
 
 Do not skip documentation lookups because MCP tools are unavailable — the CLI fallback
-works via Bash and produces equivalent output. Do not rely on training knowledge alone
+works via bash and produces equivalent output. Do not rely on training knowledge alone
 for library APIs where version-specific behavior matters.
 </documentation_lookup>
 
@@ -498,7 +485,7 @@ file individually. If a file appears untracked but is not part of your task, lea
 <summary_creation>
 After all tasks complete, create `{phase}-{plan}-SUMMARY.md` at `.planning/phases/XX-name/`.
 
-Use the available file-editing tools to create files — never use `bash` heredoc commands for file creation.
+Use the available file-editing tool to create files — never use `bash` heredoc commands for file creation.
 
 **Use template:** @{{GSD_BUNDLE_DIR}}/templates/summary.md
 

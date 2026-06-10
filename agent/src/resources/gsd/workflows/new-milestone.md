@@ -8,7 +8,7 @@ Start a new milestone cycle for an existing project. Loads project context, gath
 Local runtime mapping for this repo:
 
 - `Task(...)` => use `subagent` tool with matching local GSD mode.
-- `AskUserQuestion(...)` => use `interview` when structured UX helps, else ask directly in chat.
+- `interview(...)` => use `interview` when structured UX helps, else ask directly in chat.
 - `gsd-sdk query ...` => treat each query as desired outcome and implement it natively with local files, bundled prompts, and available tools.
 
 </local_runtime>

@@ -279,11 +279,11 @@ Things that couldn't be fully resolved:
 
 ### Secondary (MEDIUM confidence)
 
-- [WebSearch verified with official source] - [finding + verification]
+- [websearch verified with official source] - [finding + verification]
 
 ### Tertiary (LOW confidence - needs validation)
 
-- [WebSearch only] - [finding, marked for validation during implementation]
+- [websearch only] - [finding, marked for validation during implementation]
   </sources>
 
 <metadata>

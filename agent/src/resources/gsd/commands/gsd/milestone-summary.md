@@ -4,18 +4,16 @@ name: gsd:milestone-summary
 description: Generate a comprehensive project summary from milestone artifacts for team onboarding and review
 argument-hint: "[version]"
 allowed-tools:
-  - Read
-  - Write
-  - Bash
-  - Grep
-  - Glob
+  - read
+  - write
+  - bash
 ---
 
 <local_runtime>
 Local runtime mapping for this repo:
 
 - `Task(...)` => use `subagent` tool with matching local GSD mode.
-- `AskUserQuestion(...)` => use `interview` when structured UX helps, else ask directly in chat.
+- `interview(...)` => use `interview` when structured UX helps, else ask directly in chat.
 - `gsd-sdk query ...` => perform equivalent work natively with local files, repo inspection, bundled prompts, and local tools. If exact legacy helper behavior is useful and no native helper exists yet, use bundled `node {{GSD_BUNDLE_DIR}}/bin/gsd-tools.cjs ...` as local compatibility utility.
 - `{{GSD_BUNDLE_DIR}}` paths point at bundled GSD resources in this repo.
 

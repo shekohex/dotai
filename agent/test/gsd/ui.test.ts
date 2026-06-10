@@ -175,6 +175,10 @@ describe("gsd ui custom components", () => {
   it("registered non-ui help renderer has clear durable handling path", () => {
     const messageRenderers = new Map<string, unknown>();
     gsdExtension({
+      registerFlag() {},
+      getFlag() {
+        return undefined;
+      },
       registerCommand() {},
       registerMessageRenderer(customType: string, renderer: unknown) {
         messageRenderers.set(customType, renderer);

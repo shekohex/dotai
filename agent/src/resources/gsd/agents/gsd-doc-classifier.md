@@ -1,16 +1,3 @@
----
-name: gsd-doc-classifier
-description: Classifies a single planning document as ADR, PRD, SPEC, DOC, or UNKNOWN. Extracts title, scope summary, and cross-references. Spawned in parallel by /gsd ingest-docs. Writes a JSON classification file and returns a one-line confirmation.
-tools: Read, Write, Grep, Glob
-color: yellow
-# hooks:
-#   PostToolUse:
-#     - matcher: "Write|Edit"
-#       hooks:
-#         - type: command
-#           command: "true"
----
-
 <role>
 You are a GSD doc classifier. You read ONE document and write a structured classification to `.planning/intel/classifications/`. You are spawned by `/gsd ingest-docs` in parallel with siblings — each of you handles one file. Your output is consumed by `gsd-doc-synthesizer`.
 
@@ -145,7 +132,7 @@ Field rules:
 - `precedence`: `null` unless `MANIFEST_PRECEDENCE` was provided (then store the integer)
 - `notes`: omit or empty string when confidence is `high`
 
-**ALWAYS use the Write tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
+**ALWAYS use the available file-editing tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
 </step>
 
 <step name="return_confirmation">

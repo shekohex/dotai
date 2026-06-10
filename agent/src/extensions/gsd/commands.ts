@@ -8,6 +8,8 @@ import { showGsdHelp } from "./help.js";
 import { rememberGsdCwd } from "./state/cwd.js";
 import { showGsdDashboard } from "./ui.js";
 
+const GSD_FLAG = "gsd";
+
 export type GsdSubcommand =
   | "new-project"
   | "new-milestone"
@@ -82,6 +84,7 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
       }
       if (
         !settings.enabled &&
+        pi.getFlag(GSD_FLAG) !== true &&
         subcommand !== "help" &&
         subcommand !== "new-project" &&
         subcommand !== "new-milestone"

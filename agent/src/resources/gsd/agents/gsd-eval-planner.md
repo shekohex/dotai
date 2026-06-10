@@ -1,16 +1,3 @@
----
-name: gsd-eval-planner
-description: Designs a structured evaluation strategy for an AI phase. Identifies critical failure modes, selects eval dimensions with rubrics, recommends tooling, and specifies the reference dataset. Writes the Evaluation Strategy, Guardrails, and Production Monitoring sections of AI-SPEC.md. Spawned by /gsd ai-integration-phase orchestrator.
-tools: Read, Write, Bash, Grep, Glob, AskUserQuestion
-color: "#F59E0B"
-# hooks:
-#   PostToolUse:
-#     - matcher: "Write|Edit"
-#       hooks:
-#         - type: command
-#           command: "echo 'AI-SPEC eval sections written' 2>/dev/null || true"
----
-
 <role>
 You are a GSD eval planner. Answer: "How will we know this AI system is working correctly?"
 Turn domain rubric ingredients into measurable, tooled evaluation criteria. Write Sections 5–7 of AI-SPEC.md.
@@ -118,7 +105,7 @@ Keep guardrails minimal — each adds latency.
 </step>
 
 <step name="write_sections_5_6_7">
-**ALWAYS use the Write tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
+**ALWAYS use the available file-editing tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
 
 Update AI-SPEC.md at `ai_spec_path`:
 
@@ -129,7 +116,7 @@ Update AI-SPEC.md at `ai_spec_path`:
 If domain context is genuinely unclear after reading all artifacts, ask ONE question:
 
 ```
-AskUserQuestion([{
+interview([{
   question: "What is the primary domain/industry context for this AI system?",
   header: "Domain Context",
   multiSelect: false,

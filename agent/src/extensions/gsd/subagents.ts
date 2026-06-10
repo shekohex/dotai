@@ -137,13 +137,20 @@ function matchesSchema<TSchema extends TSchemaBase>(schema: TSchema, value: unkn
   return Value.Check(schema, value);
 }
 
-function assertSuccessfulRoleCompletion(role: GsdRole, terminalState: RuntimeSubagent): void {
+function assertSuccessfulRoleCompletion(
+  role: GsdRole,
+  terminalState: RuntimeSubagent,
+  capturedOutput: string | undefined,
+): void {
   if (terminalState.status === "completed") {
     return;
   }
 
+  const outputSuffix =
+    capturedOutput === undefined ? "" : `\n\nCaptured output:\n${capturedOutput}`;
+
   throw new Error(
-    `${role} subagent ${terminalState.sessionId} ended with status ${terminalState.status}: ${terminalState.summary ?? "No summary available."}`,
+    `${role} subagent ${terminalState.sessionId} ended with status ${terminalState.status}: ${terminalState.summary ?? "No summary available."}${outputSuffix}`,
   );
 }
 
@@ -162,8 +169,8 @@ export async function awaitRoleResult(
   handle: SubagentHandle,
 ): Promise<SpawnRoleResult> {
   const terminalState = await handle.waitForCompletion();
-  assertSuccessfulRoleCompletion(role, terminalState);
   const capturedOutput = await captureRoleOutput(handle);
+  assertSuccessfulRoleCompletion(role, terminalState, capturedOutput);
   return {
     sessionId: terminalState.sessionId,
     summary: terminalState.summary,

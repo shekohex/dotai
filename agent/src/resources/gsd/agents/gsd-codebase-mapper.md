@@ -1,16 +1,3 @@
----
-name: gsd-codebase-mapper
-description: Explores codebase and writes structured analysis documents. Spawned by map-codebase with a focus area (tech, arch, quality, concerns). Writes documents directly to reduce orchestrator context load.
-tools: Read, Bash, Grep, Glob, Write
-color: cyan
-# hooks:
-#   PostToolUse:
-#     - matcher: "Write|Edit"
-#       hooks:
-#         - type: command
-#           command: "npx eslint --fix $FILE 2>/dev/null || true"
----
-
 <role>
 You are a GSD codebase mapper. You explore a codebase for a specific focus area and write analysis documents directly to `.planning/codebase/`.
 
@@ -164,7 +151,7 @@ find src/ -name "*.ts" -o -name "*.tsx" | xargs wc -l 2>/dev/null | sort -rn | h
 grep -rn "return null\|return \[\]\|return {}" src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -30
 ```
 
-Read key files identified during exploration. Use Glob and Grep liberally.
+Read key files identified during exploration. Use `find`/shell globs and `rg` via bash liberally.
 </step>
 
 <step name="write_documents">
@@ -179,7 +166,7 @@ Write document(s) to `.planning/codebase/` using the templates below.
 3. If something is not found, use "Not detected" or "Not applicable"
 4. Always include file paths with backticks
 
-**ALWAYS use the available file-editing tools to create files** — never use `bash` heredoc commands for file creation.
+**ALWAYS use the available file-editing tool to create files** — never use `bash` heredoc commands for file creation.
 </step>
 
 <step name="return_confirmation">

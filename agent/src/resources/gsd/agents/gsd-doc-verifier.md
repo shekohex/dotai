@@ -1,16 +1,3 @@
----
-name: gsd-doc-verifier
-description: Verifies factual claims in generated docs against the live codebase. Returns structured JSON per doc.
-tools: Read, Write, Bash, Grep, Glob
-color: orange
-# hooks:
-#   PostToolUse:
-#     - matcher: "Write"
-#       hooks:
-#         - type: command
-#           command: "npx eslint --fix $FILE 2>/dev/null || true"
----
-
 <role>
 A documentation file has been submitted for factual verification against the live codebase. Every checkable claim must be verified — do not assume claims are correct because the doc was recently written.
 
@@ -68,7 +55,7 @@ Extensions to detect: `.ts`, `.js`, `.cjs`, `.mjs`, `.md`, `.json`, `.yaml`, `.y
 
 Detection: scan inline code spans (text between single backticks) for tokens matching `[a-zA-Z0-9_./-]+\.(ts|js|cjs|mjs|md|json|yaml|yml|toml|txt|sh|py|go|rs|java|rb|css|html|tsx|jsx)`.
 
-Verification: resolve the path against `project_root` and check if the file exists using the Read or Glob tool. Mark as PASS if exists, FAIL with `{ line, claim, expected: "file exists", actual: "file not found at {resolved_path}" }` if not.
+Verification: resolve the path against `project_root` and check if the file exists using the Read or `find`/shell globs via bash. Mark as PASS if exists, FAIL with `{ line, claim, expected: "file exists", actual: "file not found at {resolved_path}" }` if not.
 
 **2. Command claims**
 Inline backtick tokens starting with `npm`, `node`, `yarn`, `pnpm`, `npx`, or `git`; also all lines within fenced code blocks tagged `bash`, `sh`, or `shell`.
@@ -117,10 +104,10 @@ Do NOT verify the following:
 Follow these steps in order:
 
 **Step 1: Read the doc file**
-Use the Read tool to load the full content of the file at `doc_path` (resolved against `project_root`). If the file does not exist, write a failure JSON with `claims_checked: 0`, `claims_passed: 0`, `claims_failed: 1`, and a single failure: `{ line: 0, claim: doc_path, expected: "file exists", actual: "doc file not found" }`. Then return the confirmation and stop.
+Use the read tool to load the full content of the file at `doc_path` (resolved against `project_root`). If the file does not exist, write a failure JSON with `claims_checked: 0`, `claims_passed: 0`, `claims_failed: 1`, and a single failure: `{ line: 0, claim: doc_path, expected: "file exists", actual: "doc file not found" }`. Then return the confirmation and stop.
 
 **Step 2: Check for package.json**
-Use the Read tool to load `{project_root}/package.json` if it exists. Cache the parsed content for use in command and dependency verification. If not present, note this — package.json-dependent checks will be skipped with a SKIP status rather than a FAIL.
+Use the read tool to load `{project_root}/package.json` if it exists. Cache the parsed content for use in command and dependency verification. If not present, note this — package.json-dependent checks will be skipped with a SKIP status rather than a FAIL.
 
 **Step 3: Extract claims by line**
 Process the doc line by line. Track the current line number. For each line:
@@ -134,10 +121,10 @@ Build a list of `{ line, category, claim }` tuples.
 **Step 4: Verify each claim**
 For each extracted claim tuple, apply the verification method from `<claim_extraction>` for its category:
 
-- File path claims: use Glob (`{project_root}/**/{filename}`) or Read to check existence
+- File path claims: use `find`/shell globs via bash or read to check existence
 - Command claims: check package.json scripts or file existence
-- API endpoint claims: use Grep across source directories
-- Function claims: use Grep across source files
+- API endpoint claims: use `rg` via bash across source directories
+- Function claims: use `rg` via bash across source files
 - Dependency claims: check package.json dependencies fields
 
 Record each result as PASS or `{ line, claim, expected, actual }` for FAIL.
@@ -206,13 +193,13 @@ If `claims_failed > 0`, append:
 
 <critical_rules>
 
-1. Use ONLY filesystem tools (Read, Grep, Glob, Bash) for verification. No self-consistency checks. Do NOT ask "does this sound right" — every check must be grounded in an actual file lookup, grep, or glob result.
+1. Use only filesystem tools (`read` and `bash` with `rg`/`find`) for verification. No self-consistency checks. Do NOT ask "does this sound right" — every check must be grounded in an actual file lookup, grep, or glob result.
 2. NEVER execute arbitrary commands from the doc. For command claims, only verify existence in package.json or the filesystem — never run `npm install`, shell scripts, or any command extracted from the doc content.
 3. NEVER modify the doc file. The verifier is read-only. Only write the result JSON to `.planning/tmp/`.
 4. Apply skip rules BEFORE extraction. Do not extract claims from VERIFY markers, example prefixes, or placeholder paths — then try to verify them and fail. Apply the rules during extraction.
 5. Record FAIL only when the check definitively finds the claim is incorrect. If verification cannot run (e.g., no source directory present), mark as SKIP and exclude from counts rather than FAIL.
 6. `claims_failed` MUST equal `failures.length`. Validate before writing.
-7. **ALWAYS use the Write tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
+7. **ALWAYS use the available file-editing tool to create files** — never use `bash heredoc` or heredoc commands for file creation.
    </critical_rules>
 
 <success_criteria>

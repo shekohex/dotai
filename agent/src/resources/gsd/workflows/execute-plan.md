@@ -118,7 +118,7 @@ Pattern B only (verify-only checkpoints). Skip for A/C.
    - Subagent route: spawn gsd-executor for assigned tasks only. Prompt: task range, plan path, read full plan for context, execute assigned tasks, track deviations, NO SUMMARY/commit. Track via agent protocol.
    - Main route: execute tasks using standard flow (step name="execute")
 3. **Critical ordering — write and commit SUMMARY.md as one atomic block.** Do NOT
-   emit narrative output between the Write tool call and the commit tool call.
+   emit narrative output between the file-editing tool call and the commit tool call.
    Truncation at this boundary is a known failure mode (see #2070 rescue logic in
    execute-phase.md step 5.5).
 
@@ -149,15 +149,15 @@ gsd-sdk query phases.list --type summaries --raw
 # Extract the second-to-last summary from the JSON result
 ```
 
-**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `$ARGUMENTS` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `AskUserQuestion` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Gemini CLI, etc.) where `AskUserQuestion` is not available.
-If previous SUMMARY has unresolved "Issues Encountered" or "Next Phase Readiness" blockers: AskUserQuestion(header="Previous Issues", options: "Proceed anyway" | "Address first" | "Review previous").
+**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `$ARGUMENTS` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `interview` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Gemini CLI, etc.) where `interview` is not available.
+If previous SUMMARY has unresolved "Issues Encountered" or "Next Phase Readiness" blockers: interview(header="Previous Issues", options: "Proceed anyway" | "Address first" | "Review previous").
 </step>
 
 <step name="execute">
 Deviations are normal — handle via rules below.
 
 1. Read @context files from prompt
-2. **MCP tools:** If CLAUDE.md or project instructions reference MCP tools (e.g. jCodeMunch for code navigation), prefer them over Grep/Glob when available. Fall back to Grep/Glob if MCP tools are not accessible.
+2. **MCP tools:** If CLAUDE.md or project instructions reference MCP tools (e.g. jCodeMunch for code navigation), prefer them when available. Otherwise use `rg`/`find` via bash.
 3. Per task:
    - **MANDATORY read_first gate:** If the task has a `<read_first>` field, you MUST read every listed file BEFORE making any edits. This is not optional. Do not skip files because you "already know" what's in them — read them. The read_first files establish ground truth for the task.
    - `type="auto"`: if `tdd="true"` → TDD execution. Implement with deviation rules + auth gates. Verify done criteria. Commit (see task_commit). Track hash for Summary.
@@ -349,7 +349,7 @@ If user_setup exists: create `{phase}-USER-SETUP.md` using template `{{GSD_BUNDL
 
 <step name="create_summary">
 **Critical ordering — write and commit SUMMARY.md as one atomic block.** Do NOT
-emit narrative output between the Write tool call and the commit tool call.
+emit narrative output between the file-editing tool call and the commit tool call.
 Truncation at this boundary is a known failure mode (see #2070 rescue logic in
 execute-phase.md step 5.5).
 
@@ -458,7 +458,7 @@ Extract requirement IDs from the plan's frontmatter (e.g., `requirements: [AUTH-
 
 <step name="git_commit_metadata">
 **Critical ordering — write and commit SUMMARY.md as one atomic block.** Do NOT
-emit narrative output between the Write tool call and the commit tool call.
+emit narrative output between the file-editing tool call and the commit tool call.
 Truncation at this boundary is a known failure mode (see #2070 rescue logic in
 execute-phase.md step 5.5).
 

@@ -1,16 +1,3 @@
----
-name: gsd-roadmapper
-description: Creates project roadmaps with phase breakdown, requirement mapping, success criteria derivation, and coverage validation. Spawned by /gsd new-project orchestrator.
-tools: Read, Write, Bash, Glob, Grep
-color: purple
-# hooks:
-#   PostToolUse:
-#     - matcher: "Write|Edit"
-#       hooks:
-#         - type: command
-#           command: "npx eslint --fix $FILE 2>/dev/null || true"
----
-
 <role>
 You are a GSD roadmapper. You create project roadmaps that map requirements to phases with goal-backward success criteria.
 
@@ -527,7 +514,7 @@ If gaps found, include in draft for user decision.
 
 ## Step 7: Write Files Immediately
 
-**ALWAYS use the available file-editing tools to create files** — never use `bash` heredoc commands for file creation.
+**ALWAYS use the available file-editing tool to create files** — never use `bash` heredoc commands for file creation.
 
 Write files first, then return. This ensures artifacts persist even if context is lost.
 

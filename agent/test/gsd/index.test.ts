@@ -18,6 +18,18 @@ class FakePi implements Partial<ExtensionAPI> {
   readonly commands = new Map<string, RegisteredCommand>();
   readonly handlers = new Map<string, Array<(...args: any[]) => any>>();
   readonly messageRenderers = new Map<string, unknown>();
+  readonly flags = new Map<string, { description?: string; type: "boolean" | "string" }>();
+
+  registerFlag(
+    name: string,
+    definition: { description?: string; type: "boolean" | "string" },
+  ): void {
+    this.flags.set(name, definition);
+  }
+
+  getFlag(): boolean | string | undefined {
+    return undefined;
+  }
 
   registerCommand(name: string, command: RegisteredCommand): void {
     this.commands.set(name, command);

@@ -211,8 +211,8 @@ Plans execute autonomously. Checkpoints formalize interaction points where human
 
 - Deploying (use CLI - auth gate if needed)
 - Creating webhooks/databases (use API/CLI - auth gate if needed)
-- Running builds/tests (use Bash tool)
-- Creating files (use Write tool)
+- Running builds/tests (use bash tool)
+- Creating files (use the available file-editing tool)
 
 **Structure:**
 
@@ -422,7 +422,7 @@ I'll verify: vercel whoami returns your account
 
 ## Environment Variable Automation
 
-**Env files:** Use Write/Edit tools. Never ask human to create .env manually.
+**Env files:** Use the available file-editing tool. Never ask human to create .env manually.
 
 **Dashboard env vars via CLI:**
 
@@ -539,22 +539,22 @@ timeout 30 bash -c 'until node -e "fetch(\"http://localhost:3000\").then(r=>{pro
 
 ## Automatable Quick Reference
 
-| Action                           | Automatable?               | Claude does it? |
-| -------------------------------- | -------------------------- | --------------- |
-| Deploy to Vercel                 | Yes (`vercel`)             | YES             |
-| Create Stripe webhook            | Yes (API)                  | YES             |
-| Write .env file                  | Yes (Write tool)           | YES             |
-| Create Upstash DB                | Yes (`upstash`)            | YES             |
-| Run tests                        | Yes (`npm test`)           | YES             |
-| Start dev server                 | Yes (`npm run dev`)        | YES             |
-| Add env vars to Convex           | Yes (`npx convex env set`) | YES             |
-| Add env vars to Vercel           | Yes (`vercel env add`)     | YES             |
-| Seed database                    | Yes (CLI/API)              | YES             |
-| Click email verification link    | No                         | NO              |
-| Enter credit card with 3DS       | No                         | NO              |
-| Complete OAuth in browser        | No                         | NO              |
-| Visually verify UI looks correct | No                         | NO              |
-| Test interactive user flows      | No                         | NO              |
+| Action                           | Automatable?                      | Claude does it? |
+| -------------------------------- | --------------------------------- | --------------- |
+| Deploy to Vercel                 | Yes (`vercel`)                    | YES             |
+| Create Stripe webhook            | Yes (API)                         | YES             |
+| Write .env file                  | Yes (available file-editing tool) | YES             |
+| Create Upstash DB                | Yes (`upstash`)                   | YES             |
+| Run tests                        | Yes (`npm test`)                  | YES             |
+| Start dev server                 | Yes (`npm run dev`)               | YES             |
+| Add env vars to Convex           | Yes (`npx convex env set`)        | YES             |
+| Add env vars to Vercel           | Yes (`vercel env add`)            | YES             |
+| Seed database                    | Yes (CLI/API)                     | YES             |
+| Click email verification link    | No                                | NO              |
+| Enter credit card with 3DS       | No                                | NO              |
+| Complete OAuth in browser        | No                                | NO              |
+| Visually verify UI looks correct | No                                | NO              |
+| Test interactive user flows      | No                                | NO              |
 
 </automation_reference>
 

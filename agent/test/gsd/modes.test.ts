@@ -56,12 +56,23 @@ describe("ensureBuiltInGsdModes", () => {
 
     expect(built.modes["gsd-planner"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-planner"]?.modelId).toBe("gpt-5.5");
-    expect(built.modes["gsd-planner"]?.tools).toEqual(["read", "bash", "websearch", "interview"]);
+    expect(built.modes["gsd-planner"]?.tools).toEqual([
+      "read",
+      "bash",
+      "write",
+      "websearch",
+      "interview",
+    ]);
     expect(built.modes["gsd-planner"]?.tmuxTarget).toBe("window");
 
     expect(built.modes["gsd-phase-researcher"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-phase-researcher"]?.modelId).toBe("gpt-5.4-mini");
-    expect(built.modes["gsd-phase-researcher"]?.tools).toEqual(["read", "bash", "websearch"]);
+    expect(built.modes["gsd-phase-researcher"]?.tools).toEqual([
+      "read",
+      "bash",
+      "write",
+      "websearch",
+    ]);
 
     expect(built.modes["gsd-executor"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-executor"]?.modelId).toBe("gpt-5.5");
@@ -69,7 +80,11 @@ describe("ensureBuiltInGsdModes", () => {
 
     expect(built.modes["gsd-verifier"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-verifier"]?.modelId).toBe("gpt-5.5");
-    expect(built.modes["gsd-verifier"]?.tools).toEqual(["read", "bash", "websearch"]);
+    expect(built.modes["gsd-verifier"]?.tools).toEqual(["read", "bash", "write", "websearch"]);
+
+    expect(built.modes["gsd-pattern-mapper"]?.provider).toBe("openai-codex");
+    expect(built.modes["gsd-pattern-mapper"]?.modelId).toBe("gpt-5.4-mini");
+    expect(built.modes["gsd-pattern-mapper"]?.tools).toEqual(["read", "bash", "write"]);
 
     expect(built.modes["gsd-codebase-mapper"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-codebase-mapper"]?.modelId).toBe("gpt-5.4-mini");
@@ -80,6 +95,18 @@ describe("ensureBuiltInGsdModes", () => {
     expect(built.modes["gsd-intel-updater"]?.modelId).toBe("gpt-5.4-mini");
     expect(built.modes["gsd-intel-updater"]?.tools).toEqual(["read", "bash", "edit", "write"]);
     expect(built.modes["gsd-intel-updater"]?.tmuxTarget).toBe("window");
+
+    expect(built.modes["gsd-debugger"]?.provider).toBe("openai-codex");
+    expect(built.modes["gsd-debugger"]?.modelId).toBe("gpt-5.5");
+    expect(built.modes["gsd-debugger"]?.tools).toEqual([
+      "read",
+      "bash",
+      "edit",
+      "write",
+      "websearch",
+      "interview",
+      "execute",
+    ]);
 
     expect(built.modes["gsd-debug-session-manager"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-debug-session-manager"]?.modelId).toBe("gpt-5.5");

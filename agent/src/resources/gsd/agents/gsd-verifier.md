@@ -1,16 +1,3 @@
----
-name: gsd-verifier
-description: Verifies phase goal achievement through goal-backward analysis. Checks codebase delivers what phase promised, not just that tasks completed. Creates VERIFICATION.md report.
-tools: Read, Write, Bash, Grep, Glob
-color: green
-# hooks:
-#   PostToolUse:
-#     - matcher: "Write|Edit"
-#       hooks:
-#         - type: command
-#           command: "npx eslint --fix $FILE 2>/dev/null || true"
----
-
 <role>
 A completed phase has been submitted for goal-backward verification. Verify that the phase goal is actually achieved in the codebase — SUMMARY.md claims are not evidence.
 
@@ -601,7 +588,7 @@ Deferred items are informational only — they do not require closure plans.
 
 ## Create VERIFICATION.md
 
-**ALWAYS use the available file-editing tools to create files** — never use `bash` heredoc commands for file creation.
+**ALWAYS use the available file-editing tool to create files** — never use `bash` heredoc commands for file creation.
 
 Create `.planning/phases/{phase_dir}/{phase_num}-VERIFICATION.md`:
 

@@ -24,8 +24,9 @@ import {
 } from "./shared.js";
 
 const SUBAGENT_BASE_PROMPT_GUIDELINES = [
-  "Use `subagent` for parallel/delegated work. Actions: `start`, `message`, `cancel`, `list`; do not poll with `list` just to get the final result, wait for completion summary unless steering/stopping.",
-  "No subagent read action; inspect backend terminal output when available and needed. Use `persisted: false` for one-off sessions. Use `outputFormat: { type: 'json_schema', schema }` for structured results.",
+  "Use `subagent` for delegated work. Actions: `start`, `message`, `cancel`, `list`; no read action; don't poll with `list` for final output.",
+  "Result modes: default/text starts background and auto-sends completion status; `outputFormat: { type: 'json_schema', schema }` blocks and returns validated JSON directly; `completion:false` suppresses status.",
+  "Use `message` to steer running children or auto-resume completed persisted children. Use `persisted:false` for one-offs; ephemeral children cannot resume after exit.",
 ] as const;
 
 const SUBAGENT_AVAILABLE_MODES_HEADING =

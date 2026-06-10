@@ -2579,7 +2579,7 @@ timedTest("FallbackMuxAdapter routes legacy tmux pane ids without persisted back
   expect(pty.sent).toHaveLength(0);
 });
 
-timedTest("subagent tool metadata explains terminal inspection and wait-for-summary flow", () => {
+timedTest("subagent tool metadata explains terminal inspection and result modes", () => {
   const fakePi = new FakePi();
   createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
     fakePi as unknown as ExtensionAPI,
@@ -2587,18 +2587,20 @@ timedTest("subagent tool metadata explains terminal inspection and wait-for-summ
   const tool = fakePi.registeredTools.get("subagent");
   expect(tool).toBeTruthy();
 
-  expect(tool.description).toMatch(/no subagent read action/i);
-  expect(tool.description).toMatch(/wait for the automatic completion summary/i);
-  expect(tool.promptSnippet ?? "").toMatch(/no subagent read action/i);
-  expect(tool.promptSnippet ?? "").toMatch(/automatic completion summary/i);
+  expect(tool.description).toMatch(/no read action/i);
+  expect(tool.description).toMatch(/json_schema blocks and returns validated JSON directly/i);
+  expect(tool.description).toMatch(/completion:false to suppress status/i);
+  expect(tool.promptSnippet ?? "").toMatch(/no read action/i);
+  expect(tool.promptSnippet ?? "").toMatch(/json_schema=blocking validated JSON/i);
+  expect(tool.promptSnippet ?? "").toMatch(/completion:false suppresses status/i);
   expect(
     tool.promptGuidelines?.some((guideline) =>
-      /backend terminal output when available/i.test(guideline),
+      /default\/text starts background and auto-sends completion status/i.test(guideline),
     ),
   ).toBe(true);
   expect(
     tool.promptGuidelines?.some((guideline) =>
-      /do not poll with `list` just to get the final result/i.test(guideline),
+      /don't poll with `list` for final output/i.test(guideline),
     ),
   ).toBe(true);
 
@@ -3739,6 +3741,7 @@ timedTest(
         summary: "All clear",
         risk: "low",
       });
+      expect(fakePi.sentMessages).toHaveLength(0);
     } finally {
       process.env.PI_CODING_AGENT_DIR = previousAgentDir;
       await fs.rm(agentDir, { recursive: true, force: true });

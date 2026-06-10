@@ -66,6 +66,14 @@ function getSpawnRetryCount(params: StartSubagentParams): number {
     : DEFAULT_STRUCTURED_OUTPUT_RETRY_COUNT;
 }
 
+function prepareBlockingSpawnParams(params: StartSubagentParams): StartSubagentParams {
+  if (params.outputFormat?.type !== "json_schema" || params.completion !== undefined) {
+    return params;
+  }
+
+  return { ...params, completion: false };
+}
+
 async function resolveSpawnOutcome(
   params: StartSubagentParams,
   handle: SubagentHandle,
@@ -129,7 +137,12 @@ export function createSpawnFunction(input: SpawnFunctionFactoryInput): SubagentS
   ): Promise<StartSubagentSpawnOutcomeText | StartSubagentSpawnOutcomeJsonSchema<TSchemaBase>> {
     const retryCount = getSpawnRetryCount(params);
     try {
-      const started = await input.runtime.spawn(params, ctx, onUpdate, signal);
+      const started = await input.runtime.spawn(
+        prepareBlockingSpawnParams(params),
+        ctx,
+        onUpdate,
+        signal,
+      );
       input.emitChangedStates();
       const handle = input.toHandle(started.state.sessionId);
       return await resolveSpawnOutcome(params, handle, started.prompt, signal, retryCount);

@@ -1,4 +1,5 @@
 import agentsMdExtension from "./agents-md.js";
+import autoTreesExtension from "./auto-trees/index.js";
 import compactionExtension from "./compaction.js";
 import contextExtension from "./context.js";
 import debugProviderRequestExtension from "./debug-provider-request.js";
@@ -14,6 +15,7 @@ import type { GroupedExtensionDefinition } from "./definitions.js";
 
 export const groupedExtensionsB: GroupedExtensionDefinition[] = [
   { id: "review", factory: reviewExtension },
+  { id: "auto-trees", factory: autoTreesExtension },
   { id: "agents-md", factory: agentsMdExtension },
   { id: "compaction", factory: compactionExtension },
   { id: "handoff", factory: handoffExtension },

@@ -3,6 +3,11 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import {
+  createMarkerApi,
+  INCREMENTAL_WORKFLOW_MARKER_LABEL,
+  INCREMENTAL_WORKFLOW_STATE_ENTRY,
+} from "../auto-trees/index.js";
 import type { SummaryGenerationResult } from "../session-launch-utils.js";
 import { getConversationMessages } from "../session-launch-utils.js";
 import { resolveGeneratedReviewHandoffPrompt } from "./handoff-generation.js";
@@ -83,6 +88,11 @@ export function createPullRequestTargetResolver(pi: ExtensionAPI): PullRequestRe
 }
 
 export function createReviewExecutor(input: CreateReviewExecutorInput) {
+  const markerApi = createMarkerApi(input.pi, {
+    stateEntryType: INCREMENTAL_WORKFLOW_STATE_ENTRY,
+    markerLabel: INCREMENTAL_WORKFLOW_MARKER_LABEL,
+  });
+
   return (
     ctx: ExtensionCommandContext,
     target: ReviewTarget,
@@ -109,6 +119,12 @@ export function createReviewExecutor(input: CreateReviewExecutorInput) {
               targetLabel,
               createdAt: new Date().toISOString(),
             });
+          },
+          setReviewMarker: (markerCtx, _targetLabel, reviewPointId) => {
+            if (reviewPointId === undefined || reviewPointId.length === 0) {
+              return;
+            }
+            markerApi.applyMarker(markerCtx, reviewPointId, "Review marker set for /end");
           },
         }),
       startReviewRun: (runInput) =>

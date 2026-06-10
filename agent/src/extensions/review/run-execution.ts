@@ -37,6 +37,11 @@ type PrepareReviewRunInputDeps<Message = unknown> = {
   }) => string;
   getCustomInstructions: () => string | undefined;
   appendReviewAnchor: (targetLabel: string) => void;
+  setReviewMarker: (
+    ctx: ExtensionCommandContext,
+    targetLabel: string,
+    reviewPointId: string | undefined,
+  ) => void;
 };
 
 type ExecuteReviewDeps = {
@@ -58,6 +63,7 @@ export async function prepareReviewRunInput<Message>(
   deps: PrepareReviewRunInputDeps<Message>,
 ): Promise<PreparedReviewRunInput | null> {
   const checkoutToRestore = target.type === "pullRequest" ? target.checkoutToRestore : undefined;
+  const reviewPointId = ctx.sessionManager.getLeafId() ?? undefined;
   const prompt = await deps.buildReviewPrompt(target);
   const targetLabel = deps.getUserFacingHint(target);
   const generatedHandoffPrompt = await deps.resolveGeneratedReviewHandoffPrompt({
@@ -81,10 +87,12 @@ export async function prepareReviewRunInput<Message>(
     extraInstruction: reviewOptions.extraInstruction?.trim(),
   });
   deps.appendReviewAnchor(targetLabel);
+  const branchAnchorId = ctx.sessionManager.getLeafId() ?? undefined;
+  deps.setReviewMarker(ctx, targetLabel, reviewPointId);
   return {
     targetLabel,
     fullPrompt,
-    branchAnchorId: ctx.sessionManager.getLeafId() ?? undefined,
+    branchAnchorId,
     checkoutToRestore,
   };
 }

@@ -394,6 +394,7 @@ function extractMilestoneNameFromLine(line: string, milestoneVersion: string): s
     .replace(/^[-:–—]\s*/u, "")
     .replaceAll(/\(.*?\)/gu, "")
     .replace(/[-:–—]\s*(shipped|in progress|planned).*$/iu, "")
+    .replaceAll("**", "")
     .trim();
   return cleaned.length > 0 ? cleaned : undefined;
 }

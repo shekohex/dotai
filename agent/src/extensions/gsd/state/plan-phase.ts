@@ -5,17 +5,16 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { errorMessage } from "../../../utils/error-message.js";
 import { resolvePlanningDir } from "../shared.js";
-import { parseMarkdownFrontmatter } from "./markdown.js";
-import { readPlanningConfig } from "./read.js";
+import { parsePlanMarkdownContent, readPlanningConfig } from "./read.js";
 import { readRoadmapPhases, type RoadmapPhase } from "./roadmap.js";
-import { PlanFrontmatterSchema, type PlanFrontmatter } from "./schema.js";
+import type { PlanFrontmatter } from "./schema.js";
 import { ensureCurrentPhaseDir, resolveCurrentPhase, writeStateFields } from "./runtime.js";
 
 const PlanMustHavesObjectSchema = Type.Object(
   {
     truths: Type.Optional(Type.Array(Type.String())),
-    artifacts: Type.Optional(Type.Array(Type.String())),
-    key_links: Type.Optional(Type.Array(Type.String())),
+    artifacts: Type.Optional(Type.Array(Type.Unknown())),
+    key_links: Type.Optional(Type.Array(Type.Unknown())),
   },
   { additionalProperties: true },
 );
@@ -97,7 +96,11 @@ function normalizePlanValue(value: string | number): string {
 
 function normalizePhaseValue(value: string | number): string {
   const text = String(value);
-  return text.includes(".") ? text : text.padStart(2, "0");
+  const leadingPhase = text.match(/^(\d+(?:\.\d+)?)/u)?.[1] ?? text;
+  if (/^\d+$/u.test(leadingPhase)) {
+    return leadingPhase.padStart(2, "0");
+  }
+  return leadingPhase;
 }
 
 export function normalizeExplicitPhaseToken(value: string | undefined): string | undefined {
@@ -119,7 +122,15 @@ function extractTaskCount(body: string): number {
   if (taskHeadingCount > 0) {
     return taskHeadingCount;
   }
+  const xmlTaskCount = [...body.matchAll(/<task\b/giu)].length;
+  if (xmlTaskCount > 0) {
+    return xmlTaskCount;
+  }
   return [...body.matchAll(/^-\s+\[[ x]\]\s+/gmu)].length;
+}
+
+function hasTaskSection(body: string): boolean {
+  return body.includes("## Tasks") || body.includes("<tasks>");
 }
 
 export function validateCanonicalPlanArtifacts(
@@ -153,7 +164,7 @@ export function validateCanonicalPlanArtifacts(
     .toSorted((left, right) => left.localeCompare(right))
     .map((fileName) => {
       const path = join(phaseDir, fileName);
-      const parsed = parseMarkdownFrontmatter(readFileSync(path, "utf8"), PlanFrontmatterSchema);
+      const parsed = parsePlanMarkdownContent(fileName, readFileSync(path, "utf8"));
       const planSuffix = fileName.slice(phasePrefix.length + 1, phasePrefix.length + 3);
       const frontmatterPhase = normalizePhaseValue(parsed.frontmatter.phase);
       const frontmatterPlan = normalizePlanValue(parsed.frontmatter.plan);
@@ -168,7 +179,7 @@ export function validateCanonicalPlanArtifacts(
         );
       }
       const taskCount = extractTaskCount(parsed.body);
-      if (!parsed.body.includes("## Tasks") || taskCount === 0) {
+      if (!hasTaskSection(parsed.body) || taskCount === 0) {
         throw new Error(`Plan file ${fileName} missing required task structure.`);
       }
       const mustHaves = parsed.frontmatter.must_haves;

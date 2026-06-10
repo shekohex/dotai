@@ -2484,7 +2484,7 @@ test("gsd progress --next ignores noncanonical UAT artifacts before later-phase 
   );
 });
 
-test("gsd progress --next ignores noncanonical verification artifacts before blocking route", async () => {
+test("gsd progress --next ignores noncanonical verification artifacts before advancing route", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -2542,7 +2542,7 @@ test("gsd progress --next ignores noncanonical verification artifacts before blo
   await command?.handler("progress --next", createCommandContext(cwd, notifications, fakePi));
 
   expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
-    'Launch native GSD workflow for "/gsd verify-work 1"',
+    'Launch native GSD workflow for "/gsd execute-phase 2"',
   );
 });
 

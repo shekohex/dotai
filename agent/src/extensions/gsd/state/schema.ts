@@ -34,8 +34,8 @@ export type StateFrontmatter = Static<typeof StateFrontmatterSchema>;
 const PlanMustHavesSchema = Type.Object(
   {
     truths: Type.Optional(Type.Array(Type.String())),
-    artifacts: Type.Optional(Type.Array(Type.String())),
-    key_links: Type.Optional(Type.Array(Type.String())),
+    artifacts: Type.Optional(Type.Array(Type.Unknown())),
+    key_links: Type.Optional(Type.Array(Type.Unknown())),
   },
   { additionalProperties: true },
 );

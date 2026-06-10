@@ -31,7 +31,7 @@ const { MODEL_PROFILES } = require("./model-profiles.cjs");
  * Determine phase status by checking plan/summary counts AND verification state. Introduces
  * "Executed" for phases with all summaries but no passing verification.
  */
-function determinePhaseStatus(plans, summaries, phaseDir, defaultPending) {
+function determinePhaseStatus(plans, summaries, phaseDir, phaseNum, defaultPending) {
   if (plans === 0) return defaultPending;
   if (summaries < plans && summaries > 0) return "In Progress";
   if (summaries < plans) return "Planned";
@@ -39,14 +39,16 @@ function determinePhaseStatus(plans, summaries, phaseDir, defaultPending) {
   // summaries >= plans — check verification
   try {
     const files = fs.readdirSync(phaseDir);
-    const verificationFile = files.find(
-      (f) => f === "VERIFICATION.md" || f.endsWith("-VERIFICATION.md"),
-    );
+    const verificationFile = files.find((f) => isCanonicalVerificationFile(f, phaseNum));
     if (verificationFile) {
       const content = fs.readFileSync(path.join(phaseDir, verificationFile), "utf-8");
-      if (/status:\s*passed/i.test(content)) return "Complete";
-      if (/status:\s*human_needed/i.test(content)) return "Needs Review";
-      if (/status:\s*gaps_found/i.test(content)) return "Executed";
+      const frontmatter = extractTopLevelFrontmatter(content);
+      const status = readFrontmatterField(frontmatter, "status").toLowerCase();
+      const verified = readFrontmatterField(frontmatter, "verified").toLowerCase();
+      if (isPassingVerificationStatus(status) || isPassingVerifiedValue(verified))
+        return "Complete";
+      if (status === "human_needed") return "Needs Review";
+      if (status === "gaps_found" || verified === "false") return "Executed";
       // Verification exists but unrecognized status — treat as executed
       return "Executed";
     }
@@ -56,6 +58,38 @@ function determinePhaseStatus(plans, summaries, phaseDir, defaultPending) {
 
   // No verification file — executed but not verified
   return "Executed";
+}
+
+function extractTopLevelFrontmatter(content) {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  return match ? match[1] : "";
+}
+
+function isCanonicalVerificationFile(fileName, phaseNum) {
+  if (fileName === "VERIFICATION.md") return true;
+  if (!fileName.endsWith("-VERIFICATION.md")) return false;
+  const prefix = fileName.replace(/-VERIFICATION\.md$/, "");
+  return normalizePhaseName(prefix) === normalizePhaseName(phaseNum);
+}
+
+function readFrontmatterField(frontmatter, field) {
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = frontmatter.match(new RegExp(`^${escaped}:\\s*(.+)$`, "im"));
+  return match ? match[1].trim() : "";
+}
+
+function isPassingVerificationStatus(status) {
+  return [
+    "passed",
+    "approved",
+    "complete",
+    "ready_for_closeout",
+    "ready_for_metadata_closeout",
+  ].includes(status);
+}
+
+function isPassingVerifiedValue(verified) {
+  return ["true", "passed", "approved"].includes(verified);
 }
 
 function cmdGenerateSlug(text, raw) {
@@ -631,7 +665,13 @@ function cmdProgressRender(cwd, format, raw) {
       totalPlans += plans;
       totalSummaries += summaries;
 
-      const status = determinePhaseStatus(plans, summaries, path.join(phasesDir, dir), "Pending");
+      const status = determinePhaseStatus(
+        plans,
+        summaries,
+        path.join(phasesDir, dir),
+        phaseNum,
+        "Pending",
+      );
 
       phases.push({ number: phaseNum, name: phaseName, plans, summaries, status });
     }
@@ -984,6 +1024,7 @@ function cmdStats(cwd, format, raw) {
         plans,
         summaries,
         path.join(phasesDir, dir),
+        phaseNum,
         "Not Started",
       );
 

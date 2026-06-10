@@ -578,9 +578,9 @@ Plans:
     );
 
     expect(resolveNextRoute(root)).toMatchObject({
-      route: "verify-work",
-      reason: "phase ready to verify",
-      newPhase: "1",
+      route: "discuss-phase",
+      reason: "phase discuss context missing",
+      newPhase: "2",
     });
   });
 

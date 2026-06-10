@@ -59,9 +59,13 @@ function extractPlanList(
     .map((line) => line.trim())
     .filter((line) => /^- \[[ x]\]/.test(line))
     .map((line) => {
-      const match = line.match(/^- \[([ x])\]\s+([^:]+):\s+(.+)$/);
+      const colonMatch = line.match(/^- \[([ x])\]\s+([^:]+):\s+(.+)$/);
+      const fileNameMatch = line.match(
+        /^- \[([ x])\]\s+((?:\d+(?:\.\d+)?-)?\d+-PLAN\.md)\s+[—-]\s+(.+)$/u,
+      );
+      const match = fileNameMatch ?? colonMatch;
       return {
-        id: match?.[2]?.trim() ?? line,
+        id: match?.[2]?.trim().replace(/-PLAN\.md$/u, "") ?? line,
         title: match?.[3]?.trim() ?? line,
         completed: match?.[1] === "x",
       };

@@ -1079,7 +1079,7 @@ Plans:
 
     expect(computeStructuredStats(root)).toMatchObject({
       verification_count: 1,
-      phases: [expect.objectContaining({ number: "1", status: "Executed" })],
+      phases: [expect.objectContaining({ number: "1", status: "Complete" })],
     });
   });
 

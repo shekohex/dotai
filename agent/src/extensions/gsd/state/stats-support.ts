@@ -237,6 +237,9 @@ export function deriveStatsPhaseStatus(
   if (verificationStatus === "human_needed") {
     return "Human Needed";
   }
+  if (verificationStatus === "passed") {
+    return "Complete";
+  }
 
   const uatStatus = readLatestUatStatus(phaseSnapshot, phaseNumber);
   if (uatStatus === "complete") {
@@ -319,15 +322,27 @@ function readLatestVerificationStatus(
     return undefined;
   }
   const frontmatter = readFrontmatter(content);
-  const statusMatch = frontmatter.match(/^status:\s*(.+)$/mu)?.[1]?.trim();
-  if (statusMatch === "passed" || statusMatch === "gaps_found" || statusMatch === "human_needed") {
+  const statusMatch = frontmatter
+    .match(/^status:\s*(.+)$/mu)?.[1]
+    ?.trim()
+    .toLowerCase();
+  if (
+    statusMatch === "passed" ||
+    statusMatch === "approved" ||
+    statusMatch === "complete" ||
+    statusMatch === "ready_for_closeout" ||
+    statusMatch === "ready_for_metadata_closeout"
+  ) {
+    return "passed";
+  }
+  if (statusMatch === "gaps_found" || statusMatch === "human_needed") {
     return statusMatch;
   }
   const verifiedMatch = frontmatter
     .match(/^verified:\s*(.+)$/mu)?.[1]
     ?.trim()
     .toLowerCase();
-  if (verifiedMatch === "true") {
+  if (verifiedMatch === "true" || verifiedMatch === "passed" || verifiedMatch === "approved") {
     return "passed";
   }
   if (verifiedMatch === "false") {

@@ -97,7 +97,7 @@ function normalizeSummaryId(fileName: string): string {
 }
 
 function normalizePlanArtifactId(value: string): string {
-  const match = value.match(/^(\d+(?:\.\d+)?)-(\d+)$/u);
+  const match = value.match(/^(\d+(?:\.\d+)?)-(\d+)(?:-(?:PLAN|SUMMARY)\.md)?$/u);
   if (match?.[1] === undefined || match[2] === undefined) {
     return value;
   }
@@ -108,6 +108,16 @@ function normalizePlanArtifactId(value: string): string {
 function isCanonicalPhaseArtifact(fileName: string, phaseNumber: string, suffix: string): boolean {
   const artifactPrefix = fileName.replace(suffix, "");
   return canonicalizePhaseNumber(artifactPrefix) === canonicalizePhaseNumber(phaseNumber);
+}
+
+function hasCanonicalPhaseArtifact(
+  fileNames: string[] | undefined,
+  phaseNumber: string,
+  suffix: string,
+): boolean {
+  return (
+    fileNames?.some((fileName) => isCanonicalPhaseArtifact(fileName, phaseNumber, suffix)) === true
+  );
 }
 
 function countRoadmapMatchingSummaries(
@@ -164,15 +174,27 @@ function readLatestVerificationStatus(
   }
   const content = readFileSync(join(phaseSnapshot.path, fileName), "utf8");
   const frontmatter = content.match(/^---\n([\s\S]*?)\n---/u)?.[1] ?? "";
-  const statusMatch = frontmatter.match(/^status:\s*(.+)$/mu)?.[1]?.trim();
-  if (statusMatch === "passed" || statusMatch === "gaps_found" || statusMatch === "human_needed") {
+  const statusMatch = frontmatter
+    .match(/^status:\s*(.+)$/mu)?.[1]
+    ?.trim()
+    .toLowerCase();
+  if (
+    statusMatch === "passed" ||
+    statusMatch === "approved" ||
+    statusMatch === "complete" ||
+    statusMatch === "ready_for_closeout" ||
+    statusMatch === "ready_for_metadata_closeout"
+  ) {
+    return "passed";
+  }
+  if (statusMatch === "gaps_found" || statusMatch === "human_needed") {
     return statusMatch;
   }
   const verifiedMatch = frontmatter
     .match(/^verified:\s*(.+)$/mu)?.[1]
     ?.trim()
     .toLowerCase();
-  if (verifiedMatch === "true") {
+  if (verifiedMatch === "true" || verifiedMatch === "passed" || verifiedMatch === "approved") {
     return "passed";
   }
   if (verifiedMatch === "false") {
@@ -299,8 +321,8 @@ function resolvePhaseStartIndex(
       roadmapPhaseComplete &&
       localPlanCount === 0 &&
       completedPlans === 0 &&
-      (phaseSnapshot?.verifications.length ?? 0) === 0 &&
-      (phaseSnapshot?.uats.length ?? 0) === 0
+      !hasCanonicalPhaseArtifact(phaseSnapshot?.verifications, phase.number, "-VERIFICATION.md") &&
+      !hasCanonicalPhaseArtifact(phaseSnapshot?.uats, phase.number, "-UAT.md")
     ) {
       return false;
     }
@@ -310,7 +332,8 @@ function resolvePhaseStartIndex(
     }
 
     return (
-      (phaseSnapshot?.verifications.length ?? 0) === 0 && (phaseSnapshot?.uats.length ?? 0) === 0
+      !hasCanonicalPhaseArtifact(phaseSnapshot?.verifications, phase.number, "-VERIFICATION.md") &&
+      !hasCanonicalPhaseArtifact(phaseSnapshot?.uats, phase.number, "-UAT.md")
     );
   });
 
@@ -421,15 +444,18 @@ export function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNe
       };
     }
 
+    const verificationStatus = readLatestVerificationStatus(phaseSnapshot);
     const uatStatus =
       phaseSnapshot === undefined
         ? undefined
         : readPhaseUatStatus(phaseSnapshot.path, phase.number, phaseSnapshot.uats);
-    const hasCanonicalUat =
-      (phaseSnapshot?.uats.filter((fileName) =>
-        isCanonicalPhaseArtifact(fileName, phase.number, "-UAT.md"),
-      ).length ?? 0) > 0;
-    if (uatStatus !== "complete") {
+    const phaseVerified = verificationStatus === "passed";
+    const phaseAccepted = phaseVerified || uatStatus === "complete";
+    if (!phaseAccepted) {
+      const hasCanonicalUat =
+        (phaseSnapshot?.uats.filter((fileName) =>
+          isCanonicalPhaseArtifact(fileName, phase.number, "-UAT.md"),
+        ).length ?? 0) > 0;
       const verifyReason = hasCanonicalUat
         ? "phase verification in progress"
         : "phase ready to verify";

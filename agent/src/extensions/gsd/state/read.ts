@@ -22,6 +22,10 @@ export type PlanFile = {
   completed: boolean;
 };
 
+export type ParsedPlanMarkdown = ReturnType<
+  typeof parseMarkdownFrontmatter<typeof PlanFrontmatterSchema>
+>;
+
 export type PlanningSnapshot = {
   config?: PlanningConfig;
   state?: StateFrontmatter;
@@ -66,9 +70,42 @@ export function readPlanningConfig(cwd: string): PlanningConfig | undefined {
     return undefined;
   }
   if (!Value.Check(PlanningConfigSchema, parsed)) {
-    return undefined;
+    const normalized = normalizeLegacyPlanningConfig(parsed);
+    if (normalized === undefined || !Value.Check(PlanningConfigSchema, normalized)) {
+      return undefined;
+    }
+    return normalized;
   }
   return parsed;
+}
+
+function normalizeLegacyPlanningConfig(value: unknown): PlanningConfig | undefined {
+  const record = asRecord(value);
+  if (record === undefined) {
+    return undefined;
+  }
+  const modelProfile = readString(record.model_profile) ?? readString(record.mode) ?? "balanced";
+  const commitDocs = typeof record.commit_docs === "boolean" ? record.commit_docs : true;
+  const parallelization =
+    typeof record.parallelization === "boolean" ? record.parallelization : true;
+  return {
+    ...record,
+    model_profile: normalizeModelProfile(modelProfile),
+    commit_docs: commitDocs,
+    parallelization,
+    search_gitignored:
+      typeof record.search_gitignored === "boolean" ? record.search_gitignored : false,
+    brave_search: typeof record.brave_search === "boolean" ? record.brave_search : false,
+    firecrawl: typeof record.firecrawl === "boolean" ? record.firecrawl : false,
+    exa_search: typeof record.exa_search === "boolean" ? record.exa_search : false,
+  };
+}
+
+function normalizeModelProfile(value: string): PlanningConfig["model_profile"] {
+  if (value === "quality" || value === "balanced" || value === "budget" || value === "inherit") {
+    return value;
+  }
+  return "balanced";
 }
 
 export function readStateFrontmatter(
@@ -161,12 +198,19 @@ function readPhaseSnapshot(
     const filePath = join(phasePath, fileName);
     if (fileName.endsWith("-PLAN.md")) {
       const content = readFileSync(filePath, "utf8");
-      let parsed: ReturnType<typeof parseMarkdownFrontmatter<typeof PlanFrontmatterSchema>>;
+      let parsed: ParsedPlanMarkdown;
       try {
-        parsed = parseMarkdownFrontmatter(content, PlanFrontmatterSchema);
+        parsed = parsePlanMarkdownContent(fileName, content);
       } catch (error) {
-        readIssues.push(createFrontmatterIssue(filePath, error));
-        continue;
+        const fallback = createFallbackPlanFileParse(fileName, content);
+        if (fallback === undefined) {
+          readIssues.push(createFrontmatterIssue(filePath, error));
+          continue;
+        }
+        if (!isLegacyRichPlanFrontmatter(content)) {
+          readIssues.push(createFrontmatterIssue(filePath, error));
+        }
+        parsed = fallback;
       }
       plans.push({
         path: filePath,
@@ -217,6 +261,186 @@ function readPhaseSnapshot(
     context,
     research,
   };
+}
+
+export function parsePlanMarkdownContent(fileName: string, content: string): ParsedPlanMarkdown {
+  try {
+    return parseMarkdownFrontmatter(content, PlanFrontmatterSchema);
+  } catch (error) {
+    const fallback = createFallbackPlanFileParse(fileName, content);
+    if (fallback !== undefined && isLegacyRichPlanFrontmatter(content)) {
+      return fallback;
+    }
+    throw error;
+  }
+}
+
+function createFallbackPlanFrontmatter(fileName: string): PlanFrontmatter {
+  const match = fileName.match(/^(\d+(?:\.\d+)?)-(\d+)-PLAN\.md$/u);
+  if (match?.[1] === undefined || match[2] === undefined) {
+    throw new Error("invalid PLAN filename");
+  }
+  return {
+    phase: match[1],
+    plan: match[2],
+    type: "unknown",
+    wave: "1",
+    depends_on: [],
+    files_modified: [],
+    autonomous: true,
+    must_haves: [],
+  };
+}
+
+function createFallbackPlanFrontmatterFromContent(
+  fileName: string,
+  content: string,
+): PlanFrontmatter {
+  const fallback = createFallbackPlanFrontmatter(fileName);
+  const frontmatter = extractRawFrontmatter(content);
+  if (frontmatter === undefined) {
+    return fallback;
+  }
+
+  return {
+    ...fallback,
+    phase: readRawScalar(frontmatter, "phase") ?? fallback.phase,
+    plan: readRawScalar(frontmatter, "plan") ?? fallback.plan,
+    type: readRawScalar(frontmatter, "type") ?? fallback.type,
+    wave: readRawScalar(frontmatter, "wave") ?? fallback.wave,
+    depends_on: readRawList(frontmatter, "depends_on") ?? fallback.depends_on,
+    files_modified: readRawList(frontmatter, "files_modified") ?? fallback.files_modified,
+    autonomous: readRawBoolean(frontmatter, "autonomous") ?? fallback.autonomous,
+    requirements: readRawList(frontmatter, "requirements"),
+    must_haves: readRawMustHaves(frontmatter) ?? fallback.must_haves,
+  };
+}
+
+function createFallbackPlanFileParse(
+  fileName: string,
+  content: string,
+): ReturnType<typeof parseMarkdownFrontmatter<typeof PlanFrontmatterSchema>> | undefined {
+  if (!/^(\d+(?:\.\d+)?)-(\d+)-PLAN\.md$/u.test(fileName)) {
+    return undefined;
+  }
+  const closingIndex = content.startsWith("---\n") ? content.indexOf("\n---\n", 4) : -1;
+  const body = closingIndex === -1 ? content : content.slice(closingIndex + 5);
+  return { frontmatter: createFallbackPlanFrontmatterFromContent(fileName, content), body };
+}
+
+function isLegacyRichPlanFrontmatter(content: string): boolean {
+  return /^must_haves:\s*$/mu.test(content) && /^\s+(artifacts|key_links):\s*$/mu.test(content);
+}
+
+function extractRawFrontmatter(content: string): string | undefined {
+  const match = content.match(/^---\n([\s\S]*?)\n---/u);
+  return match?.[1];
+}
+
+function readRawScalar(frontmatter: string, key: string): string | undefined {
+  const match = frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, "mu"));
+  return stripYamlQuotes(match?.[1]?.trim());
+}
+
+function readRawBoolean(frontmatter: string, key: string): boolean | string | undefined {
+  const value = readRawScalar(frontmatter, key);
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  return value;
+}
+
+function readRawList(frontmatter: string, key: string): string[] | undefined {
+  const lines = frontmatter.split("\n");
+  const start = lines.findIndex((line) => line === `${key}:`);
+  if (start === -1) {
+    const inline = readRawScalar(frontmatter, key);
+    if (inline === undefined) {
+      return undefined;
+    }
+    if (inline === "[]") {
+      return [];
+    }
+    return [inline];
+  }
+  const values: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\S/u.test(line)) {
+      break;
+    }
+    const item = line.match(/^\s*-\s+(.+)$/u)?.[1];
+    if (item !== undefined) {
+      values.push(stripYamlQuotes(item) ?? item);
+    }
+  }
+  return values;
+}
+
+function readRawMustHaves(frontmatter: string): PlanFrontmatter["must_haves"] | undefined {
+  if (!/^must_haves:\s*$/mu.test(frontmatter)) {
+    return readRawList(frontmatter, "must_haves") ?? readRawScalar(frontmatter, "must_haves");
+  }
+  return {
+    truths: readRawNestedStringList(frontmatter, "truths"),
+    artifacts: readRawNestedObjectList(frontmatter, "artifacts"),
+    key_links: readRawNestedObjectList(frontmatter, "key_links"),
+  };
+}
+
+function readRawNestedStringList(frontmatter: string, key: string): string[] | undefined {
+  return readRawNestedSectionItems(frontmatter, key)
+    ?.map((item) => item.firstValue)
+    .filter((item) => item.length > 0);
+}
+
+function readRawNestedObjectList(
+  frontmatter: string,
+  key: string,
+): Array<Record<string, string>> | undefined {
+  return readRawNestedSectionItems(frontmatter, key)?.map((item) => item.fields);
+}
+
+function readRawNestedSectionItems(
+  frontmatter: string,
+  key: string,
+): Array<{ firstValue: string; fields: Record<string, string> }> | undefined {
+  const lines = frontmatter.split("\n");
+  const start = lines.findIndex((line) => line.trim() === `${key}:`);
+  if (start === -1) {
+    return undefined;
+  }
+  const items: Array<{ firstValue: string; fields: Record<string, string> }> = [];
+  let current: { firstValue: string; fields: Record<string, string> } | undefined;
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s{2}\S/u.test(line)) {
+      break;
+    }
+    const item = line.match(/^\s{4}-\s+(.+)$/u)?.[1];
+    if (item !== undefined) {
+      current = { firstValue: stripYamlQuotes(item) ?? item, fields: {} };
+      const field = item.match(/^([^:]+):\s*(.+)$/u);
+      if (field?.[1] !== undefined && field[2] !== undefined) {
+        current.fields[field[1].trim()] = stripYamlQuotes(field[2].trim()) ?? field[2].trim();
+      }
+      items.push(current);
+      continue;
+    }
+    const field = line.match(/^\s{6}([^:]+):\s*(.+)$/u);
+    if (current !== undefined && field?.[1] !== undefined && field[2] !== undefined) {
+      current.fields[field[1].trim()] = stripYamlQuotes(field[2].trim()) ?? field[2].trim();
+    }
+  }
+  return items;
+}
+
+function stripYamlQuotes(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return value.replace(/^(["'])(.*)\1$/u, "$2");
 }
 
 function createFrontmatterIssue(path: string, error: unknown): PlanningReadIssue {

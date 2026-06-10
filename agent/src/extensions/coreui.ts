@@ -28,6 +28,7 @@ import {
   startCoreUIWorkingMessageShimmer,
   stopCoreUIWorkingMessageShimmer,
 } from "./coreui/index.js";
+import { registerGitHubReferenceAutocomplete } from "./coreui/github-reference-autocomplete.js";
 import { getAiAutocompleteSettings } from "./coreui/ai-autocomplete-settings.js";
 import {
   saveAiAutocompleteSettings,
@@ -148,6 +149,7 @@ function registerSessionStartHandler(input: {
             },
           ),
         );
+        registerGitHubReferenceAutocomplete(input.pi, ctx);
         bindCoreUI(ctx, input.pi, input.state, (nextRequestRender) => {
           input.setRequestRender(nextRequestRender);
         });

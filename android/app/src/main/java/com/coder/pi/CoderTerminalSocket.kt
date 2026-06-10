@@ -4,6 +4,7 @@ import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
+import io.sentry.SentryLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,6 +26,7 @@ class CoderTerminalSocket(
     private val closedNotified = AtomicBoolean(false)
 
     fun start() {
+        SentryBreadcrumbs.terminal("socket receive loop start")
         receiveJob =
             scope.launch {
                 runCatching {
@@ -35,6 +37,11 @@ class CoderTerminalSocket(
                             is Frame.Close -> break
                             else -> Unit
                         }
+                    }
+                }.onFailure {
+                    if (!closing.get()) {
+                        SentryBreadcrumbs.terminal("socket receive failed", mapOf("error" to CoderTerminalSession.safeTerminalError(it)), SentryLevel.ERROR)
+                        SentryAppLogger.error("terminal socket receive failed", throwable = it)
                     }
                 }
                 if (!closing.get() && closedNotified.compareAndSet(false, true)) onClosed?.invoke()
@@ -56,6 +63,7 @@ class CoderTerminalSocket(
 
     suspend fun close() {
         if (!closing.compareAndSet(false, true)) return
+        SentryBreadcrumbs.terminal("socket close requested")
         receiveJob?.cancel()
         session.close()
         scope.cancel()

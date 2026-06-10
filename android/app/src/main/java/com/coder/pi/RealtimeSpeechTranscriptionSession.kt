@@ -1,7 +1,6 @@
 package com.coder.pi
 
 import android.util.Base64
-import android.util.Log
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.websocket.WebSockets
@@ -11,6 +10,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
+import io.sentry.SentryLevel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -49,7 +49,9 @@ class RealtimeSpeechTranscriptionSession(
         }
     private val client = HttpClient(OkHttp) { install(WebSockets) }
     private val exceptionHandler = CoroutineExceptionHandler { _, failure ->
-        Log.e(RealtimeTranscriptionEventHandler.LogTag, "realtime session failed", failure)
+        SentryAppLogger.error("realtime session failed", throwable = failure, capture = false)
+        SentryBreadcrumbs.speech("realtime coroutine failed", mapOf("error" to failure.message.orEmpty()), SentryLevel.ERROR)
+        SentryAppLogger.error("realtime transcription coroutine failed", throwable = failure)
     }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private val audioFrames = Channel<FloatArray>(capacity = 32, onBufferOverflow = BufferOverflow.DROP_LATEST)
@@ -65,10 +67,12 @@ class RealtimeSpeechTranscriptionSession(
     private val eventHandler = RealtimeTranscriptionEventHandler(onDelta)
 
     suspend fun start() {
+        SentryBreadcrumbs.speech("realtime start requested")
         if (sendJob == null) sendJob = scope.launch { sendAudioFrames() }
     }
 
     fun beginUtterance() {
+        SentryBreadcrumbs.speech("utterance started")
         finalTranscript = CompletableDeferred()
         eventHandler.reset()
     }
@@ -87,6 +91,7 @@ class RealtimeSpeechTranscriptionSession(
     }
 
     suspend fun close() {
+        SentryBreadcrumbs.speech("realtime close requested")
         closed = true
         audioFrames.close()
         sendJob?.cancelAndJoin()
@@ -112,7 +117,9 @@ class RealtimeSpeechTranscriptionSession(
                 )
             }.onFailure { failure ->
                 if (failure !is kotlinx.coroutines.CancellationException) {
-                    Log.w(RealtimeTranscriptionEventHandler.LogTag, "send failed; reconnecting", failure)
+                    SentryAppLogger.warn("realtime send failed; reconnecting", throwable = failure)
+                    SentryBreadcrumbs.speech("realtime send failed", mapOf("error" to failure.message.orEmpty()), SentryLevel.WARNING)
+                    SentryAppLogger.error("realtime transcription send failed", mapOf("willReconnect" to true), failure)
                     disconnectSocket()
                 }
             }
@@ -126,12 +133,14 @@ class RealtimeSpeechTranscriptionSession(
                 if (frame !is Frame.Text) continue
                 val root = runCatching { json.parseToJsonElement(frame.readText()).jsonObject }.getOrNull() ?: continue
                 val type = root["type"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                Log.d(RealtimeTranscriptionEventHandler.LogTag, "event=$type")
+                SentryAppLogger.debug("realtime event", mapOf("type" to type))
                 eventHandler.handle(root, finalTranscript)
             }
         }.onFailure { failure ->
             if (failure is kotlinx.coroutines.CancellationException) return@onFailure
-            Log.e(RealtimeTranscriptionEventHandler.LogTag, "receive failed", failure)
+            SentryAppLogger.error("realtime receive failed", throwable = failure, capture = false)
+            SentryBreadcrumbs.speech("realtime receive failed", mapOf("error" to failure.message.orEmpty()), SentryLevel.ERROR)
+            SentryAppLogger.error("realtime transcription receive failed", throwable = failure)
             markDisconnected()
             if (!finalTranscript.isCompleted) finalTranscript.complete("")
         }
@@ -144,6 +153,7 @@ class RealtimeSpeechTranscriptionSession(
             if (currentSession != null) return@withLock currentSession
             val delayMillis = reconnectDelayMillis(reconnectAttempt)
             if (reconnectAttempt > 0) delay(delayMillis)
+            SentryBreadcrumbs.speech("realtime connecting", mapOf("attempt" to reconnectAttempt, "delayMillis" to delayMillis))
             val connectedSession =
                 runCatching {
                     client.webSocketSession(RealtimeTranscriptionUrlBuilder.url(settings, apiKey)) {
@@ -152,9 +162,12 @@ class RealtimeSpeechTranscriptionSession(
                     }
                 }.onFailure { failure ->
                     reconnectAttempt++
-                    Log.e(RealtimeTranscriptionEventHandler.LogTag, "connect failed", failure)
+                    SentryAppLogger.warn("realtime connect failed", mapOf("attempt" to reconnectAttempt), failure)
+                    SentryBreadcrumbs.speech("realtime connect failed", mapOf("attempt" to reconnectAttempt, "error" to failure.message.orEmpty()), SentryLevel.WARNING)
+                    if (reconnectAttempt > 2) SentryAppLogger.error("realtime transcription connect failed", mapOf("attempt" to reconnectAttempt), failure)
                 }.getOrNull() ?: return@withLock null
             reconnectAttempt = 0
+            SentryBreadcrumbs.speech("realtime connected")
             session = connectedSession
             receiveJob?.cancelAndJoin()
             receiveJob = scope.launch { receiveEvents() }

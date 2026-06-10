@@ -36,6 +36,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SentryBreadcrumbs.app("activity created")
+
         WindowCompat.setDecorFitsSystemWindows(window, true)
         @Suppress("DEPRECATION")
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
@@ -96,6 +98,7 @@ class MainActivity : AppCompatActivity() {
     private fun handleDeepLink(intent: Intent?) {
         val uri = intent?.data ?: return
         if (uri.scheme != "pi") return
+        SentryBreadcrumbs.app("deep link opened", mapOf("host" to uri.host.orEmpty(), "path" to uri.path.orEmpty()))
         if (uri.host == "debug") {
             if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                 when (uri.path?.trim('/')) {
@@ -159,6 +162,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        SentryBreadcrumbs.app("activity resumed")
         terminalView.onResume()
         currentTheme = CoderThemes.current(this)
         terminalView.applyTheme(currentTheme ?: CoderThemes.current(this))
@@ -182,6 +186,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        SentryBreadcrumbs.app("activity paused")
         releaseKeepScreenAwake()
         terminalView.onPause()
         super.onPause()
@@ -201,6 +206,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        SentryBreadcrumbs.app("activity destroyed")
         terminalPreferencesListener?.let { terminalPreferences?.unregisterOnSharedPreferenceChangeListener(it) }
         terminalView.dispose()
         super.onDestroy()

@@ -85,7 +85,8 @@ object OpenAiProviderEndpointResolver {
     ): HttpResponse? =
         runCatching {
             withTimeout(ProbeTimeoutMillis) { httpClient.get(url) { if (apiKey.isNotBlank()) bearerAuth(apiKey) } }
-        }.getOrNull()
+        }.onFailure { SentryAppLogger.warn("openai provider endpoint probe failed", throwable = it) }
+            .getOrNull()
 
     @Synchronized
     private fun setState(

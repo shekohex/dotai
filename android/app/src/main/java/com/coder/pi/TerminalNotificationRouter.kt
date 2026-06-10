@@ -68,6 +68,7 @@ class TerminalNotificationRouter(
     ) {
         if (!canPostNotifications()) return
         runCatching { NotificationManagerCompat.from(context).notify(id, notification) }
+            .onFailure { SentryAppLogger.error("terminal notification post failed", mapOf("notificationId" to id), it) }
     }
 
     private fun postNotification(

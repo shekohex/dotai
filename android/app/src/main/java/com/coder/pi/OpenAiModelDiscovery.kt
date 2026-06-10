@@ -40,6 +40,7 @@ object OpenAiModelDiscoveryCache {
                         return@withContext Result.success(models)
                     }.onFailure { lastError = it }
             }
+            lastError?.let { SentryAppLogger.error("openai model discovery failed", throwable = it) }
             Result.failure(lastError ?: IllegalStateException("No provider endpoint configured"))
         }
 

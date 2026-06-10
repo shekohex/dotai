@@ -1,6 +1,5 @@
 package com.coder.pi
 
-import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -49,7 +48,7 @@ class RealtimeTranscriptionEventHandler(
         finalTranscript: CompletableDeferred<String>,
     ) {
         errorMessage = root.toString()
-        Log.e(LogTag, "error=$errorMessage")
+        SentryAppLogger.error("realtime provider error", mapOf("error" to errorMessage), capture = false)
         if (!errorMessage.contains("already exists", ignoreCase = true) && !finalTranscript.isCompleted) finalTranscript.complete("")
     }
 

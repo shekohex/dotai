@@ -15,6 +15,7 @@ class TerminalNotificationReplyReceiver : BroadcastReceiver() {
     ) {
         if (intent.action == TerminalNotificationCopyUrlAction) {
             val url = intent.getStringExtra(TerminalNotificationUrlKey).orEmpty().takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return
+            SentryBreadcrumbs.notification("copy url action")
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("Interview URL", url))
             return
@@ -29,6 +30,7 @@ class TerminalNotificationReplyReceiver : BroadcastReceiver() {
                 .trim()
         if (text.isBlank()) return
         val terminalId = intent.getStringExtra(TerminalNotificationTerminalIdKey).orEmpty()
+        SentryBreadcrumbs.notification("reply received", mapOf("terminalId" to terminalId, "length" to text.length))
         val sent =
             TerminalConnectionManager.sendInput(terminalId, text) ||
                 run {
@@ -36,7 +38,10 @@ class TerminalNotificationReplyReceiver : BroadcastReceiver() {
                     TerminalConnectionManager.sendInput(terminalId, text)
                 }
         if (sent) {
+            SentryBreadcrumbs.notification("reply sent", mapOf("terminalId" to terminalId))
             NotificationManagerCompat.from(context).cancel(intent.getIntExtra(TerminalNotificationIdKey, 0))
+        } else {
+            SentryBreadcrumbs.notification("reply send failed", mapOf("terminalId" to terminalId))
         }
     }
 }

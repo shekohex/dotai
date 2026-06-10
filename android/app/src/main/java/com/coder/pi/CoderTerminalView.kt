@@ -994,7 +994,10 @@ class CoderTerminalView
             if (rendererHandle != 0L) {
                 val handleToDispose = rendererHandle
                 runCatching { queueEvent { native.nativeDisposeRenderer(handleToDispose) } }
-                    .onFailure { native.nativeDisposeRenderer(handleToDispose) }
+                    .onFailure {
+                        SentryAppLogger.error("terminal renderer dispose queue failed", throwable = it)
+                        native.nativeDisposeRenderer(handleToDispose)
+                    }
             }
             rendererHandle = 0L
             if (!managerOwnsEngine) engine.dispose()
@@ -1354,6 +1357,7 @@ class CoderTerminalView
         }
 
         fun setNotificationContext(context: TerminalNotificationContext) {
+            SentryBreadcrumbs.terminal("notification context set", mapOf("workspaceId" to context.workspaceId, "terminalId" to context.terminalId))
             notificationContext =
                 context.copy(
                     workspaceId = context.workspaceId.take(128),
@@ -1998,6 +2002,7 @@ class CoderTerminalView
         ) {
             if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
             runCatching { NotificationManagerCompat.from(context).notify(notificationId, notification) }
+                .onFailure { SentryAppLogger.error("terminal notification post failed", mapOf("notificationId" to notificationId), it) }
         }
 
         private fun replyNotificationAction(notificationId: Int): NotificationCompat.Action {

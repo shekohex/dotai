@@ -148,6 +148,8 @@ import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
+import io.sentry.Sentry
+import io.sentry.protocol.Feedback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -164,7 +166,7 @@ import kotlin.math.abs
 
 enum class AppDestination { HOME, SETTINGS, DEBUG_RENDER, DEBUG_SPEECH }
 
-enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, SPEECH_DICTATION, SPEECH_PROVIDERS, SPEECH_TRANSCRIPTION, SPEECH_ENHANCEMENT, SPEECH_PROVIDER_SELECT, SPEECH_LANGUAGE_SELECT, SPEECH_MODELS, SPEECH_VOCABULARY, LINKS, LINKS_ADD, NOTIFICATIONS, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
+enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, SPEECH_DICTATION, SPEECH_PROVIDERS, SPEECH_TRANSCRIPTION, SPEECH_ENHANCEMENT, SPEECH_PROVIDER_SELECT, SPEECH_LANGUAGE_SELECT, SPEECH_MODELS, SPEECH_VOCABULARY, LINKS, LINKS_ADD, NOTIFICATIONS, FEEDBACK, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 
 private sealed interface AuthState {
     data object Loading : AuthState
@@ -424,8 +426,10 @@ fun CoderApp(
     LaunchedEffect(Unit) {
         val saved = sessionStore.loadSession()
         if (saved == null) {
+            SentryBreadcrumbs.app("no saved session")
             authState = AuthState.LoggedOut
         } else {
+            SentryBreadcrumbs.app("restoring saved session")
             runCatching {
                 val api = CoderApi(saved.first, saved.second)
                 try {
@@ -433,8 +437,15 @@ fun CoderApp(
                 } finally {
                     api.close()
                 }
-            }.onSuccess { authState = AuthState.LoggedIn(it) }.onFailure {
+            }.onSuccess {
+                SentryBreadcrumbs.app("saved session restored", mapOf("userId" to it.user.id))
+                SentrySessionContext.applySession(it)
+                authState = AuthState.LoggedIn(it)
+            }.onFailure {
+                SentryBreadcrumbs.app("saved session restore failed", mapOf("error" to safeUserError(it, "unknown")))
+                SentryAppLogger.error("saved session restore failed", mapOf("baseUrl" to saved.first), it)
                 sessionStore.clearSession()
+                SentrySessionContext.clearSession()
                 authState = AuthState.LoggedOut
             }
         }
@@ -539,7 +550,9 @@ fun CoderApp(
                                     }
                                 }.onSuccess { user ->
                                     sessionStore.saveSession(baseUrl, token)
-                                    authState = AuthState.LoggedIn(CoderSession(baseUrl, token, user))
+                                    val session = CoderSession(baseUrl, token, user)
+                                    SentrySessionContext.applySession(session)
+                                    authState = AuthState.LoggedIn(session)
                                 }
                             }
                         }
@@ -553,6 +566,7 @@ fun CoderApp(
                                 onSessionExpired = {
                                     TerminalActivity.finishDetachedTerminals(state.session.baseUrl, state.session.user.id)
                                     sessionStore.clearSession()
+                                    SentrySessionContext.clearSession()
                                     sessionStore.clearActiveTerminals(state.session.baseUrl, state.session.user.id)
                                     TerminalConnectionManager.stopAll()
                                     terminalSessions.clear()
@@ -788,7 +802,14 @@ private fun TokenScreen(
         if (error != null) Text(error ?: "", color = tokens.accent, fontSize = captionSize(), modifier = Modifier.padding(top = 8.dp))
         Spacer(Modifier.height(16.dp))
         CoderPrimaryButton("Continue", tokens) {
-            scope.launch { runCatching { onToken(baseUrl, token) }.onFailure { error = "Invalid token" } }
+            scope.launch {
+                SentryBreadcrumbs.app("token login submitted")
+                runCatching { onToken(baseUrl, token) }.onFailure {
+                    SentryBreadcrumbs.app("token login failed", mapOf("error" to safeUserError(it, "Invalid token")))
+                    SentryAppLogger.error("token login failed", mapOf("baseUrl" to baseUrl), it)
+                    error = "Invalid token"
+                }
+            }
         }
         Spacer(Modifier.height(10.dp))
         CoderSecondaryButton("Reopen auth page", tokens) { onReopen(baseUrl) }
@@ -853,17 +874,22 @@ private fun CoderHomeScreen(
         scope.launch {
             refreshInFlight = true
             loadingWorkspaces = true
+            SentryBreadcrumbs.api("workspace refresh started")
             sessionStore.appendDebugLog("workspace refresh started")
             runCatching { api.workspaces() }
                 .onSuccess {
+                    SentryBreadcrumbs.api("workspace refresh succeeded", mapOf("count" to it.size))
                     workspaces = it
                     error = null
                     lastRefreshedAt = System.currentTimeMillis()
                     sessionStore.appendDebugLog("workspace refresh ok ${it.size} workspaces")
                 }.onFailure { failure ->
                     if (failure.isUnauthorized()) {
+                        SentryBreadcrumbs.api("workspace refresh unauthorized")
                         onSessionExpired()
                     } else {
+                        SentryBreadcrumbs.api("workspace refresh failed", mapOf("error" to safeUserError(failure, "unknown")))
+                        SentryAppLogger.error("workspace refresh failed", throwable = failure)
                         error = safeUserError(failure, "Could not load workspaces")
                         sessionStore.appendDebugLog("workspace refresh failed ${error ?: "unknown"}")
                     }
@@ -947,7 +973,13 @@ private fun CoderHomeScreen(
                 selectedAgentPicker = null
                 scope.launch {
                     tmuxLoading = agent
-                    val sessions = runCatching { api.tmuxSessions(agent.id, UUID.randomUUID().toString()) }.getOrDefault(emptyList())
+                    val sessions =
+                        runCatching { api.tmuxSessions(agent.id, UUID.randomUUID().toString()) }
+                            .onFailure {
+                                SentryBreadcrumbs.api("tmux session load failed", mapOf("agentId" to agent.id, "error" to safeUserError(it, "unknown")))
+                                SentryAppLogger.error("tmux session load failed", mapOf("agentId" to agent.id), it)
+                            }
+                            .getOrDefault(emptyList())
                     tmuxLoading = null
                     if (sessions.isEmpty()) onOpenTerminal(workspace, agent, defaultShellCommand()) else tmuxPicker = Triple(workspace, agent, sessions)
                 }
@@ -1672,14 +1704,23 @@ private fun openWorkspace(
     onTmuxLoading: (CoderWorkspaceAgent) -> Unit,
     onTmux: (Triple<CoderWorkspace, CoderWorkspaceAgent, List<TmuxSession>>) -> Unit,
 ) {
+    SentryBreadcrumbs.app("workspace opened", mapOf("workspaceId" to workspace.id, "agentCount" to workspace.agents.size, "running" to workspace.running))
     if (workspace.agents.size > 1) {
+        SentryBreadcrumbs.app("agent picker opened", mapOf("workspaceId" to workspace.id, "agentCount" to workspace.agents.size))
         onChooseAgent(workspace)
         return
     }
     val agent = workspace.agents.firstOrNull() ?: return
     scope.launch {
         onTmuxLoading(agent)
-        val sessions = runCatching { api.tmuxSessions(agent.id, UUID.randomUUID().toString()) }.getOrDefault(emptyList())
+        val sessions =
+            runCatching { api.tmuxSessions(agent.id, UUID.randomUUID().toString()) }
+                .onFailure {
+                    SentryBreadcrumbs.api("tmux session load failed", mapOf("agentId" to agent.id, "error" to safeUserError(it, "unknown")))
+                    SentryAppLogger.error("tmux session load failed", mapOf("agentId" to agent.id), it)
+                }
+                .getOrDefault(emptyList())
+        SentryBreadcrumbs.api("tmux session load succeeded", mapOf("agentId" to agent.id, "count" to sessions.size))
         if (sessions.isEmpty()) onOpenTerminal(workspace, agent, defaultShellCommand()) else onTmux(Triple(workspace, agent, sessions))
     }
 }
@@ -2835,6 +2876,8 @@ private fun SettingsNavigator(
                     page = SettingsPage.SPEECH
                 } else if (it == "Links") {
                     page = SettingsPage.LINKS
+                } else if (it == "User Feedback") {
+                    page = SettingsPage.FEEDBACK
                 } else if (it == "Coder Connection") {
                     page = SettingsPage.CONNECTION
                 } else {
@@ -2906,6 +2949,7 @@ private fun SettingsNavigator(
         SettingsPage.LINKS -> LinkAllowlistSettingsScreen(tokens, false, ::navigateBack)
         SettingsPage.LINKS_ADD -> LinkAllowlistSettingsScreen(tokens, true, ::navigateBack)
         SettingsPage.NOTIFICATIONS -> TerminalNotificationsSettingsScreen(terminalView, tokens, ::navigateBack)
+        SettingsPage.FEEDBACK -> UserFeedbackSettingsScreen(tokens, ::navigateBack)
         SettingsPage.CONNECTION -> ConnectionSettingsScreen(session, sessionStore, tokens, { page = SettingsPage.DEBUG_LOGS }, ::navigateBack)
         SettingsPage.DEBUG_LOGS -> DebugLogsScreen(sessionStore, tokens, ::navigateBack)
         SettingsPage.PLACEHOLDER -> PlaceholderSettingsScreen(placeholderTitle, tokens, ::navigateBack)
@@ -2985,6 +3029,7 @@ private fun SettingsRootScreen(
             }
         }
         SettingsSection("HELP", tokens) {
+            SettingsValueRow(R.drawable.ic_feather_message_circle, "User Feedback", "Send feedback with diagnostics", null, tokens, chevron = true) { onPlaceholder("User Feedback") }
             SettingsValueRow(R.drawable.ic_feather_github, "GitHub", "shekohex/dotai", null, tokens, chevron = true) { CustomTabsIntent.Builder().build().launchUrl(context, "https://github.com/shekohex/dotai".toUri()) }
             SettingsValueRow(R.drawable.ic_feather_mail, "Support", "Open GitHub issues", null, tokens, chevron = true) { CustomTabsIntent.Builder().build().launchUrl(context, "https://github.com/shekohex/dotai/issues".toUri()) }
             SettingsValueRow(R.drawable.ic_feather_book, "Open Source Licenses", null, null, tokens, chevron = true) { onPlaceholder("Open Source Licenses") }
@@ -3075,6 +3120,94 @@ private fun TerminalNotificationsSettingsScreen(
 }
 
 private fun progressHapticOptions(): List<Pair<String, String>> = TerminalHapticPatterns.options.filterNot { it.id == "none" }.map { it.id to it.label }
+
+@Composable
+private fun UserFeedbackSettingsScreen(
+    tokens: UiTokens,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var comments by remember { mutableStateOf("") }
+    val canSubmit = comments.isNotBlank()
+    SettingsScaffold("User Feedback", tokens, onBack) {
+        item {
+            Text(
+                "Tell us what broke. Sentry attaches this feedback to a diagnostic event.",
+                color = tokens.secondary,
+                fontSize = bodySize(),
+                modifier = Modifier.padding(bottom = 16.dp),
+            )
+        }
+        item {
+            FeedbackTextField(name, { name = it }, "Name (optional)", tokens, singleLine = true)
+            Spacer(Modifier.height(12.dp))
+            FeedbackTextField(email, { email = it }, "Email (optional)", tokens, singleLine = true)
+            Spacer(Modifier.height(12.dp))
+            FeedbackTextField(comments, { comments = it }, "What happened?", tokens, singleLine = false)
+            Spacer(Modifier.height(18.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (canSubmit) tokens.accent else tokens.surfaceHigh)
+                    .clickable(enabled = canSubmit) {
+                        hapticClick()
+                        SentryBreadcrumbs.feedback("feedback submitted", mapOf("hasName" to name.isNotBlank(), "hasEmail" to email.isNotBlank(), "commentLength" to comments.length))
+                        runCatching {
+                            val eventId = Sentry.captureMessage("User feedback")
+                            val feedback =
+                                Feedback(comments.trim()).apply {
+                                    setAssociatedEventId(eventId)
+                                    name.trim().takeIf { it.isNotEmpty() }?.let { this.name = it }
+                                    email.trim().takeIf { it.isNotEmpty() }?.let { contactEmail = it }
+                                }
+                            Sentry.feedback().capture(feedback)
+                        }.onSuccess {
+                            SentryBreadcrumbs.feedback("feedback sent")
+                            name = ""
+                            email = ""
+                            comments = ""
+                            Toast.makeText(context, "Feedback sent", Toast.LENGTH_SHORT).show()
+                        }.onFailure {
+                            SentryBreadcrumbs.feedback("feedback send failed", mapOf("error" to safeUserError(it, "Failed to send feedback")))
+                            Toast.makeText(context, safeUserError(it, "Failed to send feedback"), Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) { Text("Send Feedback", color = if (canSubmit) contentColorFor(tokens.accent) else tokens.secondary, fontSize = bodySize(), fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+@Composable
+private fun FeedbackTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    tokens: UiTokens,
+    singleLine: Boolean,
+) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = singleLine,
+        textStyle = TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(if (singleLine) 52.dp else 140.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(tokens.surfaceHigh)
+                .padding(horizontal = 14.dp, vertical = 15.dp),
+        decorationBox = { inner ->
+            if (value.isEmpty()) Text(placeholder, color = tokens.secondary, fontSize = bodySize(), fontFamily = FontFamily.Monospace)
+            inner()
+        },
+    )
+}
 
 @Composable
 private fun ThemePickerScreen(

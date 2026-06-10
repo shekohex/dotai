@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
+
+    id("io.sentry.android.gradle") version "6.10.0"
 }
 
 val downloadedFontArchives = layout.projectDirectory.dir("src/main/fontArchives")
@@ -170,4 +172,14 @@ tasks.register<JavaExec>("formatKotlin") {
     mainClass.set("com.pinterest.ktlint.Main")
     args("-F", "src/**/*.kt")
     workingDir = projectDir
+}
+
+
+sentry {
+    org.set("hexorg-ltd")
+    projectName.set("picoder")
+
+    // this will upload your source code to Sentry to show it as part of the stack traces
+    // disable if you don't want to expose your sources
+    includeSourceContext.set(true)
 }

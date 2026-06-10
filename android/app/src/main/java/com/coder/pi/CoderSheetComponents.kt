@@ -10,7 +10,6 @@ import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -104,6 +103,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import io.sentry.SentryLevel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -176,6 +176,7 @@ fun ChatInputBar(
     }
 
     fun stopDictationCapture() {
+        SentryBreadcrumbs.speech("capture stop requested")
         dictationMeter = 0f
         scope.launch { speechAudioCapture.stop() }
     }
@@ -202,6 +203,7 @@ fun ChatInputBar(
     }
 
     fun acceptDictationTranscript(transcript: String = dictationTranscript) {
+        SentryBreadcrumbs.speech("dictation accepted", mapOf("length" to transcript.length))
         val mergedDraft = mergeSpeechTranscriptIntoDraft(text, transcript)
         if (mergedDraft.isNotBlank()) onTextChanged(mergedDraft)
         speechSoundFeedback.playStop()
@@ -217,6 +219,7 @@ fun ChatInputBar(
             acceptDictationTranscript(transcript)
             return
         }
+        SentryBreadcrumbs.speech("enhancement started", mapOf("transcriptLength" to transcript.length, "providerId" to speechSettings.enhancementProviderId))
         dictationState = SpeechDictationDisplayState.ENHANCING_COLLAPSED
         enhancementJob?.cancel()
         enhancementHapticJob?.cancel()
@@ -241,17 +244,20 @@ fun ChatInputBar(
                         enhancementHapticJob?.cancel()
                         enhancementHapticJob = null
                         if (result.timedOut) {
-                            Log.e(SpeechEnhancementLogTag, "enhancement timed out: ${result.errorMessage.orEmpty()}")
+                            SentryBreadcrumbs.speech("enhancement timed out", mapOf("error" to result.errorMessage.orEmpty()), SentryLevel.WARNING)
+                            SentryAppLogger.warn("speech enhancement timed out", mapOf("error" to result.errorMessage.orEmpty()))
                             Toast.makeText(context, "Enhancement timed out: ${result.errorMessage.orEmpty()}", Toast.LENGTH_LONG).show()
                             dictationTranscript = transcript
                             dictationState = SpeechDictationDisplayState.ENHANCEMENT_TIMED_OUT
                         } else {
                             if (result.failedOpen) {
-                                Log.e(SpeechEnhancementLogTag, "enhancement failed: ${result.errorMessage ?: "Empty response"}")
+                                SentryBreadcrumbs.speech("enhancement failed open", mapOf("error" to (result.errorMessage ?: "Empty response")), SentryLevel.WARNING)
+                                SentryAppLogger.warn("speech enhancement failed open", mapOf("error" to (result.errorMessage ?: "Empty response")))
                                 Toast.makeText(context, "Enhancement failed: ${result.errorMessage ?: "Empty response"}", Toast.LENGTH_LONG).show()
                                 dictationTranscript = transcript
                                 dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
                             } else if (speechSettings.autoSubmitAfterEnhancement) {
+                                SentryBreadcrumbs.speech("enhancement succeeded", mapOf("autoSubmit" to true, "resultLength" to result.text.length))
                                 val cleanText = result.text.trim()
                                 if (cleanText.isNotBlank() && onSubmit(cleanText)) {
                                     speechSoundFeedback.playStop()
@@ -261,15 +267,18 @@ fun ChatInputBar(
                                     acceptDictationTranscript(result.text)
                                 }
                             } else {
+                                SentryBreadcrumbs.speech("enhancement succeeded", mapOf("autoSubmit" to false, "resultLength" to result.text.length))
                                 acceptDictationTranscript(result.text)
                             }
                         }
                     },
                     onFailure = {
+                        SentryBreadcrumbs.speech("enhancement exception", mapOf("error" to safeUserError(it, "unknown")), SentryLevel.ERROR)
+                        SentryAppLogger.error("speech enhancement exception", throwable = it)
                         if (sessionId != dictationSessionId) return@fold
                         enhancementHapticJob?.cancel()
                         enhancementHapticJob = null
-                        Log.e(SpeechEnhancementLogTag, "enhancement exception", it)
+                        SentryAppLogger.error("speech enhancement exception", throwable = it, capture = false)
                         Toast.makeText(context, "Enhancement failed: ${it.message ?: it::class.java.simpleName}", Toast.LENGTH_LONG).show()
                         acceptDictationTranscript(transcript)
                     },
@@ -289,13 +298,22 @@ fun ChatInputBar(
                     dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
                     return@launch
                 }
-                val transcript = runCatching { realtimeSession.finish() }.getOrDefault("").trim()
+                val transcript =
+                    runCatching { realtimeSession.finish() }
+                        .onFailure {
+                            SentryBreadcrumbs.speech("transcription finish failed", mapOf("error" to safeUserError(it, "unknown")), SentryLevel.ERROR)
+                            SentryAppLogger.error("realtime transcription finish failed", throwable = it)
+                        }
+                        .getOrDefault("")
+                        .trim()
                 if (sessionId != dictationSessionId) return@launch
                 if (transcript.isBlank()) {
                     val error = realtimeSession.lastError()
+                    SentryBreadcrumbs.speech("transcription empty", mapOf("error" to error), if (error.isBlank()) SentryLevel.INFO else SentryLevel.WARNING)
                     dictationTranscript = if (error.isBlank()) "No speech detected." else "Realtime transcription failed: ${error.take(180)}"
                     dictationState = if (error.isBlank()) SpeechDictationDisplayState.NO_SPEECH else SpeechDictationDisplayState.ENHANCEMENT_FAILED
                 } else {
+                    SentryBreadcrumbs.speech("transcription succeeded", mapOf("length" to transcript.length))
                     dictationRawTranscript = transcript
                     dictationTranscript = transcript
                     enhanceTranscript(transcript, sessionId)
@@ -316,6 +334,7 @@ fun ChatInputBar(
                 }
             },
             onFailure = { failure ->
+                SentryBreadcrumbs.speech("audio capture failed", mapOf("failure" to failure), SentryLevel.ERROR)
                 scope.launch {
                     dictationTranscript =
                         when (failure) {
@@ -335,6 +354,7 @@ fun ChatInputBar(
     fun startDictationCapture() {
         val transcriptionEndpoints = SpeechSettingsStore.providers(context).endpointsForSelected(OpenAiProviderTask.Transcription, speechSettings.realtimeTranscriptionProviderId).ifEmpty { speechSettings.realtimeTranscriptionBaseUrl.openAiBaseUrlAliases() }
         if (transcriptionEndpoints.isEmpty()) {
+            SentryBreadcrumbs.speech("transcription endpoint missing", level = SentryLevel.WARNING)
             dictating = true
             dictationTranscript = "Configure realtime transcription endpoint first."
             dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED
@@ -342,6 +362,7 @@ fun ChatInputBar(
             return
         }
         speechSoundFeedback.playStart()
+        SentryBreadcrumbs.speech("dictation started", mapOf("providerId" to speechSettings.realtimeTranscriptionProviderId))
         dictationSessionId++
         dictationStartedAt = SystemClock.elapsedRealtime()
         firstPartialAt = null
@@ -382,9 +403,12 @@ fun ChatInputBar(
         scope.launch {
             runCatching { session.start() }
                 .onSuccess {
+                    SentryBreadcrumbs.speech("realtime session started")
                     if (sessionId != dictationSessionId) return@onSuccess
                     startAudioCapture(sessionId)
                 }.onFailure {
+                    SentryBreadcrumbs.speech("realtime session failed", mapOf("error" to safeUserError(it, "unknown")), SentryLevel.ERROR)
+                    SentryAppLogger.error("realtime session start failed", throwable = it)
                     if (sessionId == dictationSessionId) {
                         dictationTranscript = "Realtime transcription unavailable."
                         dictationState = SpeechDictationDisplayState.ENHANCEMENT_FAILED

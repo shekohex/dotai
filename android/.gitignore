@@ -20,3 +20,6 @@ app/src/main/bash/
 
 # Gradle buildSrc outputs
 buildSrc/build/
+
+# Sentry Config File
+sentry.properties

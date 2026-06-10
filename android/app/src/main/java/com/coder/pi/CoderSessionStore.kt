@@ -108,6 +108,7 @@ class CoderSessionStore(
         nowMillis: Long = System.currentTimeMillis(),
     ) {
         val safeMessage = safeDebugLogMessage(message)
+        SentryAppLogger.info("debug log", mapOf("message" to safeMessage, "timestamp" to nowMillis))
         val next = (debugLogs() + "$nowMillis|$safeMessage").takeLast(160)
         localPreferences.edit { putString("debug_logs", next.joinToString("\n")) }
     }

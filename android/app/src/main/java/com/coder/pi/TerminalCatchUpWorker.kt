@@ -23,6 +23,7 @@ class TerminalCatchUpWorker(
             ContextCompat.startForegroundService(applicationContext, Intent(applicationContext, TerminalConnectionService::class.java))
             store.appendDebugLog("terminal catch-up requested foreground terminal service")
         }.onFailure { failure ->
+            SentryAppLogger.error("terminal catch-up foreground service failed", throwable = failure)
             val started = TerminalConnectionManager.startSavedHeadless(applicationContext)
             store.appendDebugLog("terminal catch-up fallback started $started headless terminals after ${failure::class.simpleName}")
         }

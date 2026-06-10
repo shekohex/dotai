@@ -12,7 +12,7 @@
     "@plannotator/shared": "file:../../packages/shared",
     "@plannotator/review-editor": "file:../../packages/review-editor",
     "@plannotator/ui": "file:../../packages/ui",
-    "@pierre/diffs": "^1.1.12",
+    "@pierre/diffs": "1.2.8",
     "@plannotator/web-highlighter": "^0.8.1",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-collapsible": "^1.1.12",

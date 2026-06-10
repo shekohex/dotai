@@ -15,7 +15,7 @@
     "./theme": "./theme.css"
   },
   "dependencies": {
-    "@pierre/diffs": "^1.1.12",
+    "@pierre/diffs": "1.2.8",
     "@plannotator/shared": "file:../shared",
     "@plannotator/web-highlighter": "^0.8.1",
     "@radix-ui/react-dialog": "^1.1.15",

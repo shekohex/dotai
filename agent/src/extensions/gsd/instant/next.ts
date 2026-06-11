@@ -7,6 +7,7 @@ import type { GsdCommandArgs } from "../args.js";
 import { handleGsdCompleteMilestone } from "../lifecycle/complete-milestone.js";
 import { handleGsdDiscussPhase } from "../lifecycle/discuss-phase.js";
 import { handleGsdExecutePhase } from "../lifecycle/execute-phase.js";
+import { handleGsdNewMilestone } from "../lifecycle/new-milestone.js";
 import { handleGsdPlanPhase } from "../lifecycle/plan-phase.js";
 import { handleGsdVerifyWork } from "../lifecycle/verify-work.js";
 import { readPlanningSnapshot } from "../state/read.js";
@@ -33,7 +34,8 @@ type SupportedNextRoute =
   | "plan-phase"
   | "execute-phase"
   | "verify-work"
-  | "complete-milestone";
+  | "complete-milestone"
+  | "new-milestone";
 
 type RoutedNextOutput = {
   advanced: boolean;
@@ -43,7 +45,12 @@ type RoutedNextOutput = {
 };
 
 function routeRequiresWorkflowSession(route: SupportedNextRoute): boolean {
-  return route === "execute-phase" || route === "verify-work" || route === "complete-milestone";
+  return (
+    route === "execute-phase" ||
+    route === "verify-work" ||
+    route === "complete-milestone" ||
+    route === "new-milestone"
+  );
 }
 
 const UatStatusSchema = Type.Object(
@@ -351,7 +358,7 @@ export function resolveNextRoute(cwd: string, requestedPhase?: string): RoutedNe
   const snapshot = readPlanningSnapshot(cwd);
   const phases = readRoadmapPhases(cwd);
   if (phases.length === 0) {
-    return { advanced: false, reason: "no roadmap phases" };
+    return { advanced: true, route: "new-milestone", reason: "no active roadmap phases" };
   }
 
   if (
@@ -527,6 +534,11 @@ async function dispatchNextRoute(
       { subcommand: "verify-work", phase },
       `verify-work ${phase ?? ""}`.trim(),
     );
+    return;
+  }
+
+  if (route === "new-milestone") {
+    await handleGsdNewMilestone(pi, ctx, { subcommand: "new-milestone" }, "new-milestone");
     return;
   }
 

@@ -104,6 +104,17 @@ Plans:
     ]);
   });
 
+  it("routes empty active roadmap to new milestone", () => {
+    const root = createPlanningRoot();
+    writeFileSync(join(root, ".planning", "ROADMAP.md"), "# Roadmap\n\nNo active phases.\n");
+
+    expect(resolveNextRoute(root)).toMatchObject({
+      advanced: true,
+      route: "new-milestone",
+      reason: "no active roadmap phases",
+    });
+  });
+
   it("resolves current phase from state", () => {
     const root = createPlanningRoot();
     const current = resolveCurrentPhase(root);

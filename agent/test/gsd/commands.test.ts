@@ -2781,7 +2781,7 @@ test("gsd next ignores noncanonical UAT artifacts before later-phase routing", a
   );
 });
 
-test("gsd next fails closed when roadmap has no phases", async () => {
+test("gsd next routes roadmap with no active phases to new-milestone", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -2800,11 +2800,9 @@ test("gsd next fails closed when roadmap has no phases", async () => {
 
   await command?.handler("next", createCommandContext(cwd, notifications, fakePi));
 
-  expect(fakePi.sendUserMessage).not.toHaveBeenCalled();
-  expect(notifications.at(-1)).toEqual({
-    message: "Next no roadmap phases",
-    level: "warning",
-  });
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd new-milestone"',
+  );
 });
 
 test("gsd next keeps incomplete UAT routing on verify-work workflow", async () => {

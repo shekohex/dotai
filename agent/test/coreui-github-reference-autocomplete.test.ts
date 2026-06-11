@@ -59,8 +59,8 @@ describe("coreui github reference autocomplete", () => {
   test("searches current repo issues and PRs for #query", async () => {
     vi.useFakeTimers();
     const { exec, calls } = createExec(({ args }) => {
-      if (args[0] === "repo") {
-        return result("owner/repo\n");
+      if (args[0] === "remote") {
+        return result("origin\thttps://github.com/owner/repo.git (fetch)\n");
       }
       const state = args[args.indexOf("--state") + 1];
       if (args[1] === "issues" && state === "open") {
@@ -139,7 +139,7 @@ describe("coreui github reference autocomplete", () => {
     expect(suggestions?.items[2]?.label).toBe("Closed autocomplete PR");
     expect(suggestions?.items[2]?.description).toContain("#10 PR closed");
     expect(calls.map((call) => call.args.slice(0, 4))).toEqual([
-      ["repo", "view", "--json", "nameWithOwner"],
+      ["remote", "-v"],
       ["search", "issues", "auto", "--repo"],
       ["search", "issues", "auto", "--repo"],
       ["search", "prs", "auto", "--repo"],
@@ -157,8 +157,8 @@ describe("coreui github reference autocomplete", () => {
     vi.useFakeTimers();
     const controller = new AbortController();
     const { exec, calls } = createExec(({ args }) => {
-      if (args[0] === "repo") {
-        return result("owner/repo\n");
+      if (args[0] === "remote") {
+        return result("origin\tgit@github.com:owner/repo.git (fetch)\n");
       }
       return result("[]");
     });
@@ -179,7 +179,7 @@ describe("coreui github reference autocomplete", () => {
     vi.useRealTimers();
 
     expect(suggestions?.items[0]?.value).toBe("fallback");
-    expect(calls.map((call) => call.args[0])).toEqual(["repo"]);
+    expect(calls.map((call) => call.args[0])).toEqual(["remote"]);
   });
 
   test("applies selection by replacing typed reference token", () => {
@@ -208,6 +208,9 @@ describe("coreui github reference autocomplete", () => {
   test("falls back and warns once when gh is unavailable or unauthenticated", async () => {
     const notify = vi.fn();
     const { exec } = createExec(({ args }) => {
+      if (args[0] === "remote") {
+        return result("", 1, "fatal: not a git repository");
+      }
       if (args[0] === "repo") {
         return result("", 1, "gh: command not found");
       }
@@ -242,5 +245,21 @@ describe("coreui github reference autocomplete", () => {
     expect(
       __githubReferenceAutocompleteTest.parseJsonReferences(JSON.stringify([{ number: "bad" }])),
     ).toEqual([]);
+  });
+
+  test("parses GitHub repo from remote URLs", () => {
+    expect(
+      __githubReferenceAutocompleteTest.parseGitHubRepoFromRemote(
+        "https://github.com/tangle-network/agent-dev-container.git",
+      ),
+    ).toBe("tangle-network/agent-dev-container");
+    expect(
+      __githubReferenceAutocompleteTest.parseGitHubRepoFromRemote(
+        "git@github.com:tangle-network/agent-dev-container.git",
+      ),
+    ).toBe("tangle-network/agent-dev-container");
+    expect(
+      __githubReferenceAutocompleteTest.parseGitHubRepoFromRemote("git@gitlab.com:owner/repo.git"),
+    ).toBeUndefined();
   });
 });

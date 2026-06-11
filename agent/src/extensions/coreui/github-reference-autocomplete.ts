@@ -139,6 +139,54 @@ async function execGh(
   }
 }
 
+async function execGit(
+  exec: ExecFunction,
+  cwd: string,
+  args: string[],
+  signal: AbortSignal,
+): Promise<ExecResult | undefined> {
+  try {
+    return await exec("git", args, { cwd, signal, timeout: GH_TIMEOUT_MS });
+  } catch {
+    return undefined;
+  }
+}
+
+function parseGitHubRepoFromRemote(remoteUrl: string): string | undefined {
+  const trimmed = remoteUrl.trim();
+  const match = trimmed.match(
+    /(?:github\.com[:/]|https?:\/\/github\.com\/)([^/\s:]+)\/([^/\s]+?)(?:\.git)?$/,
+  );
+  if (match === null) {
+    return undefined;
+  }
+
+  return `${match[1]}/${match[2]}`;
+}
+
+async function resolveGitHubRepoFromGitRemote(
+  deps: GitHubReferenceSearchDeps,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  const result = await execGit(deps.exec, deps.cwd, ["remote", "-v"], signal);
+  if (result === undefined || result.code !== 0) {
+    return undefined;
+  }
+
+  for (const line of result.stdout.split("\n")) {
+    const remoteUrl = line.trim().split(/\s+/)[1];
+    if (remoteUrl === undefined) {
+      continue;
+    }
+    const repo = parseGitHubRepoFromRemote(remoteUrl);
+    if (repo !== undefined) {
+      return repo;
+    }
+  }
+
+  return undefined;
+}
+
 function waitForSearchDebounce(signal: AbortSignal): Promise<boolean> {
   if (signal.aborted) {
     return Promise.resolve(false);
@@ -185,6 +233,12 @@ async function resolveGitHubRepo(
   }
 
   state.repoCheckedAt = now;
+  const gitRemoteRepo = await resolveGitHubRepoFromGitRemote(deps, signal);
+  if (gitRemoteRepo !== undefined) {
+    state.repo = gitRemoteRepo;
+    return gitRemoteRepo;
+  }
+
   const result = await execGh(
     deps.exec,
     deps.cwd,
@@ -370,4 +424,5 @@ export function registerGitHubReferenceAutocomplete(pi: ExtensionAPI, ctx: Exten
 export const __githubReferenceAutocompleteTest = {
   extractGitHubReferenceToken,
   parseJsonReferences,
+  parseGitHubRepoFromRemote,
 };

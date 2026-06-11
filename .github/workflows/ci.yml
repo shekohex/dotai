@@ -204,6 +204,14 @@ jobs:
         working-directory: .
         run: gh release upload preview /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 --clobber
 
+      - name: Publish preview GitHub release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        working-directory: .
+        run: gh release edit preview --draft=false --prerelease
+
       - name: Publish preview package
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:

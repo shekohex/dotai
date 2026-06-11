@@ -29,6 +29,7 @@ import {
   stopCoreUIWorkingMessageShimmer,
 } from "./coreui/index.js";
 import { registerGitHubReferenceAutocomplete } from "./coreui/github-reference-autocomplete.js";
+import { registerSkillReferenceAutocomplete } from "./coreui/skill-reference-autocomplete.js";
 import { getAiAutocompleteSettings } from "./coreui/ai-autocomplete-settings.js";
 import {
   saveAiAutocompleteSettings,
@@ -524,6 +525,8 @@ export default function coreUIExtension(pi: ExtensionAPI) {
       requestRenderSafely(bindings.getRequestRender());
     },
   );
+
+  registerSkillReferenceAutocomplete(pi);
 
   registerSessionStartHandler({
     pi,

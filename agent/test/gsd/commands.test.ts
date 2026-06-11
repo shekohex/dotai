@@ -1,5 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -2803,6 +2804,25 @@ test("gsd next routes roadmap with no active phases to new-milestone", async () 
   expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
     'Launch native GSD workflow for "/gsd new-milestone"',
   );
+});
+
+test("bundled milestone complete writes awaiting-next-milestone state", () => {
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
+  writeFileSync(join(cwd, ".planning", "REQUIREMENTS.md"), "# Requirements\n");
+
+  execFileSync(
+    process.execPath,
+    [resolveGsdBundlePath("bin", "gsd-tools.cjs"), "milestone", "complete", "v1.0", "--cwd", cwd],
+    { encoding: "utf8" },
+  );
+
+  const state = readFileSync(join(cwd, ".planning", "STATE.md"), "utf8");
+  expect(state).toContain("Status: Awaiting next milestone");
+  expect(state).toContain("Phase: Milestone v1.0 complete");
+  expect(state).toContain("/gsd-new-milestone");
+  expect(state).not.toContain("Ready to plan");
 });
 
 test("gsd next keeps incomplete UAT routing on verify-work workflow", async () => {

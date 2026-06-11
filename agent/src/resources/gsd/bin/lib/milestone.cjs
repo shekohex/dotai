@@ -234,7 +234,7 @@ function cmdMilestoneComplete(cwd, version, options, raw) {
       stateContent,
       "Status",
       null,
-      `${version} milestone complete`,
+      "Awaiting next milestone",
     );
     stateContent = stateReplaceFieldWithFallback(
       stateContent,
@@ -248,6 +248,7 @@ function cmdMilestoneComplete(cwd, version, options, raw) {
       null,
       `${version} milestone completed and archived`,
     );
+    stateContent = writeMilestoneCompleteStateBody(stateContent, version);
 
     writeStateMd(statePath, stateContent, cwd);
   }
@@ -321,6 +322,36 @@ function cmdPhasesClear(cwd, raw, args) {
   }
 
   output({ cleared }, raw, `${cleared} phase director${cleared === 1 ? "y" : "ies"} cleared`);
+}
+
+function writeMilestoneCompleteStateBody(content, version) {
+  const currentPosition = [
+    "## Current Position",
+    "",
+    `Phase: Milestone ${version} complete`,
+    "Status: Awaiting next milestone",
+    `Last activity: ${version} milestone completed and archived`,
+  ].join("\n");
+  const operatorNextSteps = [
+    "## Operator Next Steps",
+    "",
+    "- Start the next milestone with /gsd-new-milestone",
+  ].join("\n");
+
+  return upsertMarkdownSection(
+    upsertMarkdownSection(content, "Current Position", currentPosition),
+    "Operator Next Steps",
+    operatorNextSteps,
+  );
+}
+
+function upsertMarkdownSection(content, sectionName, replacement) {
+  const escaped = escapeRegex(sectionName);
+  const pattern = new RegExp(`(^##\\s+${escaped}\\s*\n)[\\s\\S]*?(?=\n##\\s+|$)`, "im");
+  if (pattern.test(content)) {
+    return content.replace(pattern, replacement);
+  }
+  return `${content.trimEnd()}\n\n${replacement}\n`;
 }
 
 module.exports = {

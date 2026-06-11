@@ -17,6 +17,7 @@ const GSD_INTERVIEW_COMMANDS = new Set<GsdSubcommand>([
   "complete-milestone",
   "milestone-summary",
   "debug",
+  "discuss-phase",
   "plan-phase",
   "execute-phase",
 ]);

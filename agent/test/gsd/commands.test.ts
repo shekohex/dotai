@@ -256,6 +256,88 @@ test("gsd text-mode interview workflow command keeps interview disabled", async 
   expect(fakePi.sendUserMessage).toHaveBeenCalledTimes(1);
 });
 
+test("gsd discuss-phase default launches workflow prompt with interview enabled", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("discuss-phase 2", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.tools.has("interview")).toBe(true);
+  const prompt = String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "");
+  expect(prompt).toContain('Launch native GSD workflow for "/gsd discuss-phase 2"');
+  expect(prompt).toContain(resolveGsdBundlePath("commands/gsd/discuss-phase.md"));
+  expect(prompt).toContain(resolveGsdBundlePath("workflows/discuss-phase.md"));
+  expect(prompt).not.toContain("Continue area:");
+});
+
+test("gsd discuss-phase --assumptions launches upstream assumptions workflow", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler(
+    "discuss-phase 2 --assumptions",
+    createCommandContext(cwd, notifications, fakePi),
+  );
+
+  expect(fakePi.tools.has("interview")).toBe(true);
+  const prompt = String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "");
+  expect(prompt).toContain('Launch native GSD workflow for "/gsd discuss-phase 2 --assumptions"');
+  expect(prompt).toContain(resolveGsdBundlePath("commands/gsd/discuss-phase.md"));
+  expect(prompt).toContain(resolveGsdBundlePath("workflows/list-phase-assumptions.md"));
+  expect(prompt).toContain(resolveGsdBundlePath("agents/gsd-assumptions-analyzer.md"));
+  expect(prompt).not.toContain("Continue area:");
+});
+
+test("gsd discuss-phase config assumptions launches upstream assumptions artifact workflow", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(
+    join(cwd, ".planning", "config.json"),
+    `${JSON.stringify({ workflow: { discuss_mode: "assumptions" } }, null, 2)}\n`,
+  );
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("discuss-phase 2", createCommandContext(cwd, notifications, fakePi));
+
+  const prompt = String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "");
+  expect(prompt).toContain(resolveGsdBundlePath("workflows/discuss-phase-assumptions.md"));
+  expect(prompt).toContain(resolveGsdBundlePath("agents/gsd-assumptions-analyzer.md"));
+  expect(prompt).not.toContain(resolveGsdBundlePath("workflows/discuss-phase.md"));
+});
+
+test("gsd plan-phase launches upstream workflow prompt", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("plan-phase 2", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.tools.has("interview")).toBe(true);
+  const prompt = String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "");
+  expect(prompt).toContain('Launch native GSD workflow for "/gsd plan-phase 2"');
+  expect(prompt).toContain(resolveGsdBundlePath("commands/gsd/plan-phase.md"));
+  expect(prompt).toContain(resolveGsdBundlePath("workflows/plan-phase.md"));
+  expect(prompt).toContain("Preserve workflow gates");
+});
+
 test("gsd command enables feature with on subcommand", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
@@ -2359,9 +2441,8 @@ test("gsd progress --next can route discuss-phase without workflow session", asy
     notifications.some((item) => item.message.includes("Next requires workflow session")),
   ).toBe(false);
   expect(notifications.at(-1)).toEqual({
-    message:
-      "Existing context for phase 2\n\nOptions:\n- Use existing context\n- View context summary\n- Skip prior context",
-    level: "info",
+    message: "Cannot run /gsd discuss-phase: workflow session support unavailable in this context.",
+    level: "warning",
   });
 });
 
@@ -2464,7 +2545,11 @@ test("gsd progress --next can route plan-phase without workflow session", async 
   expect(
     notifications.some((item) => item.message.includes("Next requires workflow session")),
   ).toBe(false);
-  expect(spawn).toHaveBeenCalled();
+  expect(spawn).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Cannot run /gsd plan-phase: workflow session support unavailable in this context.",
+    level: "warning",
+  });
 });
 
 test("gsd progress --next fails closed without workflow session for verify-work route", async () => {
@@ -3076,9 +3161,8 @@ test("gsd next can route discuss-phase without workflow session", async () => {
     notifications.some((item) => item.message.includes("Next requires workflow session")),
   ).toBe(false);
   expect(notifications.at(-1)).toEqual({
-    message:
-      "Existing context for phase 2\n\nOptions:\n- Use existing context\n- View context summary\n- Skip prior context",
-    level: "info",
+    message: "Cannot run /gsd discuss-phase: workflow session support unavailable in this context.",
+    level: "warning",
   });
 });
 
@@ -3176,7 +3260,11 @@ test("gsd next can route plan-phase without workflow session", async () => {
   expect(
     notifications.some((item) => item.message.includes("Next requires workflow session")),
   ).toBe(false);
-  expect(spawn).toHaveBeenCalled();
+  expect(spawn).not.toHaveBeenCalled();
+  expect(notifications.at(-1)).toEqual({
+    message: "Cannot run /gsd plan-phase: workflow session support unavailable in this context.",
+    level: "warning",
+  });
 });
 
 test("gsd next blocks paused checkpoint markers before routing", async () => {
@@ -4127,12 +4215,12 @@ test("gsd command runs lifecycle flow through grouped command surface", async ()
   expect(
     await readFile(join(cwd, ".planning", "phases", "1-foundation", "01-01-PLAN.md"), "utf8"),
   ).toContain("Implement feature");
-  expect(
-    await readFile(join(cwd, ".planning", "phases", "1-foundation", "01-PLAN-CHECK.md"), "utf8"),
-  ).toContain("approved: true");
-  expect(
-    notifications.some((entry) => entry.message.includes("Planned 1 plan(s); check approved")),
-  ).toBe(true);
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-3)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd plan-phase 1"',
+  );
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-3)?.[0])).toContain(
+    resolveGsdBundlePath("workflows/plan-phase.md"),
+  );
   expect(String(fakePi.sendUserMessage.mock.calls.at(-2)?.[0])).toContain(
     'Launch native GSD workflow for "/gsd execute-phase 1"',
   );

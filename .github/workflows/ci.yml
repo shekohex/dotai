@@ -194,6 +194,14 @@ jobs:
           windows_source = Path('agent/scripts/install-github-package.ps1').read_text()
           windows_rendered = windows_source.replace("$defaultPackageVersion = ''", "$defaultPackageVersion = '${{ steps.preview_version.outputs.value }}'", 1)
           Path('/tmp/install-github-package.ps1').write_text(windows_rendered)
+
+          Path('/tmp/release-manifest.json').write_text('''{
+            "packageName": "@shekohex/agent",
+            "version": "${{ steps.preview_version.outputs.value }}",
+            "channel": "preview",
+            "commit": "${{ github.sha }}",
+            "registryUrl": "https://npm.pkg.github.com"
+          }\n''')
           PY
 
       - name: Upload preview installer asset
@@ -202,7 +210,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         working-directory: .
-        run: gh release upload preview /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 --clobber
+        run: gh release upload preview /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 /tmp/release-manifest.json#release-manifest.json --clobber
 
       - name: Publish preview GitHub release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

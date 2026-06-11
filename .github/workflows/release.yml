@@ -111,13 +111,21 @@ jobs:
           windows_source = Path('agent/scripts/install-github-package.ps1').read_text()
           windows_rendered = windows_source.replace("$defaultPackageVersion = ''", "$defaultPackageVersion = '${{ steps.release_version.outputs.value }}'", 1)
           Path('/tmp/install-github-package.ps1').write_text(windows_rendered)
+
+          Path('/tmp/release-manifest.json').write_text('''{
+            "packageName": "@shekohex/agent",
+            "version": "${{ steps.release_version.outputs.value }}",
+            "channel": "latest",
+            "commit": "${{ inputs.target }}",
+            "registryUrl": "https://npm.pkg.github.com"
+          }\n''')
           PY
 
       - name: Upload manual release installer asset
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release upload '${{ inputs.tag }}' /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 --clobber
+        run: gh release upload '${{ inputs.tag }}' /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 /tmp/release-manifest.json#release-manifest.json --clobber
 
   update_release_notes:
     if: github.event_name == 'release' && github.event.action == 'published'
@@ -167,13 +175,21 @@ jobs:
           windows_source = Path('agent/scripts/install-github-package.ps1').read_text()
           windows_rendered = windows_source.replace("$defaultPackageVersion = ''", f"$defaultPackageVersion = '{package_version}'", 1)
           Path('/tmp/install-github-package.ps1').write_text(windows_rendered)
+
+          Path('/tmp/release-manifest.json').write_text(f'''{{
+            "packageName": "@shekohex/agent",
+            "version": "{package_version}",
+            "channel": "latest",
+            "commit": "{os.environ['GITHUB_SHA']}",
+            "registryUrl": "https://npm.pkg.github.com"
+          }}\n''')
           PY
 
       - name: Upload release installer asset
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: gh release upload '${{ github.event.release.tag_name }}' /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 --clobber
+        run: gh release upload '${{ github.event.release.tag_name }}' /tmp/install-github-package.sh#install-github-package.sh /tmp/install-github-package.ps1#install-github-package.ps1 /tmp/release-manifest.json#release-manifest.json --clobber
 
       - name: Update GitHub release notes
         env:

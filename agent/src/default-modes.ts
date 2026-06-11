@@ -38,8 +38,8 @@ export const defaultModes = {
       description: "technical writing/docs/issues/PRs",
       fallbacks: [
         { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" },
-        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
         { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
       ],
     },
     build: {
@@ -73,7 +73,7 @@ export const defaultModes = {
       systemPromptMode: "replace",
     },
     "cheap-review": {
-      provider: "zai-coding-plan",
+      provider: "zai",
       modelId: "glm-5.1",
       thinkingLevel: "high",
       color: "muted",
@@ -83,7 +83,7 @@ export const defaultModes = {
       description: "fast cheap correctness review",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
-      fallbacks: [{ provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" }],
+      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" }],
     },
     "fast-review": {
       provider: "deepseek",
@@ -97,8 +97,8 @@ export const defaultModes = {
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
       fallbacks: [
-        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
         { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
       ],
     },
     commiter: {
@@ -128,14 +128,14 @@ export const defaultModes = {
       ],
     },
     painter: {
-      provider: "zai-coding-plan",
+      provider: "zai",
       modelId: "glm-5.1",
       thinkingLevel: "high",
       color: "bashMode",
       tmuxTarget: "window",
       tools: ["*"],
       description: "frontend/UI/UX polish",
-      fallbacks: [{ provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" }],
+      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" }],
     },
     ask: {
       provider: "openai-codex",
@@ -153,7 +153,7 @@ export const defaultModes = {
       tmuxTarget: "window",
     },
     websearch: {
-      provider: "zai-coding-plan",
+      provider: "zai",
       modelId: "glm-5.1",
       thinkingLevel: "high",
       color: "muted",
@@ -161,7 +161,7 @@ export const defaultModes = {
       tools: ["read", "grep", "find", "bash", "websearch"],
       autoExit: true,
       description: "web/current docs research",
-      fallbacks: [{ provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" }],
+      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" }],
     },
     poke: {
       provider: "deepseek",

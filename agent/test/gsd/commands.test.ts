@@ -338,6 +338,38 @@ test("gsd plan-phase launches upstream workflow prompt", async () => {
   expect(prompt).toContain("Preserve workflow gates");
 });
 
+test("gsd next enables interview before routed workflow prompt", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("next", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.tools.has("interview")).toBe(true);
+  expect(fakePi.getActiveTools()).toContain("interview");
+  expect(fakePi.sendUserMessage).toHaveBeenCalled();
+});
+
+test("gsd progress --next enables interview before routed workflow prompt", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  await command?.handler("progress --next", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.tools.has("interview")).toBe(true);
+  expect(fakePi.getActiveTools()).toContain("interview");
+  expect(fakePi.sendUserMessage).toHaveBeenCalled();
+});
+
 test("gsd command enables feature with on subcommand", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

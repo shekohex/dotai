@@ -20,6 +20,8 @@ const GSD_INTERVIEW_COMMANDS = new Set<GsdSubcommand>([
   "discuss-phase",
   "plan-phase",
   "execute-phase",
+  "next",
+  "progress",
 ]);
 
 export type GsdSubcommand =

@@ -118,14 +118,21 @@ async function sendWorkflowPromptInCurrentSession(
   pi.sendUserMessage(prompt, { deliverAs: "steer" });
 }
 
-function hasForkableLeaf(ctx: ExtensionCommandContext, leafId: string | null): leafId is string {
-  if (leafId === null) {
+function hasForkableLeaf(
+  ctx: ExtensionCommandContext,
+  leafId: string | null | undefined,
+): leafId is string {
+  if (leafId === undefined || leafId === null) {
     return false;
   }
   if (typeof ctx.sessionManager.getEntry !== "function") {
     return true;
   }
-  return ctx.sessionManager.getEntry(leafId) !== undefined;
+  try {
+    return ctx.sessionManager.getEntry(leafId)?.type === "message";
+  } catch {
+    return false;
+  }
 }
 
 export async function applyPendingGsdWorkflowLaunch(
@@ -188,7 +195,7 @@ export async function launchGsdWorkflowSession(
   try {
     if (sessionStrategy === "fork") {
       const forkLeafId = leafId;
-      if (forkLeafId === null) {
+      if (forkLeafId === undefined || forkLeafId === null) {
         setPendingGsdWorkflowLaunch(undefined);
         await sendWorkflowPromptInCurrentSession(pi, ctx, prompt, overrides);
         return;

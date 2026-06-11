@@ -414,11 +414,14 @@ async function collectFiles(root: string, prefix: string): Promise<string[]> {
 }
 
 function completeAliasItems(state: ReferenceRuntimeState, query: string): AutocompleteItem[] {
-  return fuzzyFilter(
-    state.references.filter((reference) => !reference.hidden && reference.available),
-    query,
-    (reference) => `${reference.alias} ${reference.description ?? ""}`,
-  )
+  const normalizedQuery = query.toLowerCase();
+  return state.references
+    .filter((reference) => !reference.hidden && reference.available)
+    .filter(
+      (reference) =>
+        normalizedQuery.length === 0 || reference.alias.toLowerCase().startsWith(normalizedQuery),
+    )
+    .toSorted((left, right) => left.alias.localeCompare(right.alias))
     .slice(0, MAX_AUTOCOMPLETE_ITEMS)
     .map((reference) => ({
       value: `@${reference.alias}`,

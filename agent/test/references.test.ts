@@ -418,6 +418,47 @@ describe("references extension", () => {
     expect(fallback?.items[0]?.value).toBe("fallback");
   });
 
+  test("reference autocomplete falls back when alias prefix does not match", async () => {
+    const root = createTempDirSync("agent-references-complete-");
+    const docs = join(root, "docs");
+    await mkdir(docs, { recursive: true });
+    const state = createReferenceRuntimeState();
+    state.references = [
+      {
+        alias: "pi",
+        sourceFile: join(root, "references.json"),
+        sourceDir: root,
+        path: "docs",
+        description: "source code repository",
+        hidden: false,
+        kind: "local",
+        resolvedPath: docs,
+        available: true,
+        refreshing: false,
+      },
+      {
+        alias: "opencode",
+        sourceFile: join(root, "references.json"),
+        sourceDir: root,
+        path: "docs",
+        description: "src implementation",
+        hidden: false,
+        kind: "local",
+        resolvedPath: docs,
+        available: true,
+        refreshing: false,
+      },
+    ];
+    state.byAlias = new Map(state.references.map((reference) => [reference.alias, reference]));
+    const provider = createReferencesAutocompleteProvider(createCurrentProvider(), state);
+
+    const suggestions = await provider.getSuggestions(["read @src"], 0, "read @src".length, {
+      signal: new AbortController().signal,
+    });
+
+    expect(suggestions?.items[0]?.value).toBe("fallback");
+  });
+
   test("registers session autocomplete, message renderer, and prompt context", async () => {
     const agentDir = createTempDirSync("agent-references-agent-");
     const projectDir = createTempDirSync("agent-references-project-");

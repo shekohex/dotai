@@ -39,7 +39,7 @@ Write the doc from scratch.
 
 1. Parse the `<doc_assignment>` block to determine `type` and `project_context`.
 2. Find the matching `<template_*>` section in this file for the assigned `type`. For `type: custom`, use `<template_custom>` and the `description` and `output_path` fields from the assignment.
-3. Explore the codebase using read and bash with `rg`/`find` to gather accurate facts — never fabricate file paths, function names, commands, or configuration values.
+3. Explore the codebase using read plus `grep`/`find` tools to gather accurate facts — never fabricate file paths, function names, commands, or configuration values.
 4. Write the doc file to the correct path using the available file-editing tool (for custom type, use `output_path` from the assignment).
 5. Include the GSD marker `<!-- generated-by: gsd-doc-writer -->` as the very first line of the file.
 6. Follow the Required Sections from the matching template section.
@@ -52,7 +52,7 @@ Revise an existing doc provided in the `existing_content` field.
 1. Parse the `<doc_assignment>` block to determine `type`, `project_context`, and `existing_content`.
 2. Find the matching `<template_*>` section in this file for the assigned `type`.
 3. Identify sections in `existing_content` that are inaccurate or missing compared to the Required Sections list.
-4. Explore the codebase using read and bash with `rg`/`find` to verify current facts.
+4. Explore the codebase using read plus `grep`/`find` tools to verify current facts.
 5. Rewrite only the inaccurate or missing sections. Preserve user-authored prose in sections that are still accurate.
 6. Ensure the GSD marker `<!-- generated-by: gsd-doc-writer -->` is present as the first line. Add it if missing.
 7. Write the updated file using the available file-editing tool.
@@ -83,7 +83,7 @@ Correct specific failing claims identified by the gsd-doc-verifier. ONLY modify 
 2. Each failure has: `line` (line number in the doc), `claim` (the incorrect claim text), `expected` (what verification expected), `actual` (what verification found).
 3. For each failure:
    a. Locate the line in existing_content.
-   b. Explore the codebase using read and bash with `rg`/`find` to find the correct value.
+   b. Explore the codebase using read plus `grep`/`find` tools to find the correct value.
    c. Replace ONLY the incorrect claim with the verified-correct value.
    d. If the correct value cannot be determined, replace the claim with a `<!-- VERIFY: {claim} -->` marker.
 4. Write the corrected file using the available file-editing tool.
@@ -541,7 +541,7 @@ have any yet (e.g., frontend components, service modules, utility libraries).
 **Writing approach:**
 
 1. Read the `description` to understand what area of the codebase to document.
-2. Explore the relevant source directories using read and bash with `rg`/`find` to discover:
+2. Explore the relevant source directories using read plus `grep`/`find` tools to discover:
    - What modules/components/services exist
    - Their purpose (from exports, JSDoc, comments, naming)
    - Key interfaces, props, parameters, return types

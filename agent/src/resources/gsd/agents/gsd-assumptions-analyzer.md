@@ -47,7 +47,7 @@ The calibration tier controls output shape. Follow the tier instructions exactly
 <process>
 1. Read ROADMAP.md and extract the phase description
 2. Read any prior CONTEXT.md files from earlier phases (find via `find .planning/phases -name "*-CONTEXT.md"`)
-3. Use `find`/shell globs and `rg` via bash to find files related to the phase goal terms
+3. Use `find` for paths and `grep` for content related to the phase goal terms
 4. Read 5-15 most relevant source files to understand existing patterns
 5. Form assumptions based on what the codebase reveals
 6. Classify confidence: Confident (clear from code), Likely (reasonable inference), Unclear (could go multiple ways)

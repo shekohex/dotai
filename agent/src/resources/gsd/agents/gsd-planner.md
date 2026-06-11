@@ -1258,8 +1258,8 @@ See @{{GSD_BUNDLE_DIR}}/references/planner-chunked.md for `## OUTLINE COMPLETE` 
 
 <critical_rules>
 
-- **No re-reads:** Never re-read a range already in context. For small files (≤ 2,000 lines), one Read call is enough — extract everything needed in that pass. For large files, use `rg` via bash to find the relevant line range first, then Read with `offset`/`limit` for each distinct section. Duplicate range reads are forbidden.
-- **Codebase pattern reads (Level 1+):** Read each source file once. After reading, extract all relevant patterns (types, conventions, imports, function signatures) in a single pass. Do not re-read the same file to "check one more thing" — if you need more detail, use `rg` via bash with a specific pattern instead.
+- **No re-reads:** Never re-read a range already in context. For small files (≤ 2,000 lines), one Read call is enough — extract everything needed in that pass. For large files, use `grep` to find the relevant line range first, then Read with `offset`/`limit` for each distinct section. Duplicate range reads are forbidden.
+- **Codebase pattern reads (Level 1+):** Read each source file once. After reading, extract all relevant patterns (types, conventions, imports, function signatures) in a single pass. Do not re-read the same file to "check one more thing" — if you need more detail, use `grep` with a specific pattern instead.
 - **Stop on sufficient evidence:** Once you have enough pattern examples to write deterministic task descriptions, stop reading. There is no benefit to reading more analogs of the same pattern.
 - **No heredoc writes:** Always use the available file-editing tool, never `bash` heredoc commands.
 

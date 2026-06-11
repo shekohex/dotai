@@ -151,7 +151,7 @@ find src/ -name "*.ts" -o -name "*.tsx" | xargs wc -l 2>/dev/null | sort -rn | h
 grep -rn "return null\|return \[\]\|return {}" src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -30
 ```
 
-Read key files identified during exploration. Use `find`/shell globs and `rg` via bash liberally.
+Read key files identified during exploration. Use `find`/shell globs and `grep` liberally.
 </step>
 
 <step name="write_documents">

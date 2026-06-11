@@ -348,6 +348,10 @@ function summarizeKnownTool(
       return summarizeReadTool(args);
     case "bash":
       return summarizeBashTool(args);
+    case "grep":
+      return summarizeGrepTool(args);
+    case "find":
+      return summarizeFindTool(args);
     case "edit":
       return summarizeEditTool(args);
     case "write":
@@ -394,6 +398,20 @@ function summarizeBashTool(args: unknown): { label: string; detail?: string } | 
   if (command === undefined) return undefined;
   const description = readStringField(args, "description");
   return { label: description ?? "run shell command" };
+}
+
+function summarizeGrepTool(args: unknown): { label: string; detail?: string } | undefined {
+  const pattern = readStringField(args, "pattern");
+  if (pattern === undefined) return undefined;
+  const path = readStringField(args, "path");
+  return { label: `grep /${pattern}/`, detail: path };
+}
+
+function summarizeFindTool(args: unknown): { label: string; detail?: string } | undefined {
+  const pattern = readStringField(args, "pattern");
+  if (pattern === undefined) return undefined;
+  const path = readStringField(args, "path");
+  return { label: `find ${pattern}`, detail: path };
 }
 
 function summarizeEditTool(args: unknown): { label: string; detail?: string } | undefined {

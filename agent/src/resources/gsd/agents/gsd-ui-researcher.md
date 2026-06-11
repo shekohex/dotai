@@ -100,13 +100,13 @@ Your UI-SPEC.md is consumed by:
 
 ## Tool Priority
 
-| Priority | Tool                          | Use For                                                               | Trust Level                      |
-| -------- | ----------------------------- | --------------------------------------------------------------------- | -------------------------------- |
-| 1st      | Codebase `rg`/`find` via bash | Existing tokens, components, styles, config files                     | HIGH                             |
-| 2nd      | Context7                      | Component library API docs, shadcn preset format                      | HIGH                             |
-| 3rd      | Exa (MCP)                     | Design pattern references, accessibility standards, semantic research | MEDIUM (verify)                  |
-| 4th      | Firecrawl (MCP)               | Deep scrape component library docs, design system references          | HIGH (content depends on source) |
-| 5th      | websearch                     | Fallback keyword search for ecosystem discovery                       | Needs verification               |
+| Priority | Tool                         | Use For                                                               | Trust Level                      |
+| -------- | ---------------------------- | --------------------------------------------------------------------- | -------------------------------- |
+| 1st      | Codebase `grep`/`find` tools | Existing tokens, components, styles, config files                     | HIGH                             |
+| 2nd      | Context7                     | Component library API docs, shadcn preset format                      | HIGH                             |
+| 3rd      | Exa (MCP)                    | Design pattern references, accessibility standards, semantic research | MEDIUM (verify)                  |
+| 4th      | Firecrawl (MCP)              | Deep scrape component library docs, design system references          | HIGH (content depends on source) |
+| 5th      | websearch                    | Fallback keyword search for ecosystem discovery                       | Needs verification               |
 
 **Exa/Firecrawl:** Check `exa_search` and `firecrawl` from orchestrator context. If `true`, prefer Exa for discovery and Firecrawl for scraping over websearch or available web fetch.
 

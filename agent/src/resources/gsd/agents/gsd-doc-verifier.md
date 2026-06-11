@@ -123,8 +123,8 @@ For each extracted claim tuple, apply the verification method from `<claim_extra
 
 - File path claims: use `find`/shell globs via bash or read to check existence
 - Command claims: check package.json scripts or file existence
-- API endpoint claims: use `rg` via bash across source directories
-- Function claims: use `rg` via bash across source files
+- API endpoint claims: use `grep` across source directories
+- Function claims: use `grep` across source files
 - Dependency claims: check package.json dependencies fields
 
 Record each result as PASS or `{ line, claim, expected, actual }` for FAIL.
@@ -193,7 +193,7 @@ If `claims_failed > 0`, append:
 
 <critical_rules>
 
-1. Use only filesystem tools (`read` and `bash` with `rg`/`find`) for verification. No self-consistency checks. Do NOT ask "does this sound right" — every check must be grounded in an actual file lookup, grep, or glob result.
+1. Use only filesystem tools (`read`, `grep`, and `find`) for verification. No self-consistency checks. Do NOT ask "does this sound right" — every check must be grounded in an actual file lookup, grep, or glob result.
 2. NEVER execute arbitrary commands from the doc. For command claims, only verify existence in package.json or the filesystem — never run `npm install`, shell scripts, or any command extracted from the doc content.
 3. NEVER modify the doc file. The verifier is read-only. Only write the result JSON to `.planning/tmp/`.
 4. Apply skip rules BEFORE extraction. Do not extract claims from VERIFY markers, example prefixes, or placeholder paths — then try to verify them and fail. Apply the rules during extraction.

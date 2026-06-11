@@ -1,6 +1,7 @@
 import bundledResourcesExtension from "./bundled-resources.js";
 import commitExtension from "./commit.js";
 import coreUIExtension from "./coreui.js";
+import fffExtension from "./fff/index.js";
 import glanceExtension from "./glance/index.js";
 import gitStateExtension from "./git-state.js";
 import litellmGatewayExtension from "./litellm.js";
@@ -17,6 +18,7 @@ export const groupedExtensionsA: GroupedExtensionDefinition[] = [
   { id: "bundled-resources", factory: bundledResourcesExtension },
   { id: "git-state", factory: gitStateExtension },
   { id: "coreui", factory: coreUIExtension },
+  { id: "fff", factory: fffExtension },
   { id: "glance", factory: glanceExtension },
   { id: "litellm", factory: litellmGatewayExtension },
   { id: "openai-better", factory: openAIBetterExtension },

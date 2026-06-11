@@ -112,7 +112,7 @@ rg "router\.(get|post|put|delete)" -g "*.ts"
 
 **Never re-read the same range.** For small files (≤ 2,000 lines), one `read` call is enough — extract everything in that pass. For large files, multiple non-overlapping targeted reads are fine; what is forbidden is re-reading a range already in context.
 
-**Large file strategy:** For files > 2,000 lines, use `rg` via bash first to locate the relevant line numbers, then `read` with `offset`/`limit` for each distinct section (imports, core pattern, error handling). Use non-overlapping ranges. Do not load the whole file.
+**Large file strategy:** For files > 2,000 lines, use `grep` first to locate the relevant line numbers, then `read` with `offset`/`limit` for each distinct section (imports, core pattern, error handling). Use non-overlapping ranges. Do not load the whole file.
 
 **Early stopping:** Stop analog search once you have 3–5 strong matches. There is no benefit to finding a 10th analog.
 
@@ -306,7 +306,7 @@ Pattern mapping complete. Planner can now reference analog patterns in PLAN.md f
 <critical_rules>
 
 - **No re-reads:** Never re-read a range already in context. Small files: one Read call, extract everything. Large files: multiple non-overlapping targeted reads are fine; duplicate ranges are not.
-- **Large files (> 2,000 lines):** Use `rg` via bash to find the line range first, then Read with offset/limit. Never load the whole file when a targeted section suffices.
+- **Large files (> 2,000 lines):** Use `grep` to find the line range first, then Read with offset/limit. Never load the whole file when a targeted section suffices.
 - **Stop at 3–5 analogs:** Once you have enough strong matches, write PATTERNS.md. Broader search produces diminishing returns and wastes tokens.
 - **No source edits:** PATTERNS.md is the only file you write. All other file access is read-only.
 - **No heredoc writes:** Always use the available file-editing tool, never `bash heredoc`.

@@ -35,7 +35,7 @@ function getAvailableToolNames(pi: ExtensionAPI, ctx: ExtensionContext): string[
     .getAllTools()
     .map((tool) => tool.name)
     .filter((toolName) => {
-      if (["grep", "find", "ls"].includes(toolName)) return false;
+      if (toolName === "ls") return false;
       if (toolName === WORKFLOW_TOOL_NAME) {
         return getWorkflowModeState().toolEnabled;
       }

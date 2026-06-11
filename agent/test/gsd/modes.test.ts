@@ -51,13 +51,15 @@ describe("ensureBuiltInGsdModes", () => {
     expect(loadModeRegistrySync().modes["gsd-planner"]).toBeUndefined();
   });
 
-  it("uses explicit per-role tool sets without glob or grep", () => {
+  it("uses explicit per-role tool sets without glob", () => {
     const built = buildBuiltInGsdModes();
 
     expect(built.modes["gsd-planner"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-planner"]?.modelId).toBe("gpt-5.5");
     expect(built.modes["gsd-planner"]?.tools).toEqual([
       "read",
+      "grep",
+      "find",
       "bash",
       "write",
       "websearch",
@@ -69,6 +71,8 @@ describe("ensureBuiltInGsdModes", () => {
     expect(built.modes["gsd-phase-researcher"]?.modelId).toBe("gpt-5.4-mini");
     expect(built.modes["gsd-phase-researcher"]?.tools).toEqual([
       "read",
+      "grep",
+      "find",
       "bash",
       "write",
       "websearch",
@@ -80,26 +84,55 @@ describe("ensureBuiltInGsdModes", () => {
 
     expect(built.modes["gsd-verifier"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-verifier"]?.modelId).toBe("gpt-5.5");
-    expect(built.modes["gsd-verifier"]?.tools).toEqual(["read", "bash", "write", "websearch"]);
+    expect(built.modes["gsd-verifier"]?.tools).toEqual([
+      "read",
+      "grep",
+      "find",
+      "bash",
+      "write",
+      "websearch",
+    ]);
 
     expect(built.modes["gsd-pattern-mapper"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-pattern-mapper"]?.modelId).toBe("gpt-5.4-mini");
-    expect(built.modes["gsd-pattern-mapper"]?.tools).toEqual(["read", "bash", "write"]);
+    expect(built.modes["gsd-pattern-mapper"]?.tools).toEqual([
+      "read",
+      "grep",
+      "find",
+      "bash",
+      "write",
+    ]);
 
     expect(built.modes["gsd-codebase-mapper"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-codebase-mapper"]?.modelId).toBe("gpt-5.4-mini");
-    expect(built.modes["gsd-codebase-mapper"]?.tools).toEqual(["read", "bash", "edit", "write"]);
+    expect(built.modes["gsd-codebase-mapper"]?.tools).toEqual([
+      "read",
+      "grep",
+      "find",
+      "bash",
+      "edit",
+      "write",
+    ]);
     expect(built.modes["gsd-codebase-mapper"]?.tmuxTarget).toBe("window");
 
     expect(built.modes["gsd-intel-updater"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-intel-updater"]?.modelId).toBe("gpt-5.4-mini");
-    expect(built.modes["gsd-intel-updater"]?.tools).toEqual(["read", "bash", "edit", "write"]);
+    expect(built.modes["gsd-intel-updater"]?.tools).toEqual([
+      "read",
+      "grep",
+      "find",
+      "bash",
+      "edit",
+      "write",
+    ]);
     expect(built.modes["gsd-intel-updater"]?.tmuxTarget).toBe("window");
 
     expect(built.modes["gsd-debugger"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-debugger"]?.modelId).toBe("gpt-5.5");
     expect(built.modes["gsd-debugger"]?.tools).toEqual([
       "read",
+      "grep",
+      "find",
       "bash",
       "edit",
       "write",
@@ -112,6 +145,8 @@ describe("ensureBuiltInGsdModes", () => {
     expect(built.modes["gsd-debug-session-manager"]?.modelId).toBe("gpt-5.5");
     expect(built.modes["gsd-debug-session-manager"]?.tools).toEqual([
       "read",
+      "grep",
+      "find",
       "bash",
       "edit",
       "write",
@@ -124,7 +159,6 @@ describe("ensureBuiltInGsdModes", () => {
     for (const spec of Object.values(built.modes)) {
       expect(spec.tmuxTarget).toBe("window");
       expect(spec.tools?.includes("glob")).toBeFalsy();
-      expect(spec.tools?.includes("grep")).toBeFalsy();
     }
   });
 });

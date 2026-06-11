@@ -98,6 +98,7 @@ function createCommandContext(
   cwd: string,
   notifications: Array<{ message: string; level: string }>,
   fakePi?: FakePi,
+  options?: { leafId?: string | null; hasLeafEntry?: boolean },
 ) {
   const modelRegistry = {
     find(provider: string, id: string) {
@@ -114,7 +115,9 @@ function createCommandContext(
       },
     },
     sessionManager: {
-      getLeafId: () => "leaf-id",
+      getLeafId: () => (options && "leafId" in options ? options.leafId : "leaf-id"),
+      getEntry: (entryId: string) =>
+        options?.hasLeafEntry === false ? undefined : { id: entryId, type: "message" },
       getSessionFile: () => join(cwd, ".pi", "session.jsonl"),
       getSessionId: () => "session-id",
     },
@@ -3851,6 +3854,63 @@ test("gsd new-milestone forwards supported workflow flags through grouped comman
 
   expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
     'Launch native GSD workflow for "/gsd new-milestone --text --reset-phase-numbers v2.0 Platform"',
+  );
+});
+
+test("gsd workflow launch forks when current leaf exists", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  const context = createCommandContext(cwd, notifications, fakePi);
+  await command?.handler("on", context);
+
+  await command?.handler("new-milestone v1.1 Notifications", context);
+
+  expect(context.fork).toHaveBeenCalledOnce();
+  expect(context.newSession).not.toHaveBeenCalled();
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd new-milestone v1.1 Notifications"',
+  );
+});
+
+test("gsd workflow launch uses current session when no forkable leaf exists", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  const context = createCommandContext(cwd, notifications, fakePi, { leafId: null });
+  await command?.handler("on", context);
+
+  await command?.handler("new-milestone v1.1 Notifications", context);
+
+  expect(context.fork).not.toHaveBeenCalled();
+  expect(context.newSession).not.toHaveBeenCalled();
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd new-milestone v1.1 Notifications"',
+  );
+});
+
+test("gsd workflow launch uses current session when leaf entry is stale", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  const context = createCommandContext(cwd, notifications, fakePi, { hasLeafEntry: false });
+  await command?.handler("on", context);
+
+  await command?.handler("new-milestone v1.1 Notifications", context);
+
+  expect(context.fork).not.toHaveBeenCalled();
+  expect(context.newSession).not.toHaveBeenCalled();
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0])).toContain(
+    'Launch native GSD workflow for "/gsd new-milestone v1.1 Notifications"',
   );
 });
 

@@ -93,6 +93,41 @@ async function resolveLaunchOverrides(
   return resolved.overrides;
 }
 
+async function sendWorkflowPromptInCurrentSession(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  prompt: string,
+  overrides: ResolvedSessionLaunchOptions | undefined,
+): Promise<void> {
+  const pendingMode = overrides?.mode;
+  if (
+    pendingMode !== undefined &&
+    pendingMode.length > 0 &&
+    typeof pi.events?.emit === "function"
+  ) {
+    await new Promise<void>((resolve, reject) => {
+      pi.events.emit(MODE_ACTIVATE_EVENT, {
+        ctx,
+        mode: pendingMode,
+        reason: "restore",
+        source: "session_start",
+        done: { resolve, reject },
+      });
+    });
+  }
+  pi.sendUserMessage(prompt, { deliverAs: "steer" });
+}
+
+function hasForkableLeaf(ctx: ExtensionCommandContext, leafId: string | null): leafId is string {
+  if (leafId === null) {
+    return false;
+  }
+  if (typeof ctx.sessionManager.getEntry !== "function") {
+    return true;
+  }
+  return ctx.sessionManager.getEntry(leafId) !== undefined;
+}
+
 export async function applyPendingGsdWorkflowLaunch(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -135,35 +170,31 @@ export async function launchGsdWorkflowSession(
   const prompt = buildWorkflowLaunchPrompt(config, ctx.cwd);
   const overrides = await resolveLaunchOverrides(ctx, config.mode);
 
-  if ((config.sessionStrategy ?? "fork") === "current") {
-    const pendingMode = overrides?.mode;
-    if (
-      pendingMode !== undefined &&
-      pendingMode.length > 0 &&
-      typeof pi.events?.emit === "function"
-    ) {
-      await new Promise<void>((resolve, reject) => {
-        pi.events.emit(MODE_ACTIVATE_EVENT, {
-          ctx,
-          mode: pendingMode,
-          reason: "restore",
-          source: "session_start",
-          done: { resolve, reject },
-        });
-      });
-    }
-    pi.sendUserMessage(prompt, { deliverAs: "steer" });
+  const sessionStrategy = config.sessionStrategy ?? "fork";
+
+  if (sessionStrategy === "current") {
+    await sendWorkflowPromptInCurrentSession(pi, ctx, prompt, overrides);
+    return;
+  }
+
+  const leafId = ctx.sessionManager.getLeafId();
+  if (sessionStrategy === "fork" && !hasForkableLeaf(ctx, leafId)) {
+    await sendWorkflowPromptInCurrentSession(pi, ctx, prompt, overrides);
     return;
   }
 
   setPendingGsdWorkflowLaunch({ prompt, overrides });
 
   try {
-    const shouldFork = (config.sessionStrategy ?? "fork") === "fork";
-    const leafId = ctx.sessionManager.getLeafId();
-    if (shouldFork && leafId !== undefined && leafId !== null) {
+    if (sessionStrategy === "fork") {
+      const forkLeafId = leafId;
+      if (forkLeafId === null) {
+        setPendingGsdWorkflowLaunch(undefined);
+        await sendWorkflowPromptInCurrentSession(pi, ctx, prompt, overrides);
+        return;
+      }
       try {
-        const forkResult = await ctx.fork(leafId, {
+        const forkResult = await ctx.fork(forkLeafId, {
           position: "at",
           withSession: async (replacementCtx) => {
             await replacementCtx.sendUserMessage(prompt, { deliverAs: "steer" });
@@ -173,8 +204,12 @@ export async function launchGsdWorkflowSession(
           return;
         }
       } catch {
-        // Fall back to a new session when the active leaf entry is stale or missing.
+        setPendingGsdWorkflowLaunch(undefined);
+        await sendWorkflowPromptInCurrentSession(pi, ctx, prompt, overrides);
+        return;
       }
+      setPendingGsdWorkflowLaunch(undefined);
+      return;
     }
 
     const parentSession = ctx.sessionManager.getSessionFile() ?? undefined;

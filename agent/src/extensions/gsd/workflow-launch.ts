@@ -162,14 +162,18 @@ export async function launchGsdWorkflowSession(
     const shouldFork = (config.sessionStrategy ?? "fork") === "fork";
     const leafId = ctx.sessionManager.getLeafId();
     if (shouldFork && leafId !== undefined && leafId !== null) {
-      const forkResult = await ctx.fork(leafId, {
-        position: "at",
-        withSession: async (replacementCtx) => {
-          await replacementCtx.sendUserMessage(prompt, { deliverAs: "steer" });
-        },
-      });
-      if (!forkResult.cancelled) {
-        return;
+      try {
+        const forkResult = await ctx.fork(leafId, {
+          position: "at",
+          withSession: async (replacementCtx) => {
+            await replacementCtx.sendUserMessage(prompt, { deliverAs: "steer" });
+          },
+        });
+        if (!forkResult.cancelled) {
+          return;
+        }
+      } catch {
+        // Fall back to a new session when the active leaf entry is stale or missing.
       }
     }
 

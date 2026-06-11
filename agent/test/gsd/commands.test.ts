@@ -1734,6 +1734,28 @@ test("gsd progress default routes to bundled progress workflow-launch session", 
   expect(prompt).toContain(resolveGsdBundlePath("workflows/progress.md"));
 });
 
+test("gsd progress falls back to new session when fork leaf is stale", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  createPlanningFixture(cwd);
+  writeFileSync(join(cwd, ".planning", "PROJECT.md"), "# Project\n");
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+  await command?.handler("on", createCommandContext(cwd, notifications));
+
+  const context = createCommandContext(cwd, notifications, fakePi);
+  context.fork.mockRejectedValueOnce(new Error("Entry 6bffedf1 not found"));
+
+  await expect(command?.handler("progress", context)).resolves.toBeUndefined();
+
+  expect(context.fork).toHaveBeenCalledOnce();
+  expect(context.newSession).toHaveBeenCalledOnce();
+  expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "")).toContain(
+    'Launch native GSD workflow for "/gsd progress"',
+  );
+});
+
 test("gsd progress fails closed without workflow session support", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];

@@ -4,6 +4,7 @@ import {
   formatToolRail,
   getTextContent,
   renderStreamingPreview,
+  renderToolError,
   styleToolOutput,
   type CoreUIToolTheme,
 } from "../coreui/tools.js";
@@ -136,13 +137,15 @@ export function renderSearchCall(
   const state = context.state ?? {};
   if (context.isPartial && state.startedAt === undefined) state.startedAt = Date.now();
   const text = formatSearchCall({ tool, args, theme, context, state });
-  state.baseCallText = formatSearchCall({
-    tool,
-    args,
-    theme,
-    context: { ...context, isPartial: false, isError: false },
-    state,
-  });
+  if (!context.isError) {
+    state.baseCallText = formatSearchCall({
+      tool,
+      args,
+      theme,
+      context: { ...context, isPartial: false, isError: false },
+      state,
+    });
+  }
   return setSearchCallComponent(state, context.lastComponent, text);
 }
 
@@ -153,6 +156,14 @@ export function renderSearchResult(
   context: SearchRenderContext,
 ): Text {
   const output = getTextContent(result).trim();
+
+  if (context.isError) {
+    if (options.expanded === true) {
+      return renderToolError(output || "search failed", theme, context.lastComponent);
+    }
+
+    return createTextComponent(context.lastComponent, "");
+  }
 
   if (options.isPartial === true) {
     return renderStreamingPreview(styleSearchOutput(output, theme), theme, context.lastComponent, {

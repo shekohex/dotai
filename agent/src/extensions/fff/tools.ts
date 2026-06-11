@@ -55,6 +55,28 @@ function getFindCursor(id: string): FindCursor | undefined {
   return findCursorCache.get(id);
 }
 
+function buildToolQuery(input: {
+  tool: "grep" | "find";
+  path: string | undefined;
+  pattern: string;
+  exclude: string | string[] | undefined;
+  cwd: string;
+}): string {
+  try {
+    return buildQuery(input.path, input.pattern, input.exclude, input.cwd);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message.includes("relative to the workspace")) {
+      const fallbackTool = input.tool === "grep" ? "rg" : "fd";
+      throw new Error(
+        `Path is outside workspace: ${input.path}. FFF only searches indexed workspace files. Use bash with \`${fallbackTool}\` for paths outside repo.`,
+        { cause: error },
+      );
+    }
+
+    throw error;
+  }
+}
+
 // --- grep tool ---
 
 const grepSchema = Type.Object({
@@ -136,7 +158,13 @@ function registerGrepTool(pi: ExtensionAPI, runtime: FffToolRuntime): void {
 
       const f = await runtime.ensureFinder(runtime.getActiveCwd());
       const effectiveLimit = Math.max(1, params.limit ?? DEFAULT_GREP_LIMIT);
-      const query = buildQuery(params.path, params.pattern, params.exclude, runtime.getActiveCwd());
+      const query = buildToolQuery({
+        tool: "grep",
+        path: params.path,
+        pattern: params.pattern,
+        exclude: params.exclude,
+        cwd: runtime.getActiveCwd(),
+      });
       // Auto-detect: regex if the pattern has regex metacharacters AND parses
       // as a valid regex, otherwise plain literal. The fuzzy fallback below
       // only kicks in for plain mode — regex queries are intentional.
@@ -289,7 +317,13 @@ function registerFindTool(pi: ExtensionAPI, runtime: FffToolRuntime): void {
         : Math.max(1, params.limit ?? DEFAULT_FIND_LIMIT);
       const query = resumed
         ? resumed.query
-        : buildQuery(params.path, params.pattern, params.exclude, runtime.getActiveCwd());
+        : buildToolQuery({
+            tool: "find",
+            path: params.path,
+            pattern: params.pattern,
+            exclude: params.exclude,
+            cwd: runtime.getActiveCwd(),
+          });
       const pattern = resumed ? resumed.pattern : params.pattern;
       const pageIndex = resumed?.nextPageIndex ?? 0;
 

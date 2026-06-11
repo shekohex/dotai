@@ -1,0 +1,12 @@
+{
+  "pi": {
+    "repository": "earendil-works/pi",
+    "branch": "main",
+    "description": "Upstream pi codebase, use it when the user mentions the upstream pi codebase"
+  },
+  "opencode": {
+    "repository": "anomalyco/opencode",
+    "branch": "dev",
+    "description": "Use when the user mentions opencode codebase"
+  }
+}

@@ -6,6 +6,7 @@ import debugProviderRequestExtension from "./debug-provider-request.js";
 import dynamicWorkflowsExtension from "./dynamic-workflows/extension.js";
 import filesExtension from "./files.js";
 import handoffExtension from "./handoff.js";
+import referencesExtension from "./references/index.js";
 import reviewExtension from "./review.js";
 import sessionBreakdownExtension from "./session-breakdown.js";
 import sessionNameExtension from "./session-name.js";
@@ -25,6 +26,7 @@ export const groupedExtensionsB: GroupedExtensionDefinition[] = [
   { id: "context", factory: contextExtension },
   { id: "session-breakdown", factory: sessionBreakdownExtension },
   { id: "session-name", factory: sessionNameExtension },
+  { id: "references", factory: referencesExtension },
   { id: "files", factory: filesExtension },
   { id: "skill-read", factory: skillReadExtension },
 ];

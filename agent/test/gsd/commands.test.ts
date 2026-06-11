@@ -1718,7 +1718,7 @@ test("gsd progress --next routes through next behavior to execute-phase workflow
   );
 });
 
-test("gsd progress default routes to bundled progress workflow-launch session", async () => {
+test("gsd progress default routes to bundled progress workflow in current session", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -1727,14 +1727,17 @@ test("gsd progress default routes to bundled progress workflow-launch session", 
   gsdExtension(fakePi as ExtensionAPI);
   const command = fakePi.commands.get("gsd");
   await command?.handler("on", createCommandContext(cwd, notifications));
-  await command?.handler("progress", createCommandContext(cwd, notifications, fakePi));
+  const context = createCommandContext(cwd, notifications, fakePi);
+  await command?.handler("progress", context);
   const prompt = String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "");
   expect(prompt).toContain('Launch native GSD workflow for "/gsd progress"');
   expect(prompt).toContain(resolveGsdBundlePath("commands/gsd/progress.md"));
   expect(prompt).toContain(resolveGsdBundlePath("workflows/progress.md"));
+  expect(context.fork).not.toHaveBeenCalled();
+  expect(context.newSession).not.toHaveBeenCalled();
 });
 
-test("gsd progress falls back to new session when fork leaf is stale", async () => {
+test("gsd progress avoids stale fork leaf by launching in current session", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -1749,8 +1752,8 @@ test("gsd progress falls back to new session when fork leaf is stale", async () 
 
   await expect(command?.handler("progress", context)).resolves.toBeUndefined();
 
-  expect(context.fork).toHaveBeenCalledOnce();
-  expect(context.newSession).toHaveBeenCalledOnce();
+  expect(context.fork).not.toHaveBeenCalled();
+  expect(context.newSession).not.toHaveBeenCalled();
   expect(String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "")).toContain(
     'Launch native GSD workflow for "/gsd progress"',
   );

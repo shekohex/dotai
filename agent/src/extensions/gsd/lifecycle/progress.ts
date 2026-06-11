@@ -111,6 +111,7 @@ export async function handleGsdProgress(
 
   await launchGsdWorkflowSession(pi, ctx, {
     commandName: "progress",
+    sessionStrategy: "current",
     commandResourcePath: "commands/gsd/progress.md",
     workflowResourcePaths: ["workflows/progress.md"],
     extraInstructions: [

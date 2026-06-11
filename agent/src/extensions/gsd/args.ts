@@ -86,6 +86,7 @@ export type GsdCommandArgs = Static<typeof GsdCommandArgsSchema>;
 
 function parseNewProjectArgs(tokens: string[]): GsdCommandArgs {
   let auto = false;
+  let text = false;
   const parts: string[] = [];
   for (let index = 1; index < tokens.length; index += 1) {
     const token = tokens[index];
@@ -93,12 +94,38 @@ function parseNewProjectArgs(tokens: string[]): GsdCommandArgs {
       auto = true;
       continue;
     }
+    if (token === "--text") {
+      text = true;
+      continue;
+    }
     parts.push(token);
   }
   return validateParsedArgs({
     subcommand: "new-project",
     ...(auto ? { auto: true } : {}),
+    ...(text ? { text: true } : {}),
     ...(parts.length > 0 ? { input: normalizeFreeform(parts.join(" ")) } : {}),
+  });
+}
+
+function parseVersionWorkflowArgs(
+  subcommand: "complete-milestone" | "milestone-summary",
+  tokens: string[],
+): GsdCommandArgs {
+  let text = false;
+  const parts: string[] = [];
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--text") {
+      text = true;
+      continue;
+    }
+    parts.push(token);
+  }
+  return validateParsedArgs({
+    subcommand,
+    ...(text ? { text: true } : {}),
+    version: normalizeFreeform(parts.join(" ")),
   });
 }
 
@@ -185,9 +212,14 @@ function validateParsedArgs(parsed: GsdCommandArgs): GsdCommandArgs {
 
 function parseDebugArgs(tokens: string[]): GsdCommandArgs {
   let diagnose = false;
+  let text = false;
   const filteredTokens = tokens.filter((token, index) => {
     if (index === 0) {
       return true;
+    }
+    if (token === "--text") {
+      text = true;
+      return false;
     }
     if (token === "--diagnose") {
       diagnose = true;
@@ -198,7 +230,12 @@ function parseDebugArgs(tokens: string[]): GsdCommandArgs {
 
   const action = filteredTokens[1];
   if (action === "list") {
-    return validateParsedArgs({ subcommand: "debug", debugAction: "list", diagnose });
+    return validateParsedArgs({
+      subcommand: "debug",
+      debugAction: "list",
+      diagnose,
+      ...(text ? { text: true } : {}),
+    });
   }
   if (action === "status") {
     return validateParsedArgs({
@@ -206,6 +243,7 @@ function parseDebugArgs(tokens: string[]): GsdCommandArgs {
       debugAction: "status",
       slug: normalizeFreeform(filteredTokens.slice(2).join(" ")),
       diagnose,
+      ...(text ? { text: true } : {}),
     });
   }
   if (action === "continue") {
@@ -214,6 +252,7 @@ function parseDebugArgs(tokens: string[]): GsdCommandArgs {
       debugAction: "continue",
       slug: normalizeFreeform(filteredTokens.slice(2).join(" ")),
       diagnose,
+      ...(text ? { text: true } : {}),
     });
   }
   return validateParsedArgs({
@@ -221,6 +260,7 @@ function parseDebugArgs(tokens: string[]): GsdCommandArgs {
     debugAction: "start",
     diagnose,
     description: normalizeFreeform(filteredTokens.slice(1).join(" ")),
+    ...(text ? { text: true } : {}),
   });
 }
 
@@ -646,10 +686,7 @@ export function parseGsdCommandArgs(input: string): GsdCommandArgs {
   }
 
   if (subcommand === "complete-milestone" || subcommand === "milestone-summary") {
-    return validateParsedArgs({
-      subcommand,
-      version: normalizeFreeform(tokens.slice(1).join(" ")),
-    });
+    return parseVersionWorkflowArgs(subcommand, tokens);
   }
 
   if (subcommand === "debug") {

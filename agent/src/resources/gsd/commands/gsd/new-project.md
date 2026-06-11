@@ -12,6 +12,7 @@ Goal:
 Flags:
 
 - `--auto` for document-driven fast path
+- `--text` for plain-text questions instead of interview forms
 
 Runtime notes:
 

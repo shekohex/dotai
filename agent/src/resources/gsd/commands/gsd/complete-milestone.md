@@ -19,6 +19,12 @@ Local runtime mapping for this repo:
 
 </local_runtime>
 
+<flags>
+
+- `--text` — Use plain-text confirmations instead of interview forms.
+
+</flags>
+
 <objective>
 Mark milestone {{version}} complete, archive to milestones/, and update ROADMAP.md and REQUIREMENTS.md.
 

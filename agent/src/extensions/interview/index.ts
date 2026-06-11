@@ -17,6 +17,23 @@ import { renderInterviewResult } from "./render.js";
 
 const INTERVIEW_TOOL_NAME = "interview";
 
+type InterviewToolState = {
+  toolRegistered: boolean;
+  toolEnabled: boolean;
+};
+
+const interviewToolStates = new WeakMap<ExtensionAPI, InterviewToolState>();
+
+function getInterviewToolState(pi: ExtensionAPI): InterviewToolState {
+  const existing = interviewToolStates.get(pi);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const state = { toolRegistered: false, toolEnabled: false };
+  interviewToolStates.set(pi, state);
+  return state;
+}
+
 const InterviewParams = Type.Object({
   questions: Type.String({
     description:
@@ -89,28 +106,44 @@ function registerInterviewTool(pi: ExtensionAPI): void {
   });
 }
 
+export function ensureInterviewToolEnabled(
+  pi: ExtensionAPI,
+  options?: { ctx?: ExtensionCommandContext; notify?: boolean },
+): void {
+  const state = getInterviewToolState(pi);
+  if (!state.toolRegistered) {
+    if (typeof pi.registerTool !== "function") {
+      return;
+    }
+    registerInterviewTool(pi);
+    state.toolRegistered = true;
+  }
+  state.toolEnabled = true;
+  activateTool(pi, INTERVIEW_TOOL_NAME);
+  if (options?.notify === true) {
+    options.ctx?.ui.notify("Interview tool enabled.");
+  }
+}
+
 export default function registerInterviewExtension(pi: ExtensionAPI): void {
-  let toolRegistered = false;
-  let toolEnabled = false;
+  const state = getInterviewToolState(pi);
 
   const enableTool = (ctx?: ExtensionCommandContext): void => {
-    if (!toolRegistered) {
-      registerInterviewTool(pi);
-      toolRegistered = true;
-    }
-    toolEnabled = true;
-    activateTool(pi, INTERVIEW_TOOL_NAME);
+    ensureInterviewToolEnabled(pi, { ctx });
     ctx?.ui.notify("Interview tool enabled.");
   };
 
   const disableTool = (ctx?: ExtensionCommandContext): void => {
-    toolEnabled = false;
+    state.toolEnabled = false;
     deactivateTool(pi, INTERVIEW_TOOL_NAME);
     ctx?.ui.notify("Interview tool disabled.");
   };
 
   const persistToolState = (): void => {
-    pi.appendEntry(TOOL_STATE_ENTRY_TYPE, createToolStateEntry(INTERVIEW_TOOL_NAME, toolEnabled));
+    pi.appendEntry(
+      TOOL_STATE_ENTRY_TYPE,
+      createToolStateEntry(INTERVIEW_TOOL_NAME, state.toolEnabled),
+    );
   };
 
   const restoreToolState = (ctx: ExtensionContext): void => {
@@ -145,7 +178,7 @@ export default function registerInterviewExtension(pi: ExtensionAPI): void {
         return Promise.resolve();
       }
       if (trimmed === "") {
-        if (toolEnabled) {
+        if (state.toolEnabled) {
           disableTool(ctx);
         } else {
           enableTool(ctx);
@@ -159,7 +192,7 @@ export default function registerInterviewExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("before_agent_start", () => {
-    if (!toolEnabled) {
+    if (!state.toolEnabled) {
       deactivateTool(pi, INTERVIEW_TOOL_NAME);
     }
   });

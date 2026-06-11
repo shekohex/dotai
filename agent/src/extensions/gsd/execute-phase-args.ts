@@ -20,6 +20,7 @@ export function parseExecutePhaseArgs(
   let noCrossAi = false;
   let tdd = false;
   let mvp = false;
+  let text = false;
   let unsupportedModeError: string | undefined;
 
   for (let index = 1; index < tokens.length; index += 1) {
@@ -62,6 +63,10 @@ export function parseExecutePhaseArgs(
       validate = true;
       continue;
     }
+    if (token === "--text") {
+      text = true;
+      continue;
+    }
     if (token === "--auto") {
       auto = true;
       continue;
@@ -102,6 +107,7 @@ export function parseExecutePhaseArgs(
     ...(gapsOnly ? { gapsOnly: true } : {}),
     ...(interactive ? { interactive: true } : {}),
     ...(validate ? { validate: true } : {}),
+    ...(text ? { text: true } : {}),
     ...(auto ? { auto: true } : {}),
     ...(crossAi ? { crossAi: true } : {}),
     ...(noCrossAi ? { noCrossAi: true } : {}),

@@ -22,6 +22,7 @@ class FakePi implements Partial<ExtensionAPI> {
   readonly commands = new Map<string, RegisteredCommand>();
   readonly handlers = new Map<string, Array<(...args: any[]) => any>>();
   readonly messageRenderers = new Map<string, unknown>();
+  readonly tools = new Map<string, { name: string }>();
   readonly flags = new Map<string, { description?: string; type: "boolean" | "string" }>();
   readonly flagValues = new Map<string, boolean | string>();
   private activeTools: string[] = [];
@@ -51,6 +52,10 @@ class FakePi implements Partial<ExtensionAPI> {
 
   registerMessageRenderer(customType: string, renderer: unknown): void {
     this.messageRenderers.set(customType, renderer);
+  }
+
+  registerTool(tool: { name: string }): void {
+    this.tools.set(tool.name, tool);
   }
 
   getActiveTools(): string[] {
@@ -206,6 +211,34 @@ test("gsd registers grouped command", () => {
   const fakePi = new FakePi();
   gsdExtension(fakePi as ExtensionAPI);
   expect(fakePi.commands.has("gsd")).toBe(true);
+});
+
+test("gsd interview workflow command enables interview tool", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("new-milestone", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.tools.has("interview")).toBe(true);
+  expect(fakePi.getActiveTools()).toContain("interview");
+  expect(fakePi.sendUserMessage).toHaveBeenCalledTimes(1);
+});
+
+test("gsd text-mode interview workflow command keeps interview disabled", async () => {
+  const fakePi = new FakePi();
+  const notifications: Array<{ message: string; level: string }> = [];
+  const cwd = createTempCwd();
+  gsdExtension(fakePi as ExtensionAPI);
+  const command = fakePi.commands.get("gsd");
+
+  await command?.handler("new-milestone --text", createCommandContext(cwd, notifications, fakePi));
+
+  expect(fakePi.tools.has("interview")).toBe(false);
+  expect(fakePi.getActiveTools()).not.toContain("interview");
+  expect(fakePi.sendUserMessage).toHaveBeenCalledTimes(1);
 });
 
 test("gsd command enables feature with on subcommand", async () => {
@@ -871,6 +904,11 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     mvp: true,
     tdd: true,
   });
+  expect(parseGsdCommandArgs("execute-phase 3.1 --text")).toEqual({
+    subcommand: "execute-phase",
+    phase: "3.1",
+    text: true,
+  });
   expect(parseGsdCommandArgs("execute-phase --wave=3 4")).toEqual({
     subcommand: "execute-phase",
     phase: "4",
@@ -1231,18 +1269,41 @@ test("parseGsdCommandArgs reads positional and flag phase overrides", () => {
     auto: true,
     input: "@idea.md",
   });
+  expect(parseGsdCommandArgs("new-project --text --auto @idea.md")).toEqual({
+    subcommand: "new-project",
+    text: true,
+    auto: true,
+    input: "@idea.md",
+  });
   expect(parseGsdCommandArgs("complete-milestone v1.1")).toEqual({
     subcommand: "complete-milestone",
+    version: "v1.1",
+  });
+  expect(parseGsdCommandArgs("complete-milestone --text v1.1")).toEqual({
+    subcommand: "complete-milestone",
+    text: true,
     version: "v1.1",
   });
   expect(parseGsdCommandArgs("milestone-summary v1.0")).toEqual({
     subcommand: "milestone-summary",
     version: "v1.0",
   });
+  expect(parseGsdCommandArgs("milestone-summary --text v1.0")).toEqual({
+    subcommand: "milestone-summary",
+    text: true,
+    version: "v1.0",
+  });
   expect(parseGsdCommandArgs("debug --diagnose login fails on mobile safari")).toEqual({
     subcommand: "debug",
     debugAction: "start",
     diagnose: true,
+    description: "login fails on mobile safari",
+  });
+  expect(parseGsdCommandArgs("debug --text --diagnose login fails on mobile safari")).toEqual({
+    subcommand: "debug",
+    debugAction: "start",
+    diagnose: true,
+    text: true,
     description: "login fails on mobile safari",
   });
   expect(parseGsdCommandArgs("debug status auth-token-null")).toEqual({
@@ -1327,6 +1388,10 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
       expect.objectContaining({
         value: "execute-phase --interactive",
         label: "--interactive",
+      }),
+      expect.objectContaining({
+        value: "execute-phase --text",
+        label: "--text",
       }),
       expect.objectContaining({
         value: "execute-phase --cross-ai",
@@ -1494,6 +1559,22 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
   expect(completeMilestoneItems).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ value: "complete-milestone v1.0", label: "v1.0" }),
+      expect.objectContaining({ value: "complete-milestone --text", label: "--text" }),
+    ]),
+  );
+
+  const milestoneSummaryItems = await command?.getArgumentCompletions?.("milestone-summary ");
+  expect(milestoneSummaryItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "milestone-summary --text", label: "--text" }),
+    ]),
+  );
+
+  const newProjectItems = await command?.getArgumentCompletions?.("new-project ");
+  expect(newProjectItems).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ value: "new-project --text", label: "--text" }),
+      expect.objectContaining({ value: "new-project --auto", label: "--auto" }),
     ]),
   );
 
@@ -1543,6 +1624,7 @@ test("gsd autocomplete suggests phase values and flags from ctx cwd state", asyn
       expect.objectContaining({ value: "debug list", label: "list" }),
       expect.objectContaining({ value: "debug status ", label: "status" }),
       expect.objectContaining({ value: "debug continue ", label: "continue" }),
+      expect.objectContaining({ value: "debug --text", label: "--text" }),
       expect.objectContaining({ value: "debug --diagnose", label: "--diagnose" }),
     ]),
   );

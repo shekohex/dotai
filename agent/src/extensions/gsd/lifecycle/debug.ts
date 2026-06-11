@@ -44,7 +44,9 @@ function buildDebugSessionPrompt(
     "</user_report>",
     "",
     "Mandatory behavior:",
-    "- Use `interview` first for symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`.",
+    args.text === true
+      ? "- Text mode is active: use plain-text symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`; do not call `interview`."
+      : "- Use `interview` first for symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`.",
     "- Use the user report only as seed context. Do not skip structured intake for a new issue.",
     "- After intake, create `.planning/debug/{slug}.md`, then continue orchestration here.",
   ].join("\n");

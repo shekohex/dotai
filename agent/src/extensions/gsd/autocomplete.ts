@@ -45,7 +45,10 @@ const phaseAwareSubcommands: GsdSubcommand[] = [
 ];
 
 const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
+  "new-project": ["--auto", "--text"],
   "new-milestone": ["--text", "--reset-phase-numbers"],
+  "complete-milestone": ["--text"],
+  "milestone-summary": ["--text"],
   "discuss-phase": ["--phase", "--phase=", "--assumptions", "--auto", "--all", "--chain", "--text"],
   "plan-phase": [
     "--phase",
@@ -68,6 +71,7 @@ const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
     "--gaps-only",
     "--interactive",
     "--validate",
+    "--text",
     "--cross-ai",
     "--no-cross-ai",
     "--tdd",
@@ -89,7 +93,7 @@ const subcommandFlags: Partial<Record<GsdSubcommand, string[]>> = {
     "--context-window",
     "--context-window=",
   ],
-  debug: ["--diagnose"],
+  debug: ["--diagnose", "--text"],
 };
 
 export function getGsdSubcommands(): Array<{ value: GsdSubcommand; description: string }> {
@@ -468,7 +472,7 @@ function getFlagDescription(value: string): string | undefined {
     return "Record plan-phase handoff after completion";
   }
   if (value === "--text") {
-    return "Use text-only discuss transport";
+    return "Use plain-text questions instead of interview forms";
   }
   return undefined;
 }
@@ -583,8 +587,12 @@ function getMilestoneCompletions(
     label: item.label,
     description: item.description,
   }));
+  const flagItems = getFlagItems(subcommand, `${subcommand} `);
   if (trailingSpace && tokens.length === 1) {
-    return milestoneItems;
+    return [...milestoneItems, ...flagItems];
+  }
+  if (token.startsWith("--")) {
+    return filterItems(flagItems, token);
   }
   if (tokens.length === 2) {
     return filterItems(milestoneItems, token);

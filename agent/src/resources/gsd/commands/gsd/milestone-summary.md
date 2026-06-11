@@ -19,6 +19,12 @@ Local runtime mapping for this repo:
 
 </local_runtime>
 
+<flags>
+
+- `--text` — Use plain-text follow-up Q&A instead of interview forms.
+
+</flags>
+
 <objective>
 Generate a structured milestone summary for team onboarding and project review. Reads completed milestone artifacts (ROADMAP, REQUIREMENTS, CONTEXT, SUMMARY, VERIFICATION files) and produces a human-friendly overview of what was built, how, and why.
 

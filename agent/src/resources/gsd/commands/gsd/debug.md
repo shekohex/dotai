@@ -29,6 +29,7 @@ Debug issues using scientific method with subagent isolation.
 **Flags:**
 
 - `--diagnose` — Diagnose only. Find root cause without applying a fix. Returns a structured Root Cause Report. Use when you want to validate the diagnosis before committing to a fix.
+- `--text` — Use plain-text symptom intake and checkpoints instead of interview forms.
 
 **Subcommands:**
 

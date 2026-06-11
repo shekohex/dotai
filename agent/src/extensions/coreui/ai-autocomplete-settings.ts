@@ -44,6 +44,8 @@ export const defaultAiAutocompleteSettings = {
   mode: "lazy",
   models: [
     "gemini/gemini-2.5-flash-lite",
+    "gemini/gemini-2.5-flash",
+    "gemini/gemini-2.5-pro",
     "deepseek/deepseek-v4-flash",
     "opencode-go/deepseek-v4-flash",
   ],

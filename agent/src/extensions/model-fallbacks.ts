@@ -8,6 +8,7 @@ export const DEFAULT_MODEL_FALLBACKS = [
   { provider: "zai", model: "glm-5.1" },
   { provider: "zai-coding-plan", model: "glm-5.1" },
   { provider: "gemini", model: "gemini-2.5-pro" },
+  { provider: "deepseek", model: "deepseek-v4-flash" },
   { provider: "opencode-go", model: "deepseek-v4-flash" },
 ] as const;
 

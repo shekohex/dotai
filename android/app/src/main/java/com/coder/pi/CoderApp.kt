@@ -105,8 +105,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.key.KeyEventType
@@ -166,7 +166,7 @@ import kotlin.math.abs
 
 enum class AppDestination { HOME, SETTINGS, DEBUG_RENDER, DEBUG_SPEECH }
 
-enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, SPEECH_DICTATION, SPEECH_PROVIDERS, SPEECH_TRANSCRIPTION, SPEECH_ENHANCEMENT, SPEECH_PROVIDER_SELECT, SPEECH_LANGUAGE_SELECT, SPEECH_MODELS, SPEECH_VOCABULARY, LINKS, LINKS_ADD, NOTIFICATIONS, FEEDBACK, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
+enum class SettingsPage { ROOT, THEME, FONTS, TEXT, TOOLBAR, SHORTCUTS, SHORTCUT_TAB, SHORTCUT, KEYBOARD, GESTURES, CHAT, SPEECH, SPEECH_DICTATION, SPEECH_PROVIDERS, SPEECH_TRANSCRIPTION, SPEECH_ENHANCEMENT, SPEECH_PROVIDER_SELECT, SPEECH_LANGUAGE_SELECT, SPEECH_MODELS, SPEECH_VOCABULARY, USAGE_LIMITS, USAGE_LIMITS_CONFIGURATION, USAGE_LIMITS_ENDPOINTS, USAGE_LIMITS_DISPLAY, USAGE_LIMITS_PROVIDERS, LINKS, LINKS_ADD, NOTIFICATIONS, FEEDBACK, CONNECTION, DEBUG_LOGS, PLACEHOLDER }
 
 private sealed interface AuthState {
     data object Loading : AuthState
@@ -190,8 +190,11 @@ data class UiTokens(
     val separator: Color,
     val text: Color,
     val secondary: Color,
+    val muted: Color,
     val accent: Color,
     val success: Color,
+    val warning: Color,
+    val error: Color,
     val proBackground: Color,
     val proText: Color,
     val shadow: Color,
@@ -1004,8 +1007,7 @@ private fun CoderHomeScreen(
                                 } else {
                                     SentryAppLogger.error("tmux session load failed", mapOf("agentId" to agent.id), it)
                                 }
-                            }
-                            .getOrDefault(emptyList())
+                            }.getOrDefault(emptyList())
                     tmuxLoading = null
                     if (sessions.isEmpty()) onOpenTerminal(workspace, agent, defaultShellCommand()) else tmuxPicker = Triple(workspace, agent, sessions)
                 }
@@ -1748,8 +1750,7 @@ private fun openWorkspace(
                     } else {
                         SentryAppLogger.error("tmux session load failed", mapOf("agentId" to agent.id), it)
                     }
-                }
-                .getOrDefault(emptyList())
+                }.getOrDefault(emptyList())
         SentryBreadcrumbs.api("tmux session load succeeded", mapOf("agentId" to agent.id, "count" to sessions.size))
         if (sessions.isEmpty()) onOpenTerminal(workspace, agent, defaultShellCommand()) else onTmux(Triple(workspace, agent, sessions))
     }
@@ -2601,7 +2602,9 @@ private fun TerminalCutoutFade(theme: CoderTheme) {
     )
 }
 
-private enum class DPadDirection(val keyCode: Int) {
+private enum class DPadDirection(
+    val keyCode: Int,
+) {
     UP(KeyEvent.KEYCODE_DPAD_UP),
     DOWN(KeyEvent.KEYCODE_DPAD_DOWN),
     LEFT(KeyEvent.KEYCODE_DPAD_LEFT),
@@ -2884,6 +2887,8 @@ private fun SettingsNavigator(
                 SettingsPage.SPEECH_PROVIDER_SELECT, SettingsPage.SPEECH_LANGUAGE_SELECT -> if (selectedSpeechTask == "enhancement") SettingsPage.SPEECH_ENHANCEMENT else SettingsPage.SPEECH_TRANSCRIPTION
                 SettingsPage.SPEECH_MODELS -> if (selectedSpeechTask == "enhancement") SettingsPage.SPEECH_ENHANCEMENT else SettingsPage.SPEECH_TRANSCRIPTION
                 SettingsPage.SPEECH_VOCABULARY -> SettingsPage.SPEECH_ENHANCEMENT
+                SettingsPage.USAGE_LIMITS_CONFIGURATION, SettingsPage.USAGE_LIMITS_DISPLAY, SettingsPage.USAGE_LIMITS_PROVIDERS -> SettingsPage.USAGE_LIMITS
+                SettingsPage.USAGE_LIMITS_ENDPOINTS -> SettingsPage.USAGE_LIMITS_CONFIGURATION
                 SettingsPage.DEBUG_LOGS -> SettingsPage.CONNECTION
                 else -> SettingsPage.ROOT
             }
@@ -2904,6 +2909,8 @@ private fun SettingsNavigator(
                     page = SettingsPage.CHAT
                 } else if (it == "Speech") {
                     page = SettingsPage.SPEECH
+                } else if (it == "Usage Limits") {
+                    page = SettingsPage.USAGE_LIMITS
                 } else if (it == "Links") {
                     page = SettingsPage.LINKS
                 } else if (it == "User Feedback") {
@@ -2976,6 +2983,11 @@ private fun SettingsNavigator(
         SettingsPage.SPEECH_LANGUAGE_SELECT -> SpeechLanguageSelectionScreen(tokens, ::navigateBack)
         SettingsPage.SPEECH_MODELS -> SpeechProviderModelsScreen(tokens, selectedSpeechTask, ::navigateBack)
         SettingsPage.SPEECH_VOCABULARY -> SpeechVocabularySettingsScreen(tokens, ::navigateBack)
+        SettingsPage.USAGE_LIMITS -> UsageLimitsSettingsScreen(tokens, { page = SettingsPage.USAGE_LIMITS_CONFIGURATION }, { page = SettingsPage.USAGE_LIMITS_DISPLAY }, { page = SettingsPage.USAGE_LIMITS_PROVIDERS }, ::navigateBack)
+        SettingsPage.USAGE_LIMITS_CONFIGURATION -> UsageConfigurationSettingsScreen(tokens, { page = SettingsPage.USAGE_LIMITS_ENDPOINTS }, ::navigateBack)
+        SettingsPage.USAGE_LIMITS_ENDPOINTS -> UsageCliproxyEndpointsSettingsScreen(tokens, ::navigateBack)
+        SettingsPage.USAGE_LIMITS_DISPLAY -> UsageDisplaySettingsScreen(tokens, ::navigateBack)
+        SettingsPage.USAGE_LIMITS_PROVIDERS -> UsageProvidersSettingsScreen(tokens, ::navigateBack)
         SettingsPage.LINKS -> LinkAllowlistSettingsScreen(tokens, false, ::navigateBack)
         SettingsPage.LINKS_ADD -> LinkAllowlistSettingsScreen(tokens, true, ::navigateBack)
         SettingsPage.NOTIFICATIONS -> TerminalNotificationsSettingsScreen(terminalView, tokens, ::navigateBack)
@@ -3050,6 +3062,7 @@ private fun SettingsRootScreen(
             SettingsValueRow(R.drawable.ic_feather_bell, "Terminal Notifications", "Alerts, progress, sound, haptics", if (oscNotifications) "On" else "Off", tokens, chevron = true) { onNotifications() }
         }
         SettingsSection("INTEGRATIONS", tokens) {
+            SettingsValueRow(R.drawable.ic_feather_database, "Usage Limits", "Codex, Google, OpenAI quotas", null, tokens, chevron = true) { onPlaceholder("Usage Limits") }
             SettingsValueRow(R.drawable.ic_feather_globe, "Links", "Allowed OSC 8 link hosts", null, tokens, chevron = true) { onPlaceholder("Links") }
         }
         SettingsSection("GENERAL", tokens) { SettingsValueRow(R.drawable.ic_feather_globe, "Language", null, "Auto", tokens, chevron = true) { onPlaceholder("Language") } }
@@ -4869,8 +4882,17 @@ private fun uiTokens(theme: CoderTheme): UiTokens {
     val surfaceHigh = blend(background, foreground, if (light) 0.075f else 0.12f)
     val separator = blend(background, foreground, if (light) 0.14f else 0.17f)
     val secondary = blend(background, foreground, if (light) 0.58f else 0.68f)
-    return UiTokens(light, background, surface, surfaceHigh, separator, foreground, secondary, accent, selection, blend(background, accent, 0.18f), accent, blend(background, foreground, 0.25f))
+    val muted = theme.palette.getOrElse(8) { blend(background, foreground, if (light) 0.42f else 0.48f).toArgbInt() }.toComposeColor()
+    val success = theme.palette.getOrElse(2) { theme.palette.getOrElse(10) { theme.cursor } }.toComposeColor()
+    val warning = theme.palette.getOrElse(3) { theme.palette.getOrElse(11) { theme.cursor } }.toComposeColor()
+    val error = theme.palette.getOrElse(1) { theme.palette.getOrElse(9) { theme.cursor } }.toComposeColor()
+    return UiTokens(light, background, surface, surfaceHigh, separator, foreground, secondary, muted, accent, success, warning, error, blend(background, accent, 0.18f), accent, blend(background, foreground, 0.25f))
 }
+
+private fun Color.toArgbInt(): Int =
+    ((red * 255).toInt().coerceIn(0, 255) shl 16) or
+        ((green * 255).toInt().coerceIn(0, 255) shl 8) or
+        (blue * 255).toInt().coerceIn(0, 255)
 
 fun contentColorFor(background: Color): Color = if (background.luminance() > 0.5f) Color(0xff111111) else Color.White
 

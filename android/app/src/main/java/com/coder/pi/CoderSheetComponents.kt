@@ -303,8 +303,7 @@ fun ChatInputBar(
                         .onFailure {
                             SentryBreadcrumbs.speech("transcription finish failed", mapOf("error" to safeUserError(it, "unknown")), SentryLevel.ERROR)
                             SentryAppLogger.error("realtime transcription finish failed", throwable = it)
-                        }
-                        .getOrDefault("")
+                        }.getOrDefault("")
                         .trim()
                 if (sessionId != dictationSessionId) return@launch
                 if (transcript.isBlank()) {

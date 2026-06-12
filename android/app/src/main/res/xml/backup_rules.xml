@@ -8,6 +8,7 @@
 <full-backup-content>
     <exclude domain="sharedpref" path="coder_session.xml" />
     <exclude domain="sharedpref" path="speech_secure.xml" />
+    <exclude domain="sharedpref" path="usage_limits_secure.xml" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

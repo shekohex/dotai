@@ -52,6 +52,20 @@ object CoderThemes {
             CoderThemeOption("Solarized Dark", CoderThemeMode.DARK, R.raw.solarized_dark, listOf(0x002b36, 0x839496, 0xdc322f, 0x859900, 0x268bd2)),
             CoderThemeOption("Gruvbox", CoderThemeMode.DARK, R.raw.gruvbox_dark, listOf(0x282828, 0xebdbb2, 0xcc241d, 0xd79921, 0x689d6a)),
             CoderThemeOption("Catppuccin Mocha", CoderThemeMode.DARK, R.raw.catppuccin_mocha, listOf(0x1e1e2e, 0xcdd6f4, 0xf38ba8, 0xa6e3a1, 0x89b4fa)),
+            CoderThemeOption("Catppuccin Frappe", CoderThemeMode.DARK, R.raw.catppuccin_frappe, listOf(0x303446, 0xc6d0f5, 0xe78284, 0xa6d189, 0x8caaee)),
+            CoderThemeOption("Catppuccin Macchiato", CoderThemeMode.DARK, R.raw.catppuccin_macchiato, listOf(0x24273a, 0xcad3f5, 0xed8796, 0xa6da95, 0x8aadf4)),
+            CoderThemeOption("TokyoNight Night", CoderThemeMode.DARK, R.raw.tokyonight_night, listOf(0x1a1b26, 0xc0caf5, 0xf7768e, 0x9ece6a, 0x7aa2f7)),
+            CoderThemeOption("TokyoNight Storm", CoderThemeMode.DARK, R.raw.tokyonight_storm, listOf(0x24283b, 0xc0caf5, 0xf7768e, 0x9ece6a, 0x7aa2f7)),
+            CoderThemeOption("Kanagawa Wave", CoderThemeMode.DARK, R.raw.kanagawa_wave, listOf(0x1f1f28, 0xdcd7ba, 0xc34043, 0x76946a, 0x7e9cd8)),
+            CoderThemeOption("Kanagawa Dragon", CoderThemeMode.DARK, R.raw.kanagawa_dragon, listOf(0x181616, 0xc5c9c5, 0xc4746e, 0x8a9a7b, 0x8ba4b0)),
+            CoderThemeOption("Everforest Dark Soft", CoderThemeMode.DARK, R.raw.everforest_dark_soft, listOf(0x293136, 0xd3c6aa, 0xe67e80, 0xa7c080, 0x7fbbb3)),
+            CoderThemeOption("Ayu Mirage", CoderThemeMode.DARK, R.raw.ayu_mirage, listOf(0x1f2430, 0xcccac2, 0xed8274, 0x87d96c, 0x6dcbfa)),
+            CoderThemeOption("One Half Dark", CoderThemeMode.DARK, R.raw.one_half_dark, listOf(0x282c34, 0xdcdfe4, 0xe06c75, 0x98c379, 0x61afef)),
+            CoderThemeOption("Monokai Pro", CoderThemeMode.DARK, R.raw.monokai_pro, listOf(0x2d2a2e, 0xfcfcfa, 0xff6188, 0xa9dc76, 0xfc9867)),
+            CoderThemeOption("Night Owl", CoderThemeMode.DARK, R.raw.night_owl, listOf(0x011627, 0xd6deeb, 0xef5350, 0x22da6e, 0x82aaff)),
+            CoderThemeOption("Material Ocean", CoderThemeMode.DARK, R.raw.material_ocean, listOf(0x0f111a, 0x8f93a2, 0xff5370, 0xc3e88d, 0x82aaff)),
+            CoderThemeOption("GitHub Dark Default", CoderThemeMode.DARK, R.raw.github_dark_default, listOf(0x0d1117, 0xe6edf3, 0xff7b72, 0x3fb950, 0x58a6ff)),
+            CoderThemeOption("Rosé Pine Moon", CoderThemeMode.DARK, R.raw.rose_pine_moon, listOf(0x232136, 0xe0def4, 0xeb6f92, 0x3e8fb0, 0x9ccfd8)),
         )
 
     val lightOptions =
@@ -60,6 +74,9 @@ object CoderThemes {
             CoderThemeOption("Catppuccin Latte", CoderThemeMode.LIGHT, R.raw.catppuccin_latte, listOf(0xeff1f5, 0x4c4f69, 0xd20f39, 0x40a02b, 0x1e66f5)),
             CoderThemeOption("GitHub Light", CoderThemeMode.LIGHT, R.raw.github_light, listOf(0xffffff, 0x24292f, 0xcf222e, 0x116329, 0x0969da)),
             CoderThemeOption("Rosé Pine Dawn", CoderThemeMode.LIGHT, R.raw.rose_pine_dawn, listOf(0xfffaf3, 0x575279, 0xb4637a, 0x286983, 0x56949f)),
+            CoderThemeOption("Everforest Light Soft", CoderThemeMode.LIGHT, R.raw.everforest_light_soft, listOf(0xe5dfc5, 0x5c6a72, 0xe67e80, 0x8da666, 0x72aea6)),
+            CoderThemeOption("Ayu Light", CoderThemeMode.LIGHT, R.raw.ayu_light, listOf(0xf8f9fa, 0x5c6166, 0xea6c6d, 0x6cbf43, 0x3199e1)),
+            CoderThemeOption("One Half Light", CoderThemeMode.LIGHT, R.raw.one_half_light, listOf(0xfafafa, 0x383a42, 0xe45649, 0x50a14f, 0x0184bc)),
         )
 
     val allOptions = darkOptions + lightOptions

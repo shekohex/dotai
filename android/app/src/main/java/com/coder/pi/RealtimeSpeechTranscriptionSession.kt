@@ -48,11 +48,12 @@ class RealtimeSpeechTranscriptionSession(
             explicitNulls = false
         }
     private val client = HttpClient(OkHttp) { install(WebSockets) }
-    private val exceptionHandler = CoroutineExceptionHandler { _, failure ->
-        SentryAppLogger.error("realtime session failed", throwable = failure, capture = false)
-        SentryBreadcrumbs.speech("realtime coroutine failed", mapOf("error" to failure.message.orEmpty()), SentryLevel.ERROR)
-        SentryAppLogger.error("realtime transcription coroutine failed", throwable = failure)
-    }
+    private val exceptionHandler =
+        CoroutineExceptionHandler { _, failure ->
+            SentryAppLogger.error("realtime session failed", throwable = failure, capture = false)
+            SentryBreadcrumbs.speech("realtime coroutine failed", mapOf("error" to failure.message.orEmpty()), SentryLevel.ERROR)
+            SentryAppLogger.error("realtime transcription coroutine failed", throwable = failure)
+        }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private val audioFrames = Channel<FloatArray>(capacity = 32, onBufferOverflow = BufferOverflow.DROP_LATEST)
     private var finalTranscript = CompletableDeferred<String>()

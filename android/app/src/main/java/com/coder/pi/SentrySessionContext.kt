@@ -14,10 +14,26 @@ object SentrySessionContext {
                 name = session.user.name?.takeIf { it.isNotBlank() }
             },
         )
-        Sentry.setTag("coder.host", session.baseUrl.toUri().host.orEmpty())
+        Sentry.setTag(
+            "coder.host",
+            session.baseUrl
+                .toUri()
+                .host
+                .orEmpty(),
+        )
         Sentry.setAttribute("coder.user_id", session.user.id)
         Sentry.setAttribute("coder.username", session.user.username)
-        SentryAppLogger.info("sentry session context applied", mapOf("userId" to session.user.id, "host" to session.baseUrl.toUri().host.orEmpty()))
+        SentryAppLogger.info(
+            "sentry session context applied",
+            mapOf(
+                "userId" to session.user.id,
+                "host" to
+                    session.baseUrl
+                        .toUri()
+                        .host
+                        .orEmpty(),
+            ),
+        )
     }
 
     fun clearSession() {

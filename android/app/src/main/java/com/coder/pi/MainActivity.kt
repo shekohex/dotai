@@ -129,6 +129,11 @@ class MainActivity : AppCompatActivity() {
                 "gestures" -> SettingsPage.GESTURES
                 "chat", "chat-mode" -> SettingsPage.CHAT
                 "speech" -> SettingsPage.SPEECH
+                "usage-limits", "usage", "limits" -> SettingsPage.USAGE_LIMITS
+                "usage-limits/configuration", "usage/configuration", "usage-limits/config" -> SettingsPage.USAGE_LIMITS_CONFIGURATION
+                "usage-limits/endpoints", "usage/endpoints", "cliproxy-endpoints" -> SettingsPage.USAGE_LIMITS_ENDPOINTS
+                "usage-limits/display", "usage/display" -> SettingsPage.USAGE_LIMITS_DISPLAY
+                "usage-limits/providers", "usage/providers" -> SettingsPage.USAGE_LIMITS_PROVIDERS
                 "links", "link-allowlist", "allowed-links" -> SettingsPage.LINKS
                 "links/add", "link-allowlist/add", "allowed-links/add" -> SettingsPage.LINKS_ADD
                 "notifications", "terminal-notifications" -> SettingsPage.NOTIFICATIONS

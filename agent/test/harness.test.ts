@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "vitest";
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -3961,6 +3961,7 @@ timedTest("/stash pop applies the latest entry and removes it from disk", async 
 timedTest("pi-test-harness emits project_trust before final resources load", async () => {
   const cwd = await createTempDir("agent-harness-project-trust-");
   await mkdir(join(cwd, ".pi"), { recursive: true });
+  writeFileSync(join(cwd, ".pi", "settings.json"), "{}\n");
 
   let projectTrustCalls = 0;
   let sessionStartCalls = 0;

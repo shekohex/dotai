@@ -15,7 +15,7 @@ import * as os from "node:os";
 import {
   createAgentSession,
   DefaultResourceLoader,
-  hasProjectTrustInputs,
+  hasTrustRequiringProjectResources,
   ProjectTrustStore,
   SessionManager,
   SettingsManager,
@@ -83,7 +83,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
   });
 
   await loader.reload(
-    hasProjectTrustInputs(cwd)
+    hasTrustRequiringProjectResources(cwd)
       ? {
           resolveProjectTrust: async ({ extensionsResult }) => {
             const result = await emitProjectTrustHandlers(extensionsResult, cwd, {

@@ -1,3 +1,4 @@
+import modelFamilySystemPromptExtension from "./model-family-system-prompt.js";
 import bundledResourcesExtension from "./bundled-resources.js";
 import commitExtension from "./commit.js";
 import coreUIExtension from "./coreui.js";
@@ -14,6 +15,7 @@ import webSearchExtension from "./websearch.js";
 import type { GroupedExtensionDefinition } from "./definitions.js";
 
 export const groupedExtensionsA: GroupedExtensionDefinition[] = [
+  { id: "model-family-system-prompt", factory: modelFamilySystemPromptExtension },
   { id: "project-trust", factory: projectTrustExtension },
   { id: "bundled-resources", factory: bundledResourcesExtension },
   { id: "git-state", factory: gitStateExtension },

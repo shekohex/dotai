@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { initTheme, InteractiveMode } from "@earendil-works/pi-coding-agent";
+import { initTheme, InteractiveMode, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { setKeybindings } from "@earendil-works/pi-tui";
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
@@ -21,6 +21,7 @@ initTheme("dark");
 setKeybindings(KeybindingsManager.create());
 
 const TEST_TIMEOUT_MS = 15_000;
+const previewPi = { sendMessage() {} } as unknown as ExtensionAPI;
 
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
   test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
@@ -668,7 +669,7 @@ timedTest("failed multiline bash preview shows exit code on collapsed error", ()
 });
 
 timedTest("bash preview completion is sticky even when start marker is missing", () => {
-  const toolDefinition = createBashToolOverrideDefinition();
+  const toolDefinition = createBashToolOverrideDefinition(previewPi);
   const cwd = process.cwd().replaceAll(/\\/g, "/");
   const ui = { requestRender() {} };
 
@@ -721,6 +722,37 @@ timedTest("bash preview completion is sticky even when start marker is missing",
   expect(renderedText).toMatch(/finished · ok/);
   expect(renderedText).not.toMatch(/so far/);
   expect(nonEmptyLines.length).toBe(1);
+});
+
+timedTest("background bash preview renders background status instead of ok", () => {
+  const toolDefinition = createBashToolOverrideDefinition(previewPi);
+  const cwd = process.cwd().replaceAll(/\\/g, "/");
+  const ui = { requestRender() {} };
+  const component = new ToolExecutionComponent(
+    "bash",
+    "bash-background",
+    {
+      command: "npm run dev &",
+      description: "Starts dev server",
+    },
+    {},
+    toolDefinition,
+    ui as never,
+    cwd,
+  );
+
+  component.setExpanded(false);
+  component.markExecutionStarted();
+  component.setArgsComplete();
+  component.updateResult({
+    content: [{ type: "text", text: "Started background command in tmux window @1." }],
+    details: { background: true },
+    isError: false,
+  });
+
+  const renderedText = stripAnsi(component.render(120).join("\n"));
+  expect(renderedText).toMatch(/Starts dev server · background/);
+  expect(renderedText).not.toMatch(/ · ok/);
 });
 
 timedTest("tool previews render a bare left rail instead of a box wrapper", () => {

@@ -28,6 +28,7 @@ import {
 } from "./tools-render.js";
 import { createReadToolOverrideDefinition } from "./tools-read.js";
 import { formatMutedDirSuffix, getToolPathDisplay } from "./tools-path-render.js";
+import { registerBackgroundShellUI } from "./tmux-background-ui.js";
 
 export { countTextLines, formatDurationHuman, getTextContent, styleToolOutput, summarizeLineCount };
 export type { ToolOutputStyleOptions } from "./tools-output.js";
@@ -88,7 +89,8 @@ export function registerCoreUIToolOverrides(pi: ExtensionAPI): (activeToolNames:
 }
 
 function registerBashToolOverride(pi: ExtensionAPI): void {
-  pi.registerTool(createBashToolOverrideDefinition());
+  registerBackgroundShellUI(pi);
+  pi.registerTool(createBashToolOverrideDefinition(pi));
 }
 
 function registerReadToolOverride(pi: ExtensionAPI): void {

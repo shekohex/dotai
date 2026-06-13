@@ -2,6 +2,7 @@ import { createTwoFilesPatch, diffLines } from "diff";
 import {
   ToolExecutionComponent,
   keyHint,
+  type ExtensionAPI,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
@@ -22,6 +23,8 @@ import {
 import { shortenPathForTool } from "../src/extensions/coreui/path.js";
 
 type ToolResultContent = Array<{ type: string; text?: string }>;
+
+const previewPi = { sendMessage() {} } as unknown as ExtensionAPI;
 
 export type ToolPreviewResult = {
   content: ToolResultContent;
@@ -85,7 +88,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
     cwd,
     ".pi/agent/sessions/example/2026-04-10T15-42-47-701Z_0e990a27-4131-4b96-9440-9c813db0e009.jsonl",
   );
-  const bashDefinition = createBashToolOverrideDefinition();
+  const bashDefinition = createBashToolOverrideDefinition(previewPi);
   const batchReadDefinition = createReadBatchPreviewDefinition(cwd);
   const subagentDefinition = getSubagentPreviewDefinition();
   const parentSessionPath = joinPath(

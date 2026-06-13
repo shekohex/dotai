@@ -1,8 +1,14 @@
-import { type BashToolDetails, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { Static } from "typebox";
 import { bashToolDefinition, readToolDefinition } from "./builtins.js";
+import type { BackgroundBashToolDetails } from "./tmux-background-types.js";
+import {
+  parseBackgroundCommand,
+  runBackgroundCommandInTmux,
+  warmTmuxAvailabilityCache,
+} from "./tmux-background.js";
 import {
   formatBashResultSummary,
   formatBashTimeoutSuffix,
@@ -130,27 +136,57 @@ function renderBashToolResult(
   return createTextComponent(context.lastComponent, "");
 }
 
-export function createBashToolOverrideDefinition(): ToolDefinition<
-  typeof bashToolParams,
-  BashToolDetails | undefined,
-  BashRenderState
-> {
+export function createBashToolOverrideDefinition(
+  pi: ExtensionAPI,
+): ToolDefinition<typeof bashToolParams, BackgroundBashToolDetails | undefined, BashRenderState> {
   const { prepareArguments: _prepareArguments, ...rest } = bashToolDefinition;
+  warmTmuxAvailabilityCache();
   return {
     ...rest,
+    description: `${rest.description} Commands ending with '&' run in background using tmux and return immediately. Add '# poll:5000' after '&' to receive periodic updates every 5000ms.`,
+    promptSnippet:
+      "Execute bash commands (ls, grep, find, etc.). Use trailing '&' for tmux-backed background commands.",
+    promptGuidelines: [
+      "For long-running commands, servers, watchers, REPLs, and interactive prompts, end the command with `&` to run it in a background tmux window and return immediately.",
+      "To receive periodic background updates, append `# poll:<milliseconds>` after the trailing `&`, e.g. `npm run dev & # poll:5000`.",
+      "Background commands report automatically when they finish. Never use `sleep` plus tmux/read loops to wait for completion.",
+      "Only inspect background output manually when you need interim output before the automatic completion notification.",
+      "The bash result includes tmux inspect/kill hints. Use normal tmux commands in later bash calls to peek or stop background work.",
+      "Use `nohup ... &` only when you want shell-level nohup behavior too; the trailing `&` is what makes bash run it in background.",
+    ],
     renderShell: "self",
     parameters: bashToolParams,
+    execute(toolCallId, params, signal, onUpdate, ctx) {
+      const backgroundCommand = parseBackgroundCommand(params.command);
+      if (backgroundCommand) {
+        return runBackgroundCommandInTmux({
+          command: backgroundCommand,
+          ctx,
+          description: params.description,
+          pi,
+        });
+      }
+
+      return rest.execute(toolCallId, params, signal, onUpdate, ctx);
+    },
     renderCall: renderBashToolCall,
     renderResult: renderBashToolResult,
   };
 }
 
 function summarizeBashResult(
-  result: { content: Array<{ type: string; text?: string }> },
+  result: {
+    content: Array<{ type: string; text?: string }>;
+    details?: BackgroundBashToolDetails;
+  },
   theme: ToolTheme,
   isError?: boolean,
   elapsedMs?: number,
 ): string {
+  if (result.details?.background === true) {
+    return `${theme.fg("dim", " · ")}${theme.italic(theme.fg("muted", "background"))}`;
+  }
+
   const output = getTextContent(result);
   const summary = summarizeBashOutput(output, (visibleText) =>
     styleToolOutput(visibleText, theme, BASH_OUTPUT_LINE_LIMIT),

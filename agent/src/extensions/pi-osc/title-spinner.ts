@@ -29,6 +29,7 @@ export const titleSpinnerRuntime = {
 export type TitleActivity =
   | ToolTitleActivity
   | "compacting"
+  | "question"
   | "responding"
   | "thinking"
   | "toolcall";
@@ -42,6 +43,7 @@ const TITLE_SPINNER_PROFILES: Record<TitleActivity, TitleSpinnerProfile> = {
   responding: { frames: ["⠋", "⠙", "⠚", "⠞", "⠖", "⠦", "⠴", "⠲", "⠳", "⠓"] },
   toolcall: { frames: ["◜", "◠", "◝", "◞", "◡", "◟"] },
   compacting: { frames: ["∙∙∙", "●∙∙", "∙●∙", "∙∙●", "∙∙∙"] },
+  question: { frames: ["?", "？", "?", "؟"] },
   reading: { frames: ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"] },
   editing: { frames: ["⠋", "⠙", "⠚", "⠞", "⠖", "⠦", "⠴", "⠲", "⠳", "⠓"] },
   git: { frames: ["✶", "✸", "✹", "✺", "✹", "✷"] },

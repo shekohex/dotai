@@ -15,6 +15,7 @@ export const PiOscV1EventSchema = Type.Union([
   Type.Literal("agent.progress"),
   Type.Literal("agent.input"),
   Type.Literal("agent.tool"),
+  Type.Literal("agent.question"),
   Type.Literal("agent.alert"),
   Type.Literal("agent.aborted"),
   Type.Literal("agent.compaction"),

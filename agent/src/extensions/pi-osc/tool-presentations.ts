@@ -80,6 +80,7 @@ export type ToolTitleActivity =
   | "searching"
   | "web"
   | "subagent"
+  | "question"
   | "running";
 
 const basename = (value: string): string => {
@@ -200,6 +201,7 @@ const toolProgressText = (
   if (lowerName === "subagent")
     return staticProgress("Working with subagent", "Subagent task finished");
   if (lowerName === "interview") return staticProgress("Preparing interview", "Interview ready");
+  if (lowerName === "ask_user_question") return staticProgress("Asking user", "Question answered");
   if (lowerName === "goal") return staticProgress("Updating goal", "Goal updated");
   if (lowerName === "notify") return staticProgress("Sending notification", "Notification sent");
   if (lowerName === "generate_image") return staticProgress("Generating image", "Image generated");
@@ -239,6 +241,7 @@ export const toolTitleActivity = (toolName: string, args: unknown): ToolTitleAct
   }
   if (TOOL_WEB_SEARCH.has(lowerName) || TOOL_WEB_FETCH.has(lowerName)) return "web";
   if (lowerName === "subagent") return "subagent";
+  if (lowerName === "ask_user_question") return "question";
   if (TOOL_BASH.has(lowerName)) return bashActivity(parsedArgs);
   return "running";
 };

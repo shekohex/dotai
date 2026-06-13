@@ -166,6 +166,7 @@ export function applyChildToolState(
   }
   const activeTools = new Set(childState.tools);
   activeTools.delete("subagent");
+  activeTools.delete("ask_user_question");
   if (isJsonSchemaOutputFormat(childState)) {
     activeTools.add(STRUCTURED_OUTPUT_TOOL_NAME);
   }

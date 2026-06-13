@@ -527,6 +527,7 @@ test.each([
   ["resume", "Resuming executor", "Executor resumed"],
   ["goal", "Updating goal", "Goal updated"],
   ["interview", "Preparing interview", "Interview ready"],
+  ["ask_user_question", "Asking user", "Question answered"],
   ["subagent", "Working with subagent", "Subagent task finished"],
   ["notify", "Sending notification", "Notification sent"],
   ["generate_image", "Generating image", "Image generated"],
@@ -820,6 +821,63 @@ test("tool fields are bounded before emission", () => {
   const decoded = decodeSequence(stdoutSpy.mock.calls[0]?.[0] ?? "");
   expect(decoded.envelope.data.toolCallId).toHaveLength(128);
   expect(decoded.envelope.data.toolName).toHaveLength(128);
+});
+
+test("ask user question lifecycle emits OSC question events", () => {
+  const pi = createPi();
+  const stdoutSpy = vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
+  vi.spyOn(piOscRuntime, "now").mockReturnValue(1);
+  vi.spyOn(piOscRuntime, "randomId").mockReturnValue("evt");
+  piOscExtension(pi);
+
+  const event = {
+    toolCallId: "tool-question",
+    sessionId: "session-1",
+    cwd: "/workspace",
+    glanceUploadUrl: "https://glance.example/upload",
+    questions: [
+      {
+        question: "Which path should we take?",
+        header: "Path",
+        multiSelect: false,
+        screenshotPrompt: "Upload current app state",
+        options: [
+          { label: "Fast", description: "Ship quickly", hasPreview: false },
+          { label: "Safe", description: "Reduce risk", hasPreview: true },
+        ],
+      },
+    ],
+  };
+
+  pi.events.emit("ask-user-question:prompt", { type: "prompt", ...event });
+  pi.events.emit("ask-user-question:answered", {
+    type: "answered",
+    ...event,
+    answers: [
+      { questionIndex: 0, question: event.questions[0].question, kind: "option", answer: "Fast" },
+    ],
+  });
+  pi.events.emit("ask-user-question:cancelled", { type: "cancelled", ...event, answers: [] });
+
+  const decoded = stdoutSpy.mock.calls.map((call) => decodeSequence(call[0]));
+  expect(decoded.map((item) => item.eventName)).toEqual([
+    "agent.question",
+    "agent.question",
+    "agent.question",
+  ]);
+  expect(decoded.map((item) => item.envelope.data.state)).toEqual([
+    "prompted",
+    "answered",
+    "cancelled",
+  ]);
+  expect(decoded[0]?.envelope.data).toMatchObject({
+    toolCallId: "tool-question",
+    questionCount: 1,
+    title: "Question for you",
+    body: "Which path should we take?",
+    requiresScreenshot: true,
+    glanceUploadUrl: "https://glance.example/upload",
+  });
 });
 
 test("goal progress event emits elapsed progress payload", () => {

@@ -831,6 +831,45 @@ timedTest("child bootstrap installs when subagent extension is disabled", async 
   }
 });
 
+timedTest("child bootstrap removes ask user question tool from subagent sessions", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await createTempDir("agent-subagent-child-ask-user-question-");
+  const sessionPath = path.join(cwd, "child.jsonl");
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Work without user interaction",
+    autoExit: true,
+    autoExitTimeoutMs: 30_000,
+    handoff: false,
+    tools: ["read", "ask_user_question", "subagent"],
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({ cwd, sessionId: "child-session-id", sessionFile: sessionPath });
+
+    await emitHandlers(fakePi, "session_start", { reason: "resume" }, ctx);
+
+    expect(fakePi.getActiveTools()).toEqual(["read"]);
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("modes sync preserves StructuredOutput for structured child sessions", async () => {
   const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
   const cwd = await createTempDir("agent-subagent-child-modes-");

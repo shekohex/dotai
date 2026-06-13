@@ -2,6 +2,13 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { AssistantMessageEvent } from "@earendil-works/pi-ai";
 import { randomUUID } from "node:crypto";
 import { Value } from "typebox/value";
+import {
+  ASK_USER_QUESTION_ANSWERED_EVENT,
+  ASK_USER_QUESTION_CANCELLED_EVENT,
+  ASK_USER_QUESTION_PROMPT_EVENT,
+  isAskUserQuestionEventPayload,
+  type AskUserQuestionEventPayload,
+} from "../ask-user-question/events.js";
 import { GOAL_PROGRESS_EVENT, GoalProgressEventSchema } from "../goal/types.js";
 import {
   extractLastAssistantText,
@@ -38,6 +45,36 @@ const boundedText = (value: string, maxLength: number): string =>
 
 const boundedOptionalText = (value: string | undefined, maxLength: number): string | undefined =>
   value === undefined ? undefined : boundedText(value, maxLength);
+
+const questionEventTitle = (questionCount: number): string =>
+  questionCount === 1 ? "Question for you" : `${questionCount} questions for you`;
+
+const questionEventBody = (event: AskUserQuestionEventPayload): string => {
+  const firstQuestion = event.questions[0]?.question;
+  if (event.type === "answered") return "User answered question prompt.";
+  if (event.type === "cancelled") return "User cancelled question prompt.";
+  return firstQuestion ?? "Agent needs input.";
+};
+
+const questionEventRequiresScreenshot = (event: AskUserQuestionEventPayload): boolean =>
+  event.questions.some((question) => question.screenshotPrompt !== undefined);
+
+const questionOscState = (
+  event: AskUserQuestionEventPayload,
+): "prompted" | "answered" | "cancelled" => {
+  switch (event.type) {
+    case "prompt":
+      return "prompted";
+    case "answered":
+      return "answered";
+    case "cancelled":
+      return "cancelled";
+    default: {
+      const _unreachable: never = event;
+      return _unreachable;
+    }
+  }
+};
 
 const writePiOscSequence = (sequence: string): void => {
   const paneTty = getTmuxPaneTty();
@@ -166,6 +203,32 @@ const handleTurnEnd = (
 };
 
 type PiOscEmit = (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1Payload) => void;
+
+const emitQuestionOscEvent = (event: AskUserQuestionEventPayload, seq: number): void => {
+  const questionCount = event.questions.length;
+  const requiresScreenshot = questionEventRequiresScreenshot(event);
+  writePiOscSequence(
+    createPiOscSequence("agent.question", {
+      id: piOscRuntime.randomId(),
+      ts: piOscRuntime.now(),
+      source: "agent",
+      cwd: event.cwd,
+      seq,
+      ...(event.sessionId === undefined ? {} : { sessionId: event.sessionId }),
+      data: {
+        state: questionOscState(event),
+        toolCallId: boundedText(event.toolCallId, 128),
+        questionCount,
+        title: boundedText(questionEventTitle(questionCount), 128),
+        body: boundedText(questionEventBody(event), 512),
+        ...(requiresScreenshot ? { requiresScreenshot: true } : {}),
+        ...(event.glanceUploadUrl === undefined
+          ? {}
+          : { glanceUploadUrl: boundedText(event.glanceUploadUrl, 2048) }),
+      },
+    }),
+  );
+};
 
 const registerRunLifecycleHandlers = (
   pi: ExtensionAPI,
@@ -350,6 +413,16 @@ export default function piOscExtension(pi: ExtensionAPI): void {
       }),
     );
   });
+
+  const handleAskUserQuestionEvent = (event: unknown): void => {
+    if (!isAskUserQuestionEventPayload(event)) return;
+    seq += 1;
+    emitQuestionOscEvent(event, seq);
+  };
+
+  pi.events.on(ASK_USER_QUESTION_PROMPT_EVENT, handleAskUserQuestionEvent);
+  pi.events.on(ASK_USER_QUESTION_ANSWERED_EVENT, handleAskUserQuestionEvent);
+  pi.events.on(ASK_USER_QUESTION_CANCELLED_EVENT, handleAskUserQuestionEvent);
 
   registerSessionHandlers(pi, titleSpinner, emit);
 

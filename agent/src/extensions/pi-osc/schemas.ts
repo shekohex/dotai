@@ -70,6 +70,23 @@ export const PiOscAgentToolPayloadSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const PiOscAgentQuestionPayloadSchema = Type.Object(
+  {
+    state: Type.Union([
+      Type.Literal("prompted"),
+      Type.Literal("answered"),
+      Type.Literal("cancelled"),
+    ]),
+    toolCallId: BoundedString(128),
+    questionCount: Type.Integer({ minimum: 0 }),
+    title: BoundedString(128),
+    body: BoundedString(512),
+    requiresScreenshot: Type.Optional(Type.Boolean()),
+    glanceUploadUrl: Type.Optional(BoundedString(2048)),
+  },
+  { additionalProperties: false },
+);
+
 export const PiOscAgentAlertPayloadSchema = Type.Object(
   {
     kind: Type.Union([
@@ -114,6 +131,7 @@ export type PiOscAgentTurnPayload = Static<typeof PiOscAgentTurnPayloadSchema>;
 export type PiOscAgentProgressPayload = Static<typeof PiOscAgentProgressPayloadSchema>;
 export type PiOscAgentInputPayload = Static<typeof PiOscAgentInputPayloadSchema>;
 export type PiOscAgentToolPayload = Static<typeof PiOscAgentToolPayloadSchema>;
+export type PiOscAgentQuestionPayload = Static<typeof PiOscAgentQuestionPayloadSchema>;
 export type PiOscAgentAlertPayload = Static<typeof PiOscAgentAlertPayloadSchema>;
 export type PiOscAgentAbortedPayload = Static<typeof PiOscAgentAbortedPayloadSchema>;
 export type PiOscAgentCompactionPayload = Static<typeof PiOscAgentCompactionPayloadSchema>;
@@ -126,6 +144,7 @@ export type PiOscV1Payload =
   | PiOscAgentProgressPayload
   | PiOscAgentInputPayload
   | PiOscAgentToolPayload
+  | PiOscAgentQuestionPayload
   | PiOscAgentAlertPayload
   | PiOscAgentAbortedPayload
   | PiOscAgentCompactionPayload;
@@ -146,6 +165,8 @@ export const getPiOscPayloadSchema = (eventName: PiOscV1Event): TSchema => {
       return PiOscAgentInputPayloadSchema;
     case "agent.tool":
       return PiOscAgentToolPayloadSchema;
+    case "agent.question":
+      return PiOscAgentQuestionPayloadSchema;
     case "agent.alert":
       return PiOscAgentAlertPayloadSchema;
     case "agent.aborted":

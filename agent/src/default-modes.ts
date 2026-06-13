@@ -24,8 +24,8 @@ export const defaultModes = {
       description: "cheap fast exploration/rough implementation",
       fallbacks: [
         { provider: "opencode-go", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
-        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
-        { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
       ],
     },
     docs: {
@@ -38,8 +38,8 @@ export const defaultModes = {
       description: "technical writing/docs/issues/PRs",
       fallbacks: [
         { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" },
-        { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
-        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
       ],
     },
     build: {
@@ -74,8 +74,8 @@ export const defaultModes = {
     },
     "cheap-review": {
       provider: "zai",
-      modelId: "glm-5.1",
-      thinkingLevel: "high",
+      modelId: "glm-5.2",
+      thinkingLevel: "xhigh",
       color: "muted",
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch"],
@@ -83,7 +83,7 @@ export const defaultModes = {
       description: "fast cheap correctness review",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
-      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" }],
+      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
     },
     "fast-review": {
       provider: "deepseek",
@@ -97,8 +97,8 @@ export const defaultModes = {
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
       fallbacks: [
-        { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
-        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
       ],
     },
     commiter: {
@@ -123,19 +123,19 @@ export const defaultModes = {
       autoExit: true,
       description: "quick codebase/local-file answers",
       fallbacks: [
-        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
-        { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
       ],
     },
     painter: {
       provider: "zai",
-      modelId: "glm-5.1",
-      thinkingLevel: "high",
+      modelId: "glm-5.2",
+      thinkingLevel: "xhigh",
       color: "bashMode",
       tmuxTarget: "window",
       tools: ["*"],
       description: "frontend/UI/UX polish",
-      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" }],
+      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
     },
     ask: {
       provider: "openai-codex",
@@ -154,14 +154,14 @@ export const defaultModes = {
     },
     websearch: {
       provider: "zai",
-      modelId: "glm-5.1",
-      thinkingLevel: "high",
+      modelId: "glm-5.2",
+      thinkingLevel: "xhigh",
       color: "muted",
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch"],
       autoExit: true,
       description: "web/current docs research",
-      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" }],
+      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
     },
     poke: {
       provider: "deepseek",
@@ -174,8 +174,8 @@ export const defaultModes = {
       systemPromptMode: "replace",
       fallbacks: [
         { provider: "opencode-go", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
-        { provider: "zai-coding-plan", modelId: "glm-5.1", thinkingLevel: "high" },
-        { provider: "zai", modelId: "glm-5.1", thinkingLevel: "high" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
       ],
     },
   },

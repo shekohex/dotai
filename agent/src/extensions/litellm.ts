@@ -26,10 +26,15 @@ const LITELLM_CANDIDATES: LiteLLMCandidate[] = [
 const CODEX_OPENAI_PROVIDER = "codex-openai";
 const DEEPSEEK_PROVIDER = "deepseek";
 const GEMINI_PROVIDER = "gemini";
+const ZAI_PROVIDER = "zai";
 const ZAI_CODING_PLAN_PROVIDER = "zai-coding-plan";
+const ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
+const ZAI_API_KEY_ENV = "$ZAI_API_KEY";
 const LITELLM_AUTH_PROVIDER = "litellm";
 export const LITELLM_API_KEY_ENV = "LITELLM_API_KEY";
 const LITELLM_READINESS_PATH = "/health/readiness";
+const ZAI_GLM_5_1_MODEL_ID = "glm-5.1";
+const ZAI_GLM_5_2_MODEL_ID = "glm-5.2";
 
 let litellmStatePromise: Promise<LiteLLMState> | undefined;
 
@@ -68,12 +73,21 @@ export function createLiteLLMProviderRegistrations(
       },
     },
     {
+      provider: ZAI_PROVIDER,
+      config: {
+        baseUrl: ZAI_BASE_URL,
+        apiKey: ZAI_API_KEY_ENV,
+        api: "openai-completions",
+        models: createZaiModels(),
+      },
+    },
+    {
       provider: ZAI_CODING_PLAN_PROVIDER,
       config: {
         baseUrl: state.baseUrl,
         apiKey,
         api: "openai-completions",
-        models: createZaiCodingPlanModels(),
+        models: createZaiModels(),
       },
     },
     {
@@ -163,8 +177,8 @@ async function probeLiteLLMCandidate(candidate: LiteLLMCandidate): Promise<{
   }
 }
 
-function createZaiCodingPlanModels(): ProviderModelConfig[] {
-  return getModels("zai").map((model) => ({
+function createZaiModels(): ProviderModelConfig[] {
+  const models = getModels(ZAI_PROVIDER).map((model) => ({
     id: model.id,
     name: model.name,
     api: model.api,
@@ -176,6 +190,26 @@ function createZaiCodingPlanModels(): ProviderModelConfig[] {
     compat: model.compat,
     headers: model.headers,
   }));
+  const glm51 = models.find((model) => model.id === ZAI_GLM_5_1_MODEL_ID);
+  if (glm51 === undefined || models.some((model) => model.id === ZAI_GLM_5_2_MODEL_ID)) {
+    return models;
+  }
+
+  return [
+    ...models,
+    {
+      ...glm51,
+      id: ZAI_GLM_5_2_MODEL_ID,
+      name: "GLM-5.2",
+      contextWindow: 1_000_000,
+      thinkingLevelMap: {
+        low: "high",
+        medium: "high",
+        high: "high",
+        xhigh: "max",
+      },
+    },
+  ];
 }
 
 function createCodexOpenAIModels(): ProviderModelConfig[] {

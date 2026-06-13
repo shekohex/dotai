@@ -24,6 +24,7 @@ type ResolvedCandidate = {
 export type ModeFailoverRuntime = {
   healthStore: ModelHealthStore;
   lastFallbackStatus?: string;
+  withInternalModelChange?: <T>(action: () => Promise<T>) => Promise<T>;
 };
 
 export function createModeFailoverRuntime(): ModeFailoverRuntime {
@@ -49,7 +50,7 @@ export async function restorePrimaryModelForMode(
     return;
   }
   if (ctx.model?.provider === primary.model.provider && ctx.model.id === primary.model.id) return;
-  if (!(await applyCandidate(pi, ctx, primary, spec))) return;
+  if (!(await applyCandidate(pi, runtime, primary, spec))) return;
   runtime.healthStore.markHealthy(primary.key);
   ctx.ui.notify(`Mode "${modeName}": primary model restored (${primary.key})`, "info");
   clearFallbackStatus(ctx, runtime);
@@ -165,7 +166,7 @@ async function switchToFallback(
 ): Promise<void> {
   for (const candidate of chain) {
     if (candidate.key === failedKey || runtime.healthStore.isCoolingDown(candidate.key)) continue;
-    if (!(await applyCandidate(pi, ctx, candidate, spec))) continue;
+    if (!(await applyCandidate(pi, runtime, candidate, spec))) continue;
     ctx.ui.notify(
       `Mode "${modeName}": switched to fallback ${candidate.key} (${reason})`,
       "warning",
@@ -177,11 +178,12 @@ async function switchToFallback(
 
 async function applyCandidate(
   pi: ExtensionAPI,
-  ctx: ExtensionContext,
+  runtime: ModeFailoverRuntime,
   candidate: ResolvedCandidate,
   spec: ModeSpec,
 ): Promise<boolean> {
-  const applied = await pi.setModel(candidate.model);
+  const applyModel = () => pi.setModel(candidate.model);
+  const applied = await (runtime.withInternalModelChange?.(applyModel) ?? applyModel());
   if (!applied) return false;
   const thinkingLevel = candidate.thinkingLevel ?? spec.thinkingLevel;
   if (thinkingLevel !== undefined) pi.setThinkingLevel(thinkingLevel);

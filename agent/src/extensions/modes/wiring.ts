@@ -3,8 +3,6 @@ import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ModeActivateEvent, ModeSelectionApplyEvent } from "./events.js";
 
-type ModeSource = "command" | "shortcut" | "session_start" | "model_select" | "before_agent_start";
-
 function runModeActivateHandler(
   pi: ExtensionAPI,
   deps: {
@@ -52,16 +50,17 @@ export function registerModeCommand(
   deps: {
     getModeArgumentCompletions: (prefix: string) => AutocompleteItem[] | null;
     showModePicker: (pi: ExtensionAPI, ctx: ExtensionContext) => Promise<void>;
-    applyMode: (
+    applyMode: (pi: ExtensionAPI, ctx: ExtensionContext, modeName: string) => Promise<boolean>;
+    applyModeOverride: (
       pi: ExtensionAPI,
       ctx: ExtensionContext,
       modeName: string,
-      source: ModeSource,
+      modelQuery: string | undefined,
     ) => Promise<boolean>;
   },
 ): void {
   pi.registerCommand("mode", {
-    description: "Select prompt modes: /mode, /mode <name>",
+    description: "Select prompt modes: /mode, /mode <name>, /mode <name> --override [model]",
     getArgumentCompletions: (prefix) => deps.getModeArgumentCompletions(prefix),
     handler: async (args, ctx) => {
       const tokens = args
@@ -73,7 +72,12 @@ export function registerModeCommand(
         return;
       }
 
-      await deps.applyMode(pi, ctx, tokens[0], "command");
+      if (tokens[1] === "--override") {
+        await deps.applyModeOverride(pi, ctx, tokens[0], tokens[2]);
+        return;
+      }
+
+      await deps.applyMode(pi, ctx, tokens[0]);
     },
   });
 }
@@ -106,6 +110,8 @@ export function registerModeLifecycleHandlers(
     resetRuntimeState: () => void;
     restoreMode: (pi: ExtensionAPI, ctx: ExtensionContext) => Promise<void>;
     isApplying: () => boolean;
+    isInternalModelChange: () => boolean;
+    clearActiveMode: () => void;
     markNeedsResyncAfterApply: () => void;
     syncFromSelection: (
       pi: ExtensionAPI,
@@ -127,10 +133,14 @@ export function registerModeLifecycleHandlers(
   });
 
   pi.on("model_select", async (_event, ctx) => {
+    if (deps.isInternalModelChange()) {
+      return;
+    }
     if (deps.isApplying()) {
       deps.markNeedsResyncAfterApply();
       return;
     }
+    deps.clearActiveMode();
     await deps.syncFromSelection(pi, ctx, "model_select");
   });
 

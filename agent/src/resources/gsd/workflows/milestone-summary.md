@@ -3,7 +3,7 @@
 <local_runtime>
 Local runtime mapping for this repo:
 
-- `interview(...)` => use `interview` when structured UX helps, else ask directly in chat.
+- `ask_user_question(...)` => use `ask_user_question` when structured UX helps, else ask directly in chat.
 - `gsd-sdk query ...` => treat each query as desired outcome and implement it natively with local files, bundled prompts, and available tools.
 
 </local_runtime>

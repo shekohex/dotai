@@ -45,8 +45,8 @@ function buildDebugSessionPrompt(
     "",
     "Mandatory behavior:",
     args.text === true
-      ? "- Text mode is active: use plain-text symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`; do not call `interview`."
-      : "- Use `interview` first for symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`.",
+      ? "- Text mode is active: use plain-text symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`; do not call `ask_user_question`."
+      : "- Use `ask_user_question` first for symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`.",
     "- Use the user report only as seed context. Do not skip structured intake for a new issue.",
     "- After intake, create `.planning/debug/{slug}.md`, then continue orchestration here.",
   ].join("\n");
@@ -217,7 +217,7 @@ export async function handleGsdDebug(
             ]
           : [
               "Use visible workflow session and run debug intake there.",
-              "Use `interview` for structured intake before creating any debug session file or spawning gsd-debugger.",
+              "Use `ask_user_question` for structured intake before creating any debug session file or spawning gsd-debugger.",
               "Use model judgment inside workflow to derive slug and create the debug session file. Do not rely on TypeScript-side slug generation or template scaffolding.",
               "Visible workflow session should orchestrate; delegated code investigation should run in gsd-debugger subagent.",
               "Do not mention legacy gsd-sdk commands unless you are explicitly using bundled compatibility helper behavior.",

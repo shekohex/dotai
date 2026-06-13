@@ -157,7 +157,7 @@ describe("gsd bundled resources", () => {
     expect(workflow).toContain("gsd-sdk query phases.clear --confirm");
     expect(workflow).toContain('gsd-sdk query commit "docs: start milestone v[X.Y] [Name]"');
     expect(workflow).toContain("If `phase_dir_count > 0` but `phase_archive_path` is missing");
-    expect(workflow).toContain("Ask user, preferably via `interview`");
+    expect(workflow).toContain("Ask user, preferably via `ask_user_question`");
     expect(workflow).toContain("subagent start (prompt=");
   });
 
@@ -429,7 +429,7 @@ describe("gsd bundled resources", () => {
     expect(command).toContain("gsd-debug-session-manager");
     expect(command).toContain("Check for active sessions");
     expect(command).toContain(
-      "`interview(...)` => use `interview` for user-facing decisions and symptom intake when UI is available.",
+      "`ask_user_question(...)` => use `ask_user_question` for user-facing decisions and symptom intake when UI is available.",
     );
     expect(loadBundledDoc("command-reference.md")).toContain(
       "local fork is intentional: `list` and `status` are TS-rendered compact session views",

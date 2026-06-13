@@ -8,7 +8,7 @@ Start a new milestone cycle for an existing project. Loads project context, gath
 Local runtime mapping for this repo:
 
 - `Task(...)` => use `subagent` tool with matching local GSD mode.
-- `interview(...)` => use `interview` when structured UX helps, else ask directly in chat.
+- `ask_user_question(...)` => use `ask_user_question` when structured UX helps, else ask directly in chat.
 - `gsd-sdk query ...` => treat each query as desired outcome and implement it natively with local files, bundled prompts, and available tools.
 
 </local_runtime>
@@ -54,10 +54,10 @@ If the flag is absent, keep the current behavior of continuing phase numbering f
 
 - Present what shipped in last milestone
 
-**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `$ARGUMENTS` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every structured `interview` step with a plain-text numbered list and ask the user to type their choice number.
+**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `$ARGUMENTS` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every structured `ask_user_question` step with a plain-text numbered list and ask the user to type their choice number.
 
 - Ask inline (freeform): "What do you want to build next?"
-- Wait for their response, then use `interview` or direct follow-up questions to probe specifics
+- Wait for their response, then use `ask_user_question` or direct follow-up questions to probe specifics
 - If user selects "Other" at any point to provide freeform input, ask follow-up as plain text — not another structured interview
 
 ## 2.5. Scan Planted Seeds
@@ -94,10 +94,10 @@ Seeds that match your milestone goals:
 Enter numbers to include (comma-separated), or "none" to skip:
 ```
 
-**Normal mode:** Present via `interview`:
+**Normal mode:** Present via `ask_user_question`:
 
 ```
-interview(
+ask_user_question(
   header: "Seeds",
   question: "These planted seeds match your milestone goals. Include any in this milestone's scope?",
   multiSelect: true,
@@ -140,7 +140,7 @@ Before writing any files, present a summary of what was gathered and ask for con
 **Key context:** [Any important constraints, decisions, or notes from questioning]
 ```
 
-Use `interview` or direct chat confirmation:
+Use `ask_user_question` or direct chat confirmation:
 
 - header: "Confirm?"
 - question: "Does this capture what you want to build in this milestone?"
@@ -292,14 +292,14 @@ Check `research_enabled` from init JSON (loaded from config).
 
 **If `research_enabled` is `true`:**
 
-Ask user, preferably via `interview`: "Research the domain ecosystem for new features before defining requirements?"
+Ask user, preferably via `ask_user_question`: "Research the domain ecosystem for new features before defining requirements?"
 
 - "Research first (Recommended)" — Discover patterns, features, architecture for NEW capabilities
 - "Skip research for this milestone" — Go straight to requirements (does not change your default)
 
 **If `research_enabled` is `false`:**
 
-Ask user, preferably via `interview`: "Research the domain ecosystem for new features before defining requirements?"
+Ask user, preferably via `ask_user_question`: "Research the domain ecosystem for new features before defining requirements?"
 
 - "Skip research (current default)" — Go straight to requirements
 - "Research first" — Discover patterns, features, architecture for NEW capabilities
@@ -428,7 +428,7 @@ Present features by category:
 
 **If no research:** Gather requirements through conversation. Ask: "What are the main things users need to do with [new features]?" Clarify, probe for related capabilities, group into categories.
 
-**Scope each category** via `interview` (multiSelect: true, header max 12 chars):
+**Scope each category** via `ask_user_question` (multiSelect: true, header max 12 chars):
 
 - "[Feature 1]" — [brief description]
 - "[Feature 2]" — [brief description]
@@ -436,7 +436,7 @@ Present features by category:
 
 Track: Selected → this milestone. Unselected table stakes → future. Unselected differentiators → out of scope.
 
-**Identify gaps** via `interview`:
+**Identify gaps** via `ask_user_question`:
 
 - "No, research covered it" — Proceed
 - "Yes, let me add some" — Capture additions
@@ -556,7 +556,7 @@ Success criteria:
 2. [criterion]
 ```
 
-**Ask for approval** via `interview` or direct chat:
+**Ask for approval** via `ask_user_question` or direct chat:
 
 - "Approve" — Commit and continue
 - "Adjust phases" — Tell me what to change

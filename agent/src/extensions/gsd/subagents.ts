@@ -2,10 +2,9 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createSubagentSDK, TmuxAdapter, buildLaunchCommand } from "../../subagent-sdk/index.js";
-import { ensureInterviewToolEnabled } from "../interview/index.js";
 import { registerBuiltInGsdModes } from "./modes.js";
 import type { GsdRole } from "./roles.js";
-import { resolveRoleBuiltInModeSpec, resolveRoleModeName } from "./roles.js";
+import { resolveRoleModeName } from "./roles.js";
 import type { RuntimeSubagent, SubagentCompletion, TSchemaBase } from "../../subagent-sdk/types.js";
 import { createGsdSubagentRuntimeHooks } from "./ui/subagent-widget.js";
 import type { SubagentHandle } from "../../subagent-sdk/sdk.js";
@@ -123,12 +122,6 @@ function createSdk(pi: ExtensionAPI, ctx: ExtensionCommandContext): SpawnSdk {
   return sdk;
 }
 
-function ensureRoleToolsEnabled(pi: ExtensionAPI, role: GsdRole): void {
-  if (resolveRoleBuiltInModeSpec(role).tools?.includes("interview") === true) {
-    ensureInterviewToolEnabled(pi);
-  }
-}
-
 export function listGsdSubagents(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
@@ -210,7 +203,6 @@ async function spawnStructuredRoleInternal<TSchema extends TSchemaBase>(
   retryCount = 2,
 ): Promise<unknown> {
   registerBuiltInGsdModes();
-  ensureRoleToolsEnabled(pi, role);
   const outcome = await sdk.spawn(
     {
       name: `gsd-${role}`,
@@ -251,7 +243,6 @@ export async function startRole(
 ): Promise<StartRoleResult> {
   const sdk = createSdk(pi, ctx);
   registerBuiltInGsdModes();
-  ensureRoleToolsEnabled(pi, role);
   const outcome = await sdk.spawn(
     {
       name: options?.name ?? `gsd-${role}`,

@@ -63,7 +63,7 @@ describe("ensureBuiltInGsdModes", () => {
       "bash",
       "write",
       "websearch",
-      "interview",
+      "ask_user_question",
     ]);
     expect(built.modes["gsd-planner"]?.tmuxTarget).toBe("window");
 
@@ -76,11 +76,12 @@ describe("ensureBuiltInGsdModes", () => {
       "bash",
       "write",
       "websearch",
+      "!ask_user_question",
     ]);
 
     expect(built.modes["gsd-executor"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-executor"]?.modelId).toBe("gpt-5.5");
-    expect(built.modes["gsd-executor"]?.tools).toEqual(["*"]);
+    expect(built.modes["gsd-executor"]?.tools).toEqual(["*", "!ask_user_question"]);
 
     expect(built.modes["gsd-verifier"]?.provider).toBe("openai-codex");
     expect(built.modes["gsd-verifier"]?.modelId).toBe("gpt-5.5");
@@ -91,6 +92,7 @@ describe("ensureBuiltInGsdModes", () => {
       "bash",
       "write",
       "websearch",
+      "!ask_user_question",
     ]);
 
     expect(built.modes["gsd-pattern-mapper"]?.provider).toBe("openai-codex");
@@ -101,6 +103,7 @@ describe("ensureBuiltInGsdModes", () => {
       "find",
       "bash",
       "write",
+      "!ask_user_question",
     ]);
 
     expect(built.modes["gsd-codebase-mapper"]?.provider).toBe("openai-codex");
@@ -112,6 +115,7 @@ describe("ensureBuiltInGsdModes", () => {
       "bash",
       "edit",
       "write",
+      "!ask_user_question",
     ]);
     expect(built.modes["gsd-codebase-mapper"]?.tmuxTarget).toBe("window");
 
@@ -124,6 +128,7 @@ describe("ensureBuiltInGsdModes", () => {
       "bash",
       "edit",
       "write",
+      "!ask_user_question",
     ]);
     expect(built.modes["gsd-intel-updater"]?.tmuxTarget).toBe("window");
 
@@ -137,8 +142,8 @@ describe("ensureBuiltInGsdModes", () => {
       "edit",
       "write",
       "websearch",
-      "interview",
       "execute",
+      "ask_user_question",
     ]);
 
     expect(built.modes["gsd-debug-session-manager"]?.provider).toBe("openai-codex");
@@ -152,8 +157,8 @@ describe("ensureBuiltInGsdModes", () => {
       "write",
       "websearch",
       "subagent",
-      "interview",
       "execute",
+      "ask_user_question",
     ]);
 
     for (const spec of Object.values(built.modes)) {

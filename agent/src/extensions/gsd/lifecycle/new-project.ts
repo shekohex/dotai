@@ -427,7 +427,7 @@ export async function handleGsdNewProject(
       "Prepared `.planning/` files already exist. Improve them in place instead of recreating them.",
       "Preflight already completed by local handler before this steer prompt: git repo ensured and `.planning/` bootstrap files seeded. Do not run `git init` or re-bootstrap initialization yourself.",
       "Collect init preferences early, including granularity, then rewrite `.planning/config.json` with chosen settings before roadmap work.",
-      "Use `interview` for structured choices when helpful. Use normal conversation for freeform exploration.",
+      "Use `ask_user_question` for structured choices when helpful. Use normal conversation for freeform exploration.",
       `Init metadata: PROJECT_NAME=${initMetadata.projectName}`,
       `Init metadata: IS_BROWNFIELD=${initMetadata.isBrownfield}`,
       `Init metadata: HAS_CODEBASE_MAP=${initMetadata.hasCodebaseMap}`,

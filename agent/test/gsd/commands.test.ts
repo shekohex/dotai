@@ -228,7 +228,7 @@ test("gsd registers grouped command", () => {
   expect(fakePi.commands.has("gsd")).toBe(true);
 });
 
-test("gsd interview workflow command enables interview tool", async () => {
+test("gsd interactive workflow command does not toggle interview tool", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -237,12 +237,12 @@ test("gsd interview workflow command enables interview tool", async () => {
 
   await command?.handler("new-milestone", createCommandContext(cwd, notifications, fakePi));
 
-  expect(fakePi.tools.has("interview")).toBe(true);
-  expect(fakePi.getActiveTools()).toContain("interview");
+  expect(fakePi.tools.has("interview")).toBe(false);
+  expect(fakePi.getActiveTools()).not.toContain("interview");
   expect(fakePi.sendUserMessage).toHaveBeenCalledTimes(1);
 });
 
-test("gsd text-mode interview workflow command keeps interview disabled", async () => {
+test("gsd text-mode workflow command keeps interview disabled", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -256,7 +256,7 @@ test("gsd text-mode interview workflow command keeps interview disabled", async 
   expect(fakePi.sendUserMessage).toHaveBeenCalledTimes(1);
 });
 
-test("gsd discuss-phase default launches workflow prompt with interview enabled", async () => {
+test("gsd discuss-phase default launches workflow prompt", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -267,7 +267,6 @@ test("gsd discuss-phase default launches workflow prompt with interview enabled"
 
   await command?.handler("discuss-phase 2", createCommandContext(cwd, notifications, fakePi));
 
-  expect(fakePi.tools.has("interview")).toBe(true);
   const prompt = String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "");
   expect(prompt).toContain('Launch native GSD workflow for "/gsd discuss-phase 2"');
   expect(prompt).toContain(resolveGsdBundlePath("commands/gsd/discuss-phase.md"));
@@ -289,7 +288,6 @@ test("gsd discuss-phase --assumptions launches upstream assumptions workflow", a
     createCommandContext(cwd, notifications, fakePi),
   );
 
-  expect(fakePi.tools.has("interview")).toBe(true);
   const prompt = String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "");
   expect(prompt).toContain('Launch native GSD workflow for "/gsd discuss-phase 2 --assumptions"');
   expect(prompt).toContain(resolveGsdBundlePath("commands/gsd/discuss-phase.md"));
@@ -330,7 +328,6 @@ test("gsd plan-phase launches upstream workflow prompt", async () => {
 
   await command?.handler("plan-phase 2", createCommandContext(cwd, notifications, fakePi));
 
-  expect(fakePi.tools.has("interview")).toBe(true);
   const prompt = String(fakePi.sendUserMessage.mock.calls.at(-1)?.[0] ?? "");
   expect(prompt).toContain('Launch native GSD workflow for "/gsd plan-phase 2"');
   expect(prompt).toContain(resolveGsdBundlePath("commands/gsd/plan-phase.md"));
@@ -338,7 +335,7 @@ test("gsd plan-phase launches upstream workflow prompt", async () => {
   expect(prompt).toContain("Preserve workflow gates");
 });
 
-test("gsd next enables interview before routed workflow prompt", async () => {
+test("gsd next routes workflow prompt without toggling interview", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -349,12 +346,12 @@ test("gsd next enables interview before routed workflow prompt", async () => {
 
   await command?.handler("next", createCommandContext(cwd, notifications, fakePi));
 
-  expect(fakePi.tools.has("interview")).toBe(true);
-  expect(fakePi.getActiveTools()).toContain("interview");
+  expect(fakePi.tools.has("interview")).toBe(false);
+  expect(fakePi.getActiveTools()).not.toContain("interview");
   expect(fakePi.sendUserMessage).toHaveBeenCalled();
 });
 
-test("gsd progress --next enables interview before routed workflow prompt", async () => {
+test("gsd progress --next routes workflow prompt without toggling interview", async () => {
   const fakePi = new FakePi();
   const notifications: Array<{ message: string; level: string }> = [];
   const cwd = createTempCwd();
@@ -365,8 +362,8 @@ test("gsd progress --next enables interview before routed workflow prompt", asyn
 
   await command?.handler("progress --next", createCommandContext(cwd, notifications, fakePi));
 
-  expect(fakePi.tools.has("interview")).toBe(true);
-  expect(fakePi.getActiveTools()).toContain("interview");
+  expect(fakePi.tools.has("interview")).toBe(false);
+  expect(fakePi.getActiveTools()).not.toContain("interview");
   expect(fakePi.sendUserMessage).toHaveBeenCalled();
 });
 
@@ -4150,7 +4147,7 @@ test("gsd debug without description launches workflow prompt instead of crashing
     "Start `/gsd debug` in this visible workflow session.",
   );
   expect(String(fakePi.sendUserMessage.mock.calls[0]?.[0])).toContain(
-    "Use `interview` first for symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`.",
+    "Use `ask_user_question` first for symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`.",
   );
 });
 

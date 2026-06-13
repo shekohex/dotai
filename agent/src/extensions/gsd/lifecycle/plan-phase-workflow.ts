@@ -35,7 +35,7 @@ export async function launchPlanPhaseWorkflow(
     ],
     extraInstructions: [
       "Preserve workflow gates, research decisions, planning, plan-checker verification loops, and routing from upstream workflow docs.",
-      "Use `interview`/AskUserQuestion for interactive decisions unless `--text` is active.",
+      "Use `ask_user_question` for interactive decisions unless `--text` is active.",
       "Do not create, rename, or switch git branches during plan-phase.",
     ],
   });

@@ -34,7 +34,7 @@ Contract notes:
 - `--gaps-only` limits execution to gap-closure plans only
 - `--interactive` switches to inline sequential execution with checkpoints instead of delegated parallel workers
 - `--validate` requests init-context validation data in workflow and keeps validation wording in user-facing contract for this slice
-- `--text` uses plain-text checkpoints instead of interview forms
+- `--text` uses plain-text checkpoints instead of structured question forms
 - `--cross-ai` forces cross-AI delegation path defined by bundled workflow
 - `--no-cross-ai` disables cross-AI delegation path for this run and takes precedence when both cross-AI toggles are present
 - `--tdd`, `--mvp`, and `--auto` are accepted and preserved for bundled workflow/runtime handling; local TypeScript layer does not reinterpret them beyond parse and pass-through

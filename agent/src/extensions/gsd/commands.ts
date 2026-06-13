@@ -1,5 +1,4 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { ensureInterviewToolEnabled } from "../interview/index.js";
 import { parseGsdCommandArgs, usesParsedArgs } from "./args.js";
 import { getGsdArgumentCompletions, getGsdSubcommands } from "./autocomplete.js";
 import { gsdHandlers } from "./handlers.js";
@@ -10,19 +9,6 @@ import { rememberGsdCwd } from "./state/cwd.js";
 import { showGsdDashboard } from "./ui.js";
 
 const GSD_FLAG = "gsd";
-
-const GSD_INTERVIEW_COMMANDS = new Set<GsdSubcommand>([
-  "new-project",
-  "new-milestone",
-  "complete-milestone",
-  "milestone-summary",
-  "debug",
-  "discuss-phase",
-  "plan-phase",
-  "execute-phase",
-  "next",
-  "progress",
-]);
 
 export type GsdSubcommand =
   | "new-project"
@@ -63,15 +49,6 @@ function getUnexpectedArgument(args: string): string | undefined {
     .trim()
     .split(/\s+/u)
     .filter((token) => token.length > 0)[1];
-}
-
-function shouldEnableInterviewForGsdCommand(
-  subcommand: GsdSubcommand | undefined,
-  parsedArgs: ReturnType<typeof parseGsdCommandArgs>,
-): boolean {
-  return (
-    subcommand !== undefined && GSD_INTERVIEW_COMMANDS.has(subcommand) && parsedArgs.text !== true
-  );
 }
 
 export function registerGsdCommands(pi: ExtensionAPI): void {
@@ -132,9 +109,6 @@ export function registerGsdCommands(pi: ExtensionAPI): void {
         case "progress":
         case "stats":
         case "health":
-          if (shouldEnableInterviewForGsdCommand(subcommand, parsedArgs)) {
-            ensureInterviewToolEnabled(pi);
-          }
           await gsdHandlers[subcommand](
             pi,
             ctx,

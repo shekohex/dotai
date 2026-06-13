@@ -8,7 +8,7 @@ Mark a shipped version (v1.0, v1.1, v2.0) as complete. Creates historical record
 Local runtime mapping for this repo:
 
 - `Task(...)` => use `subagent` tool with matching local GSD mode.
-- `interview(...)` => use `interview` when structured UX helps, else ask directly in chat.
+- `ask_user_question(...)` => use `ask_user_question` when structured UX helps, else ask directly in chat.
 - `gsd-sdk query ...` => treat each query as desired outcome and implement it natively with local files, bundled prompts, and available tools.
 
 </local_runtime>
@@ -450,8 +450,8 @@ Verify: `✅ Milestone archived to .planning/milestones/`
 
 **Phase archival (optional):** After archival completes, ask the user:
 
-**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `$ARGUMENTS` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every structured `interview` step with a plain-text numbered list and ask the user to type their choice number.
-Use `interview` or direct chat to ask whether to archive phase directories to `milestones/v[X.Y]-phases/` or keep them in place.
+**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `$ARGUMENTS` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every structured `ask_user_question` step with a plain-text numbered list and ask the user to type their choice number.
+Use `ask_user_question` or direct chat to ask whether to archive phase directories to `milestones/v[X.Y]-phases/` or keep them in place.
 
 If "Yes": move phase directories to the milestone archive:
 
@@ -677,7 +677,7 @@ Options:
 3. **Keep branches** — Leave for manual handling
 ```
 
-Use `interview` or direct chat with options: Squash merge (Recommended), Merge with history, Delete without merging, Keep branches.
+Use `ask_user_question` or direct chat with options: Squash merge (Recommended), Merge with history, Delete without merging, Keep branches.
 
 **Squash merge:**
 

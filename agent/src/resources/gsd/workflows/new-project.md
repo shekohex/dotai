@@ -16,7 +16,7 @@ Read invoking command file and all bundled references/templates before acting.
 - If steering metadata says `HAS_ACCIDENTAL_NESTED_GIT_REPO=true`, do not continue assuming current directory is clean standalone git root. Call out nested-git state clearly and ask user whether to keep isolated repo or use enclosing parent repo.
 - Use delegated subagents only for project research and roadmap creation.
 - Preserve local grouped UX and local `.planning` layout.
-- Use `interview` when structured multi-question selection helps. Use plain conversation when user needs freeform explanation.
+- Use `ask_user_question` when structured multi-question selection helps. Use plain conversation when user needs freeform explanation.
   </local_contract>
 
 <runtime_contract>

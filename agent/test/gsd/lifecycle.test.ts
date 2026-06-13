@@ -4873,7 +4873,7 @@ Plans:
       "Start `/gsd debug` in this visible workflow session.",
     );
     expect(String((pi.sendUserMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0])).toContain(
-      "Use `interview` first for symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`.",
+      "Use `ask_user_question` first for symptom intake in this visible workflow session before creating any debug file or spawning `gsd-debugger`.",
     );
   });
 

@@ -472,7 +472,7 @@ function getFlagDescription(value: string): string | undefined {
     return "Record plan-phase handoff after completion";
   }
   if (value === "--text") {
-    return "Use plain-text questions instead of interview forms";
+    return "Use plain-text questions instead of structured question forms";
   }
   return undefined;
 }

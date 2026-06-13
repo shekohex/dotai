@@ -54,7 +54,7 @@ export async function launchDiscussPhaseWorkflow(
     workflowResourcePaths,
     extraResourcePaths,
     extraInstructions: [
-      "Use `interview`/AskUserQuestion for interactive decisions unless `--text` is active; do not use hardcoded gray-area prompts.",
+      "Use `ask_user_question` for interactive decisions unless `--text` is active; do not use hardcoded gray-area prompts.",
       "Ask phase-specific adaptive questions grounded in ROADMAP, PROJECT, REQUIREMENTS, prior CONTEXT, and local code. Avoid generic wizard questions.",
       "Write canonical phase CONTEXT.md, DISCUSSION-LOG.md, and checkpoint artifacts exactly as workflow docs specify.",
     ],

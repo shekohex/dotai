@@ -51,7 +51,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
 
 - `/gsd new-project [brief]`
   flags: `--auto`, `--text`
-  `--text` uses plain-text questions instead of interview forms
+  `--text` uses plain-text questions instead of structured question forms
   use when starting GSD in repo with no planning tree yet
   examples: `/gsd new-project`, `/gsd new-project --auto @idea.md`
 - `/gsd new-milestone [milestone]`
@@ -59,12 +59,12 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   `--text` forwards text-mode questioning into bundled milestone workflow; `--reset-phase-numbers` opts into restarting roadmap numbering at `1` when workflow safety checks allow it
 - `/gsd complete-milestone [version]`
   flags: `--text`
-  `--text` uses plain-text confirmations instead of interview forms
+  `--text` uses plain-text confirmations instead of structured question forms
   workflow-owned closeout includes readiness confirmation, artifact-audit acknowledgment, archive/requirements rollover, commit, and optional tag confirmation
   local source of truth is `.planning/milestones/`; tagging should pause for explicit confirmation instead of assuming upstream auto-tag flow
 - `/gsd milestone-summary [version]`
   flags: `--text`
-  `--text` uses plain-text follow-up Q&A instead of interview forms
+  `--text` uses plain-text follow-up Q&A instead of structured question forms
   workflow reads archived milestone artifacts from `.planning/milestones/` and `.planning/milestones/vX.Y-phases/` when present, otherwise current planning artifacts only for requested milestone
   git statistics stay milestone-bound and the workflow must not dirty `STATE.md` as a side effect of report generation
 
@@ -91,7 +91,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
 
 - `/gsd execute-phase <phase>`
   flags: `--phase <phase>`, `--wave <n>`, `--gaps-only`, `--interactive`, `--validate`, `--text`, `--cross-ai`, `--no-cross-ai`, `--auto`, `--tdd`, `--mvp`
-  `--text` uses plain-text checkpoints instead of interview forms
+  `--text` uses plain-text checkpoints instead of structured question forms
   `--cross-ai`, `--no-cross-ai`, `--auto`, `--tdd`, `--mvp` forward to bundled workflow/runtime
   local slice requires explicit phase, preserves workflow-native flag pass-through, and uses bundled branch/worktree/checkpoint/regression/drift/verifier gates rather than native TS reimplementation
 - `/gsd secure-phase [phase]`
@@ -117,7 +117,7 @@ Local help for commands implemented in this repo. Not claim upstream parity.
   flags: `--diagnose`, `--text`
 - `/gsd debug continue <slug>`
   flags: `--diagnose`, `--text`
-  `--text` uses plain-text symptom intake/checkpoints instead of interview forms
+  `--text` uses plain-text symptom intake/checkpoints instead of structured question forms
   local fork is intentional: `list` and `status` are TS-rendered compact session views, while new/continue routes still hand off to bundled debug-session-manager workflow in visible session
 
 ## Instant

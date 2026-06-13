@@ -6,14 +6,14 @@ allowed-tools:
   - read
   - bash
   - subagent
-  - interview
+- ask_user_question
 ---
 
 <local_runtime>
 Local runtime mapping for this repo:
 
 - `Task(...)` => use `subagent` tool with matching local GSD mode.
-- `interview(...)` => use `interview` for user-facing decisions and symptom intake when UI is available. Fall back to direct chat only when UI is unavailable.
+- `ask_user_question(...)` => use `ask_user_question` for user-facing decisions and symptom intake when UI is available. Fall back to direct chat only when UI is unavailable.
 - Legacy `gsd-sdk query ...` snippets are intent examples only. Perform equivalent work natively with local files, repo inspection, bundled prompts, and local tools.
 - `{{GSD_BUNDLE_DIR}}` paths point at bundled GSD resources in this repo.
 
@@ -29,7 +29,7 @@ Debug issues using scientific method with subagent isolation.
 **Flags:**
 
 - `--diagnose` — Diagnose only. Find root cause without applying a fix. Returns a structured Root Cause Report. Use when you want to validate the diagnosis before committing to a fix.
-- `--text` — Use plain-text symptom intake and checkpoints instead of interview forms.
+- `--text` — Use plain-text symptom intake and checkpoints instead of structured question forms.
 
 **Subcommands:**
 
@@ -190,7 +190,7 @@ If $ARGUMENTS provided OR user describes new issue:
 
 ## 2. Gather Symptoms (if new issue, SUBCMD=debug)
 
-Use `interview` for structured symptom intake when UI is available. Collect at least:
+Use `ask_user_question` for structured symptom intake when UI is available. Collect at least:
 
 1. **Expected behavior** - What should happen?
 2. **Actual behavior** - What happens instead?

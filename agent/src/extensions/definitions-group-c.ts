@@ -1,10 +1,10 @@
 import agentAlertsExtension from "./agent-alerts/index.js";
+import askUserQuestionExtension from "./ask-user-question/index.js";
 import cacheGraphExtension from "./cache-graph/index.js";
 import contextPruneExtension from "./context-prune/index.js";
 import executorExtension from "./executor/index.js";
 import goalExtension from "./goal/index.js";
 import gsdExtension from "./gsd/index.js";
-import interviewExtension from "./interview/index.js";
 import mermaidExtension from "./mermaid.js";
 import notifyExtension from "./notify/index.js";
 import piOscExtension from "./pi-osc/extension.js";
@@ -23,7 +23,7 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "notify", factory: notifyExtension },
   { id: "goal", factory: goalExtension },
   { id: "prompt-stash", factory: promptStashExtension },
-  { id: "interview", factory: interviewExtension },
+  { id: "ask-user-question", factory: askUserQuestionExtension },
   { id: "plannotator", factory: plannotatorExtension },
   { id: "gsd", factory: gsdExtension },
   { id: "terminal-tmux-ui", factory: terminalTmuxUiExtension },

@@ -4,7 +4,7 @@ export {
   DebouncedAiAutocompleteRunner,
 } from "./ai-autocomplete-backend.js";
 export { bindCoreUI } from "./footer.js";
-export { createProjectInfoRefresher } from "./project-info.js";
+export { applyProjectInfoFromGitState, createProjectInfoRefresher } from "./project-info.js";
 export { registerCoreUIToolOverrides } from "./tools.js";
 export { default as registerTPSExtension } from "./tps.js";
 export { createCoreUIState } from "./types.js";

@@ -1,4 +1,5 @@
 import type { ThemeColor } from "../../mode-utils.js";
+import type { GitHubPullRequestInfo } from "../git-state.js";
 import type { WorkflowProgressEvent } from "../dynamic-workflows/status-events.js";
 
 export type CoreUITPSStats = {
@@ -16,6 +17,7 @@ export type CoreUIState = {
   cwd: string;
   repoSlug?: string;
   worktreeName?: string;
+  pullRequest?: GitHubPullRequestInfo;
   activeMode?: string;
   activeModeColor?: ThemeColor;
   tps?: CoreUITPSStats;

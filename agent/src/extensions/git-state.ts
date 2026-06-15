@@ -3,6 +3,11 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import type { GitStatusEntry } from "./files/model.js";
+import {
+  GitHubPullRequestInfoSchema,
+  loadGitHubPullRequestInfo,
+  type GitHubPullRequestInfo,
+} from "./coreui/github-pull-request.js";
 import { toCanonicalPath, toCanonicalPathMaybeMissing } from "./files/path-utils.js";
 import { isStaleSessionReplacementContextError } from "./session-replacement.js";
 
@@ -23,6 +28,7 @@ const GitStatusEntrySchema = Type.Object({
 const GitProjectInfoSchema = Type.Object({
   repoSlug: Type.Optional(Type.String()),
   worktreeName: Type.Optional(Type.String()),
+  pullRequest: Type.Optional(GitHubPullRequestInfoSchema),
   dirty: Type.Boolean(),
   addedLines: Type.Number(),
   removedLines: Type.Number(),
@@ -336,7 +342,7 @@ async function loadGitProjectInfo(
   ctx: Pick<ExtensionContext, "signal">,
   gitRoot: string,
 ): Promise<Static<typeof GitProjectInfoSchema>> {
-  const [remoteResult, gitDirResult, diffResult] = await Promise.all([
+  const [remoteResult, gitDirResult, diffResult, pullRequest] = await Promise.all([
     pi.exec("git", ["remote", "get-url", "origin"], {
       cwd: gitRoot,
       signal: ctx.signal,
@@ -352,6 +358,7 @@ async function loadGitProjectInfo(
       signal: ctx.signal,
       timeout: GIT_TIMEOUT_MS,
     }),
+    loadGitHubPullRequestInfo(pi, { gitRoot, signal: ctx.signal }),
   ]);
 
   const diffStat =
@@ -360,6 +367,7 @@ async function loadGitProjectInfo(
   return {
     repoSlug: remoteResult.code === 0 ? parseRepoSlug(remoteResult.stdout) : undefined,
     worktreeName: gitDirResult.code === 0 ? parseWorktreeName(gitDirResult.stdout) : undefined,
+    pullRequest,
     dirty: false,
     addedLines: diffStat.addedLines,
     removedLines: diffStat.removedLines,
@@ -367,6 +375,8 @@ async function loadGitProjectInfo(
     behindCommits: 0,
   };
 }
+
+export type { GitHubPullRequestInfo };
 
 function publishGitState(pi: ExtensionAPI, cwd: string, state: GitRuntimeState): GitRuntimeState {
   storeGitState(cwd, state);
@@ -430,7 +440,7 @@ export default function gitStateExtension(pi: ExtensionAPI): void {
     queueRefresh(ctx);
   });
 
-  pi.on("turn_end", async (_event, ctx) => {
+  pi.on("agent_end", async (_event, ctx) => {
     await refreshGitState(pi, ctx);
   });
 

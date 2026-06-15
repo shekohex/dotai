@@ -1,10 +1,11 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { hyperlink, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { GOAL_STATUS_KEY } from "../goal/types.js";
 import { OPENAI_BETTER_STATUS_KEY } from "../openai-better/types.js";
 import { getContextPruneFooterState } from "../context-prune/public-api.js";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
+import { githubPullRequestColor } from "./github-pull-request.js";
 import { appendGoalRuntimeStatus } from "./goal-status.js";
 import { shortenHome } from "./path.js";
 import { formatDuration } from "./tps.js";
@@ -124,6 +125,16 @@ export function buildSessionElapsedStatus(theme: Theme, state: CoreUIState): str
   return theme.fg("dim", formatDuration(state.tpsElapsedMs));
 }
 
+export function buildGitHubPullRequestStatus(theme: Theme, state: CoreUIState): string {
+  const pullRequest = state.pullRequest;
+  if (pullRequest === undefined) {
+    return "";
+  }
+
+  const label = `PR #${pullRequest.number}`;
+  return theme.fg(githubPullRequestColor(pullRequest), hyperlink(label, pullRequest.url));
+}
+
 function buildWorkflowStatus(theme: Theme, state: CoreUIState): string {
   const workflow = state.workflowStatus;
   if (workflow === undefined) return "";
@@ -178,8 +189,11 @@ function buildProjectStatus(
   const removedText = state.removedLines > 0 ? theme.fg("error", ` -${state.removedLines}`) : "";
   const aheadText = state.aheadCommits > 0 ? theme.fg("success", ` ↑${state.aheadCommits}`) : "";
   const behindText = state.behindCommits > 0 ? theme.fg("warning", ` ↓${state.behindCommits}`) : "";
+  const pullRequestText = buildGitHubPullRequestStatus(theme, state);
+  const pullRequestSuffix =
+    pullRequestText.length > 0 ? `${theme.fg("dim", " · ")}${pullRequestText}` : "";
 
-  return `${projectLabel}${theme.fg("dim", " (")}${branchText}${addedText}${removedText}${aheadText}${behindText}${theme.fg("dim", ")")}`;
+  return `${projectLabel}${theme.fg("dim", " (")}${branchText}${addedText}${removedText}${aheadText}${behindText}${pullRequestSuffix}${theme.fg("dim", ")")}`;
 }
 
 function resolveRefLabel(

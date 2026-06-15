@@ -22,6 +22,7 @@ import {
   createCorePromptEditorFactory,
   createCoreUIState,
   createProjectInfoRefresher,
+  applyProjectInfoFromGitState,
   pickRandomWhimsical,
   registerCoreUIToolOverrides,
   registerTPSExtension,
@@ -97,6 +98,14 @@ function requestRenderSafely(requestRender: (() => void) | undefined): void {
   } catch (error) {
     ignoreStaleSessionReplacementError(error);
   }
+}
+
+function gitStateEventCwd(data: unknown): string | undefined {
+  if (typeof data !== "object" || data === null || !("cwd" in data)) {
+    return undefined;
+  }
+
+  return typeof data.cwd === "string" ? data.cwd : undefined;
 }
 
 function getLatestAssistantSummarySafely(ctx: ExtensionContext): string | undefined {
@@ -316,6 +325,14 @@ function registerCoreUIHandlers(input: {
     }
   });
 
+  input.pi.on("agent_end", (_event, ctx) => {
+    try {
+      input.refreshAll(ctx);
+    } catch (error) {
+      ignoreStaleSessionReplacementError(error);
+    }
+  });
+
   input.pi.on("session_tree", (_event, ctx) => {
     try {
       input.ensureToolOverridesRegistered(input.pi.getActiveTools());
@@ -370,6 +387,10 @@ function createCoreUISubscriptions(input: {
   const unsubscribeGitStateEvents = input.pi.events.on(GIT_STATE_UPDATED_EVENT, (data) => {
     try {
       applyGitStateUpdatedEvent(data);
+      const cwd = gitStateEventCwd(data);
+      if (cwd !== undefined) {
+        applyProjectInfoFromGitState(input.state, cwd);
+      }
       requestRenderSafely(input.getRequestRender());
     } catch (error) {
       ignoreStaleSessionReplacementError(error);

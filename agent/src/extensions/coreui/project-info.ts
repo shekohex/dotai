@@ -18,17 +18,22 @@ export function createProjectInfoRefresher(
 
     state.cwd = cwd;
     state.refreshedAt = now;
-
-    const gitState = getGitState(cwd);
-    state.repoSlug = gitState.projectInfo.repoSlug;
-    state.worktreeName = gitState.projectInfo.worktreeName;
-    state.dirty = gitState.projectInfo.dirty;
-    state.addedLines = gitState.projectInfo.addedLines;
-    state.removedLines = gitState.projectInfo.removedLines;
-    state.aheadCommits = gitState.projectInfo.aheadCommits;
-    state.behindCommits = gitState.projectInfo.behindCommits;
+    applyProjectInfoFromGitState(state, cwd);
     requestRender();
   };
+}
+
+export function applyProjectInfoFromGitState(state: CoreUIState, cwd: string): void {
+  const gitState = getGitState(cwd);
+  state.cwd = cwd;
+  state.repoSlug = gitState.projectInfo.repoSlug;
+  state.worktreeName = gitState.projectInfo.worktreeName;
+  state.pullRequest = gitState.projectInfo.pullRequest;
+  state.dirty = gitState.projectInfo.dirty;
+  state.addedLines = gitState.projectInfo.addedLines;
+  state.removedLines = gitState.projectInfo.removedLines;
+  state.aheadCommits = gitState.projectInfo.aheadCommits;
+  state.behindCommits = gitState.projectInfo.behindCommits;
 }
 
 function shouldRefreshProjectInfo(

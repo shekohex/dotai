@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  buildGitHubPullRequestStatus,
   buildSessionElapsedStatus,
   buildTPSStatus,
   composeFooterLine,
@@ -15,6 +16,7 @@ const theme = {
 const stateWithTps = (tpsVisible: boolean): CoreUIState => ({
   repoSlug: undefined,
   worktreeName: undefined,
+  pullRequest: undefined,
   dirty: false,
   addedLines: 0,
   removedLines: 0,
@@ -74,5 +76,31 @@ describe("coreui footer", () => {
     const state = stateWithTps(true);
     state.tps = { ...state.tps!, current: 18.5 };
     expect(buildTPSStatus(theme, state)).toContain("<b><error>󰓅</error></b>");
+  });
+
+  test("renders linked pull request status", () => {
+    const state = stateWithTps(true);
+    state.pullRequest = {
+      number: 42,
+      state: "OPEN",
+      isDraft: false,
+      url: "https://github.com/shekohex/dotai/pull/42",
+    };
+
+    expect(buildGitHubPullRequestStatus(theme, state)).toBe(
+      "<success>\u001B]8;;https://github.com/shekohex/dotai/pull/42\u001B\\PR #42\u001B]8;;\u001B\\</success>",
+    );
+  });
+
+  test("renders draft pull request muted", () => {
+    const state = stateWithTps(true);
+    state.pullRequest = {
+      number: 7,
+      state: "OPEN",
+      isDraft: true,
+      url: "https://github.com/shekohex/dotai/pull/7",
+    };
+
+    expect(buildGitHubPullRequestStatus(theme, state)).toContain("<muted>");
   });
 });

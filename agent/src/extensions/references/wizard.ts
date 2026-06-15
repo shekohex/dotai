@@ -67,7 +67,7 @@ const LOCAL_STEPS: WizardStep[] = [
   {
     id: "source",
     title: "Path",
-    help: "Directory path. Relative paths resolve from references.json.",
+    help: "Directory path. Project paths resolve from repo root; global paths from agent dir.",
   },
   { id: "description", title: "Description", help: "Optional guidance shown to agents." },
   { id: "visibility", title: "Autocomplete", help: "Hidden refs stay in context if described." },

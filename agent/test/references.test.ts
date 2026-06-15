@@ -58,7 +58,7 @@ describe("references extension", () => {
     const agentDir = createTempDirSync("agent-references-agent-");
     const projectDir = createTempDirSync("agent-references-project-");
     const globalDocs = join(agentDir, "global-docs");
-    const projectDocs = join(projectDir, ".pi", "project-docs");
+    const projectDocs = join(projectDir, "project-docs");
     await mkdir(globalDocs, { recursive: true });
     await mkdir(projectDocs, { recursive: true });
     await mkdir(join(projectDir, ".pi"), { recursive: true });
@@ -90,10 +90,7 @@ describe("references extension", () => {
     const docs = join(projectDir, "docs");
     await mkdir(join(projectDir, ".pi"), { recursive: true });
     await mkdir(docs, { recursive: true });
-    await writeFile(
-      join(projectDir, ".pi", "references.json"),
-      JSON.stringify({ docs: "../docs" }),
-    );
+    await writeFile(join(projectDir, ".pi", "references.json"), JSON.stringify({ docs: "docs" }));
     process.env.PI_CODING_AGENT_DIR = agentDir;
     const exec = vi.fn(async () => ok());
 

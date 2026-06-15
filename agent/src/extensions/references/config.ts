@@ -182,8 +182,9 @@ export async function deleteReferenceConfigEntry(filePath: string, alias: string
 
 export async function loadReferenceConfigs(cwd: string): Promise<ReferenceConfig[]> {
   const byAlias = new Map<string, ReferenceConfig>();
-  for (const configPath of getReferenceConfigPaths(cwd)) {
-    const sourceDir = path.dirname(configPath);
+  for (const scope of ["global", "project"] as const) {
+    const configPath = getReferenceConfigPath(cwd, scope);
+    const sourceDir = scope === "project" ? cwd : path.dirname(configPath);
     const config = await readReferenceConfigFile(configPath);
     for (const [alias, entry] of Object.entries(config)) {
       const reference = parseConfigEntry(alias, entry, configPath, sourceDir);

@@ -35,6 +35,7 @@ import {
   saveAiAutocompleteSettings,
   type AiAutocompleteSettings,
 } from "./coreui/ai-autocomplete-settings.js";
+import { registerBackgroundShellUI } from "./coreui/tmux-background-ui.js";
 import { getLatestAssistantSummary } from "./session-launch-utils.js";
 
 const ModeChangedEventSchema = Type.Object({
@@ -527,6 +528,7 @@ export default function coreUIExtension(pi: ExtensionAPI) {
   );
 
   registerSkillReferenceAutocomplete(pi);
+  registerBackgroundShellUI(pi);
 
   registerSessionStartHandler({
     pi,

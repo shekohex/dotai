@@ -49,6 +49,20 @@ describe("renderBackgroundShellLines", () => {
     expect(lines[0]).toContain("1 killed");
   });
 
+  test("renders missing rows as recent tracked state", () => {
+    const lines = renderBackgroundShellLines(
+      [run({ completedAt: 2_000, status: "missing", windowId: "@9" })],
+      120,
+      theme,
+      "compact",
+      4,
+    );
+
+    expect(lines[0]).toContain("1 recent");
+    expect(lines[1]).toContain("missing");
+    expect(lines[1]).toContain("@9");
+  });
+
   test("hides overflow rows in compact mode", () => {
     const lines = renderBackgroundShellLines(
       [

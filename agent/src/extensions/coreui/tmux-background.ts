@@ -26,6 +26,17 @@ const MILLISECONDS_PER_SECOND = 1000;
 const TMUX_AVAILABILITY_TIMEOUT_MS = 2000;
 const TMUX_SESSION_TIMEOUT_MS = 2000;
 const TMUX_WINDOW_CREATE_TIMEOUT_MS = 5000;
+const TMUX_WINDOW_OPTION_TIMEOUT_MS = 2000;
+const TMUX_WINDOW_OPTIONS = {
+  command: "@pi-bg-command",
+  cwd: "@pi-bg-cwd",
+  description: "@pi-bg-description",
+  exitFile: "@pi-bg-exit-file",
+  id: "@pi-bg-id",
+  outputFile: "@pi-bg-output-file",
+  pollIntervalMs: "@pi-bg-poll-interval-ms",
+  startedAt: "@pi-bg-started-at",
+} as const;
 const execFileAsync = promisify(execFile);
 
 type QuoteState = "single" | "double" | undefined;
@@ -139,6 +150,7 @@ export async function runBackgroundCommandInTmux(input: {
     tmuxSession: session.name,
     windowId,
   };
+  await tagTmuxWindow(windowId, run, input.ctx.cwd, input.command.pollIntervalMs);
 
   state.runs.set(exitFile, run);
   trackBackgroundShellRun(
@@ -159,6 +171,34 @@ export async function runBackgroundCommandInTmux(input: {
     ],
     details: backgroundDetails(run, input.ctx.cwd, input.command.pollIntervalMs),
   };
+}
+
+async function tagTmuxWindow(
+  windowId: string,
+  run: BackgroundRun,
+  cwd: string,
+  pollIntervalMs: number | undefined,
+): Promise<void> {
+  const values: Record<string, string> = {
+    [TMUX_WINDOW_OPTIONS.command]: run.command,
+    [TMUX_WINDOW_OPTIONS.cwd]: cwd,
+    [TMUX_WINDOW_OPTIONS.description]: run.description,
+    [TMUX_WINDOW_OPTIONS.exitFile]: run.exitFile,
+    [TMUX_WINDOW_OPTIONS.id]: run.id,
+    [TMUX_WINDOW_OPTIONS.outputFile]: run.outputFile,
+    [TMUX_WINDOW_OPTIONS.startedAt]: String(run.startedAt),
+  };
+  if (pollIntervalMs !== undefined) {
+    values[TMUX_WINDOW_OPTIONS.pollIntervalMs] = String(pollIntervalMs);
+  }
+
+  await Promise.all(
+    Object.entries(values).map(([option, value]) =>
+      execFileAsync("tmux", ["set-window-option", "-q", "-t", windowId, option, value], {
+        timeout: TMUX_WINDOW_OPTION_TIMEOUT_MS,
+      }),
+    ),
+  );
 }
 
 function scanShell(command: string): ShellScan {
@@ -396,12 +436,9 @@ async function handleExitFile(pi: ExtensionAPI, exitFile: string): Promise<void>
     const exitCode = exitCodeText.length === 0 ? "1" : exitCodeText;
     const output = await readOutputTail(run.outputFile, COMPLETED_CONTEXT_LINES);
     const parsedExitCode = Number(exitCode);
-    const status = exitCode === "0" ? "completed" : "failed";
+    const status = classifyExitCode(parsedExitCode);
     markBackgroundShellCompleted(run.id, parsedExitCode, status);
-    const summary =
-      exitCode === "0"
-        ? "Background command completed with exit 0."
-        : `Background command failed with exit ${exitCode}.`;
+    const summary = formatCompletionSummary(status, exitCode);
     pi.sendMessage(
       {
         customType: BACKGROUND_SHELL_COMPLETION_MESSAGE,
@@ -421,6 +458,23 @@ async function handleExitFile(pi: ExtensionAPI, exitFile: string): Promise<void>
   } finally {
     state.completingExitFiles.delete(exitFile);
   }
+}
+
+function formatCompletionSummary(
+  status: Extract<BackgroundShellRun["status"], "completed" | "failed" | "killed">,
+  exitCode: string,
+): string {
+  if (status === "completed") return "Background command completed with exit 0.";
+  if (status === "killed") return `Background command stopped with exit ${exitCode}.`;
+  return `Background command failed with exit ${exitCode}.`;
+}
+
+function classifyExitCode(
+  exitCode: number,
+): Extract<BackgroundShellRun["status"], "completed" | "failed" | "killed"> {
+  if (exitCode === 0) return "completed";
+  if (exitCode === 130 || exitCode === 137 || exitCode === 143) return "killed";
+  return "failed";
 }
 
 function startPoller(

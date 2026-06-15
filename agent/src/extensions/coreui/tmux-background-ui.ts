@@ -20,7 +20,18 @@ const TERMINAL_RETENTION_MS = 15_000;
 const OUTPUT_TAIL_LINES = 40;
 const MAX_COMPACT_ROWS = 4;
 const TMUX_KILL_TIMEOUT_MS = 2000;
+const TMUX_LIST_TIMEOUT_MS = 2000;
 const FULLSCREEN_MAX_LIST_ROWS = 8;
+const TMUX_WINDOW_OPTIONS = {
+  command: "@pi-bg-command",
+  cwd: "@pi-bg-cwd",
+  description: "@pi-bg-description",
+  exitFile: "@pi-bg-exit-file",
+  id: "@pi-bg-id",
+  outputFile: "@pi-bg-output-file",
+  pollIntervalMs: "@pi-bg-poll-interval-ms",
+  startedAt: "@pi-bg-started-at",
+} as const;
 const execFileAsync = promisify(execFile);
 
 type DashboardMode = "compact" | "expanded";
@@ -29,7 +40,7 @@ type ThemeLike = Pick<Theme, "fg" | "bold" | "italic">;
 type BackgroundShellState = {
   ctx?: ExtensionContext;
   expanded: boolean;
-  registeredControls: boolean;
+  registeredControlApi?: ExtensionAPI;
   requestRender?: () => void;
   runs: Map<string, BackgroundShellRun>;
   timer?: ReturnType<typeof setInterval>;
@@ -37,22 +48,27 @@ type BackgroundShellState = {
 
 const state: BackgroundShellState = {
   expanded: false,
-  registeredControls: false,
   runs: new Map(),
 };
 
 export function registerBackgroundShellUI(pi: ExtensionAPI): void {
-  if (!state.registeredControls) {
-    state.registeredControls = true;
+  if (hasBackgroundControlApi(pi) && state.registeredControlApi !== pi) {
+    state.registeredControlApi = pi;
     registerCommands(pi);
   }
-  registerBackgroundShellMessageRenderers(pi);
-  pi.on("session_start", (_event, ctx) => {
-    restoreBackgroundShellRuns(ctx);
+  if (typeof pi.registerMessageRenderer === "function") {
+    registerBackgroundShellMessageRenderers(pi);
+  }
+  pi.on("session_start", async (_event, ctx) => {
+    await restoreAndReconcileBackgroundShellRuns(ctx);
     renderBackgroundShellWidget(ctx);
   });
-  pi.on("turn_end", (_event, ctx) => {
-    restoreBackgroundShellRuns(ctx);
+  pi.on("session_tree", async (_event, ctx) => {
+    await restoreAndReconcileBackgroundShellRuns(ctx);
+    renderBackgroundShellWidget(ctx);
+  });
+  pi.on("turn_end", async (_event, ctx) => {
+    await restoreAndReconcileBackgroundShellRuns(ctx);
     renderBackgroundShellWidget(ctx);
   });
   pi.on("session_shutdown", () => {
@@ -60,6 +76,12 @@ export function registerBackgroundShellUI(pi: ExtensionAPI): void {
     state.requestRender = undefined;
     state.ctx = undefined;
   });
+}
+
+function hasBackgroundControlApi(
+  pi: ExtensionAPI,
+): pi is ExtensionAPI & Pick<ExtensionAPI, "registerCommand" | "registerShortcut"> {
+  return typeof pi.registerCommand === "function" && typeof pi.registerShortcut === "function";
 }
 
 export function trackBackgroundShellRun(ctx: ExtensionContext, run: BackgroundShellRun): void {
@@ -70,7 +92,7 @@ export function trackBackgroundShellRun(ctx: ExtensionContext, run: BackgroundSh
 export function markBackgroundShellCompleted(
   id: string,
   exitCode: number,
-  status: Extract<BackgroundShellStatus, "completed" | "failed">,
+  status: Extract<BackgroundShellStatus, "completed" | "failed" | "killed">,
 ): void {
   const run = state.runs.get(id);
   if (run === undefined) {
@@ -104,7 +126,7 @@ function registerCommands(pi: ExtensionAPI): void {
 }
 
 async function handleBackgroundCommand(args: string, ctx: ExtensionContext): Promise<void> {
-  restoreBackgroundShellRuns(ctx);
+  await restoreAndReconcileBackgroundShellRuns(ctx);
   const [action = "toggle", target] = args.trim().split(/\s+/);
   if (action === "fullscreen" || action === "full") {
     await showBackgroundShellFullscreen(ctx);
@@ -184,6 +206,157 @@ function restoreBackgroundShellRuns(ctx: ExtensionContext): void {
   }
 }
 
+async function restoreAndReconcileBackgroundShellRuns(ctx: ExtensionContext): Promise<void> {
+  restoreBackgroundShellRuns(ctx);
+  await restoreTaggedTmuxRuns();
+  await reconcileBackgroundShellRuns();
+}
+
+async function restoreTaggedTmuxRuns(): Promise<void> {
+  const windows = await listTaggedTmuxWindows();
+  for (const window of windows) {
+    const existing = state.runs.get(window.id);
+    state.runs.set(window.id, {
+      command: window.command,
+      cwd: window.cwd,
+      ...(window.description.length === 0 ? {} : { description: window.description }),
+      exitFile: window.exitFile,
+      id: window.id,
+      outputFile: window.outputFile,
+      ...(window.pollIntervalMs === undefined ? {} : { pollIntervalMs: window.pollIntervalMs }),
+      startedAt: window.startedAt,
+      status: existing?.status ?? "running",
+      tmuxSession: window.tmuxSession,
+      windowId: window.windowId,
+    });
+  }
+}
+
+type TaggedTmuxWindow = Required<
+  Pick<
+    BackgroundShellRun,
+    "command" | "cwd" | "exitFile" | "id" | "outputFile" | "startedAt" | "tmuxSession" | "windowId"
+  >
+> & {
+  description: string;
+  pollIntervalMs?: number;
+};
+
+async function listTaggedTmuxWindows(): Promise<TaggedTmuxWindow[]> {
+  const format = [
+    "#{session_name}",
+    "#{window_id}",
+    `#{${TMUX_WINDOW_OPTIONS.id}}`,
+    `#{${TMUX_WINDOW_OPTIONS.command}}`,
+    `#{${TMUX_WINDOW_OPTIONS.description}}`,
+    `#{${TMUX_WINDOW_OPTIONS.cwd}}`,
+    `#{${TMUX_WINDOW_OPTIONS.exitFile}}`,
+    `#{${TMUX_WINDOW_OPTIONS.outputFile}}`,
+    `#{${TMUX_WINDOW_OPTIONS.startedAt}}`,
+    `#{${TMUX_WINDOW_OPTIONS.pollIntervalMs}}`,
+  ].join("\t");
+
+  try {
+    const { stdout } = await execFileAsync("tmux", ["list-windows", "-a", "-F", format], {
+      encoding: "utf-8",
+      timeout: TMUX_LIST_TIMEOUT_MS,
+    });
+    return stdout
+      .split("\n")
+      .map((line) => parseTaggedTmuxWindow(line))
+      .filter((window): window is TaggedTmuxWindow => window !== undefined);
+  } catch {
+    return [];
+  }
+}
+
+function parseTaggedTmuxWindow(line: string): TaggedTmuxWindow | undefined {
+  const [
+    tmuxSession,
+    windowId,
+    id,
+    command,
+    description = "",
+    cwd,
+    exitFile,
+    outputFile,
+    startedAtText,
+    pollIntervalText,
+  ] = line.split("\t");
+  const startedAt = Number(startedAtText);
+  if (
+    !tmuxSession ||
+    !windowId ||
+    !id ||
+    !command ||
+    !cwd ||
+    !exitFile ||
+    !outputFile ||
+    !Number.isFinite(startedAt)
+  ) {
+    return undefined;
+  }
+
+  const pollIntervalMs =
+    pollIntervalText === undefined || pollIntervalText.length === 0
+      ? undefined
+      : Number(pollIntervalText);
+  return {
+    command,
+    cwd,
+    description,
+    exitFile,
+    id,
+    outputFile,
+    ...(pollIntervalMs === undefined || !Number.isFinite(pollIntervalMs) ? {} : { pollIntervalMs }),
+    startedAt,
+    tmuxSession,
+    windowId,
+  };
+}
+
+async function reconcileBackgroundShellRuns(): Promise<boolean> {
+  const taggedWindowIds = new Set((await listTaggedTmuxWindows()).map((window) => window.windowId));
+  let changed = false;
+  for (const run of state.runs.values()) {
+    if (run.status !== "running") continue;
+    const exitCode = await readExitCode(run.exitFile);
+    if (exitCode !== undefined) {
+      state.runs.set(run.id, {
+        ...run,
+        completedAt: Date.now(),
+        exitCode,
+        status: classifyExitCode(exitCode),
+      });
+      changed = true;
+      continue;
+    }
+    if (!taggedWindowIds.has(run.windowId)) {
+      state.runs.set(run.id, { ...run, completedAt: Date.now(), status: "missing" });
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+async function readExitCode(exitFile: string): Promise<number | undefined> {
+  try {
+    const text = (await readFile(exitFile, "utf-8")).trim();
+    if (!/^-?\d+$/.test(text)) return undefined;
+    return Number(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function classifyExitCode(
+  exitCode: number,
+): Extract<BackgroundShellStatus, "completed" | "failed" | "killed"> {
+  if (exitCode === 0) return "completed";
+  if (exitCode === 130 || exitCode === 137 || exitCode === 143) return "killed";
+  return "failed";
+}
+
 function isBackgroundDetails(
   details: unknown,
 ): details is Required<
@@ -210,7 +383,7 @@ function isBackgroundDetails(
 
 function renderBackgroundShellWidget(ctx: ExtensionContext | undefined): void {
   try {
-    if (ctx === undefined || !ctx.hasUI) {
+    if (ctx === undefined || !ctx.hasUI || typeof ctx.ui.setWidget !== "function") {
       return;
     }
 
@@ -239,7 +412,10 @@ function syncWidgetTimer(): void {
   if ([...state.runs.values()].some((run) => run.status === "running")) {
     if (state.timer === undefined) {
       state.timer = setInterval(() => {
-        state.requestRender?.();
+        void reconcileBackgroundShellRuns().then((changed) => {
+          if (changed) renderBackgroundShellWidget(state.ctx);
+          state.requestRender?.();
+        });
       }, WIDGET_REFRESH_INTERVAL_MS);
       state.timer.unref?.();
     }
@@ -391,9 +567,6 @@ async function showBackgroundShellFullscreen(ctx: ExtensionContext): Promise<voi
 
 class BackgroundShellDashboard implements Component, Focusable {
   private _focused = false;
-  private outputLines: string[] = [];
-  private outputRunId: string | undefined;
-  private outputScroll = 0;
   private selectedIndex = 0;
 
   get focused(): boolean {
@@ -432,26 +605,6 @@ class BackgroundShellDashboard implements Component, Focusable {
       this.setSelection(Math.max(0, this.input.getRuns().length - 1));
       return;
     }
-    if (key === Key.pageUp || key === "u") {
-      this.scrollOutput(-this.outputViewportRows());
-      return;
-    }
-    if (key === Key.pageDown || key === "d") {
-      this.scrollOutput(this.outputViewportRows());
-      return;
-    }
-    if (key === "g") {
-      this.setOutputScroll(0);
-      return;
-    }
-    if (key === "G") {
-      this.setOutputScroll(Number.MAX_SAFE_INTEGER);
-      return;
-    }
-    if (key === "p" || key === Key.enter) {
-      void this.loadSelectedOutput();
-      return;
-    }
     if (key === "K" || key === "x") void this.killSelected();
   }
 
@@ -476,8 +629,6 @@ class BackgroundShellDashboard implements Component, Focusable {
       this.frame("", innerWidth, border),
       ...this.renderDetails(runs[this.selectedIndex], innerWidth, border),
       this.frame("", innerWidth, border),
-      ...this.renderOutput(runs[this.selectedIndex], innerWidth, border),
-      this.frame("", innerWidth, border),
       this.frame(
         this.theme.fg("dim", this.formatShortcutHelp(runs[this.selectedIndex])),
         innerWidth,
@@ -501,17 +652,6 @@ class BackgroundShellDashboard implements Component, Focusable {
 
   private setSelection(index: number): void {
     this.selectedIndex = index;
-    this.outputScroll = 0;
-    this.requestRender();
-  }
-
-  private scrollOutput(delta: number): void {
-    this.outputScroll = Math.max(0, this.outputScroll + delta);
-    this.requestRender();
-  }
-
-  private setOutputScroll(scroll: number): void {
-    this.outputScroll = scroll;
     this.requestRender();
   }
 
@@ -569,45 +709,6 @@ class BackgroundShellDashboard implements Component, Focusable {
     ];
   }
 
-  private renderOutput(
-    run: BackgroundShellRun | undefined,
-    innerWidth: number,
-    border: string,
-  ): string[] {
-    if (run === undefined) return [];
-    if (this.outputRunId !== run.id) {
-      return [
-        this.frame(this.theme.fg("accent", "Output"), innerWidth, border),
-        this.frame(this.theme.fg("dim", "Press p or enter to load output."), innerWidth, border),
-      ];
-    }
-    const viewportRows = this.outputViewportRows();
-    const maxScroll = Math.max(0, this.outputLines.length - viewportRows);
-    this.outputScroll = Math.max(0, Math.min(this.outputScroll, maxScroll));
-    const visible = this.outputLines.slice(this.outputScroll, this.outputScroll + viewportRows);
-    const range =
-      this.outputLines.length > viewportRows
-        ? ` ${this.outputScroll + 1}-${Math.min(this.outputScroll + viewportRows, this.outputLines.length)}/${this.outputLines.length}`
-        : "";
-    return [
-      this.frame(this.theme.fg("accent", `Output${range}`), innerWidth, border),
-      ...visible.map((line) => this.frame(this.theme.fg("muted", line), innerWidth, border)),
-    ];
-  }
-
-  private outputViewportRows(): number {
-    return Math.max(4, Math.floor(this.tui.terminal.rows / 3));
-  }
-
-  private async loadSelectedOutput(): Promise<void> {
-    const run = this.input.getRuns()[this.selectedIndex];
-    if (run === undefined) return;
-    this.outputRunId = run.id;
-    this.outputLines = (await readOutputTail(run.outputFile, Number.MAX_SAFE_INTEGER)).split("\n");
-    this.outputScroll = 0;
-    this.requestRender();
-  }
-
   private async killSelected(): Promise<void> {
     const run = this.input.getRuns()[this.selectedIndex];
     if (run === undefined) return;
@@ -620,16 +721,16 @@ class BackgroundShellDashboard implements Component, Focusable {
 
   private formatShortcutHelp(run: BackgroundShellRun | undefined): string {
     const killHelp = run?.status === "running" ? " • K/x kill" : " • inspect-only";
-    return `↑/↓ select • p/enter output • u/d scroll${killHelp} • q close`;
+    return `↑/↓ select${killHelp} • q close`;
   }
 }
 
 function formatPeekHint(run: BackgroundShellRun): string {
   if (run.status === "running") {
-    return `peek: p load output · tmux capture-pane -t ${run.windowId} -p -S -200`;
+    return `peek: tmux capture-pane -t ${run.windowId} -p -S -200`;
   }
 
-  return `peek: p load output · tail -n 200 ${run.outputFile}`;
+  return `peek: tail -n 200 ${run.outputFile}`;
 }
 
 function formatKillHint(run: BackgroundShellRun): string {

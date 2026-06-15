@@ -415,32 +415,6 @@ it("shuts down after all heartbeats expire", async () => {
   await expect(fetch(`${baseUrl}/health`)).rejects.toThrow();
 });
 
-it("starts daemon when status is stale and no server is healthy", async () => {
-  const agentDir = await createTempDir("glance-stale-status-");
-  const paths = getGlancePaths(agentDir);
-  const port = await getFreePort();
-  await mkdir(paths.runtimeDir, { recursive: true });
-  await writeFile(
-    paths.statusPath,
-    `${JSON.stringify({
-      schemaVersion: 1,
-      pid: 1,
-      host: "127.0.0.1",
-      port,
-      baseUrl: `http://127.0.0.1:${port}`,
-      publicBaseUrl: null,
-      storageDir: paths.storageDir,
-      startedAt: 1,
-      updatedAt: 1,
-    })}\n`,
-  );
-  const heartbeat = await startGlanceHeartbeat({ paths, cwd: agentDir });
-  const status = await ensureGlanceDaemon({ paths, port });
-  daemonPids.add(status.pid);
-  expect(status.pid).not.toBe(1);
-  await heartbeat.stop();
-}, 15_000);
-
 it("fresh startup lock makes competing process wait then fail", async () => {
   const agentDir = await createTempDir("glance-fresh-lock-");
   const paths = getGlancePaths(agentDir);

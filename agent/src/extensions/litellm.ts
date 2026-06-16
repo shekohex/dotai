@@ -189,6 +189,7 @@ function createZaiModels(): ProviderModelConfig[] {
     maxTokens: model.maxTokens,
     compat: model.compat,
     headers: model.headers,
+    thinkingLevelMap: model.thinkingLevelMap,
   }));
   const glm51 = models.find((model) => model.id === ZAI_GLM_5_1_MODEL_ID);
   if (glm51 === undefined || models.some((model) => model.id === ZAI_GLM_5_2_MODEL_ID)) {
@@ -224,6 +225,7 @@ function createCodexOpenAIModels(): ProviderModelConfig[] {
     maxTokens: model.maxTokens,
     compat: model.compat,
     headers: model.headers,
+    thinkingLevelMap: model.thinkingLevelMap,
   }));
 }
 
@@ -239,6 +241,7 @@ function createDeepSeekModels(): ProviderModelConfig[] {
     maxTokens: model.maxTokens,
     compat: model.compat,
     headers: model.headers,
+    thinkingLevelMap: model.thinkingLevelMap,
   }));
 }
 
@@ -254,6 +257,7 @@ function createGeminiModels(): ProviderModelConfig[] {
     maxTokens: model.maxTokens,
     compat: model.compat,
     headers: model.headers,
+    thinkingLevelMap: model.thinkingLevelMap,
   }));
 }
 

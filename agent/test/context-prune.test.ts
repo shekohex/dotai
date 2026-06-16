@@ -526,6 +526,28 @@ describe("context-prune summarizer", () => {
     );
   });
 
+  test("summarizer prompt preserves concrete recovery details", async () => {
+    const geminiModel = createModel(
+      "gemini",
+      "gemini-3.1-flash-lite-preview",
+      "google-generative-ai",
+    );
+    const mock = streamMock();
+    mock.mockReturnValue(createResponseStream("summary") as never);
+
+    await summarizeBatch(
+      createBatch(),
+      { ...DEFAULT_CONFIG, summarizerModels: ["gemini/gemini-3.1-flash-lite-preview"] },
+      createContext([geminiModel]),
+    );
+
+    const request = mock.mock.calls[0]?.[1];
+    const promptText = request?.messages?.[0]?.content?.[0]?.text ?? "";
+    expect(promptText).toContain("Exact file paths, symbols, commands, errors");
+    expect(promptText).toContain("Do not invent details or infer beyond the tool results");
+    expect(promptText).toContain("avoid repeating work after pruning");
+  });
+
   test("falls back immediately on rate limit and cools down model for parallel batches", async () => {
     const geminiModel = createModel(
       "gemini",

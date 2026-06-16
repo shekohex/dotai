@@ -26,7 +26,13 @@ For each tool call provide:
 - Key outcome: success/failure and the most important data returned
 - Any findings the future conversation needs to remember
 
-Keep each tool call to 1-3 bullet points. Be concise.`;
+Preserve concrete recovery details:
+- Exact file paths, symbols, commands, errors, test results, commit hashes, and user feedback when present
+- Decisions made and constraints discovered
+- Failed approaches and why they failed
+
+Do not invent details or infer beyond the tool results. If output is truncated or inconclusive, say so.
+Keep each tool call to 1-3 bullet points. Be concise but complete enough to avoid repeating work after pruning.`;
 
 export function summarizerThinkingOptions(config: ContextPruneConfig): Record<string, unknown> {
   const level: SummarizerThinking = config.summarizerThinking;

@@ -8,5 +8,10 @@
     "repository": "anomalyco/opencode",
     "branch": "dev",
     "description": "Use when the user mentions opencode codebase"
+  },
+  "cc-system-prompts": {
+    "repository": "Piebald-AI/claude-code-system-prompts",
+    "branch": "main",
+    "description": "Use when the user mentions Claude Code system prompts"
   }
 }

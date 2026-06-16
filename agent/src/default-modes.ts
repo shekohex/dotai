@@ -122,6 +122,8 @@ export const defaultModes = {
       tools: ["read", "grep", "find", "bash"],
       autoExit: true,
       description: "quick codebase/local-file answers",
+      systemPrompt: modeSystemPrompt("search"),
+      systemPromptMode: "replace",
       fallbacks: [
         { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
         { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },

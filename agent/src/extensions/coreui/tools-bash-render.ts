@@ -145,8 +145,13 @@ export function createBashToolOverrideDefinition(
     ...rest,
     description: `${rest.description} Commands ending with '&' run in background using tmux and return immediately. Add '# poll:5000' after '&' to receive periodic updates every 5000ms.`,
     promptSnippet:
-      "Execute bash commands (ls, grep, find, etc.). Use trailing '&' for tmux-backed background commands.",
+      "Execute bash commands. Prefer dedicated tools for file search/read. Use trailing '&' for tmux-backed background commands.",
     promptGuidelines: [
+      "Prefer dedicated tools over bash when they fit: use `find` for path searches, `grep` for content searches, and `read` for reading files.",
+      "Use bash for shell-native tasks, git inspection, package scripts, build/test commands, and commands that dedicated tools cannot express.",
+      "Avoid destructive commands (`rm`, `git reset --hard`, `git clean`, `git checkout --`, force-push, truncating redirects) unless explicitly requested and scoped.",
+      "Never skip git hooks with `--no-verify` or bypass signing unless the user explicitly asks; fix hook failures instead.",
+      "Keep the current working directory stable; prefer repo-relative paths or absolute paths over unnecessary `cd` chains.",
       "For long-running commands, servers, watchers, REPLs, and interactive prompts, end the command with `&` to run it in a background tmux window and return immediately.",
       "To receive periodic background updates, append `# poll:<milliseconds>` after the trailing `&`, e.g. `npm run dev & # poll:5000`.",
       "Background commands report automatically when they finish. Never use `sleep` plus tmux/read loops to wait for completion.",

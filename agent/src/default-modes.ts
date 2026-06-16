@@ -149,6 +149,8 @@ export const defaultModes = {
       tools: ["read", "grep", "find", "bash", "websearch", "execute", "subagent"],
       autoExit: true,
       description: "QA/codebase chat",
+      systemPrompt: modeSystemPrompt("ask"),
+      systemPromptMode: "append",
     },
     worker: {
       tools: ["*", "!subagent"],

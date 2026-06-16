@@ -21,7 +21,8 @@ export const defaultModes = {
       color: "warning",
       tmuxTarget: "window",
       tools: ["*", "!subagent"],
-      description: "cheap fast exploration/rough implementation",
+      description:
+        "Use for cheap exploration, parallel scenario probes, and disposable implementation passes.",
       fallbacks: [
         { provider: "opencode-go", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
         { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
@@ -35,7 +36,8 @@ export const defaultModes = {
       color: "success",
       tmuxTarget: "window",
       tools: ["*"],
-      description: "technical writing/docs/issues/PRs",
+      description:
+        "Use for technical writing, docs, GitHub issues/PRs, release notes, and human-readable refinement.",
       fallbacks: [
         { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" },
         { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
@@ -49,7 +51,8 @@ export const defaultModes = {
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
-      description: "default coding",
+      description:
+        "Use for normal coding tasks: implementation, fixes, refactors, tests, and verification.",
     },
     deep: {
       provider: "codex-openai",
@@ -58,7 +61,8 @@ export const defaultModes = {
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
-      description: "complex implementation/debugging/review",
+      description:
+        "Use for build-style work that needs deeper reasoning, higher cost, and more correct code.",
     },
     review: {
       provider: "codex-openai",
@@ -68,7 +72,8 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch"],
       autoExit: true,
-      description: "focused correctness review",
+      description:
+        "Use after cheap-review/fast-review find no issues or when explicitly requested; expensive correctness review, no fixes.",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
     },
@@ -80,7 +85,8 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch"],
       autoExit: true,
-      description: "fast cheap correctness review",
+      description:
+        "Use first for cheap correctness review; run many in parallel before escalating to review.",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
       fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
@@ -93,7 +99,8 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch"],
       autoExit: true,
-      description: "ultra-fast parallel correctness review",
+      description:
+        "Use first for fast correctness review; run many in parallel before escalating to review.",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
       fallbacks: [
@@ -109,7 +116,8 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash"],
       autoExit: true,
-      description: "atomic conventional commits",
+      description:
+        "Use to inspect changes, stage explicit files, and create atomic conventional commits.",
       systemPrompt: modeSystemPrompt("commiter"),
       systemPromptMode: "append",
     },
@@ -121,7 +129,8 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash"],
       autoExit: true,
-      description: "quick codebase/local-file answers",
+      description:
+        "Use first for codebase exploration: locate files, trace symbols, map references, and answer where/how.",
       systemPrompt: modeSystemPrompt("search"),
       systemPromptMode: "replace",
       fallbacks: [
@@ -136,7 +145,8 @@ export const defaultModes = {
       color: "bashMode",
       tmuxTarget: "window",
       tools: ["*"],
-      description: "frontend/UI/UX polish",
+      description:
+        "Use for frontend, UI, UX polish, design-system fidelity, accessibility, and visual verification.",
       systemPrompt: modeSystemPrompt("painter"),
       systemPromptMode: "append",
       fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
@@ -148,14 +158,16 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch", "execute", "subagent"],
       autoExit: true,
-      description: "QA/codebase chat",
+      description:
+        "Use for Q&A, debugging analysis, code explanation, architecture discussion, and grounded recommendations.",
       systemPrompt: modeSystemPrompt("ask"),
       systemPromptMode: "append",
     },
     worker: {
       tools: ["*", "!subagent"],
       autoExit: true,
-      description: "general-purpose worker",
+      description:
+        "Use for delegated implementation work with scoped changes, validation, and coordinator-facing summary.",
       tmuxTarget: "window",
       systemPrompt: modeSystemPrompt("worker"),
       systemPromptMode: "append",
@@ -168,7 +180,8 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch"],
       autoExit: true,
-      description: "web/current docs research",
+      description:
+        "Use for web search, current docs, external APIs, release notes, and cited research.",
       fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
     },
     poke: {
@@ -178,6 +191,7 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["*"],
       autoExit: true,
+      description: "Use for personal assistant and chat workflows outside focused coding modes.",
       systemPrompt: modeSystemPrompt("poke"),
       systemPromptMode: "replace",
       fallbacks: [

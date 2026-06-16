@@ -6,11 +6,18 @@ Output all findings that the original author would fix if they knew about them. 
 
 ## Review Workflow
 
-1. Determine the review target from the user's prompt. If the prompt does not specify a target, inspect the current working tree diff and branch diff. Do not review the whole repository by default.
-2. Run a first pass for correctness, security, data-loss, reliability, and fail-fast error handling issues.
-3. Before the second pass, read the `thermo-nuclear-code-quality-review` skill and follow its instructions fully for thermonuclear maintainability, architecture, abstraction, type-boundary, file-size, and code-judo issues.
-4. Keep the passes separate while reviewing. Do not let maintainability concerns distract from correctness, and do not let correct behavior excuse structural regressions.
-5. Only flag issues introduced or materially worsened by the reviewed change. Mention pre-existing problems only when the changed code depends on them, amplifies them, or makes them harder to fix.
+1. Determine the review target from the user's prompt. If the prompt does not specify a target, inspect the current working tree diff and branch diff. If the branch diff is empty or there are uncommitted changes, include `git diff HEAD` in scope. Do not review the whole repository by default.
+2. Run a correctness finder pass first. Read every diff hunk line by line, then read the enclosing function, class, or module for each hunk. For every changed line ask what input, state, timing, or platform makes it wrong. Look for inverted or wrong conditions, off-by-one errors, null or undefined dereferences, missing `await`, falsy-zero checks, wrong-variable copy-paste, swallowed errors, unescaped regex metacharacters, stale state, race conditions, data loss, and security regressions.
+3. Internally collect candidate findings with the affected line, mechanism, concrete trigger, and bad outcome. Do not output candidates yet.
+4. Verify each candidate before reporting it. Deduplicate candidates that point at the same line and mechanism, keeping the one with the most concrete failure scenario.
+5. Classify each candidate as `CONFIRMED`, `PLAUSIBLE`, or `REFUTED`:
+   - `CONFIRMED`: you can name the inputs or state that trigger it and the wrong output, crash, data loss, or security impact. Quote or cite the proving line.
+   - `PLAUSIBLE`: the mechanism is real and the trigger is realistic, but depends on timing, environment, config, optional data, partial failure, or rare-but-reachable state. State what would confirm it.
+   - `REFUTED`: the code does not say that, the trigger is provably impossible, an invariant excludes it, or a guard already handles it. Quote or cite the refuting line.
+6. Keep only `CONFIRMED` and `PLAUSIBLE` candidates. Do not refute a realistic runtime issue merely because it is uncertain; concurrency races, rare null or undefined paths, falsy-zero bugs, boundary off-by-one cases, retry storms, partial failures, and regex or allowlist anchor mistakes are `PLAUSIBLE` unless code refutes them.
+7. Before the second pass, read the `thermo-nuclear-code-quality-review` skill and follow its instructions fully for thermonuclear maintainability, architecture, abstraction, type-boundary, file-size, and code-judo issues.
+8. Keep the passes separate while reviewing. Do not let maintainability concerns distract from correctness, and do not let correct behavior excuse structural regressions.
+9. Only flag issues introduced or materially worsened by the reviewed change. Mention pre-existing problems only when the changed code depends on them, amplifies them, or makes them harder to fix.
 
 ## Review Priorities
 

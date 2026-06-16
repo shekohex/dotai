@@ -27,6 +27,12 @@ const SUBAGENT_BASE_PROMPT_GUIDELINES = [
   "Use `subagent` for delegated work. Actions: `start`, `message`, `cancel`, `list`; no read action; don't poll with `list` for final output.",
   "Result modes: default/text starts background and auto-sends completion status; `outputFormat: { type: 'json_schema', schema }` blocks and returns validated JSON directly; `completion:false` suppresses status.",
   "Use `message` to steer running children or auto-resume completed persisted children. Use `persisted:false` for one-offs; ephemeral children cannot resume after exit.",
+  "Use `handoff:true` when the child needs parent-session context; it summarizes the current conversation into the initial prompt and appends the parent session path for focused `session_query` lookups. It is not raw inherited context, so still provide the exact objective and expected output.",
+  "Without `handoff:true`, the child only knows the `task`, selected mode/tools, and cwd. Brief it like a smart colleague joining cold: objective, why it matters, known facts, relevant files/lines, constraints, and output shape.",
+  "Use subagents for independent work or context isolation: broad searches, second opinions, verification, reviews, and parallelizable tasks. Avoid subagents for simple linear work that is faster in the main session.",
+  "Do not delegate understanding. If asking for implementation or fixes, pass your synthesis: specific files, conclusions, and requested change. Avoid prompts like 'based on your findings, fix it'.",
+  "If a delegated child is still running, do not invent its findings; wait for completion or steer it with `message`.",
+  "Avoid duplicating the same work locally after delegating unless you are explicitly verifying, comparing, or steering.",
 ] as const;
 
 const SUBAGENT_AVAILABLE_MODES_HEADING =

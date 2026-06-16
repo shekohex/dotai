@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -98,6 +99,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -137,6 +139,8 @@ fun ChatInputBar(
     onClose: () -> Unit,
     startDictationRequest: Int = 0,
     onStartDictationRequestConsumed: () -> Unit = {},
+    keyboardAvoidanceOffsetPx: Int = 0,
+    manualKeyboardAvoidance: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -497,7 +501,7 @@ fun ChatInputBar(
         )
         return
     }
-    ChatModeDock(tokens, modifier, attachmentVisible) {
+    ChatModeDock(tokens, modifier, attachmentVisible, keyboardAvoidanceOffsetPx, manualKeyboardAvoidance) {
         ChatDraftField(
             text = text,
             tokens = tokens,
@@ -605,13 +609,20 @@ private fun ChatModeDock(
     tokens: UiTokens,
     modifier: Modifier,
     attachmentVisible: Boolean,
+    keyboardAvoidanceOffsetPx: Int,
+    manualKeyboardAvoidance: Boolean,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val contentHeight = if (attachmentVisible) 214.dp else 144.dp
+    val dockModifier =
+        if (manualKeyboardAvoidance) {
+            modifier.offset { IntOffset(0, -keyboardAvoidanceOffsetPx) }
+        } else {
+            modifier.imePadding()
+        }
     Column(
-        modifier
+        dockModifier
             .fillMaxWidth()
-            .imePadding()
             .wrapContentHeight()
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.Bottom,

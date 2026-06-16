@@ -2257,17 +2257,28 @@ fun TerminalSurface(
     onHideKeyboard: () -> Unit,
     modifier: Modifier = Modifier,
     showMetadataOverlay: Boolean = true,
+    keyboardAvoidanceOffsetPx: Int = 0,
+    keyboardGapPx: Int = 0,
     statusContent: @Composable BoxScope.() -> Unit = {},
 ) {
     var copyModeActive by remember { mutableStateOf(terminalView.copyModeActive()) }
     var oscMetadata by remember { mutableStateOf(TerminalOscMetadata("", "", 0L)) }
     var pendingHyperlink by remember { mutableStateOf<String?>(null) }
+    var chatModeActive by remember { mutableStateOf(false) }
+    var accessoryReserved by remember { mutableStateOf(true) }
+    var bottomOverlayHeightPx by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val reservedAccessoryHeight = if (accessoryReserved) TerminalToolbarReservedHeight else 0.dp
+    val reservedAccessoryHeightPx = with(density) { reservedAccessoryHeight.roundToPx() }
+    val keyboardOffsetPx = if (keyboardAvoidanceOffsetPx > 0) keyboardAvoidanceOffsetPx + keyboardGapPx else 0
+    val chatExtraOffsetPx = if (chatModeActive) (bottomOverlayHeightPx - reservedAccessoryHeightPx).coerceAtLeast(0) else 0
+    val terminalKeyboardOffsetPx = if (chatModeActive) keyboardAvoidanceOffsetPx + chatExtraOffsetPx else keyboardOffsetPx
     DisposableEffect(terminalView) {
         val metadataHandler: (TerminalOscMetadata) -> Unit = { oscMetadata = it }
         val hyperlinkHandler: (String) -> Unit = { if (terminalOscHyperlinkAllowed(context, it)) openTerminalHyperlink(context, it) else pendingHyperlink = it }
         terminalView.setTerminalForegroundActive(true)
-        terminalView.post { terminalView.forceRefreshSurface() }
+        terminalView.post { terminalView.refreshSurface() }
         terminalView.onOscMetadataChanged = metadataHandler
         terminalView.onHyperlinkActivated = hyperlinkHandler
         onDispose {
@@ -2276,32 +2287,40 @@ fun TerminalSurface(
             terminalView.setTerminalForegroundActive(false)
         }
     }
-    Column(modifier.background(theme.background.toComposeColor())) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            AndroidView(
-                factory = { terminalView.prepareForComposeHost() },
-                modifier = Modifier.fillMaxSize().onSizeChanged { terminalView.post { terminalView.forceRefreshSurface() } },
-                update = {
-                    it.applyTheme(theme)
-                    it.post { it.forceRefreshSurface() }
-                },
-            )
-            TerminalCutoutFade(theme)
-            TerminalPinchFontOverlay(terminalView)
-            if (showMetadataOverlay && (oscMetadata.title.isNotBlank() || oscMetadata.pwd.isNotBlank())) {
-                Column(
-                    Modifier
-                        .align(Alignment.TopStart)
-                        .padding(10.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(theme.background.toComposeColor().copy(alpha = 0.86f))
-                        .padding(horizontal = 10.dp, vertical = 7.dp),
-                ) {
-                    if (oscMetadata.title.isNotBlank()) Text(oscMetadata.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
-                    if (oscMetadata.pwd.isNotBlank()) Text(oscMetadata.pwd, color = theme.foreground.toComposeColor().copy(alpha = 0.64f), fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+    Box(modifier.background(theme.background.toComposeColor())) {
+        Column(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .offset { IntOffset(0, -terminalKeyboardOffsetPx) },
+            ) {
+                AndroidView(
+                    factory = { terminalView.prepareForComposeHost() },
+                    modifier = Modifier.fillMaxSize().onSizeChanged { terminalView.post { terminalView.refreshSurface() } },
+                    update = {
+                        it.applyTheme(theme)
+                        it.post { it.refreshSurface() }
+                    },
+                )
+                TerminalCutoutFade(theme)
+                TerminalPinchFontOverlay(terminalView)
+                if (showMetadataOverlay && (oscMetadata.title.isNotBlank() || oscMetadata.pwd.isNotBlank())) {
+                    Column(
+                        Modifier
+                            .align(Alignment.TopStart)
+                            .padding(10.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(theme.background.toComposeColor().copy(alpha = 0.86f))
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                    ) {
+                        if (oscMetadata.title.isNotBlank()) Text(oscMetadata.title, color = theme.foreground.toComposeColor(), fontSize = captionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+                        if (oscMetadata.pwd.isNotBlank()) Text(oscMetadata.pwd, color = theme.foreground.toComposeColor().copy(alpha = 0.64f), fontSize = smallCaptionSize(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+                    }
                 }
+                statusContent()
             }
-            statusContent()
+            Spacer(Modifier.height(reservedAccessoryHeight))
         }
         TerminalAccessory(
             theme,
@@ -2316,6 +2335,11 @@ fun TerminalSurface(
             },
             onShowKeyboard,
             onHideKeyboard,
+            modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { bottomOverlayHeightPx = it.height },
+            keyboardAvoidanceOffsetPx = keyboardAvoidanceOffsetPx,
+            keyboardGapPx = keyboardGapPx,
+            onAccessoryReservedChanged = { accessoryReserved = it },
+            onChatModeChanged = { chatModeActive = it },
         ) { active ->
             terminalView.setCopyModeActive(active)
             copyModeActive = active
@@ -2346,6 +2370,8 @@ fun TerminalSurface(
     }
 }
 
+private val TerminalToolbarReservedHeight = 78.dp
+
 @Composable
 fun TerminalAccessory(
     theme: CoderTheme,
@@ -2356,6 +2382,10 @@ fun TerminalAccessory(
     onShowKeyboard: () -> Unit,
     onHideKeyboard: () -> Unit,
     modifier: Modifier = Modifier,
+    keyboardAvoidanceOffsetPx: Int = 0,
+    keyboardGapPx: Int = 0,
+    onAccessoryReservedChanged: (Boolean) -> Unit = {},
+    onChatModeChanged: (Boolean) -> Unit = {},
     onCopyModeChanged: (Boolean) -> Unit = {},
 ) {
     var chatMode by remember { mutableStateOf(false) }
@@ -2397,6 +2427,8 @@ fun TerminalAccessory(
             }
         }
     var keyboardVisible by remember { mutableStateOf(false) }
+    val softwareKeyboardVisible = keyboardVisible || keyboardAvoidanceOffsetPx > 0
+    val toolbarKeyboardOffsetPx = if (keyboardAvoidanceOffsetPx > 0) keyboardAvoidanceOffsetPx + keyboardGapPx else 0
     val hardwareKeyboardAvailable = configuration.keyboard != Configuration.KEYBOARD_NOKEYS
     val toolbarHiddenForHardwareKeyboard = terminalToolbarHiddenForHardwareKeyboard(terminalView.autoHideToolbarEnabled(), hardwareKeyboardAvailable, selectionActive, chatMode)
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.roundToPx() }
@@ -2459,6 +2491,14 @@ fun TerminalAccessory(
         onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
     }
     DisposableEffect(enhancementHttpClient) { onDispose { enhancementHttpClient.close() } }
+    LaunchedEffect(chatMode) { onChatModeChanged(chatMode) }
+    LaunchedEffect(chatMode, toolbarHiddenForHardwareKeyboard) { onAccessoryReservedChanged(chatMode || !toolbarHiddenForHardwareKeyboard) }
+    DisposableEffect(Unit) {
+        onDispose {
+            onChatModeChanged(false)
+            onAccessoryReservedChanged(false)
+        }
+    }
     val speechSettings = SpeechSettingsStore.values(context)
     val speechEnhancementClient =
         remember(context, enhancementHttpClient) {
@@ -2513,12 +2553,20 @@ fun TerminalAccessory(
             },
             startDictationRequest = startDictationRequest,
             onStartDictationRequestConsumed = { startDictationRequest = 0 },
+            keyboardAvoidanceOffsetPx = keyboardAvoidanceOffsetPx,
+            manualKeyboardAvoidance = true,
         )
         return
     }
     if (toolbarHiddenForHardwareKeyboard) return
     TerminalDPadOverlay(dpadExpanded, uiTokens(theme), terminalView, dpadOffset, { delta -> dpadOffset = clampDPadOffset(dpadOffset + delta) }, ::snapDPadOffset)
-    Box(modifier.fillMaxWidth().wrapContentHeight().padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.BottomCenter) {
+    val toolbarModifier =
+        if (toolbarKeyboardOffsetPx > 0) {
+            modifier.offset { IntOffset(0, -toolbarKeyboardOffsetPx) }
+        } else {
+            modifier
+        }
+    Box(toolbarModifier.fillMaxWidth().wrapContentHeight().padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.BottomCenter) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -2576,7 +2624,7 @@ fun TerminalAccessory(
                             },
                         ) { chatMode = true }
                     }
-                    if (!keyboardVisible) ToolbarIconButton(R.drawable.ic_feather_keyboard, text, Color.Transparent) { onShowKeyboard() }
+                    if (!softwareKeyboardVisible) ToolbarIconButton(R.drawable.ic_feather_keyboard, text, Color.Transparent) { onShowKeyboard() }
                 }
             }
             if (shortcutsPanelExpanded && selectedPanelTab != null) TerminalShortcutPanel(selectedPanelTab, shortcutPanelTabs, terminalView, text, uiTokens(theme), { selectedShortcutPanelTab = it }) { shortcutsPanelExpanded = false }

@@ -20,6 +20,8 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.opengl.GLSurfaceView
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -82,6 +84,7 @@ data class TerminalAccessibleLine(
 private const val TerminalOscNotificationChannelId = TerminalNotificationFormat.defaultOscChannelId
 private const val TerminalOscProgressNotificationChannelId = TerminalNotificationFormat.defaultProgressChannelId
 private const val TerminalOscProgressNotificationId = TerminalNotificationFormat.progressBaseId
+private const val TerminalSizeReadyDelayMillis = 80L
 const val TerminalNotificationReplyAction = "com.coder.pi.TERMINAL_NOTIFICATION_REPLY"
 const val TerminalNotificationCopyUrlAction = "com.coder.pi.TERMINAL_NOTIFICATION_COPY_URL"
 const val TerminalNotificationReplyInputKey = "terminal_reply"
@@ -107,6 +110,7 @@ class CoderTerminalView
         private val engine = terminalEngine
         private var managerOwnsEngine = false
         private var rendererHandle = native.nativeInitRenderer()
+        private val mainHandler = Handler(Looper.getMainLooper())
         private val native: CoderNative get() = engine.native
         private var handle: Long
             get() = engine.handle
@@ -162,6 +166,11 @@ class CoderTerminalView
         private var notificationContext = TerminalNotificationContext()
         private val agentState = TerminalAgentState()
         private var terminalViewForeground = false
+        private val terminalSizeReadyLock = Any()
+        private val pendingTerminalSizeReadyActions = mutableListOf<() -> Unit>()
+        private var terminalSizeReadyRunnable: Runnable? = null
+        private var lastNotifiedColumns = 0
+        private var lastNotifiedRows = 0
         private var workspaceIconRequestInFlight = false
         private var workspaceIconCacheKey = ""
         private var workspaceIconCache: android.graphics.Bitmap? = null
@@ -170,6 +179,12 @@ class CoderTerminalView
         private val pendingRemoteOutput = mutableListOf<ByteArray>()
         private val accessibilityHelper = TerminalAccessibilityHelper()
         override var onTerminalSizeChanged: ((Int, Int) -> Unit)? = null
+            set(value) {
+                field = value
+                lastNotifiedColumns = 0
+                lastNotifiedRows = 0
+                if (value != null) post { notifyTerminalSizeChanged() }
+            }
         var onOscMetadataChanged: ((TerminalOscMetadata) -> Unit)? = null
         var onHyperlinkActivated: ((String) -> Unit)? = null
         var onModifierLatchChanged: ((Boolean, Boolean, Boolean) -> Unit)? = null
@@ -893,8 +908,14 @@ class CoderTerminalView
             }
         }
 
-        fun setKeyboardAvoidanceOffset(offset: Int) {
-            translationY = -offset.toFloat()
+        fun runWhenTerminalSizeReady(action: () -> Unit) {
+            if (terminalColumns() > 0 && terminalRows() > 0) {
+                post(action)
+                return
+            }
+            synchronized(terminalSizeReadyLock) {
+                pendingTerminalSizeReadyActions += action
+            }
         }
 
         fun refreshSurface() {
@@ -974,9 +995,38 @@ class CoderTerminalView
                     native.nativeRendererSurfaceChanged(terminalHandle, currentRendererHandle, nextWidth, nextHeight, currentCellWidth, currentCellHeight, currentFontPixelSize)
                 }
             }
-            if (queueOnGlThread) queueEvent(resize) else resize()
+            if (queueOnGlThread) {
+                queueEvent {
+                    resize()
+                    dispatchTerminalSizeReadyIfNeeded()
+                }
+            } else {
+                resize()
+                dispatchTerminalSizeReadyIfNeeded()
+            }
             notifyTerminalSizeChanged()
             requestRender()
+        }
+
+        private fun dispatchTerminalSizeReadyIfNeeded() {
+            if (terminalColumns() <= 0 || terminalRows() <= 0) return
+            mainHandler.post {
+                if (terminalColumns() <= 0 || terminalRows() <= 0) return@post
+                if (synchronized(terminalSizeReadyLock) { pendingTerminalSizeReadyActions.isEmpty() }) return@post
+                terminalSizeReadyRunnable?.let(mainHandler::removeCallbacks)
+                val runnable =
+                    Runnable {
+                        terminalSizeReadyRunnable = null
+                        if (terminalColumns() <= 0 || terminalRows() <= 0) return@Runnable
+                        val actions =
+                            synchronized(terminalSizeReadyLock) {
+                                pendingTerminalSizeReadyActions.toList().also { pendingTerminalSizeReadyActions.clear() }
+                            }
+                        actions.forEach { it() }
+                    }
+                terminalSizeReadyRunnable = runnable
+                mainHandler.postDelayed(runnable, TerminalSizeReadyDelayMillis)
+            }
         }
 
         private fun setNativeFont(key: String) {
@@ -989,6 +1039,9 @@ class CoderTerminalView
         }
 
         fun dispose() {
+            terminalSizeReadyRunnable?.let(mainHandler::removeCallbacks)
+            terminalSizeReadyRunnable = null
+            synchronized(terminalSizeReadyLock) { pendingTerminalSizeReadyActions.clear() }
             agentState.clear()
             unregisterTerminalView(this)
             if (rendererHandle != 0L) {
@@ -1226,9 +1279,13 @@ class CoderTerminalView
                 "dismiss_keyboard" -> {
                     context.getSystemService<InputMethodManager>()?.hideSoftInputFromWindow(windowToken, 0)
                     clearFocus()
-                    post { forceRefreshSurface() }
-                    postDelayed({ forceRefreshSurface() }, 180L)
-                    postDelayed({ forceRefreshSurface() }, 360L)
+                    postDelayed(
+                        {
+                            ViewCompat.requestApplyInsets(this)
+                            refreshSurface()
+                        },
+                        180L,
+                    )
                     true
                 }
                 "send_escape" -> {
@@ -1482,7 +1539,12 @@ class CoderTerminalView
         private fun notifyTerminalSizeChanged() {
             val columns = terminalColumns()
             val rows = terminalRows()
-            if (columns > 0 && rows > 0) onTerminalSizeChanged?.invoke(columns, rows)
+            val callback = onTerminalSizeChanged ?: return
+            if (columns <= 0 || rows <= 0) return
+            if (columns == lastNotifiedColumns && rows == lastNotifiedRows) return
+            lastNotifiedColumns = columns
+            lastNotifiedRows = rows
+            callback(columns, rows)
         }
 
         private fun notifyOscMetadataChanged() {
@@ -2034,10 +2096,17 @@ class CoderTerminalView
             return NotificationCompat.Action.Builder(R.drawable.ic_feather_clipboard, "Copy URL", pendingIntent).build()
         }
 
-        private fun terminalNotificationLaunchIntent(url: String? = null): Intent =
-            ((url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { Intent(Intent.ACTION_VIEW, it.toUri()) } ?: if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, notificationContext.deepLink.toUri(), context, MainActivity::class.java)) ?: Intent(context, MainActivity::class.java)).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
+        private fun terminalNotificationLaunchIntent(url: String? = null): Intent {
+            val intent =
+                url
+                    ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                    ?.let { Intent(Intent.ACTION_VIEW, it.toUri()) }
+                    ?: TerminalWindowLauncher.intentForSavedTerminal(context, notificationContext.terminalId)
+                    ?: (if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, notificationContext.deepLink.toUri(), context, MainActivity::class.java))
+                    ?: Intent(context, MainActivity::class.java)
+            if (intent.component?.className != TerminalActivity::class.java.name) intent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            return intent
+        }
 
         private fun progressNotificationTitle(title: String): String = title.ifBlank { "Terminal" }.take(128)
 

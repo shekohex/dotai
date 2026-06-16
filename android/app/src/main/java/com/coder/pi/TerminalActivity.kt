@@ -12,17 +12,21 @@ import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.getSystemService
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +36,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.lang.ref.WeakReference
+
+private const val TerminalKeyboardGapDp = 8
 
 class TerminalActivity : AppCompatActivity() {
     private lateinit var terminalView: CoderTerminalView
@@ -43,6 +49,7 @@ class TerminalActivity : AppCompatActivity() {
     private var currentTheme by mutableStateOf<CoderTheme?>(null)
     private var currentFontKey: String? = null
     private var currentFontSizePoints = 0
+    private var keyboardAvoidanceOffset by mutableIntStateOf(0)
     private var terminalStatus by mutableStateOf(TerminalConnectionStatus.Connecting.wireName)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,7 +63,7 @@ class TerminalActivity : AppCompatActivity() {
                 }
         }
         @Suppress("DEPRECATION")
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         val launch =
             terminalLaunchRequestFromIntent() ?: run {
                 finish()
@@ -89,13 +96,23 @@ class TerminalActivity : AppCompatActivity() {
             }
         terminalMetadata = CoderActiveTerminalMetadata(identity.baseUrl, identity.userId, identity.workspaceId, launch.workspaceName, identity.agentId, launch.badge, identity.command, launch.reconnectId, System.currentTimeMillis(), workspaceIconUrl = launch.workspaceIconUrl)
         terminalStore?.saveActiveTerminal(terminalMetadata ?: return)
-        terminalSession =
-            TerminalConnectionManager.startVisible(terminalId, launch, terminalView, { status ->
-                terminalStatus = status
-                terminalStore?.appendDebugLog("terminal window ${launch.title} $status")
-            }, { safeError ->
-                safeError?.let { terminalStore?.appendDebugLog("terminal window ${launch.title} error $it") }
-            })
+        configureTerminalKeyboardInsets()
+        val startTerminalSession = {
+            if (!isFinishing && !isDestroyed && terminalSession == null) {
+                terminalSession =
+                    TerminalConnectionManager.startVisible(terminalId, launch, terminalView, { status ->
+                        terminalStatus = status
+                        terminalStore?.appendDebugLog("terminal window ${launch.title} $status")
+                    }, { safeError ->
+                        safeError?.let { terminalStore?.appendDebugLog("terminal window ${launch.title} error $it") }
+                    })
+            }
+        }
+        if (TerminalConnectionManager.hasRuntime(terminalId)) {
+            startTerminalSession()
+        } else {
+            terminalView.runWhenTerminalSizeReady(startTerminalSession)
+        }
         startPreviewPersistence()
         applySystemBars(currentTheme ?: theme)
         onBackPressedDispatcher.addCallback(
@@ -109,6 +126,7 @@ class TerminalActivity : AppCompatActivity() {
         setContent {
             MaterialTheme(typography = appTypography(CoderFonts.uiFontFamily(this))) {
                 val renderedTheme = currentTheme ?: CoderThemes.current(this)
+                val keyboardGapPx = with(LocalDensity.current) { TerminalKeyboardGapDp.dp.roundToPx() }
                 TerminalSurface(
                     terminalView,
                     renderedTheme,
@@ -116,9 +134,10 @@ class TerminalActivity : AppCompatActivity() {
                     { hideTerminalKeyboard() },
                     Modifier
                         .fillMaxSize()
-                        .background(renderedTheme.background.toComposeColor())
-                        .imePadding(),
+                        .background(renderedTheme.background.toComposeColor()),
                     showMetadataOverlay = false,
+                    keyboardAvoidanceOffsetPx = keyboardAvoidanceOffset,
+                    keyboardGapPx = keyboardGapPx,
                 )
                 DisposableEffect(terminalStatus) {
                     val metadata = terminalMetadata
@@ -149,7 +168,7 @@ class TerminalActivity : AppCompatActivity() {
         val metadata = terminalMetadata
         val session = metadata?.let { terminalStore?.loadSession()?.takeIf { saved -> saved.first == it.baseUrl } }
         if (metadata != null && session == null) {
-            finish()
+            terminalStore?.appendDebugLog("terminal window ${metadata.workspaceName} resume without saved session")
             return
         }
         terminalMetadata?.let { terminalStore?.saveActiveTerminal(it.copy(updatedAtMillis = System.currentTimeMillis())) }
@@ -251,22 +270,49 @@ class TerminalActivity : AppCompatActivity() {
     }
 
     private fun terminalLaunchRequestFromIntent(): TerminalLaunchRequest? {
-        val baseUrl = intent.getStringExtra(TerminalWindowLauncher.BaseUrl) ?: return null
-        val token = CoderSessionStore(this).loadSession()?.takeIf { it.first == baseUrl }?.second ?: return null
+        val store = terminalStore ?: CoderSessionStore(this)
+        val baseUrl = intent.getStringExtra(TerminalWindowLauncher.BaseUrl)
+        if (baseUrl == null) {
+            savedTerminalMetadataFromIntent()?.let { metadata ->
+                val token = store.loadSession()?.takeIf { it.first == metadata.baseUrl }?.second ?: return null
+                val localWorkspaceState = store.workspaceState(metadata.baseUrl, metadata.userId, metadata.workspaceId)
+                return TerminalLaunchRequest(metadata.baseUrl, token, metadata.agentId, metadata.reconnectId, metadata.command, localWorkspaceState.alias ?: metadata.workspaceName, metadata.agentName, metadata.workspaceName, metadata.workspaceIconUrl)
+            }
+            return null
+        }
+        val token = store.loadSession()?.takeIf { it.first == baseUrl }?.second ?: return null
         val agentId = intent.getStringExtra(TerminalWindowLauncher.AgentId) ?: return null
         val reconnectId = intent.getStringExtra(TerminalWindowLauncher.ReconnectId) ?: return null
         val command = intent.getStringExtra(TerminalWindowLauncher.Command) ?: return null
         val title = intent.getStringExtra(TerminalWindowLauncher.WorkspaceName) ?: return null
         val badge = intent.getStringExtra(TerminalWindowLauncher.AgentName) ?: return null
         val iconUrl = intent.getStringExtra(TerminalWindowLauncher.WorkspaceIconUrl)
-        val localWorkspaceState = CoderSessionStore(this).workspaceState(baseUrl, intent.getStringExtra(TerminalWindowLauncher.UserId) ?: "", intent.getStringExtra(TerminalWindowLauncher.WorkspaceId) ?: "")
+        val localWorkspaceState = store.workspaceState(baseUrl, intent.getStringExtra(TerminalWindowLauncher.UserId) ?: "", intent.getStringExtra(TerminalWindowLauncher.WorkspaceId) ?: "")
         return TerminalLaunchRequest(baseUrl, token, agentId, reconnectId, command, localWorkspaceState.alias ?: title, badge, title, iconUrl)
     }
 
     private fun terminalIdentityFromIntent(launch: TerminalLaunchRequest): TerminalIdentity? {
+        if (intent.getStringExtra(TerminalWindowLauncher.BaseUrl) == null) savedTerminalMetadataFromIntent()?.let { metadata ->
+            return TerminalIdentity(metadata.baseUrl, metadata.userId, metadata.workspaceId, metadata.agentId, metadata.command)
+        }
         val userId = intent.getStringExtra(TerminalWindowLauncher.UserId) ?: return null
         val workspaceId = intent.getStringExtra(TerminalWindowLauncher.WorkspaceId) ?: return null
         return TerminalIdentity(launch.baseUrl, userId, workspaceId, launch.agentId, launch.command)
+    }
+
+    private fun savedTerminalMetadataFromIntent(): CoderActiveTerminalMetadata? {
+        val uri = intent.data ?: return null
+        if (uri.scheme != "pi" || uri.host != "terminal") return null
+        val pathSegments = uri.pathSegments
+        if (pathSegments.size < 3) return null
+        val userId = pathSegments[0]
+        val workspaceId = pathSegments[1]
+        val agentId = pathSegments[2]
+        val command = uri.getQueryParameter(TerminalWindowLauncher.Command) ?: return null
+        val baseUrl = terminalStore?.loadSession()?.first ?: CoderSessionStore(this).loadSession()?.first ?: return null
+        return CoderSessionStore(this)
+            .activeTerminalsForBaseUrl(baseUrl, Long.MAX_VALUE)
+            .firstOrNull { it.userId == userId && it.workspaceId == workspaceId && it.agentId == agentId && it.command == command }
     }
 
     private fun terminalWindowTitle(launch: TerminalLaunchRequest): String {
@@ -283,6 +329,31 @@ class TerminalActivity : AppCompatActivity() {
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    private fun configureTerminalKeyboardInsets() {
+        val applyInsets: (WindowInsetsCompat) -> Unit = applyInsets@{ insets ->
+            val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            val navigationBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            keyboardAvoidanceOffset = (imeBottom - navigationBottom).coerceAtLeast(0)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { _, insets ->
+            applyInsets(insets)
+            insets
+        }
+        ViewCompat.setWindowInsetsAnimationCallback(
+            window.decorView,
+            object : WindowInsetsAnimationCompat.Callback(WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                override fun onProgress(
+                    insets: WindowInsetsCompat,
+                    runningAnimations: MutableList<WindowInsetsAnimationCompat>,
+                ): WindowInsetsCompat {
+                    applyInsets(insets)
+                    return insets
+                }
+            },
+        )
+        window.decorView.post { ViewCompat.requestApplyInsets(window.decorView) }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

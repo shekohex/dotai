@@ -3,6 +3,7 @@ package com.coder.pi
 import io.sentry.SentryLevel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -30,6 +31,13 @@ class CoderTerminalSession(
     @Volatile private var networkUnavailable = false
 
     private val maxReconnectAttempts = Int.MAX_VALUE
+    private val resizeLock = Any()
+    private var pendingResizeJob: Job? = null
+    private var pendingResizeWidth = 0
+    private var pendingResizeHeight = 0
+    private var lastSentResizeWidth = 0
+    private var lastSentResizeHeight = 0
+    private var socketGeneration = 0
 
     fun updateCallbacks(
         onStatusChanged: (String) -> Unit,
@@ -64,13 +72,23 @@ class CoderTerminalSession(
                 val initialHeight = terminalEndpoint.terminalRows().takeIf { it > 0 } ?: 24
                 SentryBreadcrumbs.terminal("socket connecting", mapOf("reconnecting" to reconnecting, "columns" to initialWidth, "rows" to initialHeight, "attempt" to reconnectAttempts))
                 val terminalSocket = CoderTerminalSocket(api.connectTerminal(agentId, reconnectId, command, initialWidth, initialHeight))
+                synchronized(resizeLock) {
+                    pendingResizeJob?.cancel()
+                    pendingResizeJob = null
+                    pendingResizeWidth = 0
+                    pendingResizeHeight = 0
+                    lastSentResizeWidth = initialWidth
+                    lastSentResizeHeight = initialHeight
+                    socketGeneration += 1
+                }
                 socket = terminalSocket
                 terminalEndpoint.attachRemote { bytes -> terminalSocket.send(bytes) }
-                terminalEndpoint.onTerminalSizeChanged = { width, height -> terminalSocket.resize(width, height) }
+                terminalEndpoint.onTerminalSizeChanged = { width, height -> scheduleResize(width, height) }
                 terminalSocket.onBytes = { terminalEndpoint.feedRemoteOutput(it) }
                 terminalSocket.onClosed = { handleClosed() }
                 terminalSocket.start()
                 terminalSocket.resize(initialWidth, initialHeight)
+                scheduleResize(terminalEndpoint.terminalColumns(), terminalEndpoint.terminalRows())
                 reconnectAttempts = 0
                 reconnectScheduled = false
                 updateError(null)
@@ -97,6 +115,11 @@ class CoderTerminalSession(
     private fun handleClosed() {
         SentryBreadcrumbs.terminal("socket closed", mapOf("stopped" to stopped, "attempt" to reconnectAttempts))
         socket = null
+        synchronized(resizeLock) {
+            pendingResizeJob?.cancel()
+            pendingResizeJob = null
+            socketGeneration += 1
+        }
         terminalEndpoint.detachRemote()
         if (stopped) {
             updateStatus(TerminalConnectionStatus.Disconnected.wireName)
@@ -132,6 +155,11 @@ class CoderTerminalSession(
         networkUnavailable = true
         val terminalSocket = socket
         socket = null
+        synchronized(resizeLock) {
+            pendingResizeJob?.cancel()
+            pendingResizeJob = null
+            socketGeneration += 1
+        }
         terminalEndpoint.detachRemote()
         updateError("Network unavailable")
         updateStatus(TerminalConnectionStatus.Reconnecting.wireName)
@@ -152,6 +180,11 @@ class CoderTerminalSession(
         stopped = true
         networkUnavailable = false
         reconnectScheduled = false
+        synchronized(resizeLock) {
+            pendingResizeJob?.cancel()
+            pendingResizeJob = null
+            socketGeneration += 1
+        }
         terminalEndpoint.detachRemote()
         terminalEndpoint.onTerminalSizeChanged = null
         val terminalSocket = socket
@@ -165,6 +198,43 @@ class CoderTerminalSession(
             onErrorChanged(null)
             onStatusChanged(TerminalConnectionStatus.Disconnected.wireName)
             mainScope.cancel()
+        }
+    }
+
+    private fun scheduleResize(
+        width: Int,
+        height: Int,
+    ) {
+        if (width <= 0 || height <= 0) return
+        synchronized(resizeLock) {
+            if (width == lastSentResizeWidth && height == lastSentResizeHeight) return
+            if (width == pendingResizeWidth && height == pendingResizeHeight && pendingResizeJob != null) return
+            val resizeGeneration = socketGeneration
+            pendingResizeWidth = width
+            pendingResizeHeight = height
+            pendingResizeJob?.cancel()
+            pendingResizeJob =
+                scope.launch {
+                    delay(180L)
+                    val resize =
+                        synchronized(resizeLock) {
+                            if (resizeGeneration != socketGeneration || stopped) return@launch
+                            pendingResizeJob = null
+                            val nextWidth = pendingResizeWidth
+                            val nextHeight = pendingResizeHeight
+                            pendingResizeWidth = 0
+                            pendingResizeHeight = 0
+                            if (nextWidth <= 0 || nextHeight <= 0 || nextWidth == lastSentResizeWidth && nextHeight == lastSentResizeHeight) {
+                                null
+                            } else {
+                                val terminalSocket = socket ?: return@launch
+                                lastSentResizeWidth = nextWidth
+                                lastSentResizeHeight = nextHeight
+                                Triple(terminalSocket, nextWidth, nextHeight)
+                            }
+                        }
+                    resize?.let { it.first.resize(it.second, it.third) }
+                }
         }
     }
 

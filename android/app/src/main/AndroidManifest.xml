@@ -47,8 +47,7 @@
             android:documentLaunchMode="intoExisting"
             android:excludeFromRecents="false"
             android:exported="false"
-            android:launchMode="standard"
-            android:taskAffinity="" />
+            android:launchMode="standard" />
         <receiver
             android:name=".TerminalNotificationReplyReceiver"
             android:exported="false" />

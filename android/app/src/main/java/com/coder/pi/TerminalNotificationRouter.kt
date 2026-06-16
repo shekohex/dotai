@@ -320,10 +320,17 @@ class TerminalNotificationRouter(
         return NotificationCompat.Action.Builder(R.drawable.ic_feather_clipboard, "Copy URL", pendingIntent).build()
     }
 
-    private fun launchIntent(url: String? = null): Intent =
-        ((url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { Intent(Intent.ACTION_VIEW, it.toUri()) } ?: if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, notificationContext.deepLink.toUri(), context, MainActivity::class.java)) ?: Intent(context, MainActivity::class.java)).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
+    private fun launchIntent(url: String? = null): Intent {
+        val intent =
+            url
+                ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                ?.let { Intent(Intent.ACTION_VIEW, it.toUri()) }
+                ?: TerminalWindowLauncher.intentForSavedTerminal(context, notificationContext.terminalId)
+                ?: (if (notificationContext.deepLink.isBlank()) context.packageManager.getLaunchIntentForPackage(context.packageName) else Intent(Intent.ACTION_VIEW, notificationContext.deepLink.toUri(), context, MainActivity::class.java))
+                ?: Intent(context, MainActivity::class.java)
+        if (intent.component?.className != TerminalActivity::class.java.name) intent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        return intent
+    }
 
     private fun workspaceLabel(): String = TerminalNotificationFormat.workspaceLabel(notificationContext)
 

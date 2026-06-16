@@ -2,7 +2,11 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  AgentSession,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 
 import type { ModeSpec } from "../src/mode-utils.js";
@@ -156,8 +160,60 @@ describe("classifyModelFailure", () => {
     expect(cooldownDelayMs(result)).toBe(720000);
   });
 
+  it.each([
+    "GoUsageLimitError",
+    "FreeUsageLimitError",
+    "available balance is too low",
+    "insufficient_quota",
+    "out of budget",
+    "quota exceeded",
+    "billing hard limit reached",
+  ])("classifies upstream Codex terminal quota errors as billing: %s", (message) => {
+    const result = classifyModelFailure(message);
+
+    expect(result.kind).toBe("billing");
+    expect(shouldFallbackImmediately(result)).toBe(true);
+  });
+
+  it.each(["usage_limit_reached", "usage_not_included", "rate_limit_exceeded"])(
+    "classifies upstream Codex usage codes as rate limits: %s",
+    (message) => {
+      const result = classifyModelFailure(message);
+
+      expect(result.kind).toBe("rate_limit");
+      expect(shouldFallbackImmediately(result)).toBe(true);
+    },
+  );
+
   it("classifies transient unavailable errors separately", () => {
     const result = classifyModelFailure("503 service unavailable: upstream connect timeout");
+
+    expect(result.kind).toBe("unavailable");
+  });
+
+  it.each([
+    "overloaded",
+    "service unavailable",
+    "upstream connect error",
+    "connection refused",
+    "Failed after retries",
+    "No response body",
+    "Request failed",
+    "Codex SSE response headers timed out after 10000ms",
+    "WebSocket transport is not available in this runtime",
+    "WebSocket stream closed before response.completed",
+    "Invalid Codex SSE JSON: unexpected token",
+    "Invalid Codex WebSocket JSON: unexpected token",
+  ])("classifies upstream Codex retryable errors as unavailable: %s", (message) => {
+    const result = classifyModelFailure(message);
+
+    expect(result.kind).toBe("unavailable");
+  });
+
+  it("classifies generic OpenAI processing failures as unavailable", () => {
+    const result = classifyModelFailure(
+      "Error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID e4f5a936-060b-4a3d-a4a2-542b8b2eb602 in your message.",
+    );
 
     expect(result.kind).toBe("unavailable");
   });
@@ -173,6 +229,49 @@ describe("classifyModelFailure", () => {
 
     expect(result.kind).toBe("billing");
     expect(shouldFallbackImmediately(result)).toBe(true);
+  });
+});
+
+describe("upstream agent auto-retry patch", () => {
+  type RetryableAgentSession = {
+    _isNonRetryableProviderLimitError(errorMessage: string): boolean;
+    _isRetryableError(message: AssistantMessage): boolean;
+  };
+
+  const retryablePrototype = AgentSession.prototype as unknown as RetryableAgentSession;
+
+  function isRetryableError(errorMessage: string): boolean {
+    return retryablePrototype._isRetryableError.call(
+      {
+        model: createFakeModel("codex-openai", "gpt-5.5"),
+        _isNonRetryableProviderLimitError: retryablePrototype._isNonRetryableProviderLimitError,
+      },
+      createAssistantError(errorMessage),
+    );
+  }
+
+  it("retries the generic OpenAI processing failure before failover", () => {
+    expect(
+      isRetryableError(
+        "Error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists.",
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    "Failed after retries",
+    "No response body",
+    "Request failed",
+    "WebSocket transport is not available in this runtime",
+    "WebSocket stream closed before response.completed",
+    "Invalid Codex SSE JSON: unexpected token",
+    "Invalid Codex WebSocket JSON: unexpected token",
+  ])("retries upstream Codex transient errors: %s", (message) => {
+    expect(isRetryableError(message)).toBe(true);
+  });
+
+  it("does not retry upstream Codex terminal billing errors", () => {
+    expect(isRetryableError("GoUsageLimitError: quota exceeded")).toBe(false);
   });
 });
 
@@ -301,6 +400,42 @@ describe("mode failover event handling", () => {
       "build",
       spec,
       createAssistantError("503 service unavailable"),
+    );
+    expect(ctx.model).toBe(fallback);
+  });
+
+  it("falls back after repeated OpenAI processing failures", async () => {
+    const { ctx, pi, runtime, spec, fallback } = createHarness();
+    const errorMessage =
+      "Error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID e4f5a936-060b-4a3d-a4a2-542b8b2eb602 in your message.";
+
+    await handleModeAssistantMessageEnd(
+      pi,
+      ctx,
+      runtime,
+      "build",
+      spec,
+      createAssistantError(errorMessage),
+    );
+    expect(ctx.model).not.toBe(fallback);
+
+    await handleModeAssistantMessageEnd(
+      pi,
+      ctx,
+      runtime,
+      "build",
+      spec,
+      createAssistantError(errorMessage),
+    );
+    expect(ctx.model).not.toBe(fallback);
+
+    await handleModeAssistantMessageEnd(
+      pi,
+      ctx,
+      runtime,
+      "build",
+      spec,
+      createAssistantError(errorMessage),
     );
     expect(ctx.model).toBe(fallback);
   });

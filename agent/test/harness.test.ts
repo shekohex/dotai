@@ -2293,6 +2293,31 @@ timedTest("LiteLLM provider registrations add the gemini provider via v1beta", (
   ).toBeTruthy();
 });
 
+timedTest("LiteLLM provider registrations route codex-openai via OpenAI Responses", () => {
+  const registrations = createLiteLLMProviderRegistrations(
+    {
+      healthy: true,
+      label: "public",
+      origin: "https://litellm.example.test",
+      baseUrl: "https://litellm.example.test/v1",
+    },
+    "TEST_KEY",
+  );
+
+  const codexRegistration = registrations.find(
+    (registration) => registration.provider === "codex-openai",
+  );
+
+  expect(codexRegistration).toBeTruthy();
+  expect(codexRegistration.provider).toBe("codex-openai");
+  expect(codexRegistration.config.baseUrl).toBe("https://litellm.example.test/v1");
+  expect(codexRegistration.config.apiKey).toBe("TEST_KEY");
+  expect(codexRegistration.config.api).toBe("openai-responses");
+  expect(
+    codexRegistration.config.models!.every((model) => model.api === "openai-responses"),
+  ).toBeTruthy();
+});
+
 timedTest("LiteLLM provider registrations route deepseek via LiteLLM v1", () => {
   const registrations = createLiteLLMProviderRegistrations(
     {

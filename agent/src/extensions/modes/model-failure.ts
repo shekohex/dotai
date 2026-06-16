@@ -97,7 +97,7 @@ function isAuthError(message: string): boolean {
 }
 
 function isBillingError(message: string): boolean {
-  return /billing|insufficient_quota|available balance|out of budget|monthly usage limit reached/u.test(
+  return /gousagelimiterror|freeusagelimiterror|billing|insufficient_quota|available balance|out of budget|monthly usage limit reached|quota exceeded/u.test(
     message,
   );
 }
@@ -114,13 +114,19 @@ function isRateLimitError(message: string): boolean {
     message.includes("quota will reset") ||
     message.includes("quotareset") ||
     message.includes("usage_limit_reached") ||
+    message.includes("usage_not_included") ||
     message.includes("rate_limit_exceeded") ||
     message.includes("usage limit")
   );
 }
 
 function isUnavailableError(message: string): boolean {
-  return /overloaded|provider.?returned.?error|\b500\b|\b502\b|\b503\b|\b504\b|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated/u.test(
-    message,
+  return (
+    /overloaded|provider.?returned.?error|\b500\b|\b502\b|\b503\b|\b504\b|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|websocket transport is not available|other side closed|fetch failed|request failed|failed after retries|no response body|upstream.?connect|reset before headers|socket hang up|ended without|stream ended before message_stop|stream closed before response\.completed|http2 request did not get a response|invalid codex sse json|invalid codex websocket json|timed? out|timeout|terminated/u.test(
+      message,
+    ) ||
+    /error occurred while processing your request|you can retry your request|help\.openai\.com/u.test(
+      message,
+    )
   );
 }

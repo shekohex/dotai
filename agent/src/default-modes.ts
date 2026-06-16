@@ -155,6 +155,8 @@ export const defaultModes = {
       autoExit: true,
       description: "general-purpose worker",
       tmuxTarget: "window",
+      systemPrompt: modeSystemPrompt("worker"),
+      systemPromptMode: "append",
     },
     websearch: {
       provider: "zai",

@@ -65,8 +65,9 @@ test("simplify workflow produces a valid, parseable script", () => {
     ["Code Review", "Fix Issues"],
   );
   assert.match(body, /reuse-review/);
-  assert.match(body, /quality-review/);
+  assert.match(body, /simplification-review/);
   assert.match(body, /efficiency-review/);
+  assert.match(body, /altitude-review/);
   assert.match(body, /simplify-fixer/);
 });
 
@@ -86,11 +87,13 @@ test("existing simplify workflow remains compatible with session-backed text res
       ) {
         const label = /Code Reuse Review/.test(prompt)
           ? "reuse"
-          : /Code Quality Review/.test(prompt)
-            ? "quality"
+          : /Simplification Review/.test(prompt)
+            ? "simplification"
             : /Efficiency Review/.test(prompt)
               ? "efficiency"
-              : "fix";
+              : /Altitude Review/.test(prompt)
+                ? "altitude"
+                : "fix";
         options.onStart?.({ sessionId: `session-${label}`, sessionPath: `/tmp/session-${label}` });
         return `${label} result`;
       },
@@ -98,7 +101,7 @@ test("existing simplify workflow remains compatible with session-backed text res
   });
 
   assert.deepEqual(result.result, {
-    reviews: ["reuse result", "quality result", "efficiency result"],
+    reviews: ["reuse result", "simplification result", "efficiency result", "altitude result"],
     fixes: "fix result",
   });
 });

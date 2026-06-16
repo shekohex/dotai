@@ -43,7 +43,7 @@ export const bashToolParams = Type.Object({
   ),
   description: Type.String({
     description:
-      "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
+      "Clear, concise active-voice description of what this command does. For simple commands, use 5-10 words. Do not describe risk; describe the action. For piped commands or obscure flags, add enough context to clarify the operation. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: find . -name '*.tmp' -delete\nOutput: Finds and deletes temporary files\n\nInput: curl -s url | jq '.data[]'\nOutput: Fetches JSON and extracts data array elements",
   }),
 });
 

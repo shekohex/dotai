@@ -133,6 +133,24 @@ test("WorkflowAgent reuses one SDK until disposed", async () => {
   assert.equal(sdkDispose.mock.calls.length, 1);
 });
 
+test("WorkflowAgent gives text subagents a verbatim output contract", async () => {
+  const { WorkflowAgent } = await import("../../src/extensions/dynamic-workflows/agent.js");
+  sdkStart.mockResolvedValue(createStartValue("text-session", "text result"));
+  const cwd = mkdtempSync(join(tmpdir(), "workflow-agent-text-contract-"));
+  cleanupPaths.push(cwd);
+
+  await new WorkflowAgent({
+    cwd,
+    pi: {} as ExtensionAPI,
+    ctx: createContext(cwd),
+  }).run("Return JSON for findings", { label: "findings" });
+
+  const params = sdkStart.mock.calls[0]?.[0];
+  assert.match(params.task, /final text response is returned verbatim/u);
+  assert.match(params.task, /raw JSON only/u);
+  assert.match(params.task, /Do not output confirmations/u);
+});
+
 function createStartValue(
   sessionId: string,
   result: string,

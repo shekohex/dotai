@@ -58,6 +58,7 @@ Rules:
 - `parallel()` takes **functions**, not promises: `parallel(items.map(item => () => agent(...)))`
 - Every workflow must call `agent()` at least once
 - Use `{ label: 'short name' }` on every `agent()` call
+- Give every `agent()` prompt a concrete return contract. Text agents return final text verbatim; if the script will parse JSON or fields, prefer `schema`.
 
 ## Tool Parameters
 
@@ -112,6 +113,12 @@ Examples:
 | `agentType`        | Persona hint injected into agent instructions.                                                             |
 | `timeoutMs`        | Override default agent timeout.                                                                            |
 | `resume`           | Continue a prior agent session using a previous `agent()` result or explicit `{ sessionId, sessionPath }`. |
+
+Output contracts:
+
+- Without `schema`, `agent()` returns the subagent's final text exactly as a string. Ask for literal output, not human confirmations.
+- With `schema`, `agent()` returns a validated object matching the schema. Use this whenever later script logic needs fields.
+- If asking for JSON without `schema`, tell the agent to return raw JSON only: no code fences, prose, or labels.
 
 ## Resuming Agents
 

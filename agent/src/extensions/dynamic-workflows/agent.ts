@@ -169,6 +169,16 @@ export class WorkflowAgent {
           "- If you need to inspect files or run commands first, do so, then call StructuredOutput exactly once.",
         ].join("\n"),
       );
+    } else {
+      parts.push(
+        [
+          "Final output contract:",
+          "- Your final text response is returned verbatim as this agent's workflow result.",
+          '- Output the literal result only. Do not output confirmations like "Done."',
+          "- If asked for JSON, return raw JSON only: no Markdown fences, prose, or labels.",
+          "- Be concise; the workflow script may parse this output.",
+        ].join("\n"),
+      );
     }
 
     return parts.join("\n\n");

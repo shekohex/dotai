@@ -95,6 +95,7 @@ const workflowToolSchema = Type.Object({
         "First statement: export const meta = { name: 'short_snake_case', description: 'non-empty description', phases: [{ title: 'Phase' }] }",
         "Use phase('Name'), agent(prompt, opts), parallel(arrayOfFunctions), pipeline(items, ...stages), log(message), args, and budget. The workflow must call agent() at least once. Route agents with opts.mode when a specialized mode fits.",
         "parallel() requires functions, not promises: await parallel(items.map(item => () => agent(...))).",
+        "For parseable results, give agent() an explicit output contract. Without opts.schema, its final text is returned verbatim. With opts.schema, it must return a schema-valid object.",
       ].join(" "),
     }),
   ),
@@ -181,6 +182,7 @@ export function createWorkflowTool(
     promptGuidelines: [
       "Use workflow only when the user explicitly asks for workflow, fan-out, or multi-agent orchestration.",
       "Before calling workflow, read the dynamic-workflows skill for script format, API, and constraints.",
+      "Give each agent() a concrete return contract. Text results are returned verbatim; use opts.schema when the script needs structured data.",
     ],
     parameters: workflowToolSchema,
     prepareArguments(args) {

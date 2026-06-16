@@ -2,7 +2,11 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  AgentSession,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 
 import type { ModeSpec } from "../src/mode-utils.js";
@@ -225,6 +229,49 @@ describe("classifyModelFailure", () => {
 
     expect(result.kind).toBe("billing");
     expect(shouldFallbackImmediately(result)).toBe(true);
+  });
+});
+
+describe("upstream agent auto-retry patch", () => {
+  type RetryableAgentSession = {
+    _isNonRetryableProviderLimitError(errorMessage: string): boolean;
+    _isRetryableError(message: AssistantMessage): boolean;
+  };
+
+  const retryablePrototype = AgentSession.prototype as unknown as RetryableAgentSession;
+
+  function isRetryableError(errorMessage: string): boolean {
+    return retryablePrototype._isRetryableError.call(
+      {
+        model: createFakeModel("codex-openai", "gpt-5.5"),
+        _isNonRetryableProviderLimitError: retryablePrototype._isNonRetryableProviderLimitError,
+      },
+      createAssistantError(errorMessage),
+    );
+  }
+
+  it("retries the generic OpenAI processing failure before failover", () => {
+    expect(
+      isRetryableError(
+        "Error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID a657e1a1-8f81-4710-899c-67bb595a1c6c in your message.",
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    "Failed after retries",
+    "No response body",
+    "Request failed",
+    "WebSocket transport is not available in this runtime",
+    "WebSocket stream closed before response.completed",
+    "Invalid Codex SSE JSON: unexpected token",
+    "Invalid Codex WebSocket JSON: unexpected token",
+  ])("retries upstream Codex transient errors: %s", (message) => {
+    expect(isRetryableError(message)).toBe(true);
+  });
+
+  it("does not retry upstream Codex terminal billing errors", () => {
+    expect(isRetryableError("GoUsageLimitError: quota exceeded")).toBe(false);
   });
 });
 

@@ -66,6 +66,8 @@ For other app surfaces:
 
 If a project-specific run skill or documented launch path exists, use it instead of rediscovering the app mechanics.
 
+If you had to discover non-obvious app launch mechanics, env vars, setup steps, ports, patches, or driver commands, mention them in the report and recommend capturing them in a project run skill or docs. Do not create that documentation unless asked.
+
 ## Edge States
 
 Check the important states for the changed surface when they are relevant:

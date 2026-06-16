@@ -30,7 +30,7 @@ export const defaultModes = {
     },
     docs: {
       provider: "opencode-go",
-      modelId: "kimi-k2.6",
+      modelId: "kimi-k2.7-code",
       thinkingLevel: "high",
       color: "success",
       tmuxTarget: "window",
@@ -43,7 +43,7 @@ export const defaultModes = {
       ],
     },
     build: {
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "medium",
       color: "warning",
@@ -52,7 +52,7 @@ export const defaultModes = {
       description: "default coding",
     },
     deep: {
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "xhigh",
       color: "warning",
@@ -61,7 +61,7 @@ export const defaultModes = {
       description: "complex implementation/debugging/review",
     },
     review: {
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "xhigh",
       color: "muted",
@@ -102,7 +102,7 @@ export const defaultModes = {
       ],
     },
     commiter: {
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "low",
       color: "muted",
@@ -138,7 +138,7 @@ export const defaultModes = {
       fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
     },
     ask: {
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "low",
       tmuxTarget: "window",

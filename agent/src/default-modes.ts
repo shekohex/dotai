@@ -137,6 +137,8 @@ export const defaultModes = {
       tmuxTarget: "window",
       tools: ["*"],
       description: "frontend/UI/UX polish",
+      systemPrompt: modeSystemPrompt("painter"),
+      systemPromptMode: "append",
       fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
     },
     ask: {

@@ -1,41 +1,46 @@
 ---
 name: debugging
-description: Debug software failures with a disciplined reproduce, inspect, hypothesize, fix, and verify loop. Use when the user reports a bug, failing test, crash, regression, flaky behavior, broken workflow, or asks to diagnose root cause.
+description: Instructions for debugging an issue that the user is encountering in the current coding session. Use when the user reports a bug, failing test, crash, regression, flaky behavior, broken workflow, or asks to diagnose root cause.
 ---
 
-# Debugging
+# Debug Skill
 
-Debug from evidence, not guesses. Preserve user work and avoid destructive shortcuts.
+Help the user debug an issue they're encountering in this current Claude Code session.
+${DEBUG_LOGGING_WAS_ALREADY_ACTIVE?"":`
 
-## Workflow
+## Debug Logging Just Enabled
 
-1. Restate the symptom and expected behavior in one concise sentence.
-2. Reproduce or observe the failure when feasible using the smallest command, test, app path, log, or scenario.
-3. Capture exact evidence: error text, stack trace, failing assertion, file path, command, input, environment, and observed output.
-4. Inspect the narrow code path around the evidence before changing code.
-5. Form one concrete hypothesis that explains the observed failure.
-6. Make the smallest fix that addresses the root cause.
-7. Verify with the failing reproduction first, then run the smallest relevant regression checks.
-8. If the fix changes user-visible behavior, verify through the real runtime surface when feasible.
+Debug logging was OFF for this session until now. Nothing prior to this /debug invocation was captured.
 
-## Investigation Rules
+Tell the user that debug logging is now active at `${DEBUG_LOG_PATH}`, ask them to reproduce the issue, then re-read the log. If they can't reproduce, they can also restart with `claude --debug` to capture logs from startup.
+`}
 
-- Prefer targeted reads, greps, logs, and tests over broad rewrites.
-- Do not retry failing commands in a sleep loop; diagnose the cause or use an observable readiness check.
-- Do not delete locks, caches, generated files, branches, or data unless the user explicitly authorizes it and you have inspected the target.
-- Do not bypass tests, hooks, or policy gates with flags like `--no-verify`; fix the underlying failure or report the blocker.
-- If logs are huge, search for errors, warnings, stack traces, request IDs, timestamps near the failure, and the exact message the user reported.
+## Session Debug Log
 
-## When Blocked
+The debug log for the current session is at: `${DEBUG_LOG_PATH}`
 
-Stop and report when reproduction needs missing credentials, unavailable services, hardware, private data, or a user decision. Include what you tried, what evidence is missing, and the next concrete step once unblocked.
+${DEBUG_LOG_SUMMARY}
 
-## Report
+For additional context, grep for [ERROR] and [WARN] lines across the full file.
 
-Include:
+${ISSUE_DESCRIPTION}
 
-- root cause or strongest current hypothesis
-- evidence that supports it
-- files changed, if any
-- verification run and result
-- remaining uncertainty or follow-up checks
+## Issue Description
+
+${DAEMON_DEBUG_CONTEXT||"The user did not describe a specific issue. Read the debug log and summarize any errors, warnings, or notable issues."}
+
+## Settings
+
+Remember that settings are in:
+
+- user - ${GET_SETTINGS_FILE_PATH_FN("userSettings")}
+- project - ${GET_SETTINGS_FILE_PATH_FN("projectSettings")}
+- local - ${GET_SETTINGS_FILE_PATH_FN("localSettings")}
+
+## Instructions
+
+1. Review the user's issue description
+2. The last ${LOG_LINE_COUNT} lines show the debug file format. Look for [ERROR] and [WARN] entries, stack traces, and failure patterns across the file
+3. Consider launching the ${CLAUDE_CODE_GUIDE_SUBAGENT_NAME} subagent to understand the relevant Claude Code features
+4. Explain what you found in plain language
+5. Suggest concrete fixes or next steps

@@ -1,46 +1,71 @@
 ---
-name: run-app
-description: Launch and drive the current project's real app surface to verify behavior, screenshots, or changes. Use when asked to run, start, smoke test, screenshot, or confirm app behavior through CLI, server/API, browser, TUI, desktop, or SDK entrypoints.
+name: run
+description: Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library).
 ---
 
-# Run App
+**Running means launching the actual app and interacting with it** —
+not the test suite, not an `import` of an internal function and a
+`console.log`. The app as a user (human or programmatic) would meet
+it: the CLI at its command, the server at its socket, the GUI at its
+window.
 
-Running means launching the actual app surface and interacting with it like a user or integration would. Tests and imports are useful, but they are not a real app run by themselves.
+## First: does a project skill already cover this?
 
-## First Check Existing Run Paths
+A project skill that launches this app is the repo's verified path —
+its author already cold-started from a Linux container and committed
+what worked: the exact `apt-get` line, the env vars, the patches, the
+driver. Use it instead of rediscovering.
 
-- Look for repo docs, `package.json` scripts, Makefile targets, README run sections, `DESIGN.md`, storybook docs, or project skills that already define launch mechanics.
-- If one clearly covers the app, follow it instead of rediscovering mechanics.
-- If several units could be the target, ask which unit to run.
-- If the documented path is stale for reasons unrelated to the task, report that and use the closest safe fallback.
+```bash
+d=$PWD; while :; do
+  grep -Hm1 '^description:' "$d"/.claude/skills/*/SKILL.md 2>/dev/null
+  [ -e "$d/.git" ] || [ "$d" = / ] && break
+  d=$(dirname "$d")
+done
+```
 
-## Pick The Real Surface
+- **One describes launching/driving this app** → read that SKILL.md
+  and follow it verbatim. Don't paraphrase; don't skip the patches.
+- **Mega-repo, several plausible, no clear match** → ask the user
+  which unit to run.
+- **Stale** (fails on mechanics unrelated to your task) → tell the
+  user; offer to refresh it via `/run-skill-generator`.
+- **Nothing about running** → fall back to the patterns below.
 
-- CLI: invoke the command a user would run, include representative args/stdin, and inspect exit code/output.
-- Server/API: start service if needed, wait for readiness by polling the port/health/page, then hit the route the change affects.
-- Browser app: start dev server, wait for the real page, navigate to changed UI, exercise the interaction, inspect screenshot/rendered output, and check console errors when tooling exists.
-- TUI: run in tmux, send keys, and capture the visible pane.
-- Desktop/Electron: drive the real window when available and inspect screenshot/output.
-- Library/SDK UI package: run a boundary example, story, preview, or consumer smoke path.
+## Otherwise: match the shape, use the pattern
 
-## Runtime Rules
+Pick the row closest to your project. Each example walks through
+launch + first interaction; ignore any trailing "write the skill"
+section — you're using the recipe, not authoring one.
 
-- Drive it, don't just launch it. Launching without interaction only proves the entrypoint resolves.
-- Do not rely on fixed sleeps for readiness; poll a port, health endpoint, page text, prompt, process output, or other observable condition.
-- Use background execution for long-running servers/watchers and stop or leave them according to user/tool guidance.
-- Check the golden path and the relevant edge path touched by the task.
-- If verification is impossible, state exactly what was verified and what remains unverified.
+| Project type               | Handle                                               | Example                                          |
+| -------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
+| CLI tool                   | direct invocation, exit code, stdin/stdout           | [examples/cli.md](examples/cli.md)               |
+| Web server / API           | background launch + `curl` smoke                     | [examples/server.md](examples/server.md)         |
+| TUI / interactive terminal | tmux `send-keys` / `capture-pane`                    | [examples/tui.md](examples/tui.md)               |
+| Electron / desktop GUI     | Playwright `_electron` REPL under xvfb               | [examples/electron.md](examples/electron.md)     |
+| Browser-driven             | dev server + `chromium-cli` script                   | [examples/playwright.md](examples/playwright.md) |
+| Library / SDK              | import-and-call smoke script at the package boundary | [examples/library.md](examples/library.md)       |
 
-## Capture Learning
+If nothing fits, start from the closest match and adapt. For a web
+app, [examples/playwright.md](examples/playwright.md) — drive it with
+`chromium-cli`, no custom driver needed. For a desktop app,
+[examples/electron.md](examples/electron.md) — it has the `_electron`
+REPL driver skeleton and the tmux wrapping.
 
-If you had to discover non-obvious launch mechanics, env vars, setup steps, ports, patches, auth, seed data, or driver commands, mention them in the report and recommend capturing them in project docs or a project run skill. Do not create documentation unless asked.
+## Drive it, don't just launch it
 
-## Report
+Launching with no interaction proves the entrypoint resolves. That's
+not running the app — it's typechecking with extra steps. Drive it to
+a point where a user would see something:
 
-Include:
+- CLI → type a representative command, check the exit code and output.
+- Server → hit the route the diff touches with `curl`, read the body.
+- TUI → `send-keys` a navigation, `capture-pane` the result.
+- GUI → click the button, screenshot the window. **Look at the
+  screenshot.** A blank frame is a failure to launch.
 
-- command or app path used
-- interaction performed
-- result observed
-- screenshots/logs/console/errors checked when relevant
-- unverified parts and why
+If the fallback pattern didn't work out of the box — you had to
+install packages, set env vars, patch config, or write a driver —
+recommend `/run-skill-generator` in your report so that work gets
+captured as a project skill. If it just worked, don't.

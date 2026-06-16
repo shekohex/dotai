@@ -3270,13 +3270,13 @@ timedTest(
       expect((mux.created[1]?.command ?? "").includes(sessionPath)).toBeTruthy();
       expect(
         readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
-      ).toBe("Inspect failing tests");
+      ).toContain("Assigned task:\nInspect failing tests");
       expect(
         readLaunchFileBackedValue(mux.created[1]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
       ).toBe("Address review feedback");
       expect(
         readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
-      ).toMatch(/"prompt":"Inspect failing tests"/);
+      ).toMatch(/Assigned task:\\nInspect failing tests/);
       expect(
         readLaunchFileBackedValue(mux.created[1]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
       ).toMatch(/"prompt":"Address review feedback"/);
@@ -3364,9 +3364,9 @@ timedTest("subagent extension launches into a tmux window when the mode requests
     expect(mux.created.length).toBe(1);
     expect(mux.created[0]?.target).toBe("window");
     expect(mux.created[0]?.title).toBe("worker-window");
-    expect(readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE")).toBe(
-      "Inspect failing tests",
-    );
+    expect(
+      readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_TASK_FILE"),
+    ).toContain("Assigned task:\nInspect failing tests");
   } finally {
     session?.dispose();
     await rm(cwd, { recursive: true, force: true });
@@ -3418,7 +3418,7 @@ timedTest(
       expect(mux.created[0]?.title).toBe("worker-timeout");
       expect(
         readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
-      ).toMatch(/"prompt":"Inspect failing tests"/);
+      ).toMatch(/Assigned task:\\nInspect failing tests/);
       expect(
         readLaunchFileBackedValue(mux.created[0]?.command ?? "", "PI_SUBAGENT_CHILD_STATE_FILE"),
       ).toMatch(/"autoExitTimeoutMs":45/);

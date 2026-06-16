@@ -186,7 +186,8 @@ timedTest("message auto-resume uses new message as task not original task", asyn
       ctx,
     );
 
-    expect(launchedTasks).toEqual(["Research topic X"]);
+    expect(launchedTasks).toHaveLength(1);
+    expect(launchedTasks[0]).toContain("Assigned task:\nResearch topic X");
     expect(fakeMux.created.length).toBe(1);
 
     const sessionId = started.handle.sessionId;

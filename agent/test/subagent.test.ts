@@ -3625,7 +3625,15 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
       ctx,
     );
 
-    expect((started.details as { prompt: string }).prompt).toBe(startTask);
+    expect((started.details as { prompt: string }).prompt).toContain(
+      "You are a subagent working for a parent pi session.",
+    );
+    expect((started.details as { prompt: string }).prompt).toContain(
+      "You are not chatting with the end user directly.",
+    );
+    expect((started.details as { prompt: string }).prompt).toContain(
+      `Assigned task:\n${startTask}`,
+    );
     expect(started.content[0]?.text ?? "").toMatch(
       /will return with a summary automatically when it finishes/i,
     );
@@ -3882,10 +3890,13 @@ timedTest(
       expect(fakeMux.created[0]?.target).toBe("window");
       expect(launched.length).toBe(1);
       const launch = launched[0]!;
-      expect(launch.prompt).toBe("Inspect the failing tests");
+      expect(launch.prompt).toContain("You are a subagent working for a parent pi session.");
+      expect(launch.prompt).toContain("Assigned task:\nInspect the failing tests");
       expect(fakeMux.sent.length).toBe(0);
       expect((launch.childState as { tools: string[] }).tools).toEqual(["read"]);
-      expect((launch.childState as { prompt: string }).prompt).toBe("Inspect the failing tests");
+      expect((launch.childState as { prompt: string }).prompt).toContain(
+        "Assigned task:\nInspect the failing tests",
+      );
       expect((launch.childState as { persisted: boolean }).persisted).toBe(true);
       expect((launch.childState as { autoExitTimeoutMs?: number }).autoExitTimeoutMs).toBe(30_000);
       expect(launch.options).toEqual({

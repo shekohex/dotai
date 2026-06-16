@@ -19,6 +19,7 @@ import { errorMessage } from "../utils/error-message.js";
 import { SubagentRuntimeEventBus } from "./events.js";
 import type { SubagentChildIpcEvent } from "./ipc.js";
 import { resolveSubagentMode, type ResolvedSubagentMode } from "./modes.js";
+import { buildSubagentTaskPrompt } from "./prompt.js";
 import { createLiteSessionResources } from "./lite-session-resources.js";
 import {
   isTerminalSubagentStatus,
@@ -441,7 +442,7 @@ export class LiteRuntime {
     signal: AbortSignal | undefined,
   ): Promise<string> {
     if (params.handoff !== true) {
-      return params.task;
+      return buildSubagentTaskPrompt(params.task);
     }
 
     onUpdate?.({
@@ -478,7 +479,9 @@ export class LiteRuntime {
       throw new Error("Cancelled");
     }
 
-    return buildContextTransferPrompt(summary.summary, ctx.sessionManager.getSessionFile());
+    return buildSubagentTaskPrompt(
+      buildContextTransferPrompt(summary.summary, ctx.sessionManager.getSessionFile()),
+    );
   }
 
   private createInitialState(

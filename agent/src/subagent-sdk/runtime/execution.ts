@@ -11,6 +11,7 @@ import {
 import { errorMessage } from "../../utils/error-message.js";
 import { resolveSubagentMode } from "../modes.js";
 import { createChildSessionFile } from "../persistence.js";
+import { buildSubagentTaskPrompt } from "../prompt.js";
 import type {
   ChildBootstrapState,
   ResumeSubagentParams,
@@ -204,7 +205,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
     signal: AbortSignal | undefined,
   ): Promise<string> {
     if (params.handoff !== true) {
-      return params.task;
+      return buildSubagentTaskPrompt(params.task);
     }
 
     emitProgressUpdate(onUpdate, {
@@ -235,7 +236,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
       throw new Error("Cancelled");
     }
 
-    return buildContextTransferPrompt(summary.summary, parentSessionPath);
+    return buildSubagentTaskPrompt(buildContextTransferPrompt(summary.summary, parentSessionPath));
   }
 
   protected buildSpawnStateBundle(

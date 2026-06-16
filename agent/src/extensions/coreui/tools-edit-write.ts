@@ -58,10 +58,29 @@ type EditResultContext = Parameters<NonNullable<typeof editToolDefinition.render
 type WriteCallArgs = Parameters<NonNullable<typeof writeToolDefinition.renderCall>>[0];
 type WriteCallContext = Parameters<NonNullable<typeof writeToolDefinition.renderCall>>[2];
 
+const EDIT_PROMPT_GUIDELINES: string[] = [
+  ...(editToolDefinition.promptGuidelines ?? []),
+  "Prefer editing existing files over creating new files. Keep edits focused on the requested change.",
+  "Do not refactor, rename, reorder, or reformat unrelated code while editing.",
+  "Remove imports, variables, or functions made unused by your own edit, but do not clean up unrelated pre-existing dead code.",
+  "Do not add emojis, decorative comments, or broad defensive error handling unless the user asks or the boundary requires it.",
+  "Before deleting or overwriting existing content, make sure it is in scope and not unrelated user work.",
+];
+
+const WRITE_PROMPT_GUIDELINES: string[] = [
+  ...(writeToolDefinition.promptGuidelines ?? []),
+  "Prefer editing existing files over writing new files. Use write only when creating a new file is explicitly required or replacing the entire file is clearly safer than patching.",
+  "Do not proactively create documentation, README, example, or test files unless requested or required to verify the change.",
+  "When replacing an existing file, preserve intended behavior and unrelated content; do not use write as a shortcut for broad cleanup.",
+  "Do not add emojis, decorative comments, or broad defensive error handling unless the user asks or the boundary requires it.",
+  "Before overwriting existing content, make sure it is in scope and not unrelated user work.",
+];
+
 export function createEditToolOverrideDefinition() {
   return {
     ...editToolDefinition,
     renderShell: "self" as const,
+    promptGuidelines: EDIT_PROMPT_GUIDELINES,
     renderCall(args: EditCallArgs, theme: ToolTheme, context: EditCallContext) {
       const state: EditRenderState = isEditRenderState(context.state) ? context.state : {};
       const rawPath = readPathArg(args);
@@ -168,6 +187,7 @@ export function createWriteToolOverrideDefinition() {
   return {
     ...writeToolDefinition,
     renderShell: "self" as const,
+    promptGuidelines: WRITE_PROMPT_GUIDELINES,
     renderCall(args: WriteCallArgs, theme: ToolTheme, context: WriteCallContext) {
       return renderStatusPathToolCall(
         { pending: "writing", success: "written", error: "write" },

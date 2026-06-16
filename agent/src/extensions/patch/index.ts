@@ -72,6 +72,15 @@ It is important to remember:
 - You must prefix new lines with \`+\` even when creating a new file
 `;
 
+const APPLY_PATCH_PROMPT_GUIDELINES: string[] = [
+  "Prefer editing existing files over creating new files. Create files only when the task explicitly requires a new artifact or no existing file fits.",
+  "Keep patches surgical: change only lines required for the request, and do not refactor, rename, reorder, or reformat unrelated code.",
+  "Do not proactively create documentation, README, example, or test files unless requested or required to verify the change.",
+  "Remove imports, variables, or functions made unused by your own patch, but do not clean up unrelated pre-existing dead code.",
+  "Do not add emojis, decorative comments, or broad defensive error handling unless the user asks or the boundary requires it.",
+  "Before deleting or overwriting existing content, make sure it is in scope and not unrelated user work.",
+];
+
 const applyPatchParams = Type.Object(
   {
     patchText: Type.String({
@@ -91,6 +100,7 @@ export const applyPatchTool = defineTool<
   renderShell: "self",
   description: APPLY_PATCH_DESCRIPTION,
   promptSnippet: `edit/patch files`,
+  promptGuidelines: APPLY_PATCH_PROMPT_GUIDELINES,
   parameters: applyPatchParams,
   execute(_toolCallId, params, _signal, onUpdate, ctx) {
     const { hunks, targets } = parsePatchExecutionInput(params.patchText);

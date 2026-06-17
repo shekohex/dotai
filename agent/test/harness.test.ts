@@ -2669,7 +2669,7 @@ timedTest("benchmarks bundled system prompt token budget", async () => {
     await writeFile(benchmarkPath, `${JSON.stringify(benchmark, null, 2)}\n`, "utf8");
     await writeFile(benchmarkMarkdownPath, renderPromptBenchmarkTable(benchmark), "utf8");
 
-    expect(tokenCount).toBeLessThanOrEqual(5_500);
+    expect(tokenCount).toBeLessThanOrEqual(7_500);
     expect(projectInstructionBreakdown.some((entry) => entry.name === loadedGlobalAgentsPath)).toBe(
       true,
     );

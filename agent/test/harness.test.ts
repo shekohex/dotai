@@ -270,6 +270,13 @@ function createHandoffTestProviders(summaryText: string): {
       provider: "codex-openai",
       models: [
         {
+          id: "gpt-5.5",
+          reasoning: true,
+          input: ["text"],
+          contextWindow: 128_000,
+          maxTokens: 8_192,
+        },
+        {
           id: "gpt-5.4-mini",
           reasoning: true,
           input: ["text"],

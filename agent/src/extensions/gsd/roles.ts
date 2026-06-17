@@ -29,7 +29,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "worker",
     builtInModeSpec: {
       description: "Built-in GSD planner",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "xhigh",
       tools: ["read", "grep", "find", "bash", "write", "websearch", "ask_user_question"],
@@ -43,7 +43,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "worker",
     builtInModeSpec: {
       description: "Built-in GSD executor",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "medium",
       tools: ["*", "!ask_user_question"],
@@ -57,7 +57,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "review",
     builtInModeSpec: {
       description: "Built-in GSD verifier",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "medium",
       tools: ["read", "grep", "find", "bash", "write", "websearch", "!ask_user_question"],
@@ -71,7 +71,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "search",
     builtInModeSpec: {
       description: "Built-in GSD codebase mapper",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "edit", "write", "!ask_user_question"],
@@ -86,7 +86,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "search",
     builtInModeSpec: {
       description: "Built-in GSD intel updater",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "edit", "write", "!ask_user_question"],
@@ -101,7 +101,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "search",
     builtInModeSpec: {
       description: "Built-in GSD phase researcher",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "write", "websearch", "!ask_user_question"],
@@ -115,7 +115,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "search",
     builtInModeSpec: {
       description: "Built-in GSD pattern mapper",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "write", "!ask_user_question"],
@@ -129,7 +129,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "search",
     builtInModeSpec: {
       description: "Built-in GSD assumptions analyzer",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "!ask_user_question"],
@@ -143,7 +143,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "search",
     builtInModeSpec: {
       description: "Built-in GSD project researcher",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.4-mini",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "write", "websearch", "ask_user_question"],
@@ -157,7 +157,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "worker",
     builtInModeSpec: {
       description: "Built-in GSD roadmapper",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "medium",
       tools: ["read", "grep", "find", "bash", "write", "websearch", "!ask_user_question"],
@@ -171,7 +171,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "review",
     builtInModeSpec: {
       description: "Built-in GSD plan checker",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "medium",
       tools: ["read", "grep", "find", "bash", "websearch", "!ask_user_question"],
@@ -185,7 +185,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "worker",
     builtInModeSpec: {
       description: "Built-in GSD debugger",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "low",
       tools: [
@@ -209,7 +209,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     fallbackMode: "worker",
     builtInModeSpec: {
       description: "Built-in GSD debug session manager",
-      provider: "openai-codex",
+      provider: "codex-openai",
       modelId: "gpt-5.5",
       thinkingLevel: "low",
       tools: [

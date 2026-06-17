@@ -6,7 +6,11 @@ import { Type } from "typebox";
 import { test } from "vitest";
 import type { AgentUsage } from "../../src/extensions/dynamic-workflows/agent.js";
 import { WORKFLOW_AGENT_SESSION_REF } from "../../src/extensions/dynamic-workflows/agent-result.js";
-import { WorkflowError, WorkflowErrorCode } from "../../src/extensions/dynamic-workflows/errors.js";
+import {
+  isRetryableWorkflowError,
+  WorkflowError,
+  WorkflowErrorCode,
+} from "../../src/extensions/dynamic-workflows/errors.js";
 import { type JournalEntry, runWorkflow } from "../../src/extensions/dynamic-workflows/workflow.js";
 import { SUBAGENT_STRUCTURED_OUTPUT_ENTRY } from "../../src/subagent-sdk/types.js";
 
@@ -58,6 +62,15 @@ test("runWorkflow accumulates real per-agent usage", async () => {
   assert.equal(result.tokenUsage?.output, 80);
   assert.equal(result.tokenUsage?.total, 280);
   assert.ok(Math.abs((result.tokenUsage?.cost ?? 0) - 0.004) < 1e-9);
+});
+
+test("workflow retry classification handles generic OpenAI processing failures", () => {
+  const error = new WorkflowError(
+    "Error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID a657e1a1-8f81-4710-899c-67bb595a1c6c in your message.",
+    WorkflowErrorCode.AGENT_EXECUTION_ERROR,
+  );
+
+  assert.equal(isRetryableWorkflowError(error), true);
 });
 
 test("runWorkflow falls back to an estimate when provider reports total === 0", async () => {

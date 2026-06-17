@@ -1194,6 +1194,80 @@ timedTest("child bootstrap keeps subagent alive after provider error so pi can r
   }
 });
 
+timedTest("child bootstrap retries generic OpenAI processing failures", async () => {
+  const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+  const cwd = await createTempDir("agent-subagent-child-openai-processing-error-");
+  const sessionPath = path.join(cwd, "child.jsonl");
+  let shutdownCount = 0;
+
+  process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+    sessionId: "child-session-id",
+    sessionPath,
+    parentSessionId: "parent-session-id",
+    parentSessionPath: path.join(cwd, "parent.jsonl"),
+    name: "worker-one",
+    prompt: "Inspect failing tests",
+    autoExit: true,
+    autoExitTimeoutMs: 25,
+    handoff: false,
+    tools: ["read"],
+    startedAt: Date.now(),
+  });
+
+  try {
+    const fakePi = new FakePi();
+    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+      fakePi as unknown as ExtensionAPI,
+    );
+    const ctx = createFakeContext({
+      cwd,
+      sessionId: "child-session-id",
+      sessionFile: sessionPath,
+      shutdown: () => {
+        shutdownCount += 1;
+      },
+    });
+
+    const errorMessage =
+      "Error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID a657e1a1-8f81-4710-899c-67bb595a1c6c in your message.";
+
+    await emitHandlers(
+      fakePi,
+      "agent_end",
+      {
+        messages: [
+          {
+            role: "assistant",
+            stopReason: "error",
+            errorMessage,
+            content: [],
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      ctx,
+    );
+
+    expect(shutdownCount).toBe(0);
+    const activityEntry = fakePi.appendedEntries.find(
+      (entry) => entry.customType === SUBAGENT_ACTIVITY_ENTRY,
+    );
+    expect(activityEntry?.data).toMatchObject({
+      kind: "idle",
+      label: "retrying provider request",
+      detail: errorMessage,
+      done: false,
+    });
+  } finally {
+    if (previousChildState === undefined) {
+      delete process.env.PI_SUBAGENT_CHILD_STATE;
+    } else {
+      process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest(
   "child bootstrap prefers provider response status for retryable provider error",
   async () => {

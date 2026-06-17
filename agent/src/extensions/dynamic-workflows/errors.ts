@@ -54,7 +54,7 @@ export function isTimeoutError(error: unknown): boolean {
 }
 
 export function isRetryableErrorMessage(message: string): boolean {
-  return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay|\b(?:ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND)\b/i.test(
+  return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|websocket transport is not available|other side closed|fetch failed|request failed|failed after retries|no response body|upstream.?connect|reset before headers|socket hang up|ended without|stream ended before message_stop|stream closed before response\.completed|http2 request did not get a response|invalid codex sse json|invalid codex websocket json|error occurred while processing your request|you can retry your request|help\.openai\.com|timed? out|timeout|terminated|retry delay|\b(?:ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND)\b/i.test(
     message,
   );
 }

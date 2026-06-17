@@ -7,6 +7,7 @@ import {
 import {
   createWorkflowStorage,
   createWorkflowTool,
+  formatBuiltinWorkflowsForSystemPrompt,
   getWorkflowCommandCompletions,
   handleWorkflowCommand,
   getWorkflowModeState,
@@ -98,7 +99,12 @@ export default function extension(pi: ExtensionAPI) {
     },
   });
   registerWorkflowCommands(pi, manager, { storage, cwd });
-  registerBuiltinWorkflows(pi, { cwd, manager });
+  const builtinWorkflows = registerBuiltinWorkflows(pi, {
+    enableWorkflowTool: () => {
+      setWorkflowToolEnabled(true);
+    },
+  });
+  const workflowSystemPrompt = formatBuiltinWorkflowsForSystemPrompt(builtinWorkflows);
   registerAllSavedWorkflows(pi, cwd, storage, manager);
   // Deliver a background run's result into the conversation when it finishes.
   installResultDelivery(pi, manager);
@@ -117,8 +123,13 @@ export default function extension(pi: ExtensionAPI) {
     manager.setMainModel(ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined);
     manager.setExtensionContext(ctx);
   });
-  pi.on("before_agent_start", () => {
-    if (!workflowToolEnabled) deactivateWorkflowTool(pi);
+  pi.on("before_agent_start", (event) => {
+    if (!workflowToolEnabled) {
+      deactivateWorkflowTool(pi);
+      return { systemPrompt: event.systemPrompt };
+    }
+    if (workflowSystemPrompt.length === 0) return { systemPrompt: event.systemPrompt };
+    return { systemPrompt: `${event.systemPrompt}\n\n${workflowSystemPrompt}` };
   });
   pi.on("session_tree", (_event: unknown, ctx: ExtensionContext) => {
     setWorkflowStatusContext(ctx);

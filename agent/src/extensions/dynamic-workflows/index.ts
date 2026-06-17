@@ -13,6 +13,13 @@ export { WorkflowAgent } from "./agent.js";
 export type { AutoWorkflowConfig } from "./auto-workflow.js";
 export { shouldUseWorkflow, suggestWorkflowScript } from "./auto-workflow.js";
 export { registerBuiltinWorkflows } from "./builtin-commands.js";
+export {
+  buildBuiltinWorkflowInvocationPrompt,
+  formatBuiltinWorkflowsForSystemPrompt,
+  listBuiltinWorkflows,
+  listRunnableBuiltinWorkflows,
+  type BuiltinWorkflowDefinition,
+} from "./builtin-registry.js";
 export * from "./config.js";
 export type { DeepResearchConfig } from "./deep-research.js";
 export { generateCodebaseAuditWorkflow, generateDeepResearchWorkflow } from "./deep-research.js";

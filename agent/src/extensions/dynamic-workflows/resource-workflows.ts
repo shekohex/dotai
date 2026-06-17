@@ -7,7 +7,14 @@ const WorkflowTemplateValuesSchema = Type.Record(Type.String(), Type.String());
 
 type WorkflowTemplateValues = Static<typeof WorkflowTemplateValuesSchema>;
 
-const resourcesDir = join(import.meta.dirname, "..", "..", "resources", "workflows", "dynamic");
+export const workflowResourcesDir = join(
+  import.meta.dirname,
+  "..",
+  "..",
+  "resources",
+  "workflows",
+  "dynamic",
+);
 
 /**
  * Load a bundled workflow resource script.
@@ -19,7 +26,7 @@ const resourcesDir = join(import.meta.dirname, "..", "..", "resources", "workflo
  * @returns {string} Raw workflow script ready for template transformation or parsing.
  */
 export function loadWorkflowResource(name: string): string {
-  return readFileSync(join(resourcesDir, name), "utf-8");
+  return readFileSync(join(workflowResourcesDir, name), "utf-8");
 }
 
 /**

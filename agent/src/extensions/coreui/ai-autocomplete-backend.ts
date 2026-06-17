@@ -1,6 +1,7 @@
 import { complete, type Api, type Message, type Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
+import { escapeXml } from "../../utils/xml.js";
 import {
   isAbortSignalAborted,
   modelForOpenAIResponses,
@@ -282,15 +283,6 @@ export function formatPreviousSuggestions(previousSuggestions: string[] | undefi
     )
     .join("\n");
   return formatted.slice(0, MAX_PREVIOUS_SUGGESTIONS_CHARS);
-}
-
-function escapeXml(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
 }
 
 export function normalizeCompletion(text: string, suffix: string): string {

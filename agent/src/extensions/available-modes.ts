@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { loadModeRegistry, type ModeSpec } from "../mode-utils.js";
+import { escapeXml } from "../utils/xml.js";
 
 export type AvailableMode = {
   name: string;
@@ -11,15 +12,6 @@ function compareModeNames(left: string, right: string): number {
   if (left < right) return -1;
   if (left > right) return 1;
   return 0;
-}
-
-function escapeXmlAttribute(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("'", "&apos;");
 }
 
 export async function loadAvailableModes(): Promise<AvailableMode[]> {
@@ -41,7 +33,7 @@ export function formatAvailableModesXml(modes: AvailableMode[]): string {
   return [
     "<available_modes>",
     ...sortedModes.map(({ name, spec }) => {
-      const attrs = [`name="${escapeXmlAttribute(name)}"`];
+      const attrs = [`name="${escapeXml(name)}"`];
       if (
         spec.provider !== undefined &&
         spec.provider.length > 0 &&
@@ -49,13 +41,13 @@ export function formatAvailableModesXml(modes: AvailableMode[]): string {
         spec.modelId.length > 0
       ) {
         const model = `${spec.provider}/${spec.modelId}`;
-        attrs.push(`model="${escapeXmlAttribute(model)}"`);
+        attrs.push(`model="${escapeXml(model)}"`);
       }
       if (spec.thinkingLevel !== undefined) {
-        attrs.push(`thinkingLevel="${escapeXmlAttribute(spec.thinkingLevel)}"`);
+        attrs.push(`thinkingLevel="${escapeXml(spec.thinkingLevel)}"`);
       }
       if (spec.description !== undefined && spec.description.length > 0) {
-        attrs.push(`description="${escapeXmlAttribute(spec.description)}"`);
+        attrs.push(`description="${escapeXml(spec.description)}"`);
       }
       return `  <mode ${attrs.join(" ")} />`;
     }),

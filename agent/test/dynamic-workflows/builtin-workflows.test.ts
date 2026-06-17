@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { test } from "vitest";
+import {
+  buildBuiltinWorkflowInvocationPrompt,
+  formatBuiltinWorkflowsForSystemPrompt,
+  listBuiltinWorkflows,
+  listRunnableBuiltinWorkflows,
+} from "../../src/extensions/dynamic-workflows/builtin-registry.js";
+import { registerBuiltinWorkflows } from "../../src/extensions/dynamic-workflows/builtin-commands.js";
 import {
   generateAdversarialReviewWorkflow,
   generateMultiPerspectiveWorkflow,
@@ -55,6 +63,82 @@ test("built-in workflows load from bundled resources", () => {
     loadWorkflowResource("adversarial-review.workflow.js"),
   );
   assert.equal(generateSimplifyWorkflow(), loadWorkflowResource("simplify.workflow.js"));
+});
+
+test("built-in workflow registry lists workflows deterministically", () => {
+  const workflows = listBuiltinWorkflows();
+  assert.deepEqual(
+    workflows.map((workflow) => workflow.commandName),
+    ["wf:adversarial-review", "wf:deep-research", "wf:goal", "wf:simplify"],
+  );
+  assert.ok(workflows.every((workflow) => workflow.filePath.endsWith(".workflow.js")));
+  assert.ok(workflows.every((workflow) => !workflow.description.includes("__description__")));
+});
+
+test("built-in workflow prompt catalog is stable and points agents at scriptFile", () => {
+  const prompt = formatBuiltinWorkflowsForSystemPrompt(listRunnableBuiltinWorkflows());
+  assert.match(prompt, /<workflows>/);
+  assert.match(prompt, /\/wf:<name> => src\/resources\/workflows\/dynamic\/<name>\.workflow\.js/);
+  assert.match(prompt, /n="adversarial-review"/);
+  assert.match(prompt, /n="deep-research"/);
+  assert.doesNotMatch(prompt, /n="goal"/);
+  assert.doesNotMatch(prompt, /n="wf:/);
+  assert.match(prompt, /scriptFile\+args/);
+  assert.match(prompt, /scriptFile/);
+  assert.doesNotMatch(prompt, /codebase-audit/);
+  assert.doesNotMatch(prompt, /multi-perspective/);
+});
+
+test("built-in workflow invocation prompt preserves user context", () => {
+  const workflow = listBuiltinWorkflows().find(
+    (item) => item.commandName === "wf:adversarial-review",
+  );
+  assert.ok(workflow);
+  const prompt = buildBuiltinWorkflowInvocationPrompt(workflow, "review auth diff");
+  assert.match(prompt, /Use built-in dynamic workflow `wf:adversarial-review`/);
+  assert.match(prompt, /<workflow_description>/);
+  assert.match(prompt, /Workflow file: `adversarial-review\.workflow\.js`/);
+  assert.match(prompt, /detailed standalone prompt/);
+  assert.match(prompt, /workflow` tool/);
+  assert.match(prompt, /<additional_context>\nreview auth diff\n<\/additional_context>/);
+  assert.doesNotMatch(prompt, /\/home\/coder/);
+  assert.doesNotMatch(prompt, /<auto_context>/);
+});
+
+test("built-in workflow slash commands send follow-up user turns", async () => {
+  const commands = new Map<
+    string,
+    { handler: (args: string, ctx: ExtensionCommandContext) => void }
+  >();
+  const sent: Array<{ content: string; options?: { deliverAs?: string } }> = [];
+  let enabled = false;
+  const pi = {
+    getCommands: () => [],
+    registerCommand(
+      name: string,
+      command: { handler: (args: string, ctx: ExtensionCommandContext) => void },
+    ) {
+      commands.set(name, command);
+    },
+    sendUserMessage(content: string, options?: { deliverAs?: string }) {
+      sent.push({ content, options });
+    },
+  } as unknown as ExtensionAPI;
+  const ctx = {
+    ui: { notify() {} },
+  } as unknown as ExtensionCommandContext;
+
+  registerBuiltinWorkflows(pi, {
+    enableWorkflowTool: () => {
+      enabled = true;
+    },
+  });
+
+  await commands.get("wf:adversarial-review")?.handler("review auth diff", ctx);
+
+  assert.equal(enabled, true);
+  assert.equal(sent[0]?.options?.deliverAs, "followUp");
+  assert.match(sent[0]?.content ?? "", /review auth diff/);
 });
 
 test("simplify workflow produces a valid, parseable script", () => {

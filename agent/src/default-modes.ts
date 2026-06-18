@@ -15,7 +15,7 @@ export const defaultModes = {
   currentMode: "build",
   modes: {
     rush: {
-      provider: "deepseek",
+      provider: "opencode-go",
       modelId: "deepseek-v4-flash",
       thinkingLevel: "high",
       color: "warning",
@@ -24,7 +24,7 @@ export const defaultModes = {
       description:
         "Use for cheap exploration, parallel scenario probes, and disposable implementation passes.",
       fallbacks: [
-        { provider: "opencode-go", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
+        { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
         { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
         { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
       ],
@@ -92,7 +92,7 @@ export const defaultModes = {
       fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
     },
     "fast-review": {
-      provider: "deepseek",
+      provider: "opencode-go",
       modelId: "deepseek-v4-pro",
       thinkingLevel: "high",
       color: "muted",
@@ -104,6 +104,7 @@ export const defaultModes = {
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
       fallbacks: [
+        { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" },
         { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
         { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
       ],
@@ -122,7 +123,7 @@ export const defaultModes = {
       systemPromptMode: "append",
     },
     search: {
-      provider: "deepseek",
+      provider: "opencode-go",
       modelId: "deepseek-v4-flash",
       color: "borderMuted",
       thinkingLevel: "high",
@@ -134,6 +135,7 @@ export const defaultModes = {
       systemPrompt: modeSystemPrompt("search"),
       systemPromptMode: "replace",
       fallbacks: [
+        { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
         { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
         { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
       ],
@@ -185,7 +187,7 @@ export const defaultModes = {
       fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
     },
     poke: {
-      provider: "deepseek",
+      provider: "opencode-go",
       modelId: "deepseek-v4-flash",
       thinkingLevel: "high",
       tmuxTarget: "window",
@@ -195,7 +197,7 @@ export const defaultModes = {
       systemPrompt: modeSystemPrompt("poke"),
       systemPromptMode: "replace",
       fallbacks: [
-        { provider: "opencode-go", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
+        { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
         { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
         { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
       ],

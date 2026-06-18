@@ -21,6 +21,7 @@ export type ModelAuth = {
   model: Model<Api>;
   apiKey: string;
   headers?: Record<string, string>;
+  env?: Record<string, string>;
 };
 
 export function modelDisplayName(candidate: ModelFallbackCandidate): string {
@@ -87,7 +88,7 @@ export async function resolveModelFallbackAuth(
     return undefined;
   }
 
-  return { model, apiKey: auth.apiKey, headers: auth.headers };
+  return { model, apiKey: auth.apiKey, headers: auth.headers, env: auth.env };
 }
 
 export function isAbortSignalAborted(signal: AbortSignal | undefined): boolean {

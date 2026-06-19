@@ -1,4 +1,5 @@
 import { createConnection } from "node:net";
+import path from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -9,6 +10,9 @@ import {
   type AskUserQuestionPromptEventPayload,
 } from "./ask-user-question/index.js";
 import { isAskUserQuestionEventPayload } from "./ask-user-question/events.js";
+import { extractLastAssistantText, formatNotification } from "./terminal-notify.js";
+import { isChildSession, readChildState } from "../subagent-sdk/index.js";
+import type { ChildBootstrapState } from "../subagent-sdk/types.js";
 import { asRecord, readString } from "../utils/unknown-data.js";
 
 type AgentState = "working" | "blocked" | "idle";
@@ -21,7 +25,13 @@ type QueuedState = {
 
 type HerdrStateRequest = {
   id: string;
-  method: "pane.report_agent" | "pane.release_agent";
+  method:
+    | "client.window_title.clear"
+    | "client.window_title.set"
+    | "notification.show"
+    | "pane.report_agent"
+    | "pane.report_metadata"
+    | "pane.release_agent";
   params: Record<string, unknown>;
 };
 
@@ -134,9 +144,75 @@ function sendState(state: AgentState, message?: string, seq = nextReportSeq()): 
       agent: "pi",
       state,
       message,
+      custom_status: customStatusForState(state, message),
       seq,
     }),
   });
+}
+
+function customStatusForState(state: AgentState, message?: string): string {
+  if (message !== undefined && message.length > 0) {
+    return message;
+  }
+  if (state === "working") {
+    return "working";
+  }
+  if (state === "blocked") {
+    return "needs input";
+  }
+  return "ready";
+}
+
+function sendMetadata(params: Record<string, unknown>): Promise<void> {
+  const paneId = currentPaneId();
+  if (paneId === undefined) {
+    return Promise.resolve();
+  }
+
+  return sendRequest({
+    id: randomRequestId("metadata"),
+    method: "pane.report_metadata",
+    params: {
+      pane_id: paneId,
+      source,
+      agent: "pi",
+      applies_to_source: source,
+      seq: nextReportSeq(),
+      ...params,
+    },
+  });
+}
+
+function sendWindowTitle(title: string): Promise<void> {
+  return sendRequest({
+    id: randomRequestId("window-title"),
+    method: "client.window_title.set",
+    params: { title },
+  });
+}
+
+function clearWindowTitle(): Promise<void> {
+  return sendRequest({
+    id: randomRequestId("clear-window-title"),
+    method: "client.window_title.clear",
+    params: {},
+  });
+}
+
+function sendNotification(title: string, body?: string, sound: "done" | "request" = "done"): void {
+  void sendRequest({
+    id: randomRequestId("notification"),
+    method: "notification.show",
+    params: body === undefined ? { title, sound } : { title, body, sound },
+  });
+}
+
+function sessionTitle(ctx: ExtensionContext): string {
+  const sessionName = ctx.sessionManager.getSessionName();
+  const cwdBasename = path.basename(ctx.cwd);
+  return sessionName !== undefined && sessionName.length > 0
+    ? `π - ${sessionName} - ${cwdBasename}`
+    : `π - ${cwdBasename}`;
 }
 
 function releaseAgent(): Promise<void> {
@@ -167,9 +243,22 @@ function lastAssistantMessage(messages: unknown[]): Record<string, unknown> | un
   return undefined;
 }
 
-function retryableErrorMessage(event: unknown): string | undefined {
+function isMessageLike(value: unknown): value is { role?: string; content?: unknown } {
+  const record = asRecord(value);
+  return record !== undefined && (record.role === undefined || typeof record.role === "string");
+}
+
+function readMessages(event: unknown): Array<{ role?: string; content?: unknown }> | undefined {
   const messages = asRecord(event)?.messages;
-  if (!Array.isArray(messages)) {
+  if (!Array.isArray(messages) || !messages.every((message) => isMessageLike(message))) {
+    return undefined;
+  }
+  return messages;
+}
+
+function retryableErrorMessage(event: unknown): string | undefined {
+  const messages = readMessages(event);
+  if (messages === undefined) {
     return undefined;
   }
 
@@ -211,6 +300,7 @@ function clearTimer(timer: ReturnType<typeof setTimeout> | undefined): void {
 class HerdrAgentStateReporter {
   private readonly idleDebounceMs = parseDurationEnv("HERDR_PI_IDLE_DEBOUNCE_MS", 250);
   private readonly retryGraceMs = parseDurationEnv("HERDR_PI_RETRY_GRACE_MS", 2500);
+  private currentContext: ExtensionContext | undefined;
   private readonly activeQuestionToolCallIds = new Set<string>();
   private agentActive = false;
   private retryHoldActive = false;
@@ -225,9 +315,17 @@ class HerdrAgentStateReporter {
   private sendInFlight = false;
   private queuedState: QueuedState | undefined;
 
+  constructor(private readonly childState: ChildBootstrapState | undefined) {}
+
   register(pi: ExtensionAPI): void {
     pi.on("session_start", (_event, ctx) => {
       this.onSessionStart(ctx);
+    });
+    pi.on("before_agent_start", (_event, ctx) => {
+      this.currentContext = ctx;
+      if (!this.isChildSession(ctx)) {
+        void this.updateTitle(ctx);
+      }
     });
     pi.events.on("herdr:blocked", (data) => {
       this.onBlockedEvent(data);
@@ -249,13 +347,43 @@ class HerdrAgentStateReporter {
     });
     pi.on("session_shutdown", async () => {
       this.clearPendingTimers();
-      await releaseAgent();
+      await Promise.all([
+        sendMetadata({
+          clear_title: true,
+          clear_custom_status: true,
+          clear_state_labels: true,
+        }),
+        clearWindowTitle(),
+        releaseAgent(),
+      ]);
     });
   }
 
   private onSessionStart(ctx: ExtensionContext): void {
+    this.currentContext = ctx;
     updateSessionRef(ctx);
+    if (!this.isChildSession(ctx)) {
+      void this.updateTitle(ctx);
+    }
     this.publishState(true);
+  }
+
+  private async updateTitle(ctx: ExtensionContext): Promise<void> {
+    const title = sessionTitle(ctx);
+    await Promise.all([
+      sendMetadata({
+        title,
+        display_agent: "π",
+        state_labels: {
+          working: "working",
+          blocked: "needs input",
+          idle: "ready",
+          done: "done",
+          unknown: "unknown",
+        },
+      }),
+      sendWindowTitle(title),
+    ]);
   }
 
   private onBlockedEvent(data: unknown): void {
@@ -272,6 +400,7 @@ class HerdrAgentStateReporter {
     this.clearPendingTimers();
     this.blockedCount += 1;
     this.blockedMessage = event.label;
+    this.notifyInputRequest(this.blockedMessage);
     this.publishState();
   }
 
@@ -289,6 +418,7 @@ class HerdrAgentStateReporter {
     this.activeQuestionToolCallIds.add(data.toolCallId);
     this.blockedCount += 1;
     this.blockedMessage = askUserQuestionMessage(data);
+    this.notifyInputRequest(this.blockedMessage);
     this.publishState();
   }
 
@@ -323,6 +453,38 @@ class HerdrAgentStateReporter {
     }
 
     this.scheduleIdle();
+    this.notifyAgentEnd(event);
+  }
+
+  private notifyAgentEnd(event: unknown): void {
+    if (this.isChildSession()) {
+      return;
+    }
+
+    const messages = readMessages(event);
+    if (messages === undefined) {
+      sendNotification("π", "done", "done");
+      return;
+    }
+
+    const text = extractLastAssistantText(messages);
+    const notification = formatNotification(text);
+    if (notification === null) {
+      sendNotification("π", "done", "done");
+      return;
+    }
+    sendNotification(notification.title, notification.body, "done");
+  }
+
+  private notifyInputRequest(message: string | undefined): void {
+    if (this.isChildSession()) {
+      return;
+    }
+    sendNotification("π needs input", message, "request");
+  }
+
+  private isChildSession(ctx = this.currentContext): boolean {
+    return ctx !== undefined && isChildSession(this.childState, ctx);
   }
 
   private clearBlocked(): void {
@@ -428,5 +590,5 @@ export default function herdrAgentStateExtension(pi: ExtensionAPI): void {
     return;
   }
 
-  new HerdrAgentStateReporter().register(pi);
+  new HerdrAgentStateReporter(readChildState()).register(pi);
 }

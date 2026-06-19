@@ -94,6 +94,18 @@ data class TmuxSession(
     val attached: Boolean,
 )
 
+enum class TerminalAttachKind {
+    Tmux,
+    Herdr,
+}
+
+data class TerminalAttachTarget(
+    val kind: TerminalAttachKind,
+    val title: String,
+    val subtitle: String,
+    val command: String,
+)
+
 data class CoderReconnectToken(
     val id: String,
     val lastUsedAtMillis: Long,

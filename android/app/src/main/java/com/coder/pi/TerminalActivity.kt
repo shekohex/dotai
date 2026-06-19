@@ -316,7 +316,7 @@ class TerminalActivity : AppCompatActivity() {
     }
 
     private fun terminalWindowTitle(launch: TerminalLaunchRequest): String {
-        val sessionLabel = tmuxSessionLabel(launch.command)
+        val sessionLabel = terminalAttachLabel(launch.command)
         val suffix = sessionLabel ?: launch.badge.takeIf { it.isNotBlank() }
         return suffix?.let { "${launch.title} · $it" } ?: launch.title
     }

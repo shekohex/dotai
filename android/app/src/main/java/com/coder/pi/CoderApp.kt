@@ -865,13 +865,13 @@ private fun CoderHomeScreen(
     var selectedWorkspace by remember { mutableStateOf<CoderWorkspace?>(null) }
     var workspaceIconRevision by remember { mutableStateOf(0) }
     var selectedAgentPicker by remember { mutableStateOf<CoderWorkspace?>(null) }
-    var tmuxLoading by remember { mutableStateOf<CoderWorkspaceAgent?>(null) }
-    var tmuxPicker by remember { mutableStateOf<Triple<CoderWorkspace, CoderWorkspaceAgent, List<TmuxSession>>?>(null) }
+    var attachLoading by remember { mutableStateOf<CoderWorkspaceAgent?>(null) }
+    var attachPicker by remember { mutableStateOf<Triple<CoderWorkspace, CoderWorkspaceAgent, List<TerminalAttachTarget>>?>(null) }
     val metrics = rememberCoderUiMetrics()
-    BackHandler(enabled = tmuxPicker != null || tmuxLoading != null || selectedAgentPicker != null || selectedWorkspace != null) {
+    BackHandler(enabled = attachPicker != null || attachLoading != null || selectedAgentPicker != null || selectedWorkspace != null) {
         when {
-            tmuxPicker != null -> tmuxPicker = null
-            tmuxLoading != null -> tmuxLoading = null
+            attachPicker != null -> attachPicker = null
+            attachLoading != null -> attachLoading = null
             selectedAgentPicker != null -> selectedAgentPicker = null
             selectedWorkspace != null -> selectedWorkspace = null
         }
@@ -977,17 +977,17 @@ private fun CoderHomeScreen(
             if (error != null) item { Text(error ?: "", color = tokens.accent, modifier = Modifier.padding(horizontal = spacingLarge())) }
             if (loadingWorkspaces && workspaces.isEmpty()) item { WorkspaceLoadingSection(tokens, metrics) }
             WorkspaceSection("RUNNING WORKSPACES", running, session, sessionStore, api, tokens, metrics, workspaceIconRevision, onSessionExpired, { failure -> error = safeUserError(failure, "Workspace action failed") }, { selectedWorkspace = it }, { workspace ->
-                openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { tmuxLoading = it }, {
-                    tmuxLoading = null
-                    tmuxPicker = it
+                openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { attachLoading = it }, {
+                    attachLoading = null
+                    attachPicker = it
                 })
             }, { refresh() })
             item { CoderSectionHeader("STOPPED WORKSPACES", if (inactiveCollapsed) "show" else "hide", tokens, metrics) { inactiveCollapsed = !inactiveCollapsed } }
             if (!inactiveCollapsed) {
                 WorkspaceRows(inactive, session, sessionStore, api, tokens, metrics, workspaceIconRevision, onSessionExpired, { failure -> error = safeUserError(failure, "Workspace action failed") }, { selectedWorkspace = it }, { workspace ->
-                    openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { tmuxLoading = it }, {
-                        tmuxLoading = null
-                        tmuxPicker = it
+                    openWorkspace(scope, api, workspace, onOpenTerminal, { selectedAgentPicker = it }, { attachLoading = it }, {
+                        attachLoading = null
+                        attachPicker = it
                     })
                 }, { refresh() })
             }
@@ -997,30 +997,30 @@ private fun CoderHomeScreen(
             AgentPickerSheet(workspace, tokens, { selectedAgentPicker = null }) { agent ->
                 selectedAgentPicker = null
                 scope.launch {
-                    tmuxLoading = agent
-                    val sessions =
-                        runCatching { api.tmuxSessions(agent.id, UUID.randomUUID().toString()) }
+                    attachLoading = agent
+                    val targets =
+                        runCatching { api.terminalAttachTargets(agent.id, UUID.randomUUID().toString()) }
                             .onFailure {
-                                SentryBreadcrumbs.api("tmux session load failed", mapOf("agentId" to agent.id, "error" to safeUserError(it, "unknown")))
+                                SentryBreadcrumbs.api("terminal attach target load failed", mapOf("agentId" to agent.id, "error" to safeUserError(it, "unknown")))
                                 if (AppFailureClassifier.isTransientNetwork(it)) {
-                                    SentryAppLogger.warn("tmux session load failed; network unavailable", mapOf("agentId" to agent.id), it)
+                                    SentryAppLogger.warn("terminal attach target load failed; network unavailable", mapOf("agentId" to agent.id), it)
                                 } else {
-                                    SentryAppLogger.error("tmux session load failed", mapOf("agentId" to agent.id), it)
+                                    SentryAppLogger.error("terminal attach target load failed", mapOf("agentId" to agent.id), it)
                                 }
                             }.getOrDefault(emptyList())
-                    tmuxLoading = null
-                    if (sessions.isEmpty()) onOpenTerminal(workspace, agent, defaultShellCommand()) else tmuxPicker = Triple(workspace, agent, sessions)
+                    attachLoading = null
+                    if (targets.isEmpty()) onOpenTerminal(workspace, agent, defaultShellCommand()) else attachPicker = Triple(workspace, agent, targets)
                 }
             }
         }
-        tmuxLoading?.let { agent -> CoderTmuxLoadingSheet(agent, tokens, metrics) { tmuxLoading = null } }
-        tmuxPicker?.let { picker ->
-            CoderTmuxSheet(picker.second, picker.third, tokens, metrics, { tmuxPicker = null }, {
-                tmuxPicker = null
+        attachLoading?.let { agent -> CoderAttachLoadingSheet(agent, tokens, metrics) { attachLoading = null } }
+        attachPicker?.let { picker ->
+            CoderAttachSheet(picker.second, picker.third, tokens, metrics, { attachPicker = null }, {
+                attachPicker = null
                 onOpenTerminal(picker.first, picker.second, defaultShellCommand())
-            }) { tmux ->
-                tmuxPicker = null
-                onOpenTerminal(picker.first, picker.second, "tmux attach-session -t ${shellSingleQuote(tmux.name)}")
+            }) { target ->
+                attachPicker = null
+                onOpenTerminal(picker.first, picker.second, target.command)
             }
         }
     }
@@ -1168,9 +1168,9 @@ private fun ActiveCoderSessionCard(
                 Spacer(Modifier.width(4.dp))
                 Box(Modifier.size(6.dp).clip(CircleShape).background(tokens.accent))
             }
-            tmuxSessionLabel(managed.identity.command)?.let { tmuxLabel ->
+            terminalAttachLabel(managed.identity.command)?.let { attachLabel ->
                 Text(
-                    tmuxLabel,
+                    attachLabel,
                     color = Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
@@ -1222,6 +1222,13 @@ fun tmuxSessionLabel(command: String): String? {
             .ifBlank { name.take(10) }
     }
 }
+
+fun herdrSessionLabel(command: String): String? {
+    if (!command.contains("herdr") || !command.contains("--session")) return null
+    return if (command.contains("--session 'default'") || command.contains("--session default")) "Herdr" else "Herdr+"
+}
+
+fun terminalAttachLabel(command: String): String? = tmuxSessionLabel(command) ?: herdrSessionLabel(command)
 
 fun relativeSessionTime(
     timestampMillis: Long,
@@ -1560,18 +1567,20 @@ private fun TmuxPickerSheet(
 }
 
 @Composable
-private fun CoderTmuxSheet(
+private fun CoderAttachSheet(
     agent: CoderWorkspaceAgent,
-    sessions: List<TmuxSession>,
+    targets: List<TerminalAttachTarget>,
     tokens: UiTokens,
     metrics: CoderUiMetrics,
     onDismiss: () -> Unit,
     onNewShell: () -> Unit,
-    onTmux: (TmuxSession) -> Unit,
+    onTarget: (TerminalAttachTarget) -> Unit,
 ) {
-    CoderResizableBottomSheet(tokens, metrics, onDismiss, label = "tmux-sheet-height") {
+    CoderResizableBottomSheet(tokens, metrics, onDismiss, label = "attach-sheet-height") {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            CoderPill("›_  Tmux", tokens, metrics)
+            CoderPill("Herdr", tokens, metrics)
+            Spacer(Modifier.width(8.dp))
+            CoderPill("Tmux", tokens, metrics)
             Spacer(Modifier.weight(1f))
             CoderPill("Skip ▷", tokens, metrics) {
                 hapticClick()
@@ -1590,7 +1599,7 @@ private fun CoderTmuxSheet(
             Icon(painterResource(R.drawable.ic_feather_sliders), null, tint = tokens.accent, modifier = Modifier.size(metrics.iconSize))
             Spacer(Modifier.width(metrics.iconGap / 2))
             Column(Modifier.weight(1f)) {
-                Text("${sessions.size} tmux sessions on ${agent.name}", color = tokens.text, fontSize = metrics.bodySize, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${targets.size} attach targets on ${agent.name}", color = tokens.text, fontSize = metrics.bodySize, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(agent.status, color = tokens.secondary, fontSize = metrics.captionSize, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Text("Open ›", color = tokens.accent, fontSize = metrics.bodySize)
@@ -1604,10 +1613,40 @@ private fun CoderTmuxSheet(
                 .background(tokens.surface),
             contentPadding = PaddingValues(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + metrics.sheetPadding),
         ) {
-            items(sessions.size) { index ->
-                val session = sessions[index]
-                HostSheetRow(session.name, "${session.windows} windows", tokens) { onTmux(session) }
+            items(targets.size) { index ->
+                val target = targets[index]
+                TerminalAttachTargetRow(target, tokens, metrics) { onTarget(target) }
             }
+        }
+    }
+}
+
+@Composable
+private fun TerminalAttachTargetRow(
+    target: TerminalAttachTarget,
+    tokens: UiTokens,
+    metrics: CoderUiMetrics,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable {
+                hapticClick()
+                onClick()
+            }.padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painterResource(if (target.kind == TerminalAttachKind.Herdr) R.drawable.ic_herdr_logo else R.drawable.ic_feather_terminal),
+            null,
+            tint = if (target.kind == TerminalAttachKind.Herdr) Color.Unspecified else tokens.accent,
+            modifier = Modifier.size(metrics.iconSize),
+        )
+        Spacer(Modifier.width(metrics.iconGap))
+        Column(Modifier.weight(1f)) {
+            Text(target.title, color = tokens.text, fontSize = metrics.bodySize, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(target.subtitle, color = tokens.secondary, fontSize = metrics.captionSize, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -1667,7 +1706,7 @@ private fun CoderResizableBottomSheet(
 }
 
 @Composable
-private fun CoderTmuxLoadingSheet(
+private fun CoderAttachLoadingSheet(
     agent: CoderWorkspaceAgent,
     tokens: UiTokens,
     metrics: CoderUiMetrics,
@@ -1685,7 +1724,7 @@ private fun CoderTmuxLoadingSheet(
         ) {
             CoderSheetHandle(tokens, metrics)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                CoderPill("›_  Tmux", tokens, metrics)
+                CoderPill("›_  Sessions", tokens, metrics)
                 Spacer(Modifier.weight(1f))
                 CoderPill("Skip ▷", tokens, metrics) {
                     hapticClick()
@@ -1704,7 +1743,7 @@ private fun CoderTmuxLoadingSheet(
                 Icon(painterResource(R.drawable.ic_feather_sliders), null, tint = tokens.accent, modifier = Modifier.size(metrics.iconSize))
                 Spacer(Modifier.width(metrics.iconGap / 2))
                 Column(Modifier.weight(1f)) {
-                    Text("Checking tmux on ${agent.name}", color = tokens.text, fontSize = metrics.bodySize, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Checking sessions on ${agent.name}", color = tokens.text, fontSize = metrics.bodySize, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(agent.status, color = tokens.secondary, fontSize = metrics.captionSize, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -1729,8 +1768,8 @@ private fun openWorkspace(
     workspace: CoderWorkspace,
     onOpenTerminal: (CoderWorkspace, CoderWorkspaceAgent, String) -> Unit,
     onChooseAgent: (CoderWorkspace) -> Unit,
-    onTmuxLoading: (CoderWorkspaceAgent) -> Unit,
-    onTmux: (Triple<CoderWorkspace, CoderWorkspaceAgent, List<TmuxSession>>) -> Unit,
+    onAttachLoading: (CoderWorkspaceAgent) -> Unit,
+    onAttachTargets: (Triple<CoderWorkspace, CoderWorkspaceAgent, List<TerminalAttachTarget>>) -> Unit,
 ) {
     SentryBreadcrumbs.app("workspace opened", mapOf("workspaceId" to workspace.id, "agentCount" to workspace.agents.size, "running" to workspace.running))
     if (workspace.agents.size > 1) {
@@ -1740,19 +1779,19 @@ private fun openWorkspace(
     }
     val agent = workspace.agents.firstOrNull() ?: return
     scope.launch {
-        onTmuxLoading(agent)
-        val sessions =
-            runCatching { api.tmuxSessions(agent.id, UUID.randomUUID().toString()) }
+        onAttachLoading(agent)
+        val targets =
+            runCatching { api.terminalAttachTargets(agent.id, UUID.randomUUID().toString()) }
                 .onFailure {
-                    SentryBreadcrumbs.api("tmux session load failed", mapOf("agentId" to agent.id, "error" to safeUserError(it, "unknown")))
+                    SentryBreadcrumbs.api("terminal attach target load failed", mapOf("agentId" to agent.id, "error" to safeUserError(it, "unknown")))
                     if (AppFailureClassifier.isTransientNetwork(it)) {
-                        SentryAppLogger.warn("tmux session load failed; network unavailable", mapOf("agentId" to agent.id), it)
+                        SentryAppLogger.warn("terminal attach target load failed; network unavailable", mapOf("agentId" to agent.id), it)
                     } else {
-                        SentryAppLogger.error("tmux session load failed", mapOf("agentId" to agent.id), it)
+                        SentryAppLogger.error("terminal attach target load failed", mapOf("agentId" to agent.id), it)
                     }
                 }.getOrDefault(emptyList())
-        SentryBreadcrumbs.api("tmux session load succeeded", mapOf("agentId" to agent.id, "count" to sessions.size))
-        if (sessions.isEmpty()) onOpenTerminal(workspace, agent, defaultShellCommand()) else onTmux(Triple(workspace, agent, sessions))
+        SentryBreadcrumbs.api("terminal attach target load succeeded", mapOf("agentId" to agent.id, "count" to targets.size))
+        if (targets.isEmpty()) onOpenTerminal(workspace, agent, defaultShellCommand()) else onAttachTargets(Triple(workspace, agent, targets))
     }
 }
 
@@ -1817,8 +1856,6 @@ private fun CoderSecondaryButton(
 private fun normalizeBaseUrl(value: String) = value.trim().trimEnd('/').let { if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it" }
 
 private fun defaultShellCommand() = "bash -lc 'exec ${'$'}{SHELL:-bash}'"
-
-private fun shellSingleQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
 
 private fun Throwable.isUnauthorized(): Boolean = this is ClientRequestException && response.status == HttpStatusCode.Unauthorized
 

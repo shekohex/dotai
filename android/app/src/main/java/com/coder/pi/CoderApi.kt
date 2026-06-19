@@ -23,9 +23,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.Protocol
 import java.io.Closeable
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -94,6 +96,56 @@ class CoderApi(
         }
     }
 
+    suspend fun terminalAttachTargets(
+        agentId: String,
+        reconnectId: String,
+    ): List<TerminalAttachTarget> {
+        val tmuxTargets =
+            tmuxSessions(agentId, reconnectId).map { session ->
+                TerminalAttachTarget(
+                    TerminalAttachKind.Tmux,
+                    session.name,
+                    "${session.windows} windows",
+                    "tmux attach-session -t ${shellQuote(session.name)}",
+                )
+            }
+        return herdrTargets(agentId, reconnectId) + tmuxTargets
+    }
+
+    private suspend fun herdrTargets(
+        agentId: String,
+        reconnectId: String,
+    ): List<TerminalAttachTarget> {
+        val sessionOutput = runProcess(agentId, reconnectId, "command -v herdr >/dev/null 2>&1 && herdr session list --json", 5_000)
+        val sessions =
+            runCatching { json.decodeFromString<HerdrSessionListDto>(sessionOutput).sessions }
+                .getOrDefault(emptyList())
+                .filter { it.running }
+        return sessions.flatMap { session ->
+            val workspaceOutput = runProcess(agentId, UUID.randomUUID().toString(), "herdr --session ${shellQuote(session.name)} workspace list", 5_000)
+            val workspaces = runCatching { json.decodeFromString<HerdrWorkspaceListResponseDto>(workspaceOutput).result.workspaces }.getOrDefault(emptyList())
+            workspaces.map { workspace ->
+                TerminalAttachTarget(
+                    TerminalAttachKind.Herdr,
+                    workspace.label.takeIf { it.isNotBlank() } ?: workspace.workspaceId,
+                    herdrWorkspaceSubtitle(session, workspace),
+                    loginShellCommand("herdr --session ${shellQuote(session.name)} workspace focus ${shellQuote(workspace.workspaceId)} >/dev/null 2>&1; exec herdr --session ${shellQuote(session.name)}"),
+                )
+            }
+        }
+    }
+
+    private fun herdrWorkspaceSubtitle(
+        session: HerdrSessionDto,
+        workspace: HerdrWorkspaceDto,
+    ): String =
+        listOfNotNull(
+            "Herdr ${if (session.default) "default" else session.name}",
+            workspace.agentStatus?.takeIf { it.isNotBlank() },
+            "${workspace.tabCount} tabs",
+            "${workspace.paneCount} panes",
+        ).joinToString(" · ")
+
     suspend fun runProcess(
         agentId: String,
         reconnectId: String,
@@ -155,6 +207,8 @@ class CoderApi(
     private fun wsUrl(path: String) = baseUrl.trimEnd('/').replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + path
 
     private fun shellQuote(value: String) = "'" + value.replace("'", "'\\''") + "'"
+
+    private fun loginShellCommand(command: String) = "bash -lc ${shellQuote(command)}"
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
@@ -287,4 +341,35 @@ private data class CoderAgentLatencyDto(
 @Serializable
 private data class WorkspaceBuildRequestDto(
     val transition: String,
+)
+
+@Serializable
+private data class HerdrSessionListDto(
+    val sessions: List<HerdrSessionDto> = emptyList(),
+)
+
+@Serializable
+private data class HerdrSessionDto(
+    val name: String = "default",
+    val running: Boolean = false,
+    val default: Boolean = false,
+)
+
+@Serializable
+private data class HerdrWorkspaceListResponseDto(
+    val result: HerdrWorkspaceListDto = HerdrWorkspaceListDto(),
+)
+
+@Serializable
+private data class HerdrWorkspaceListDto(
+    val workspaces: List<HerdrWorkspaceDto> = emptyList(),
+)
+
+@Serializable
+private data class HerdrWorkspaceDto(
+    @SerialName("workspace_id") val workspaceId: String = "",
+    val label: String = "",
+    @SerialName("agent_status") val agentStatus: String? = null,
+    @SerialName("tab_count") val tabCount: Int = 0,
+    @SerialName("pane_count") val paneCount: Int = 0,
 )

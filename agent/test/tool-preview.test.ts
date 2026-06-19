@@ -875,6 +875,7 @@ function createInteractiveModePreview(cwd: string) {
     getAutocompleteMaxVisible: () => 8,
     getHideThinkingBlock: () => false,
     getTheme: () => "dark",
+    getThemeSetting: () => "dark",
     getShowImages: () => false,
     getImageWidthCells: () => 60,
     getCodeBlockIndent: () => 2,

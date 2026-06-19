@@ -129,7 +129,7 @@ class CoderApi(
                     TerminalAttachKind.Herdr,
                     workspace.label.takeIf { it.isNotBlank() } ?: workspace.workspaceId,
                     herdrWorkspaceSubtitle(session, workspace),
-                    loginShellCommand("herdr --session ${shellQuote(session.name)} workspace focus ${shellQuote(workspace.workspaceId)} >/dev/null 2>&1; exec herdr --session ${shellQuote(session.name)}"),
+                    loginShellCommand("herdr --session ${shellQuote(session.name)} workspace focus ${shellQuote(workspace.workspaceId)} >/dev/null 2>&1; herdr --session ${shellQuote(session.name)}; exit"),
                 )
             }
         }

@@ -2304,6 +2304,8 @@ fun TerminalSurface(
     var chatModeActive by remember { mutableStateOf(false) }
     var accessoryReserved by remember { mutableStateOf(true) }
     var bottomOverlayHeightPx by remember { mutableIntStateOf(0) }
+    var terminalHostHeightPx by remember { mutableIntStateOf(0) }
+    var imePanPx by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val density = LocalDensity.current
     val reservedAccessoryHeight = if (accessoryReserved) TerminalToolbarReservedHeight else 0.dp
@@ -2311,6 +2313,18 @@ fun TerminalSurface(
     val keyboardOffsetPx = if (keyboardAvoidanceOffsetPx > 0) keyboardAvoidanceOffsetPx + keyboardGapPx else 0
     val chatExtraOffsetPx = if (chatModeActive) (bottomOverlayHeightPx - reservedAccessoryHeightPx).coerceAtLeast(0) else 0
     val terminalKeyboardOffsetPx = if (chatModeActive) keyboardAvoidanceOffsetPx + chatExtraOffsetPx else keyboardOffsetPx
+    LaunchedEffect(terminalView, terminalKeyboardOffsetPx, terminalHostHeightPx) {
+        if (terminalKeyboardOffsetPx <= 0 || terminalHostHeightPx <= 0) {
+            imePanPx = 0
+            return@LaunchedEffect
+        }
+        while (true) {
+            val visibleBottomPx = (terminalHostHeightPx - terminalKeyboardOffsetPx).coerceAtLeast(0)
+            val cursorBottomPx = terminalView.cursorBottomPx()
+            imePanPx = cursorBottomPx?.let { (it - visibleBottomPx + keyboardGapPx).coerceAtLeast(0) } ?: 0
+            delay(80)
+        }
+    }
     DisposableEffect(terminalView) {
         val metadataHandler: (TerminalOscMetadata) -> Unit = { oscMetadata = it }
         val hyperlinkHandler: (String) -> Unit = { if (terminalOscHyperlinkAllowed(context, it)) openTerminalHyperlink(context, it) else pendingHyperlink = it }
@@ -2330,7 +2344,8 @@ fun TerminalSurface(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .offset { IntOffset(0, -terminalKeyboardOffsetPx) },
+                    .onSizeChanged { terminalHostHeightPx = it.height }
+                    .offset { IntOffset(0, -imePanPx) },
             ) {
                 AndroidView(
                     factory = { terminalView.prepareForComposeHost() },

@@ -186,6 +186,8 @@ class CoderNative {
 
     external fun nativeSnapshotText(handle: Long): Array<String>
 
+    external fun nativeCursorPosition(handle: Long): IntArray
+
     companion object {
         init {
             System.loadLibrary("coder-terminal")

@@ -81,6 +81,13 @@ data class TerminalAccessibleLine(
     val text: String,
 )
 
+data class TerminalCursorPosition(
+    val col: Int,
+    val row: Int,
+    val columns: Int,
+    val rows: Int,
+)
+
 private const val TerminalOscNotificationChannelId = TerminalNotificationFormat.defaultOscChannelId
 private const val TerminalOscProgressNotificationChannelId = TerminalNotificationFormat.defaultProgressChannelId
 private const val TerminalOscProgressNotificationId = TerminalNotificationFormat.progressBaseId
@@ -853,6 +860,15 @@ class CoderTerminalView
             if (handle == 0L) return emptyList()
             return native.nativeSnapshotText(handle).toList()
         }
+
+        fun cursorPosition(): TerminalCursorPosition? {
+            if (handle == 0L) return null
+            val values = native.nativeCursorPosition(handle)
+            if (values.size < 4 || values[0] < 0 || values[1] < 0) return null
+            return TerminalCursorPosition(values[0], values[1], values[2], values[3])
+        }
+
+        fun cursorBottomPx(): Int? = cursorPosition()?.let { (it.row + 1) * cellHeight }
 
         private fun setPreeditText(text: String) {
             if (handle == 0L) return

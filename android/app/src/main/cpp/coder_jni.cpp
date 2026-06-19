@@ -330,3 +330,16 @@ Java_com_coder_pi_CoderNative_nativeSnapshotText(JNIEnv* env, jobject, jlong han
     }
     return result;
 }
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_coder_pi_CoderNative_nativeCursorPosition(JNIEnv* env, jobject, jlong handle) {
+    int cols = 0;
+    int rows = 0;
+    int cursorCol = -1;
+    int cursorRow = -1;
+    terminal(reinterpret_cast<NativeTerminal*>(handle))->snapshot(cols, rows, cursorCol, cursorRow);
+    jint values[4] = {cursorCol, cursorRow, cols, rows};
+    jintArray result = env->NewIntArray(4);
+    env->SetIntArrayRegion(result, 0, 4, values);
+    return result;
+}

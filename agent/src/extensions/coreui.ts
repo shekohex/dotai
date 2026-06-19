@@ -36,7 +36,7 @@ import {
   saveAiAutocompleteSettings,
   type AiAutocompleteSettings,
 } from "./coreui/ai-autocomplete-settings.js";
-import { registerBackgroundShellUI } from "./coreui/tmux-background-ui.js";
+import { registerBackgroundShellUI } from "./coreui/background-bash-ui.js";
 import { getLatestAssistantSummary } from "./session-launch-utils.js";
 
 const ModeChangedEventSchema = Type.Object({

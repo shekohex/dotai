@@ -7,7 +7,7 @@ import {
   BACKGROUND_SHELL_POLL_MESSAGE,
   type BackgroundShellMessageDetails,
   type BackgroundShellStatus,
-} from "./tmux-background-types.js";
+} from "./background-bash-types.js";
 
 const POLL_MESSAGE_PREVIEW_LINES = 5;
 
@@ -19,7 +19,7 @@ const BackgroundShellMessageDetailsSchema = Type.Object({
   pollLineCount: Type.Optional(Type.Number()),
   pollOmittedLineCount: Type.Optional(Type.Number()),
   status: Type.Optional(Type.String()),
-  windowId: Type.Optional(Type.String()),
+  targetLabel: Type.Optional(Type.String()),
 });
 
 type ParsedMessageDetails = Static<typeof BackgroundShellMessageDetailsSchema>;
@@ -121,17 +121,12 @@ function formatNotificationNotes(
   details: ParsedMessageDetails | undefined,
   theme: MessageTheme,
 ): string[] {
-  if (details?.outputFile === undefined && details?.windowId === undefined) return [];
+  if (details?.outputFile === undefined && details?.targetLabel === undefined) return [];
 
   const lines = ["", theme.fg("muted", theme.bold("Notes:"))];
   if (details.outputFile !== undefined) lines.push(theme.fg("dim", `Log: ${details.outputFile}`));
-  if (details.windowId !== undefined) {
-    lines.push(
-      theme.fg(
-        "dim",
-        `Peek while running: \`tmux capture-pane -t ${details.windowId} -p -S -200\``,
-      ),
-    );
+  if (details.targetLabel !== undefined) {
+    lines.push(theme.fg("dim", `Target: ${details.targetLabel}`));
   }
   if (details.outputFile !== undefined) {
     lines.push(theme.fg("dim", `If closed: \`tail -n 200 ${details.outputFile}\``));

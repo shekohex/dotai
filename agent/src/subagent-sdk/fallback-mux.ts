@@ -114,6 +114,9 @@ export class FallbackMuxAdapter implements MuxAdapter {
     if (paneId.startsWith("pty:")) {
       return "pty";
     }
+    if (/^(?:w\d+:p\d+|\d+-\d+)$/.test(paneId)) {
+      return "herdr";
+    }
     if (paneId.startsWith("%")) {
       return "tmux";
     }

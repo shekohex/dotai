@@ -3,12 +3,12 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { Static } from "typebox";
 import { bashToolDefinition, readToolDefinition } from "./builtins.js";
-import type { BackgroundBashToolDetails } from "./tmux-background-types.js";
+import type { BackgroundBashToolDetails } from "./background-bash-types.js";
 import {
   parseBackgroundCommand,
-  runBackgroundCommandInTmux,
-  warmTmuxAvailabilityCache,
-} from "./tmux-background.js";
+  runBackgroundCommand,
+  warmBackgroundShellAvailabilityCache,
+} from "./background-bash.js";
 import {
   formatBashResultSummary,
   formatBashTimeoutSuffix,
@@ -140,23 +140,26 @@ export function createBashToolOverrideDefinition(
   pi: ExtensionAPI,
 ): ToolDefinition<typeof bashToolParams, BackgroundBashToolDetails | undefined, BashRenderState> {
   const { prepareArguments: _prepareArguments, ...rest } = bashToolDefinition;
-  warmTmuxAvailabilityCache();
+  warmBackgroundShellAvailabilityCache();
   return {
     ...rest,
-    description: `${rest.description} Commands ending with '&' run in background using tmux and return immediately. Add '# poll:5000' after '&' to receive periodic updates every 5000ms.`,
+    description: `${rest.description} Commands ending with '&' run in background and return immediately. Add '# poll:5000' after '&' to receive periodic updates every 5000ms.`,
     promptSnippet:
-      "Execute bash commands. Prefer dedicated tools for file search/read. Use trailing '&' for tmux-backed background commands.",
+      "Execute bash commands. Prefer dedicated tools for file search/read. Use trailing '&' for background commands.",
     promptGuidelines: [
       "Prefer dedicated tools over bash when they fit: use `find` for path searches, `grep` for content searches, and `read` for reading files.",
       "Use bash for shell-native tasks, git inspection, package scripts, build/test commands, and commands that dedicated tools cannot express.",
       "Avoid destructive commands (`rm`, `git reset --hard`, `git clean`, `git checkout --`, force-push, truncating redirects) unless explicitly requested and scoped.",
       "Never skip git hooks with `--no-verify` or bypass signing unless the user explicitly asks; fix hook failures instead.",
       "Keep the current working directory stable; prefer repo-relative paths or absolute paths over unnecessary `cd` chains.",
-      "For long-running commands, servers, watchers, REPLs, and interactive prompts, end the command with `&` to run it in a background tmux window and return immediately.",
-      "To receive periodic background updates, append `# poll:<milliseconds>` after the trailing `&`, e.g. `npm run dev & # poll:5000`.",
-      "Background commands report automatically when they finish. Never use `sleep` plus tmux/read loops to wait for completion.",
+      "For long-running commands, servers, watchers, REPLs, and interactive prompts, end the command with `&` to run it in the background and return immediately.",
+      "Do not add polling to background commands unless the user explicitly asks for periodic updates, reminders, or progress notifications.",
+      "Use polling for deliberate notification loops, alarms, or progress beacons, e.g. `while true; do date; sleep 600; done & # poll:60000` to receive periodic updates from a long-running reminder loop.",
+      "Do not use polling for dev servers, watch commands, log streams, or ordinary long-running processes. Start them in the background, then read logs/output on demand using the inspect hints from the bash result.",
+      "To receive periodic background updates when appropriate, append `# poll:<milliseconds>` after the trailing `&`.",
+      "Background commands report automatically when they finish. Never use `sleep` or polling loops to wait for completion.",
       "Only inspect background output manually when you need interim output before the automatic completion notification.",
-      "The bash result includes tmux inspect/kill hints. Use normal tmux commands in later bash calls to peek or stop background work.",
+      "The bash result includes inspect/kill hints. Use those commands in later bash calls to peek or stop background work.",
       "Use `nohup ... &` only when you want shell-level nohup behavior too; the trailing `&` is what makes bash run it in background.",
     ],
     renderShell: "self",
@@ -164,7 +167,7 @@ export function createBashToolOverrideDefinition(
     execute(toolCallId, params, signal, onUpdate, ctx) {
       const backgroundCommand = parseBackgroundCommand(params.command);
       if (backgroundCommand) {
-        return runBackgroundCommandInTmux({
+        return runBackgroundCommand({
           command: backgroundCommand,
           ctx,
           description: params.description,

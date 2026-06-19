@@ -125,10 +125,12 @@ Avoid resuming the same prior result concurrently from multiple `parallel()` bra
 
 Workflow subagents can run on two backends:
 
-| Backend   | Behavior                                                                                                                                                                                             |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lite`    | In-process runtime. Fast, low overhead, persists session files, but has no live tmux pane/window.                                                                                                    |
-| `process` | Default runtime. Launches real child Pi sessions through the mux backend. Inside tmux, this creates inspectable tmux panes/windows according to mode settings; outside tmux it can fall back to pty. |
+| Backend   | Behavior                                                                                                                                                        |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lite`    | In-process runtime. Fast, low overhead, persists session files, but has no live terminal pane/tab/window.                                                       |
+| `process` | Default runtime. Launches real child Pi sessions through the default mux backend: Herdr when running inside Herdr, then tmux when available, then pty fallback. |
+
+`process` agents are inspectable through their selected mux backend. Herdr launches use Herdr panes/tabs, tmux launches use tmux panes/windows according to mode settings, and pty fallback keeps output capturable but is not a persistent external multiplexer.
 
 Use `lite` when lower overhead matters more than live process visibility:
 

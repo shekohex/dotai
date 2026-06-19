@@ -3,41 +3,29 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { watch } from "node:fs";
 import type { FSWatcher } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { promisify } from "node:util";
+import {
+  getBackgroundShellBackend,
+  selectBackgroundShellBackend,
+  warmBackgroundShellBackendAvailability,
+} from "./background-bash-backends.js";
+import type { BackgroundBackendName } from "./background-bash-backend.js";
 import {
   BACKGROUND_SHELL_COMPLETION_MESSAGE,
   BACKGROUND_SHELL_POLL_MESSAGE,
   type BackgroundBashToolDetails,
   type BackgroundShellRun,
-} from "./tmux-background-types.js";
-import { markBackgroundShellCompleted, trackBackgroundShellRun } from "./tmux-background-ui.js";
+} from "./background-bash-types.js";
+import { markBackgroundShellCompleted, trackBackgroundShellRun } from "./background-bash-ui.js";
 
-const BACKGROUND_SESSION_NAME = "pi-background";
 const COMPLETED_CONTEXT_LINES = 20;
 const POLL_CONTEXT_LINES = 5;
 const MIN_POLL_INTERVAL_MS = 1000;
 const MILLISECONDS_PER_SECOND = 1000;
-const TMUX_AVAILABILITY_TIMEOUT_MS = 2000;
-const TMUX_SESSION_TIMEOUT_MS = 2000;
-const TMUX_WINDOW_CREATE_TIMEOUT_MS = 5000;
-const TMUX_WINDOW_OPTION_TIMEOUT_MS = 2000;
-const TMUX_WINDOW_OPTIONS = {
-  command: "@pi-bg-command",
-  cwd: "@pi-bg-cwd",
-  description: "@pi-bg-description",
-  exitFile: "@pi-bg-exit-file",
-  id: "@pi-bg-id",
-  outputFile: "@pi-bg-output-file",
-  pollIntervalMs: "@pi-bg-poll-interval-ms",
-  startedAt: "@pi-bg-started-at",
-} as const;
-const execFileAsync = promisify(execFile);
 
 type QuoteState = "single" | "double" | undefined;
 
@@ -58,21 +46,20 @@ export type BackgroundCommand = {
 };
 
 type BackgroundRun = {
+  backend: BackgroundBackendName;
   command: string;
+  cwd: string;
   description: string;
   exitFile: string;
   id: string;
   lastPollOutput?: string;
+  muxSession?: string;
   outputFile: string;
   pollTimer?: ReturnType<typeof setInterval>;
   startedAt: number;
-  tmuxSession: string;
-  windowId: string;
-};
-
-type TargetSession = {
-  exists: boolean;
-  name: string;
+  status: BackgroundShellRun["status"];
+  targetId: string;
+  targetLabel: string;
 };
 
 type BackgroundState = {
@@ -80,7 +67,6 @@ type BackgroundState = {
   runDir?: string;
   runDirPromise?: Promise<string>;
   runs: Map<string, BackgroundRun>;
-  tmuxAvailablePromise?: Promise<void>;
   watcher?: FSWatcher;
 };
 
@@ -89,9 +75,8 @@ const state: BackgroundState = {
   runs: new Map(),
 };
 
-export function warmTmuxAvailabilityCache(): void {
-  state.tmuxAvailablePromise ??= checkTmuxAvailable();
-  void state.tmuxAvailablePromise.catch(() => {});
+export function warmBackgroundShellAvailabilityCache(): void {
+  warmBackgroundShellBackendAvailability();
 }
 
 export function parseBackgroundCommand(command: string): BackgroundCommand | undefined {
@@ -118,13 +103,13 @@ export function parseBackgroundCommand(command: string): BackgroundCommand | und
   return { command: foregroundCommand, pollIntervalMs };
 }
 
-export async function runBackgroundCommandInTmux(input: {
+export async function runBackgroundCommand(input: {
   command: BackgroundCommand;
   ctx: ExtensionContext;
   description: string;
   pi: ExtensionAPI;
 }): Promise<AgentToolResult<BackgroundBashToolDetails>> {
-  await assertTmuxAvailable();
+  const backend = await selectBackgroundShellBackend(input.ctx.cwd);
 
   const runDir = await getRunDir();
   ensureWatcher(input.pi, runDir);
@@ -136,21 +121,36 @@ export async function runBackgroundCommandInTmux(input: {
   const script = buildScript(input.command.command, outputFile, exitFile);
   await writeFile(scriptPath, script, { mode: 0o700 });
 
-  const session = await resolveTargetSession(input.ctx.cwd);
   const windowName = formatWindowName(input.command.command);
-  const windowId = await createTmuxWindow(session, input.ctx.cwd, windowName, scriptPath);
+  const target = await backend.launch({
+    command: input.command.command,
+    cwd: input.ctx.cwd,
+    description: input.description,
+    exitFile,
+    id,
+    label: windowName,
+    outputFile,
+    ...(input.command.pollIntervalMs === undefined
+      ? {}
+      : { pollIntervalMs: input.command.pollIntervalMs }),
+    scriptPath,
+    startedAt: Date.now(),
+  });
   const startedAt = Date.now();
   const run: BackgroundRun = {
+    backend: target.backend,
     command: input.command.command,
+    cwd: input.ctx.cwd,
     description: input.description,
     exitFile,
     id,
     outputFile,
+    ...(target.muxSession === undefined ? {} : { muxSession: target.muxSession }),
     startedAt,
-    tmuxSession: session.name,
-    windowId,
+    status: "running",
+    targetId: target.targetId,
+    targetLabel: target.targetLabel,
   };
-  await tagTmuxWindow(windowId, run, input.ctx.cwd, input.command.pollIntervalMs);
 
   state.runs.set(exitFile, run);
   trackBackgroundShellRun(
@@ -171,34 +171,6 @@ export async function runBackgroundCommandInTmux(input: {
     ],
     details: backgroundDetails(run, input.ctx.cwd, input.command.pollIntervalMs),
   };
-}
-
-async function tagTmuxWindow(
-  windowId: string,
-  run: BackgroundRun,
-  cwd: string,
-  pollIntervalMs: number | undefined,
-): Promise<void> {
-  const values: Record<string, string> = {
-    [TMUX_WINDOW_OPTIONS.command]: run.command,
-    [TMUX_WINDOW_OPTIONS.cwd]: cwd,
-    [TMUX_WINDOW_OPTIONS.description]: run.description,
-    [TMUX_WINDOW_OPTIONS.exitFile]: run.exitFile,
-    [TMUX_WINDOW_OPTIONS.id]: run.id,
-    [TMUX_WINDOW_OPTIONS.outputFile]: run.outputFile,
-    [TMUX_WINDOW_OPTIONS.startedAt]: String(run.startedAt),
-  };
-  if (pollIntervalMs !== undefined) {
-    values[TMUX_WINDOW_OPTIONS.pollIntervalMs] = String(pollIntervalMs);
-  }
-
-  await Promise.all(
-    Object.entries(values).map(([option, value]) =>
-      execFileAsync("tmux", ["set-window-option", "-q", "-t", windowId, option, value], {
-        timeout: TMUX_WINDOW_OPTION_TIMEOUT_MS,
-      }),
-    ),
-  );
 }
 
 function scanShell(command: string): ShellScan {
@@ -392,7 +364,7 @@ async function getRunDir(): Promise<string> {
     return state.runDir;
   }
 
-  state.runDirPromise ??= mkdtemp(join(tmpdir(), "pi-tmux-bash-"));
+  state.runDirPromise ??= mkdtemp(join(tmpdir(), "pi-background-bash-"));
   state.runDir = await state.runDirPromise;
   return state.runDir;
 }
@@ -450,7 +422,7 @@ async function handleExitFile(pi: ExtensionAPI, exitFile: string): Promise<void>
           exitCode,
           outputFile: run.outputFile,
           status,
-          windowId: run.windowId,
+          targetLabel: run.targetLabel,
         },
       },
       { deliverAs: "followUp", triggerTurn: true },
@@ -510,7 +482,7 @@ async function sendPollMessage(
   pi.sendMessage(
     {
       customType: BACKGROUND_SHELL_POLL_MESSAGE,
-      content: `Background command poll: ${run.windowId}\nNew output since last poll. Completion will be reported automatically; do not use sleep/tmux polling loops to wait.\n\n${pollPreview.text}\n\n${formatInspectHint(run)}`,
+      content: `Background command poll: ${run.targetLabel}\nNew output since last poll. Completion will be reported automatically; do not use sleep/backend polling loops to wait.\n\n${pollPreview.text}\n\n${formatInspectHint(run)}`,
       display: true,
       details: {
         command: run.command,
@@ -519,7 +491,7 @@ async function sendPollMessage(
         pollLineCount: pollPreview.visibleLineCount,
         pollOmittedLineCount: pollPreview.omittedLineCount,
         status: "running",
-        windowId: run.windowId,
+        targetLabel: run.targetLabel,
       },
     },
     { deliverAs: "followUp", triggerTurn: true },
@@ -554,95 +526,6 @@ function arraysEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
-async function assertTmuxAvailable(): Promise<void> {
-  state.tmuxAvailablePromise ??= checkTmuxAvailable();
-  await state.tmuxAvailablePromise;
-}
-
-async function checkTmuxAvailable(): Promise<void> {
-  try {
-    await execFileAsync("tmux", ["-V"], { timeout: TMUX_AVAILABILITY_TIMEOUT_MS });
-  } catch {
-    throw new Error(
-      "Background command requested with trailing `&`, but `tmux` is not available. Install tmux, or remove trailing `&` to run in foreground.",
-    );
-  }
-}
-
-async function resolveTargetSession(cwd: string): Promise<TargetSession> {
-  if (process.env.TMUX !== undefined && process.env.TMUX.length > 0) {
-    const { stdout } = await execFileAsync("tmux", ["display-message", "-p", "#S"], {
-      cwd,
-      encoding: "utf-8",
-      timeout: TMUX_SESSION_TIMEOUT_MS,
-    });
-    const currentSession = stdout.trim();
-    if (currentSession.length > 0) {
-      return { exists: true, name: currentSession };
-    }
-  }
-
-  try {
-    await execFileAsync("tmux", ["has-session", "-t", BACKGROUND_SESSION_NAME], {
-      cwd,
-      encoding: "utf-8",
-      timeout: TMUX_SESSION_TIMEOUT_MS,
-    });
-    return { exists: true, name: BACKGROUND_SESSION_NAME };
-  } catch {
-    return { exists: false, name: BACKGROUND_SESSION_NAME };
-  }
-}
-
-async function createTmuxWindow(
-  session: TargetSession,
-  cwd: string,
-  windowName: string,
-  scriptPath: string,
-): Promise<string> {
-  if (session.exists) {
-    const { stdout } = await execFileAsync(
-      "tmux",
-      [
-        "new-window",
-        "-d",
-        "-t",
-        session.name,
-        "-c",
-        cwd,
-        "-n",
-        windowName,
-        "-P",
-        "-F",
-        "#{window_id}",
-        scriptPath,
-      ],
-      { cwd, encoding: "utf-8", timeout: TMUX_WINDOW_CREATE_TIMEOUT_MS },
-    );
-    return stdout.trim();
-  }
-
-  const { stdout } = await execFileAsync(
-    "tmux",
-    [
-      "new-session",
-      "-d",
-      "-s",
-      session.name,
-      "-c",
-      cwd,
-      "-n",
-      windowName,
-      "-P",
-      "-F",
-      "#{window_id}",
-      scriptPath,
-    ],
-    { cwd, encoding: "utf-8", timeout: TMUX_WINDOW_CREATE_TIMEOUT_MS },
-  );
-  return stdout.trim();
-}
-
 function buildScript(command: string, outputFile: string, exitFile: string): string {
   return `#!/usr/bin/env bash
 set +e
@@ -670,16 +553,11 @@ function formatWindowName(command: string): string {
 
 function formatStartedMessage(run: BackgroundRun, pollIntervalMs: number | undefined): string {
   const pollText = pollIntervalMs === undefined ? "" : ` Polling every ${pollIntervalMs}ms.`;
-  return `Started background command in tmux window ${run.windowId}.${pollText}\nResult will be reported automatically when it finishes. Do not use sleep commands or tmux/read polling loops to wait for completion.\n\n${formatInspectHint(run)}\nFull output: ${run.outputFile}`;
+  return `Started background command in ${run.targetLabel}.${pollText}\nResult will be reported automatically when it finishes. Do not use sleep commands or backend polling loops to wait for completion.\n\n${formatInspectHint(run)}\nFull output: ${run.outputFile}`;
 }
 
 function formatInspectHint(run: BackgroundRun): string {
-  return [
-    `Peek while running: tmux capture-pane -t ${run.windowId} -p -S -200`,
-    `Stop while running: tmux kill-window -t ${run.windowId}`,
-    `Output file: ${run.outputFile}`,
-    `If window closed: tail -n 200 ${run.outputFile}`,
-  ].join("\n");
+  return getBackgroundShellBackend(run.backend).formatInspectHint(run);
 }
 
 async function readOutputTail(outputFile: string, lines: number): Promise<string> {
@@ -726,21 +604,23 @@ function formatPollPreviewBlock(
 
 function toBackgroundShellRun(
   run: BackgroundRun,
-  cwd: string,
+  _cwd: string,
   pollIntervalMs: number | undefined,
 ): BackgroundShellRun {
   return {
     command: run.command,
-    cwd,
+    cwd: run.cwd,
     description: run.description,
     exitFile: run.exitFile,
     id: run.id,
     outputFile: run.outputFile,
     ...(pollIntervalMs === undefined ? {} : { pollIntervalMs }),
     startedAt: run.startedAt,
-    status: "running",
-    tmuxSession: run.tmuxSession,
-    windowId: run.windowId,
+    status: run.status,
+    backend: run.backend,
+    ...(run.muxSession === undefined ? {} : { muxSession: run.muxSession }),
+    targetId: run.targetId,
+    targetLabel: run.targetLabel,
   };
 }
 

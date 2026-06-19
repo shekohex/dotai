@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { renderBackgroundShellLines } from "../../src/extensions/coreui/tmux-background-ui.js";
-import type { BackgroundShellRun } from "../../src/extensions/coreui/tmux-background-types.js";
+import { renderBackgroundShellLines } from "../../src/extensions/coreui/background-bash-ui.js";
+import type { BackgroundShellRun } from "../../src/extensions/coreui/background-bash-types.js";
 
 const theme = {
   bold: (text: string) => text,
@@ -17,8 +17,10 @@ function run(input: Partial<BackgroundShellRun> = {}): BackgroundShellRun {
     outputFile: "/tmp/run.out",
     startedAt: 1_000,
     status: "running",
-    tmuxSession: "pi-background",
-    windowId: "@1",
+    backend: "tmux",
+    muxSession: "pi-background",
+    targetId: "@1",
+    targetLabel: "tmux window @1",
     ...input,
   };
 }
@@ -35,8 +37,8 @@ describe("renderBackgroundShellLines", () => {
   test("renders failed and killed counts", () => {
     const lines = renderBackgroundShellLines(
       [
-        run({ id: "failed", status: "failed", windowId: "@2" }),
-        run({ id: "killed", status: "killed", windowId: "@3" }),
+        run({ id: "failed", status: "failed", targetId: "@2", targetLabel: "tmux window @2" }),
+        run({ id: "killed", status: "killed", targetId: "@3", targetLabel: "tmux window @3" }),
       ],
       120,
       theme,
@@ -51,7 +53,14 @@ describe("renderBackgroundShellLines", () => {
 
   test("renders missing rows as recent tracked state", () => {
     const lines = renderBackgroundShellLines(
-      [run({ completedAt: 2_000, status: "missing", windowId: "@9" })],
+      [
+        run({
+          completedAt: 2_000,
+          status: "missing",
+          targetId: "@9",
+          targetLabel: "tmux window @9",
+        }),
+      ],
       120,
       theme,
       "compact",
@@ -67,9 +76,9 @@ describe("renderBackgroundShellLines", () => {
     const lines = renderBackgroundShellLines(
       [
         run({ id: "1" }),
-        run({ id: "2", windowId: "@2" }),
-        run({ id: "3", windowId: "@3" }),
-        run({ id: "4", windowId: "@4" }),
+        run({ id: "2", targetId: "@2", targetLabel: "tmux window @2" }),
+        run({ id: "3", targetId: "@3", targetLabel: "tmux window @3" }),
+        run({ id: "4", targetId: "@4", targetLabel: "tmux window @4" }),
       ],
       120,
       theme,

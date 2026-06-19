@@ -68,6 +68,8 @@ function pathDirname(inputPath: string): string {
 }
 
 export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging {
+  private pollRunning = false;
+
   private hasActiveUiContext(): boolean {
     try {
       return this.ctx?.hasUI === true;
@@ -141,6 +143,18 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
   }
 
   private async poll(): Promise<void> {
+    if (this.pollRunning) {
+      return;
+    }
+    this.pollRunning = true;
+    try {
+      await this.pollOnce();
+    } finally {
+      this.pollRunning = false;
+    }
+  }
+
+  private async pollOnce(): Promise<void> {
     if (this.disposed) {
       return;
     }

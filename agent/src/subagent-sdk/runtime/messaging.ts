@@ -147,7 +147,7 @@ export abstract class SubagentRuntimeMessaging extends SubagentRuntimeExecution 
     if (!this.activeSessionIds.has(params.sessionId)) {
       throw runtimeSubagentError(
         "cancel",
-        `${state.name} (${state.sessionId}) does not have a live tmux pane/window right now. Inspect subagent list or the tmux state first.`,
+        `${state.name} (${state.sessionId}) does not have a live mux target right now. Inspect subagent list or the mux state first.`,
       );
     }
 

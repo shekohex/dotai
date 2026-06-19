@@ -4,6 +4,7 @@ export { createDefaultSubagentRuntimeHooks } from "./runtime-hooks.js";
 export { createDefaultMuxAdapter } from "./default-mux.js";
 export { createSubagentSDK, isLiteSDK, isProcessSDK } from "./sdk.js";
 export { FallbackMuxAdapter } from "./fallback-mux.js";
+export { HerdrAdapter } from "./herdr.js";
 export { PtyAdapter } from "./pty.js";
 export { TmuxAdapter } from "./tmux.js";
 export { SUBAGENT_STATUS_MESSAGE } from "./types.js";

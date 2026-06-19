@@ -604,24 +604,28 @@ function registerChildSessionShutdownHandler(
       handleStructuredAgentEnd(pi, state);
     }
 
+    const summary = getLastAssistantText(ctx.sessionManager.getBranch());
+    const structuredError =
+      state.structuredState.lastValidationError !== undefined &&
+      state.structuredState.lastValidationError.length > 0
+        ? {
+            code: "validation_failed" as const,
+            message: state.structuredState.lastValidationError,
+            retryCount: state.structuredState.retryCount,
+            attempts: state.structuredState.attempts,
+            lastValidationError: state.structuredState.lastValidationError,
+          }
+        : undefined;
+    const requiresStructuredOutput = childState.outputFormat?.type === "json_schema";
+
     writeEphemeralChildSessionOutcome(childState.sessionId, {
-      summary: getLastAssistantText(ctx.sessionManager.getBranch()),
+      summary,
       structured: state.structuredState.captured,
-      structuredError:
-        state.structuredState.lastValidationError !== undefined &&
-        state.structuredState.lastValidationError.length > 0
-          ? {
-              code: "validation_failed",
-              message: state.structuredState.lastValidationError,
-              retryCount: state.structuredState.retryCount,
-              attempts: state.structuredState.attempts,
-              lastValidationError: state.structuredState.lastValidationError,
-            }
-          : undefined,
+      structuredError,
       failed:
-        state.structuredState.captured === undefined &&
-        (state.structuredState.lastValidationError === undefined ||
-          state.structuredState.lastValidationError.length === 0),
+        structuredError !== undefined ||
+        (requiresStructuredOutput && state.structuredState.captured === undefined) ||
+        (!requiresStructuredOutput && summary === undefined),
     });
   });
 }

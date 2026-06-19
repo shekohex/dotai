@@ -91,7 +91,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
       this.activeSessionIds.add(existing.sessionId);
       throw runtimeSubagentError(
         errorAction,
-        `${existing.name} (${existing.sessionId}) already has a live tmux pane/window. Inspect that tmux output directly from the parent session or use subagent message instead.`,
+        `${existing.name} (${existing.sessionId}) already has a live mux target. Inspect that target from the parent session or use subagent message instead.`,
       );
     }
 
@@ -100,7 +100,7 @@ export abstract class SubagentRuntimeExecution extends SubagentRuntimeBase {
     if (existing.persisted === false || existing.sessionPath === undefined) {
       throw runtimeSubagentError(
         errorAction,
-        `${existing.name} (${existing.sessionId}) is ephemeral (persisted: false) and cannot be resumed after its tmux pane/window exits. Start a new subagent instead.`,
+        `${existing.name} (${existing.sessionId}) is ephemeral (persisted: false) and cannot be resumed after its mux target exits. Start a new subagent instead.`,
       );
     }
     const mode = await this.resolveModeValue(ctx, {

@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   diffPollOutput,
   parseBackgroundCommand,
-} from "../../src/extensions/coreui/tmux-background.js";
+} from "../../src/extensions/coreui/background-bash.js";
 
 describe("parseBackgroundCommand", () => {
   test("detects trailing ampersand", () => {

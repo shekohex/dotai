@@ -793,8 +793,8 @@ Each role entry maps to a mode name (e.g., `gsd-planner`). The extension injects
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import type { SubagentSDK } from "../../subagent-sdk/sdk-types.js";
+import { createDefaultMuxAdapter } from "../../subagent-sdk/default-mux.js";
 import { createSubagentSDK } from "../../subagent-sdk/sdk.js";
-import { TmuxAdapter } from "../../subagent-sdk/tmux.js";
 import { buildLaunchCommand } from "../../subagent-sdk/launch.js";
 import type { GsdRole } from "./roles.js";
 import { resolveRoleModeName } from "./roles.js";
@@ -821,10 +821,7 @@ const PlanOutputSchema = Type.Object(
 export type PlanOutput = Static<typeof PlanOutputSchema>;
 
 export function createGsdSubagentSDK(pi: ExtensionAPI): SubagentSDK {
-  const adapter = new TmuxAdapter(
-    (command, args, execOptions) => pi.exec(command, args, execOptions),
-    process.cwd(),
-  );
+  const adapter = createDefaultMuxAdapter(pi);
   return createSubagentSDK(pi, { adapter, buildLaunchCommand });
 }
 

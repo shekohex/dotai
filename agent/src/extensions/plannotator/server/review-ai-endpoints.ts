@@ -4,7 +4,11 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
 import { getCurrentPiSessionContext } from "../current-pi-session.js";
-import { buildLaunchCommand, createSubagentSDK, TmuxAdapter } from "../../../subagent-sdk/index.js";
+import {
+  buildLaunchCommand,
+  createDefaultMuxAdapter,
+  createSubagentSDK,
+} from "../../../subagent-sdk/index.js";
 import type { SubagentHandle, SubagentSDK } from "../../../subagent-sdk/sdk-types.js";
 import type { SubagentChildIpcEvent } from "../../../subagent-sdk/ipc.js";
 import { errorMessage } from "../../../utils/error-message.js";
@@ -111,10 +115,7 @@ function createSdk() {
     throw new Error("No active Pi session available for Ask AI.");
   }
   const sdk = createSubagentSDK(currentSession.pi, {
-    adapter: new TmuxAdapter(
-      (command, args, execOptions) => currentSession.pi.exec(command, args, execOptions),
-      process.cwd(),
-    ),
+    adapter: createDefaultMuxAdapter(currentSession.pi),
     buildLaunchCommand,
   });
   return { sdk, ctx: currentSession.ctx };

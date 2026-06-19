@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { formatPollPreview } from "../../src/extensions/coreui/tmux-background-messages.js";
+import { formatPollPreview } from "../../src/extensions/coreui/background-bash-messages.js";
 
 const theme = {
   bg: (_color: string, text: string) => text,

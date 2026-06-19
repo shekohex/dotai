@@ -1,11 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import { installChildBootstrap, isChildSession } from "../../subagent-sdk/bootstrap.js";
+import { createDefaultMuxAdapter } from "../../subagent-sdk/default-mux.js";
 import { buildLaunchCommand, readChildState } from "../../subagent-sdk/launch.js";
 import { createSubagentSDK } from "../../subagent-sdk/sdk.js";
-import { FallbackMuxAdapter } from "../../subagent-sdk/fallback-mux.js";
-import { PtyAdapter } from "../../subagent-sdk/pty.js";
-import { TmuxAdapter } from "../../subagent-sdk/tmux.js";
 import { buildSubagentPromptGuidelines } from "./execution.js";
 import {
   ensureParentSubagentToolActive,
@@ -19,15 +17,7 @@ function installEnabledSubagentExtension(
   pi: ExtensionAPI,
   resolvedOptions: CreateSubagentExtensionOptions,
 ): void {
-  const adapter =
-    resolvedOptions.adapterFactory?.(pi) ??
-    new FallbackMuxAdapter([
-      new TmuxAdapter(
-        (command, args, execOptions) => pi.exec(command, args, execOptions),
-        process.cwd(),
-      ),
-      new PtyAdapter(),
-    ]);
+  const adapter = resolvedOptions.adapterFactory?.(pi) ?? createDefaultMuxAdapter(pi);
   const sdk = createSubagentSDK(pi, { adapter, buildLaunchCommand });
   const runtimeState: SubagentRuntimeState = {};
   const subagentTool = createSubagentToolDefinition(sdk);

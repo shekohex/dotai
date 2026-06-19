@@ -5,6 +5,7 @@ import contextPruneExtension from "./context-prune/index.js";
 import executorExtension from "./executor/index.js";
 import goalExtension from "./goal/index.js";
 import gsdExtension from "./gsd/index.js";
+import herdrAgentStateExtension from "./herdr-agent-state.js";
 import mermaidExtension from "./mermaid.js";
 import notifyExtension from "./notify/index.js";
 import piOscExtension from "./pi-osc/extension.js";
@@ -28,6 +29,7 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "gsd", factory: gsdExtension },
   { id: "terminal-tmux-ui", factory: terminalTmuxUiExtension },
   { id: "pi-osc", factory: piOscExtension },
+  { id: "herdr-agent-state", factory: herdrAgentStateExtension },
   { id: "warp", factory: warpExtension },
   { id: "executor", factory: executorExtension },
   { id: "tmux-share", factory: tmuxShareExtension },

@@ -996,6 +996,66 @@ timedTest(
 );
 
 timedTest(
+  "ephemeral text child shutdown persists assistant summary as successful outcome",
+  async () => {
+    const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;
+
+    process.env.PI_SUBAGENT_CHILD_STATE = JSON.stringify({
+      sessionId: "expected-text-child-session-id",
+      parentSessionId: "parent-session-id",
+      name: "worker-one",
+      prompt: "Return text output",
+      autoExit: true,
+      autoExitTimeoutMs: 30_000,
+      handoff: false,
+      persisted: false,
+      tools: ["read", "bash"],
+      outputFormat: { type: "text" },
+      startedAt: Date.now(),
+    });
+
+    try {
+      const fakePi = new FakePi();
+      createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+        fakePi as unknown as ExtensionAPI,
+      );
+      const ctx = createFakeContext({
+        cwd: process.cwd(),
+        entries: [
+          {
+            type: "message",
+            message: {
+              role: "assistant",
+              content: "SUBAGENTS_EXIT_OK_IN_HERDR",
+            },
+          },
+        ] as never,
+        persisted: false,
+        sessionId: "different-ephemeral-session-id",
+        shutdown: () => {},
+      });
+
+      await emitHandlers(fakePi, "session_shutdown", {}, ctx);
+
+      const outcome = await readEphemeralChildSessionOutcomeBySessionId(
+        "expected-text-child-session-id",
+      );
+      expect(outcome.failed).toBe(false);
+      expect(outcome.summary).toBe("SUBAGENTS_EXIT_OK_IN_HERDR");
+    } finally {
+      if (previousChildState === undefined) {
+        delete process.env.PI_SUBAGENT_CHILD_STATE;
+      } else {
+        process.env.PI_SUBAGENT_CHILD_STATE = previousChildState;
+      }
+      await fs.rm(getEphemeralChildOutcomePath("expected-text-child-session-id"), {
+        force: true,
+      });
+    }
+  },
+);
+
+timedTest(
   "child bootstrap auto-exits immediately on idle with no manual terminal input",
   async () => {
     const previousChildState = process.env.PI_SUBAGENT_CHILD_STATE;

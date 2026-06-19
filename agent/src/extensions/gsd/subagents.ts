@@ -1,7 +1,11 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import { createSubagentSDK, TmuxAdapter, buildLaunchCommand } from "../../subagent-sdk/index.js";
+import {
+  createDefaultMuxAdapter,
+  createSubagentSDK,
+  buildLaunchCommand,
+} from "../../subagent-sdk/index.js";
 import { registerBuiltInGsdModes } from "./modes.js";
 import type { GsdRole } from "./roles.js";
 import { resolveRoleModeName } from "./roles.js";
@@ -77,10 +81,7 @@ export type DetachedRoleRunResult = {
 
 let spawnSdkFactory: SpawnSdkFactory = (pi) =>
   createSubagentSDK(pi, {
-    adapter: new TmuxAdapter(
-      (command, args, execOptions) => pi.exec(command, args, execOptions),
-      process.cwd(),
-    ),
+    adapter: createDefaultMuxAdapter(pi),
     buildLaunchCommand,
     hooks: createGsdSubagentRuntimeHooks(pi),
   });
@@ -184,10 +185,7 @@ export function setGsdSubagentSdkFactoryForTests(factory: SpawnSdkFactory | unde
     factory ??
     ((pi) =>
       createSubagentSDK(pi, {
-        adapter: new TmuxAdapter(
-          (command, args, execOptions) => pi.exec(command, args, execOptions),
-          process.cwd(),
-        ),
+        adapter: createDefaultMuxAdapter(pi),
         buildLaunchCommand,
         hooks: createGsdSubagentRuntimeHooks(pi),
       }));

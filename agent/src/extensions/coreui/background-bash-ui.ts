@@ -5,33 +5,24 @@ import { execFile } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
+import { getBackgroundShellBackend } from "./background-bash-backends.js";
+import { TAGGED_TMUX_WINDOW_FORMAT } from "./background-bash-tmux-backend.js";
 import { formatDurationHuman } from "./tools-output.js";
-import { registerBackgroundShellMessageRenderers } from "./tmux-background-messages.js";
+import { registerBackgroundShellMessageRenderers } from "./background-bash-messages.js";
 import {
   BACKGROUND_SHELL_WIDGET_KEY,
   type BackgroundBashToolDetails,
   type BackgroundShellRun,
   type BackgroundShellStatus,
-} from "./tmux-background-types.js";
+} from "./background-bash-types.js";
 
 const BACKGROUND_SHELL_SHORTCUT = Key.ctrlAlt("b");
 const WIDGET_REFRESH_INTERVAL_MS = 1000;
 const TERMINAL_RETENTION_MS = 15_000;
 const OUTPUT_TAIL_LINES = 40;
 const MAX_COMPACT_ROWS = 4;
-const TMUX_KILL_TIMEOUT_MS = 2000;
 const TMUX_LIST_TIMEOUT_MS = 2000;
 const FULLSCREEN_MAX_LIST_ROWS = 8;
-const TMUX_WINDOW_OPTIONS = {
-  command: "@pi-bg-command",
-  cwd: "@pi-bg-cwd",
-  description: "@pi-bg-description",
-  exitFile: "@pi-bg-exit-file",
-  id: "@pi-bg-id",
-  outputFile: "@pi-bg-output-file",
-  pollIntervalMs: "@pi-bg-poll-interval-ms",
-  startedAt: "@pi-bg-started-at",
-} as const;
 const execFileAsync = promisify(execFile);
 
 type DashboardMode = "compact" | "expanded";
@@ -105,7 +96,7 @@ export function markBackgroundShellCompleted(
 
 function registerCommands(pi: ExtensionAPI): void {
   pi.registerCommand("background", {
-    description: "Show or control background tmux shell processes",
+    description: "Show or control background shell processes",
     getArgumentCompletions(prefix) {
       return ["toggle", "expand", "collapse", "fullscreen", "list", "peek", "kill"]
         .filter((item) => item.startsWith(prefix.trim()))
@@ -162,13 +153,16 @@ async function handleBackgroundCommand(args: string, ctx: ExtensionContext): Pro
       return;
     }
     if (run.status !== "running") {
-      ctx.ui.notify(`Background shell ${run.windowId} is ${run.status}; nothing to kill.`, "info");
+      ctx.ui.notify(
+        `Background shell ${run.targetLabel} is ${run.status}; nothing to kill.`,
+        "info",
+      );
       return;
     }
-    await killRun(run);
+    await getBackgroundShellBackend(run.backend).kill(run);
     state.runs.set(run.id, { ...run, completedAt: Date.now(), status: "killed" });
     renderBackgroundShellWidget(ctx);
-    ctx.ui.notify(`Killed background shell ${run.windowId}.`, "info");
+    ctx.ui.notify(`Killed background shell ${run.targetLabel}.`, "info");
     return;
   }
 
@@ -195,8 +189,10 @@ function restoreBackgroundShellRuns(ctx: ExtensionContext): void {
         ...(details.pollIntervalMs === undefined ? {} : { pollIntervalMs: details.pollIntervalMs }),
         startedAt: details.startedAt,
         status: existing?.status ?? details.status ?? "running",
-        tmuxSession: details.tmuxSession,
-        windowId: details.windowId,
+        backend: details.backend,
+        ...(details.muxSession === undefined ? {} : { muxSession: details.muxSession }),
+        targetId: details.targetId,
+        targetLabel: details.targetLabel,
       });
     }
   } catch (error) {
@@ -226,41 +222,33 @@ async function restoreTaggedTmuxRuns(): Promise<void> {
       ...(window.pollIntervalMs === undefined ? {} : { pollIntervalMs: window.pollIntervalMs }),
       startedAt: window.startedAt,
       status: existing?.status ?? "running",
-      tmuxSession: window.tmuxSession,
-      windowId: window.windowId,
+      backend: "tmux",
+      muxSession: window.muxSession,
+      targetId: window.targetId,
+      targetLabel: `tmux window ${window.targetId}`,
     });
   }
 }
 
 type TaggedTmuxWindow = Required<
-  Pick<
-    BackgroundShellRun,
-    "command" | "cwd" | "exitFile" | "id" | "outputFile" | "startedAt" | "tmuxSession" | "windowId"
-  >
+  Pick<BackgroundShellRun, "command" | "cwd" | "exitFile" | "id" | "outputFile" | "startedAt">
 > & {
   description: string;
+  muxSession: string;
   pollIntervalMs?: number;
+  targetId: string;
 };
 
 async function listTaggedTmuxWindows(): Promise<TaggedTmuxWindow[]> {
-  const format = [
-    "#{session_name}",
-    "#{window_id}",
-    `#{${TMUX_WINDOW_OPTIONS.id}}`,
-    `#{${TMUX_WINDOW_OPTIONS.command}}`,
-    `#{${TMUX_WINDOW_OPTIONS.description}}`,
-    `#{${TMUX_WINDOW_OPTIONS.cwd}}`,
-    `#{${TMUX_WINDOW_OPTIONS.exitFile}}`,
-    `#{${TMUX_WINDOW_OPTIONS.outputFile}}`,
-    `#{${TMUX_WINDOW_OPTIONS.startedAt}}`,
-    `#{${TMUX_WINDOW_OPTIONS.pollIntervalMs}}`,
-  ].join("\t");
-
   try {
-    const { stdout } = await execFileAsync("tmux", ["list-windows", "-a", "-F", format], {
-      encoding: "utf-8",
-      timeout: TMUX_LIST_TIMEOUT_MS,
-    });
+    const { stdout } = await execFileAsync(
+      "tmux",
+      ["list-windows", "-a", "-F", TAGGED_TMUX_WINDOW_FORMAT],
+      {
+        encoding: "utf-8",
+        timeout: TMUX_LIST_TIMEOUT_MS,
+      },
+    );
     return stdout
       .split("\n")
       .map((line) => parseTaggedTmuxWindow(line))
@@ -272,8 +260,8 @@ async function listTaggedTmuxWindows(): Promise<TaggedTmuxWindow[]> {
 
 function parseTaggedTmuxWindow(line: string): TaggedTmuxWindow | undefined {
   const [
-    tmuxSession,
-    windowId,
+    muxSession,
+    targetId,
     id,
     command,
     description = "",
@@ -285,8 +273,8 @@ function parseTaggedTmuxWindow(line: string): TaggedTmuxWindow | undefined {
   ] = line.split("\t");
   const startedAt = Number(startedAtText);
   if (
-    !tmuxSession ||
-    !windowId ||
+    !muxSession ||
+    !targetId ||
     !id ||
     !command ||
     !cwd ||
@@ -310,13 +298,12 @@ function parseTaggedTmuxWindow(line: string): TaggedTmuxWindow | undefined {
     outputFile,
     ...(pollIntervalMs === undefined || !Number.isFinite(pollIntervalMs) ? {} : { pollIntervalMs }),
     startedAt,
-    tmuxSession,
-    windowId,
+    muxSession,
+    targetId,
   };
 }
 
 async function reconcileBackgroundShellRuns(): Promise<boolean> {
-  const taggedWindowIds = new Set((await listTaggedTmuxWindows()).map((window) => window.windowId));
   let changed = false;
   for (const run of state.runs.values()) {
     if (run.status !== "running") continue;
@@ -331,7 +318,7 @@ async function reconcileBackgroundShellRuns(): Promise<boolean> {
       changed = true;
       continue;
     }
-    if (!taggedWindowIds.has(run.windowId)) {
+    if (!(await getBackgroundShellBackend(run.backend).targetExists(run))) {
       state.runs.set(run.id, { ...run, completedAt: Date.now(), status: "missing" });
       changed = true;
     }
@@ -362,7 +349,15 @@ function isBackgroundDetails(
 ): details is Required<
   Pick<
     BackgroundBashToolDetails,
-    "command" | "cwd" | "exitFile" | "id" | "outputFile" | "startedAt" | "tmuxSession" | "windowId"
+    | "backend"
+    | "command"
+    | "cwd"
+    | "exitFile"
+    | "id"
+    | "outputFile"
+    | "startedAt"
+    | "targetId"
+    | "targetLabel"
   >
 > &
   BackgroundBashToolDetails {
@@ -376,8 +371,9 @@ function isBackgroundDetails(
     typeof value.exitFile === "string" &&
     typeof value.outputFile === "string" &&
     typeof value.startedAt === "number" &&
-    typeof value.tmuxSession === "string" &&
-    typeof value.windowId === "string"
+    (value.backend === "herdr" || value.backend === "pty" || value.backend === "tmux") &&
+    typeof value.targetId === "string" &&
+    typeof value.targetLabel === "string"
   );
 }
 
@@ -521,7 +517,7 @@ function formatRunLine(run: BackgroundShellRun, theme: ThemeLike): string {
   const elapsed = formatDurationHuman(Math.max(0, (run.completedAt ?? Date.now()) - run.startedAt));
   const poll =
     run.pollIntervalMs === undefined ? undefined : formatPollInterval(run.pollIntervalMs);
-  const meta = [elapsed, run.windowId, poll]
+  const meta = [elapsed, run.targetLabel, poll]
     .filter((part): part is string => part !== undefined)
     .join(" · ");
   return `  ${theme.fg("text", run.description ?? summarizeCommand(run.command))} ${theme.fg("dim", "·")} ${status} ${theme.fg("dim", "·")} ${theme.fg("muted", meta)}`;
@@ -682,7 +678,7 @@ class BackgroundShellDashboard implements Component, Focusable {
         run.pollIntervalMs === undefined
           ? ""
           : this.theme.fg("dim", ` · ${formatPollInterval(run.pollIntervalMs)}`);
-      const row = `${prefix} ${status} ${this.theme.fg("muted", elapsed.padEnd(8))} ${this.theme.fg("dim", run.windowId.padEnd(5))} ${runLabel(run)}${poll}`;
+      const row = `${prefix} ${status} ${this.theme.fg("muted", elapsed.padEnd(8))} ${this.theme.fg("dim", run.targetLabel.padEnd(14))} ${runLabel(run)}${poll}`;
       return this.frame(selected ? this.theme.bold(row) : row, innerWidth, border);
     });
   }
@@ -701,11 +697,11 @@ class BackgroundShellDashboard implements Component, Focusable {
         innerWidth,
         border,
       ),
-      this.frame(`window: ${run.windowId} (${run.tmuxSession})`, innerWidth, border),
+      this.frame(`target: ${run.targetLabel}`, innerWidth, border),
       this.frame(`command: ${run.command}`, innerWidth, border),
       this.frame(`output: ${run.outputFile}`, innerWidth, border),
-      this.frame(formatPeekHint(run), innerWidth, border),
-      this.frame(formatKillHint(run), innerWidth, border),
+      this.frame(getBackgroundShellBackend(run.backend).formatPeekHint(run), innerWidth, border),
+      this.frame(getBackgroundShellBackend(run.backend).formatKillHint(run), innerWidth, border),
     ];
   }
 
@@ -713,7 +709,7 @@ class BackgroundShellDashboard implements Component, Focusable {
     const run = this.input.getRuns()[this.selectedIndex];
     if (run === undefined) return;
     if (run.status !== "running") return;
-    await killRun(run);
+    await getBackgroundShellBackend(run.backend).kill(run);
     state.runs.set(run.id, { ...run, completedAt: Date.now(), status: "killed" });
     renderBackgroundShellWidget(state.ctx);
     this.requestRender();
@@ -723,22 +719,6 @@ class BackgroundShellDashboard implements Component, Focusable {
     const killHelp = run?.status === "running" ? " • K/x kill" : " • inspect-only";
     return `↑/↓ select${killHelp} • q close`;
   }
-}
-
-function formatPeekHint(run: BackgroundShellRun): string {
-  if (run.status === "running") {
-    return `peek: tmux capture-pane -t ${run.windowId} -p -S -200`;
-  }
-
-  return `peek: tail -n 200 ${run.outputFile}`;
-}
-
-function formatKillHint(run: BackgroundShellRun): string {
-  if (run.status !== "running") {
-    return `kill: unavailable · ${run.status} commands are inspect-only`;
-  }
-
-  return `kill: K/x stop · tmux kill-window -t ${run.windowId}`;
 }
 
 function repeat(char: string, count: number): string {
@@ -759,15 +739,9 @@ function renderFullscreenSummary(runs: BackgroundShellRun[], theme: ThemeLike): 
   return `${theme.fg("muted", "tracked")} ${runs.length}  ${theme.fg("warning", "running")} ${running}  ${theme.fg("success", "completed")} ${completed}  ${theme.fg("error", "failed")} ${failed}  ${theme.fg("muted", "killed")} ${killed}`;
 }
 
-async function killRun(run: BackgroundShellRun): Promise<void> {
-  await execFileAsync("tmux", ["kill-window", "-t", run.windowId], {
-    timeout: TMUX_KILL_TIMEOUT_MS,
-  }).catch(() => {});
-}
-
 function findRun(target: string | undefined): BackgroundShellRun | undefined {
   if (target === undefined || target.length === 0) return getVisibleRuns()[0];
-  return [...state.runs.values()].find((run) => run.id === target || run.windowId === target);
+  return [...state.runs.values()].find((run) => run.id === target || run.targetId === target);
 }
 
 function formatRunList(runs: BackgroundShellRun[]): string {
@@ -775,7 +749,7 @@ function formatRunList(runs: BackgroundShellRun[]): string {
   return runs
     .map(
       (run) =>
-        `${run.windowId} ${run.status} ${formatDurationHuman(Date.now() - run.startedAt)} ${run.command}`,
+        `${run.targetLabel} ${run.status} ${formatDurationHuman(Date.now() - run.startedAt)} ${run.command}`,
     )
     .join("\n");
 }

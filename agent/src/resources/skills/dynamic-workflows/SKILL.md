@@ -62,15 +62,15 @@ Rules:
 
 ## Tool Parameters
 
-| Parameter         | Type                  | Description                                                                                |
-| ----------------- | --------------------- | ------------------------------------------------------------------------------------------ |
-| `script`          | `string`              | Raw JavaScript workflow. Mutually exclusive with `scriptFile`.                             |
-| `scriptFile`      | `string`              | Absolute path to JavaScript workflow file. Mutually exclusive with `script`.               |
-| `args`            | `unknown`             | Optional JSON value. Exposed inside the script as the global `args`.                       |
-| `background`      | `boolean`             | Default `true`. Returns immediately; result delivered when finished. Set `false` to block. |
-| `maxAgents`       | `number`              | Max agents allowed. Default `1000`.                                                        |
-| `agentTimeoutMs`  | `number`              | Timeout per agent. Default `1800000` (30 min).                                             |
-| `subagentBackend` | `"lite" \| "process"` | Subagent runtime. Default `process`; use `lite` for lower-overhead in-process agents.      |
+| Parameter         | Type                  | Description                                                                                                                                       |
+| ----------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `script`          | `string`              | Raw JavaScript workflow. Mutually exclusive with `scriptFile`.                                                                                    |
+| `scriptFile`      | `string`              | Absolute path to JavaScript workflow file. Mutually exclusive with `script`.                                                                      |
+| `args`            | `unknown`             | Optional JSON value. Exposed inside the script as the global `args`.                                                                              |
+| `background`      | `boolean`             | Default `true`. Returns immediately; result delivered when finished. Set `false` to block.                                                        |
+| `maxAgents`       | `number`              | Max agents allowed. Default `1000`.                                                                                                               |
+| `agentTimeoutMs`  | `number`              | Timeout per agent. Default `1800000` (30 min).                                                                                                    |
+| `subagentBackend` | `"lite" \| "process"` | Subagent runtime. Default `process`; use `lite` for lower-overhead in-process agents. `process` uses the default mux: Herdr, then tmux, then pty. |
 
 Examples:
 

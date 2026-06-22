@@ -399,6 +399,34 @@ function waitForPostAgentSettle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 175));
 }
 
+type CompactionReason = "manual" | "threshold" | "overflow";
+
+async function emitBeforeCompact(
+  harness: ReturnType<typeof createGoalHarness>,
+  reason: CompactionReason,
+  willRetry: boolean,
+): Promise<void> {
+  await harness.emit("session_before_compact", {
+    type: "session_before_compact",
+    reason,
+    willRetry,
+  });
+}
+
+async function emitSessionCompact(
+  harness: ReturnType<typeof createGoalHarness>,
+  reason: CompactionReason,
+  willRetry: boolean,
+): Promise<void> {
+  await harness.emit("session_compact", {
+    type: "session_compact",
+    compactionEntry: { id: "compaction-1" },
+    fromExtension: false,
+    reason,
+    willRetry,
+  });
+}
+
 function deferredWorkflowResult() {
   let resolve!: (value: {
     result: unknown;
@@ -1995,6 +2023,106 @@ Ship it`);
       kind: "continuation",
       goalId: harness.snapshot().goal?.goalId,
     });
+  });
+
+  test("retry compaction does not enqueue goal continuation", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "overflow", true);
+    harness.setContextUsage(null);
+    await emitSessionCompact(harness, "overflow", true);
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("retry before compact cancels pending post-agent continuation", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 10, contextUsageTokens: 100 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "overflow", true);
+    await waitForPostAgentSettle();
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("explicit non-retry compaction keeps pending goal continuation", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "threshold", false);
+    harness.setContextUsage(null);
+    await emitSessionCompact(harness, "threshold", false);
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("goal can continue after retry compaction turn completes", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await emitBeforeCompact(harness, "overflow", true);
+    harness.setContextUsage(null);
+    await emitSessionCompact(harness, "overflow", true);
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+    harness.setContextUsage(10, 100);
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await waitForPostAgentSettle();
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("goal does not continue when retried turn ends with assistant error", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await emitBeforeCompact(harness, "overflow", true);
+    harness.setContextUsage(null);
+    await emitSessionCompact(harness, "overflow", true);
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+    harness.setContextUsage(10, 100);
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("error", { input: 30, output: 0 })],
+    });
+    await waitForPostAgentSettle();
+
+    expect(harness.sentMessages).toHaveLength(0);
   });
 
   test("successful compact after repeated before compact events resumes once", async () => {

@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type * as Pi from "@earendil-works/pi-coding-agent";
 import {
   createToolStateEntry,
   readToolState,
@@ -231,11 +232,13 @@ class GoalRuntime {
     this.clearContinuationTimer();
     this.clearCompactionResumeTimer();
     this.clearPostAgentSettleTimer();
-    this.continuationPendingAfterCompaction = false;
-    this.blockedContinuationPosition = null;
+    this.clearPendingCompactionContinuation();
     this.continuationQueuedFor = null;
   }
-
+  private clearPendingCompactionContinuation(): void {
+    this.continuationPendingAfterCompaction = false;
+    this.blockedContinuationPosition = null;
+  }
   private clearScheduledContinuationAttempts(): void {
     this.clearContinuationTimer();
     this.clearCompactionResumeTimer();
@@ -248,8 +251,7 @@ class GoalRuntime {
     }
 
     this.clearScheduledContinuationAttempts();
-    this.continuationPendingAfterCompaction = false;
-    this.blockedContinuationPosition = null;
+    this.clearPendingCompactionContinuation();
     return true;
   }
 
@@ -494,8 +496,7 @@ class GoalRuntime {
     }
 
     if (this.continuationBlockedByAssistantError) {
-      this.continuationPendingAfterCompaction = false;
-      this.blockedContinuationPosition = null;
+      this.clearPendingCompactionContinuation();
       return;
     }
 
@@ -503,8 +504,7 @@ class GoalRuntime {
       options.resumeAnchor !== undefined &&
       !canResumeFromCompactionAnchor(ctx, options.resumeAnchor)
     ) {
-      this.continuationPendingAfterCompaction = false;
-      this.blockedContinuationPosition = null;
+      this.clearPendingCompactionContinuation();
       return;
     }
 
@@ -514,8 +514,7 @@ class GoalRuntime {
       return;
     }
 
-    this.continuationPendingAfterCompaction = false;
-    this.blockedContinuationPosition = null;
+    this.clearPendingCompactionContinuation();
 
     const goalId = this.goal.goalId;
     const goalPosition = sessionPosition(ctx);
@@ -577,8 +576,7 @@ class GoalRuntime {
 
     const blockedPosition = this.blockedContinuationPosition;
     if (blockedPosition === null || !branchContainsEntry(ctx, blockedPosition.leafId)) {
-      this.continuationPendingAfterCompaction = false;
-      this.blockedContinuationPosition = null;
+      this.clearPendingCompactionContinuation();
       return;
     }
 
@@ -592,8 +590,7 @@ class GoalRuntime {
       this.compactionResumeTimer = null;
       this.compactionResumeAnchor = null;
       if (resumeAnchor === null || !canResumeFromCompactionAnchor(ctx, resumeAnchor)) {
-        this.continuationPendingAfterCompaction = false;
-        this.blockedContinuationPosition = null;
+        this.clearPendingCompactionContinuation();
         return;
       }
       // Pi exposes successful compaction completion to extensions via session_compact.
@@ -726,8 +723,14 @@ class GoalRuntime {
     this.scheduleContinuationAfterAgentSettles(ctx);
   }
 
-  private handleSessionBeforeCompact(_event: object, ctx: ExtensionContext): void {
-    if (this.postAgentSettleTimer !== null) {
+  private handleSessionBeforeCompact(
+    event: Pi.SessionBeforeCompactEvent,
+    ctx: ExtensionContext,
+  ): void {
+    if (event.willRetry) {
+      this.clearScheduledContinuationAttempts();
+      this.clearPendingCompactionContinuation();
+    } else if (this.postAgentSettleTimer !== null) {
       this.continuationPendingAfterCompaction = true;
       this.blockedContinuationPosition ??= this.postAgentSettlePosition ?? sessionPosition(ctx);
       this.clearPostAgentSettleTimer();
@@ -736,16 +739,16 @@ class GoalRuntime {
     this.accountProgress(ctx, 0);
   }
 
-  private handleSessionCompact(
-    event: { compactionEntry: { id: string } },
-    ctx: ExtensionContext,
-  ): void {
+  private handleSessionCompact(event: Pi.SessionCompactEvent, ctx: ExtensionContext): void {
     this.isCompacting = false;
     this.clearPostAgentSettleTimer();
     if (this.goal !== null) {
       this.persistGoal(this.goal, "runtime");
     }
     this.refreshUi(ctx);
+    if (event.willRetry) {
+      return;
+    }
     if (this.continuationPendingAfterCompaction) {
       this.scheduleContinuationAfterCompaction(event, ctx);
     }

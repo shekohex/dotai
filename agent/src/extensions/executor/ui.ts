@@ -167,12 +167,6 @@ function toReadyRuntimeLine(
   if (line === `webUrl: ${state.webUrl}`) {
     return { kind: "kv", label: "Web URL", value: state.webUrl };
   }
-  if (line === `scopeId: ${state.scopeId}`) {
-    return { kind: "kv", label: "Scope ID", value: state.scopeId };
-  }
-  if (line === `scopeDir: ${state.scopeDir}`) {
-    return { kind: "kv", label: "Scope Dir", value: state.scopeDir };
-  }
 
   return undefined;
 }
@@ -183,8 +177,6 @@ function buildWebLines(endpoint: ExecutorEndpoint, launchError?: string): Execut
     { kind: "kv", label: "Candidate", value: endpoint.label },
     { kind: "kv", label: "MCP URL", value: endpoint.mcpUrl },
     { kind: "kv", label: "Web URL", value: endpoint.webUrl },
-    { kind: "kv", label: "Scope ID", value: endpoint.scope.id },
-    { kind: "kv", label: "Scope Dir", value: endpoint.scope.dir },
   ];
 
   if (launchError !== undefined && launchError.length > 0) {

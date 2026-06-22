@@ -1,14 +1,9 @@
-import { setTimeout as delay } from "node:timers/promises";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import { errorMessage } from "../../utils/error-message.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = { [key: string]: JsonValue };
-
-export type ScopeInfo = {
-  id: string;
-  name: string;
-  dir: string;
-};
 
 export type FetchJsonOptions = {
   method?: "GET" | "POST";
@@ -39,7 +34,7 @@ export class HttpError extends Error {
 }
 
 const DEFAULT_HTTP_TIMEOUT_MS = 5_000;
-const POLL_INTERVAL_MS = 100;
+const EXECUTOR_AUTH_PROVIDER = "executor";
 
 const isJsonValue = (value: unknown): value is JsonValue => {
   if (value === null) {
@@ -59,16 +54,6 @@ const isJsonValue = (value: unknown): value is JsonValue => {
   }
 
   return false;
-};
-
-const isJsonObject = (value: JsonValue): value is JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const readString = (value: JsonValue | undefined, field: string): string => {
-  if (typeof value !== "string") {
-    throw new TypeError(`Expected ${field} to be a string`);
-  }
-  return value;
 };
 
 const parseJson = async (response: Response): Promise<JsonValue> => {
@@ -117,6 +102,18 @@ export const fetchJson = async <T>(
   }
 };
 
+export async function resolveExecutorAuthorizationHeaders(): Promise<Record<string, string>> {
+  const apiKey = await AuthStorage.create().getApiKey(EXECUTOR_AUTH_PROVIDER, {
+    includeFallback: false,
+  });
+
+  if (apiKey === undefined || apiKey.length === 0) {
+    return {};
+  }
+
+  return { Authorization: `Bearer ${apiKey}` };
+}
+
 async function requestJson(
   baseUrl: string,
   path: string,
@@ -124,9 +121,14 @@ async function requestJson(
   options: FetchJsonOptions,
   signal: AbortSignal,
 ): Promise<Response> {
+  const headers = await resolveExecutorAuthorizationHeaders();
+  if (options.body) {
+    headers["content-type"] = "application/json";
+  }
+
   const response = await fetch(url, {
     method: options.method ?? "GET",
-    headers: options.body ? { "content-type": "application/json" } : undefined,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined,
     signal,
   });
@@ -166,46 +168,13 @@ function toHttpError(baseUrl: string, path: string, error: unknown): HttpError {
   });
 }
 
-export const parseScopeInfo = (value: JsonValue): ScopeInfo => {
-  if (!isJsonObject(value)) {
-    throw new Error("Expected scope response to be an object");
+const parseIntegrationsProbe = (value: JsonValue): true => {
+  if (!Array.isArray(value)) {
+    throw new TypeError("Expected integrations response to be an array");
   }
 
-  return {
-    id: readString(value.id, "scope.id"),
-    name: readString(value.name, "scope.name"),
-    dir: readString(value.dir, "scope.dir"),
-  };
+  return true;
 };
 
-export const getScope = (baseUrl: string, timeoutMs?: number): Promise<ScopeInfo> =>
-  fetchJson(baseUrl, "/api/scope", parseScopeInfo, { timeoutMs });
-
-export const waitForHealthyScope = async (
-  baseUrl: string,
-  expectedDir: string,
-  timeoutMs: number,
-): Promise<ScopeInfo> => {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() <= deadline) {
-    try {
-      const scope = await getScope(baseUrl, Math.min(timeoutMs, DEFAULT_HTTP_TIMEOUT_MS));
-      if (scope.dir === expectedDir) {
-        return scope;
-      }
-    } catch {
-      await delay(POLL_INTERVAL_MS);
-      continue;
-    }
-
-    await delay(POLL_INTERVAL_MS);
-  }
-
-  throw new HttpError({
-    baseUrl,
-    path: "/api/scope",
-    message: `Executor did not become healthy for ${expectedDir} within ${timeoutMs}ms`,
-  });
-};
-import { errorMessage } from "../../utils/error-message.js";
+export const probeExecutorApi = (baseUrl: string, timeoutMs?: number): Promise<true> =>
+  fetchJson(baseUrl, "/api/integrations", parseIntegrationsProbe, { timeoutMs });

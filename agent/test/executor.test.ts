@@ -1,10 +1,11 @@
-import { expect, afterEach, test } from "vitest";
+import { expect, afterEach, test, vi } from "vitest";
 import { createServer } from "node:http";
 import type {
   ExtensionAPI,
   ExtensionContext,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import createExecutorExtension from "../src/extensions/executor/index.ts";
 import { getExecutorState } from "../src/extensions/executor/status.ts";
 import {
@@ -22,6 +23,7 @@ const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
 afterEach(() => {
   setExecutorSettingsForTests(undefined);
   clearExecutorInspectionCache();
+  vi.restoreAllMocks();
 });
 
 class FakePi implements Partial<ExtensionAPI> {
@@ -87,13 +89,11 @@ function createFakeContext(): ExtensionContext {
   } as unknown as ExtensionContext;
 }
 
-async function createExecutorProbeServer(
-  scopeDir: string,
-): Promise<{ url: string; close: () => Promise<void> }> {
+async function createExecutorProbeServer(): Promise<{ url: string; close: () => Promise<void> }> {
   const server = createServer((request, response) => {
-    if (request.url === "/api/scope") {
+    if (request.url === "/api/integrations") {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ id: "scope_test", name: "executor-test", dir: scopeDir }));
+      response.end("[]");
       return;
     }
 
@@ -123,7 +123,7 @@ timedTest("getExecutorWebUrl strips the /mcp suffix", () => {
 });
 
 timedTest("resolveExecutorEndpoint falls back to the next healthy candidate", async () => {
-  const server = await createExecutorProbeServer("/tmp/executor-scope");
+  const server = await createExecutorProbeServer();
 
   try {
     setExecutorSettingsForTests({
@@ -140,10 +140,90 @@ timedTest("resolveExecutorEndpoint falls back to the next healthy candidate", as
     expect(endpoint.label).toBe("online");
     expect(endpoint.mcpUrl).toBe(server.url);
     expect(endpoint.webUrl).toBe(server.url.replace(/\/mcp$/, "/"));
-    expect(endpoint.scope.id).toBe("scope_test");
-    expect(endpoint.scope.dir).toBe("/tmp/executor-scope");
   } finally {
     await server.close();
+  }
+});
+
+timedTest("resolveExecutorEndpoint probes v1.5 integrations API", async () => {
+  const seenPaths: string[] = [];
+  const server = createServer((request, response) => {
+    const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    seenPaths.push(path);
+
+    if (path === "/api/integrations") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("[]");
+      return;
+    }
+
+    response.writeHead(404, { "content-type": "text/plain" });
+    response.end("not found");
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to start test server");
+  }
+
+  try {
+    setExecutorSettingsForTests({
+      autoStart: true,
+      probeTimeoutMs: 200,
+      candidates: [{ label: "online", mcpUrl: `http://127.0.0.1:${address.port}/mcp` }],
+    });
+
+    const endpoint = await resolveExecutorEndpoint();
+
+    expect(endpoint.label).toBe("online");
+    expect(seenPaths).toEqual(["/api/integrations"]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+timedTest("resolveExecutorEndpoint sends auth storage token as bearer header", async () => {
+  vi.spyOn(AuthStorage, "create").mockReturnValue({
+    getApiKey: async () => "executor-secret",
+  } as unknown as AuthStorage);
+
+  const seenAuthorizationHeaders: string[] = [];
+  const server = createServer((request, response) => {
+    if (request.url === "/api/integrations") {
+      seenAuthorizationHeaders.push(request.headers.authorization ?? "");
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("[]");
+      return;
+    }
+
+    response.writeHead(404, { "content-type": "text/plain" });
+    response.end("not found");
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to start test server");
+  }
+
+  try {
+    setExecutorSettingsForTests({
+      autoStart: true,
+      probeTimeoutMs: 200,
+      candidates: [{ label: "online", mcpUrl: `http://127.0.0.1:${address.port}/mcp` }],
+    });
+
+    const endpoint = await resolveExecutorEndpoint();
+
+    expect(endpoint.label).toBe("online");
+    expect(seenAuthorizationHeaders).toEqual(["Bearer executor-secret"]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
   }
 });
 

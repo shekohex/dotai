@@ -53,7 +53,6 @@ const runExecuteTool = async (
   );
   return toToolResult(outcome, {
     baseUrl: endpoint.mcpUrl,
-    scopeId: endpoint.scope.id,
     durationMs: Date.now() - startedAt,
   });
 };
@@ -66,9 +65,10 @@ export const createExecuteToolDefinition = (pi: ExtensionAPI, description: strin
     description,
     promptSnippet: "Execute TypeScript in Executor's sandboxed runtime with configured API tools.",
     promptGuidelines: [
-      "Search inside execute before calling Executor tools directly in code.",
-      "Use execute instead of top-level helper tools for Executor discovery and invocation.",
-      "load the `executor` skill first before using this tool, it will explain it in details and how to use it",
+      "Load the `executor` skill before using this tool.",
+      "Inside execute, discover tools with `tools.search({ query, limit })`, then inspect unfamiliar tools with `tools.describe.tool({ path })`.",
+      "Call discovered tools with exact bracket access, `tools[path](args)`, instead of guessing dotted proxy paths.",
+      "Use execute instead of top-level helper tools for Executor discovery and configured integration calls.",
     ],
     parameters: executeToolParams,
     renderCall: renderExecuteToolCall,
@@ -104,7 +104,6 @@ const buildResumeTool = (pi: ExtensionAPI, description: string) =>
 
       return toToolResult(outcome, {
         baseUrl: endpoint.mcpUrl,
-        scopeId: endpoint.scope.id,
         durationMs: Date.now() - startedAt,
       });
     },
@@ -116,15 +115,11 @@ export const loadExecutorPrompt = async (cwd: string, hasUI: boolean): Promise<s
 };
 
 export const isExecutorToolDetails = (value: object | null): value is ExecuteToolDetails => {
-  if (!value || !("baseUrl" in value) || !("scopeId" in value) || !("isError" in value)) {
+  if (!value || !("baseUrl" in value) || !("isError" in value)) {
     return false;
   }
 
-  return (
-    typeof value.baseUrl === "string" &&
-    typeof value.scopeId === "string" &&
-    typeof value.isError === "boolean"
-  );
+  return typeof value.baseUrl === "string" && typeof value.isError === "boolean";
 };
 
 export const createExecutorTools = async (

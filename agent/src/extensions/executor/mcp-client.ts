@@ -3,7 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { ElicitRequestSchema, type ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import type { JsonObject, JsonValue } from "./http.js";
+import { resolveExecutorAuthorizationHeaders, type JsonObject, type JsonValue } from "./http.js";
 
 export type ResumeAction = "accept" | "decline" | "cancel";
 
@@ -178,7 +178,10 @@ const connectExecutorMcpClient = async (
     { name: "pi-executor-builtin", version: "0.0.1" },
     { capabilities: buildCapabilities(options.hasUI) },
   );
-  const transport = new StreamableHTTPClientTransport(new URL(mcpUrl));
+  const headers = await resolveExecutorAuthorizationHeaders();
+  const transport = new StreamableHTTPClientTransport(new URL(mcpUrl), {
+    requestInit: Object.keys(headers).length > 0 ? { headers } : undefined,
+  });
 
   registerElicitationHandler(client, options.onElicitation);
 

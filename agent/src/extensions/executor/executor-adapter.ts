@@ -2,7 +2,6 @@ import type { JsonObject, JsonValue } from "./http.js";
 
 export type ExecuteToolDetails = {
   baseUrl: string;
-  scopeId: string;
   structuredContent: JsonValue;
   isError: boolean;
   executionId?: string;
@@ -75,12 +74,11 @@ export const parseJsonContent = (raw: string | undefined): JsonObject | undefine
 
 export const toToolResult = (
   outcome: ExecutorToolOutcome,
-  meta: { baseUrl: string; scopeId: string; durationMs?: number },
+  meta: { baseUrl: string; durationMs?: number },
 ): ExecuteToolResult => ({
   content: [{ type: "text", text: outcome.text }],
   details: {
     baseUrl: meta.baseUrl,
-    scopeId: meta.scopeId,
     structuredContent: outcome.structuredContent,
     isError: outcome.isError,
     executionId: readExecutionId(outcome.structuredContent),

@@ -167,13 +167,14 @@ async function writeHandoffCommandSettings(agentDir: string): Promise<void> {
   );
 }
 
-async function createExecutorProbeServer(
-  scopeDir: string,
-): Promise<{ mcpUrl: string; close: () => Promise<void> }> {
+async function createExecutorProbeServer(): Promise<{
+  mcpUrl: string;
+  close: () => Promise<void>;
+}> {
   const server = createServer((request, response) => {
-    if (request.url === "/api/scope") {
+    if (request.url === "/api/integrations") {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ id: "scope_test", name: "executor-test", dir: scopeDir }));
+      response.end("[]");
       return;
     }
 
@@ -1701,7 +1702,7 @@ timedTest("handoff command autocompletes flags, modes, and models", async () => 
 timedTest("executor command autocompletes subcommands with fuzzy search", async () => {
   const cwd = await createTempDir("agent-executor-autocomplete-");
   let session: TestSession | undefined;
-  const server = await createExecutorProbeServer(cwd);
+  const server = await createExecutorProbeServer();
 
   try {
     setExecutorSettingsForTests({
@@ -1732,7 +1733,7 @@ timedTest("executor command autocompletes subcommands with fuzzy search", async 
 timedTest("executor command without arguments shows status", async () => {
   const cwd = await createTempDir("agent-executor-command-");
   let session: TestSession | undefined;
-  const server = await createExecutorProbeServer(cwd);
+  const server = await createExecutorProbeServer();
 
   try {
     setExecutorSettingsForTests({

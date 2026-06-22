@@ -1,12 +1,10 @@
-import type { ScopeInfo } from "./http.js";
-import { getScope } from "./http.js";
+import { probeExecutorApi } from "./http.js";
 import { getExecutorSettings, getExecutorWebUrl } from "./settings.js";
 
 export type ExecutorEndpoint = {
   label: string;
   mcpUrl: string;
   webUrl: string;
-  scope: ScopeInfo;
 };
 
 export type ExecutorConnectionAttempt = {
@@ -48,12 +46,11 @@ export async function resolveExecutorEndpoint(): Promise<ExecutorEndpoint> {
     const mcpUrl = assertMcpUrl(candidate.mcpUrl);
 
     try {
-      const scope = await getScope(mcpUrl, settings.probeTimeoutMs);
+      await probeExecutorApi(mcpUrl, settings.probeTimeoutMs);
       return {
         label: candidate.label,
         mcpUrl,
         webUrl: getExecutorWebUrl(mcpUrl),
-        scope,
       };
     } catch (error) {
       attempts.push({

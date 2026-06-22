@@ -85,7 +85,7 @@ EXECUTOR_VERSION=1.4.6 EXECUTOR_HTTP_PORT=8090 docker compose up -d --build
 ### Endpoints
 
 - `http://localhost:4788/`
-- `http://localhost:4788/api/scope`
+- `http://localhost:4788/api/integrations`
 - `http://localhost:4788/mcp`
 
 ### Persistence

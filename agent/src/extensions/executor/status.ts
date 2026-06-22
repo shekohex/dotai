@@ -11,8 +11,6 @@ export type ExecutorRuntimeState =
       label: string;
       mcpUrl: string;
       webUrl: string;
-      scopeId: string;
-      scopeDir: string;
     }
   | { kind: "error"; message: string };
 
@@ -52,8 +50,6 @@ function toReadyState(endpoint: ExecutorEndpoint): ExecutorRuntimeState {
     label: endpoint.label,
     mcpUrl: endpoint.mcpUrl,
     webUrl: endpoint.webUrl,
-    scopeId: endpoint.scope.id,
-    scopeDir: endpoint.scope.dir,
   };
 }
 
@@ -84,8 +80,6 @@ export function formatExecutorRuntimeState(state: ExecutorRuntimeState): string[
         `candidate: ${state.label}`,
         `mcpUrl: ${state.mcpUrl}`,
         `webUrl: ${state.webUrl}`,
-        `scopeId: ${state.scopeId}`,
-        `scopeDir: ${state.scopeDir}`,
       ];
     case "connecting":
       return ["Executor connecting"];

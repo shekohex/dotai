@@ -327,7 +327,6 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         ],
         details: {
           baseUrl: "http://127.0.0.1:4788/mcp",
-          scopeId: "scope_preview",
           structuredContent: {
             status: "executing",
             step: "issues.listForRepo",
@@ -346,7 +345,6 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         ],
         details: {
           baseUrl: "http://127.0.0.1:4788/mcp",
-          scopeId: "scope_preview",
           structuredContent: {
             status: "completed",
             result: {
@@ -371,7 +369,6 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         ],
         details: {
           baseUrl: "http://127.0.0.1:4788/mcp",
-          scopeId: "scope_preview",
           structuredContent: {
             status: "failed",
             error: "403 Forbidden",
@@ -387,7 +384,6 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             content: [{ type: "text", text: '{\n  "status": "executing",\n  "step": "search"\n}' }],
             details: {
               baseUrl: "http://127.0.0.1:4788/mcp",
-              scopeId: "scope_preview",
               structuredContent: {
                 status: "executing",
                 step: "search",
@@ -402,7 +398,6 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             ],
             details: {
               baseUrl: "http://127.0.0.1:4788/mcp",
-              scopeId: "scope_preview",
               structuredContent: {
                 status: "executing",
                 step: "describe.tool",
@@ -420,7 +415,6 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
             ],
             details: {
               baseUrl: "http://127.0.0.1:4788/mcp",
-              scopeId: "scope_preview",
               structuredContent: {
                 status: "executing",
                 step: "issues.listForRepo",
@@ -452,7 +446,6 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
         ],
         details: {
           baseUrl: "http://127.0.0.1:4788/mcp",
-          scopeId: "scope_preview",
           structuredContent: {
             status: "completed",
             result: [

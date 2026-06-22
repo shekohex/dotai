@@ -3,8 +3,7 @@ name: executor
 description: >-
   Load before using the `execute` tool, external systems, and
   configured MCP/OpenAPI/GraphQL integrations. Use `tools.search({ ... })`,
-  then `tools.describe.tool({ path })`, then call the full
-  `tools.<namespace>.<tool>(args)` path.
+  then `tools.describe.tool({ path })`, then call `tools[path](args)`.
 metadata:
   short-description: Required calling pattern for Executor `execute`
 ---
@@ -24,14 +23,14 @@ Inside `execute`:
 
 - `tools` is a lazy proxy
 - discover first, call second
-- call the exact full path
+- call the exact full path through bracket access
 - pass objects to helper tools
 
 Helpers:
 
 - `tools.search({ query, namespace?, limit? })`
 - `tools.describe.tool({ path })`
-- `tools.executor.sources.list({ query?, limit? })`
+- `tools[path](args)` where `path` is exact path from search/describe
 
 ## Required Flow
 
@@ -44,18 +43,19 @@ Helpers:
 ## Canonical Pattern
 
 ```ts
-const matches = await tools.search({ query: "linear issues", limit: 5 });
-const path = matches[0]?.path;
+const { items } = await tools.search({ query: "linear issues", limit: 5 });
+const path = items[0]?.path;
 if (!path) return "No matching tools found.";
 
 const details = await tools.describe.tool({ path });
 
-const result = await tools.mcp_linear_app.list_issues({
+const result = await tools[path]({
   project: "<project-id>",
   limit: 5,
 });
 
-return result?.structuredContent ?? result;
+if (!result.ok) return { error: result.error };
+return result.data?.structuredContent ?? result.data;
 ```
 
 ## Result Unwrap
@@ -82,8 +82,8 @@ const unwrap = (value: any) => {
 
 - start with `tools.search({ ... })` when path is not certain
 - use `tools.describe.tool({ path })` before unfamiliar calls
-- call `tools.<namespace>.<tool>(args)` exactly
-- use `tools.executor.sources.list({})` to confirm namespaces or source inventory
+- call `tools[path](args)` exactly; do not guess dotted proxy paths
+- use `tools.search({ query: "connections", limit })` to find connection inventory tools
 - let `execute` handle inline interaction in UI sessions
 
 ## Don’t
@@ -91,6 +91,7 @@ const unwrap = (value: any) => {
 - do not call `tools()`
 - do not use `Object.keys(tools)` for discovery
 - do not guess namespaces like `tools.linear`
+- do not rely on namespace-only search; include a query term
 - do not pass a raw string to `tools.search`
 - do not use `includeSchemas` with `tools.describe.tool()`
 - do not use `fetch` when Executor already has the integration

@@ -168,17 +168,17 @@ describe("session-query extension", () => {
         },
       ],
       [
-        "gemini/google-gemini-3.1-pro-preview",
+        "gemini/gemini-3.1-pro-preview",
         {
           provider: "gemini",
-          id: "google-gemini-3.1-pro-preview",
+          id: "gemini-3.1-pro-preview",
           api: "gemini",
           baseUrl: "https://litellm.example.test/v1beta",
         },
       ],
     ]);
     vi.mocked(stream).mockImplementation((model) => {
-      const answer = model.id === "google-gemini-3.1-pro-preview" ? "Changed src/main.ts." : "";
+      const answer = model.id === "gemini-3.1-pro-preview" ? "Changed src/main.ts." : "";
       return {
         async *[Symbol.asyncIterator]() {},
         result: async () => ({
@@ -209,7 +209,7 @@ describe("session-query extension", () => {
 
     expect(vi.mocked(stream).mock.calls.map(([model]) => model.id)).toEqual([
       "gemini-3.1-flash-lite-preview",
-      "google-gemini-3.1-pro-preview",
+      "gemini-3.1-pro-preview",
     ]);
     expect(vi.mocked(stream).mock.calls.map(([model]) => model.api)).toEqual([
       "openai-responses",

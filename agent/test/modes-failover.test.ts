@@ -262,6 +262,7 @@ describe("upstream agent auto-retry patch", () => {
     "Failed after retries",
     "No response body",
     "Request failed",
+    "Codex SSE response headers timed out after 10000ms",
     "WebSocket transport is not available in this runtime",
     "WebSocket stream closed before response.completed",
     "Invalid Codex SSE JSON: unexpected token",

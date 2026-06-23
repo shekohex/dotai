@@ -2,14 +2,14 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export const DEFAULT_MODEL_FALLBACKS = [
-  { provider: "gemini", model: "gemini-3.1-flash-lite-preview" },
-  { provider: "gemini", model: "google-gemini-3.1-pro-preview" },
-  { provider: "openai-codex", model: "gpt-5.4-mini" },
+  { provider: "codex-openai", model: "gpt-5.4-mini" },
   { provider: "zai", model: "glm-5.2" },
   { provider: "zai-coding-plan", model: "glm-5.2" },
-  { provider: "gemini", model: "gemini-2.5-pro" },
-  { provider: "deepseek", model: "deepseek-v4-flash" },
   { provider: "opencode-go", model: "deepseek-v4-flash" },
+  { provider: "deepseek", model: "deepseek-v4-flash" },
+  { provider: "gemini", model: "gemini-3.1-flash-lite-preview" },
+  { provider: "gemini", model: "gemini-3.1-pro-preview" },
+  { provider: "gemini", model: "gemini-2.5-pro" },
 ] as const;
 
 export type ModelFallbackCandidate = {

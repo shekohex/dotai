@@ -8,6 +8,7 @@ OPENCODE_CONFIG="$HOME/.config/opencode"
 CODEX_CONFIG="$HOME/.codex"
 GEMINI_CONFIG="$HOME/.gemini"
 PI_CONFIG="$HOME/.pi/agent"
+HERMES_CONFIG="$HOME/.hermes"
 DOTAI_NONINTERACTIVE="${DOTAI_NONINTERACTIVE:-}"
 PROMPT_BLOCKED=0
 
@@ -228,6 +229,7 @@ sync_skills_directory() {
   local agent_skills_target="$OPENCODE_CONFIG/skills"
   local codex_skills_target="$CODEX_CONFIG/skills"
   local pi_skills_target="$PI_CONFIG/skills"
+  local hermes_skills_target="$HERMES_CONFIG/skills/dotai"
   local skills_config="$REPO_DIR/skills.json"
   local use_enabled_filter=0
   local enabled_lookup="|"
@@ -304,6 +306,12 @@ sync_skills_directory() {
   sync_skills_to_target "$agent_skills_target" "OpenCode"
   sync_skills_to_target "$codex_skills_target" "Codex"
   sync_skills_to_target "$pi_skills_target" "Pi"
+
+  if [[ -d "$HERMES_CONFIG" ]]; then
+    sync_skills_to_target "$hermes_skills_target" "Hermes"
+  else
+    log_info "Hermes config not found at $HERMES_CONFIG, skipping Hermes skills"
+  fi
 }
 
 sync_codex_prompts_directory() {
@@ -439,6 +447,9 @@ main() {
   log_info "Codex config: $CODEX_CONFIG"
   log_info "Gemini config: $GEMINI_CONFIG"
   log_info "Pi config: $PI_CONFIG"
+  if [[ -d "$HERMES_CONFIG" ]]; then
+    log_info "Hermes config: $HERMES_CONFIG"
+  fi
   echo ""
   echo "Synchronized files:"
   echo "  - AI.md → $CLAUDE_CONFIG/CLAUDE.md"
@@ -450,6 +461,9 @@ main() {
     echo "  - skills/ → $OPENCODE_CONFIG/skills/"
     echo "  - skills/ → $CODEX_CONFIG/skills/"
     echo "  - skills/ → $PI_CONFIG/skills/"
+    if [[ -d "$HERMES_CONFIG" ]]; then
+      echo "  - skills/ → $HERMES_CONFIG/skills/dotai/"
+    fi
   fi
   if [[ -d "$REPO_DIR/.codex/prompts" || -d "$REPO_DIR/.claude/commands" ]]; then
     echo "  - prompts/ → ~/.codex/prompts/"

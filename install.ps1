@@ -10,6 +10,7 @@ $OpenCodeConfig = Join-Path $HOME ".config\opencode"
 $CodexConfig = Join-Path $HOME ".codex"
 $GeminiConfig = Join-Path $HOME ".gemini"
 $PiConfig = Join-Path $HOME ".pi\agent"
+$HermesConfig = Join-Path $HOME ".hermes"
 
 # Source files
 $AiMd = Join-Path $RepoDir "AI.md"
@@ -142,6 +143,7 @@ function Sync-Skills-Directory {
     $skillsSource = Join-Path $RepoDir "skills"
     $agentSkillsTarget = Join-Path $HOME ".opencode/skill"
     $codexSkillsTarget = Join-Path $CodexConfig "skills"
+    $hermesSkillsTarget = Join-Path $HermesConfig "skills/dotai"
     $skillsConfig = Join-Path $RepoDir "skills.json"
     $useEnabledFilter = $false
     $enabledLookup = @{}
@@ -177,6 +179,13 @@ function Sync-Skills-Directory {
         @{ Path = $agentSkillsTarget; Name = "OpenCode" },
         @{ Path = $codexSkillsTarget; Name = "Codex" }
     )
+
+    if (Test-Path -LiteralPath $HermesConfig) {
+        $targets += @{ Path = $hermesSkillsTarget; Name = "Hermes" }
+    }
+    else {
+        Log-Info "Hermes config not found at $HermesConfig, skipping Hermes skills"
+    }
 
     foreach ($target in $targets) {
         Log-Info "Syncing skills to $($target.Name)..."
@@ -358,6 +367,9 @@ function Main {
     Log-Info "Codex config: $CodexConfig"
     Log-Info "Gemini config: $GeminiConfig"
     Log-Info "Pi config: $PiConfig"
+    if (Test-Path -LiteralPath $HermesConfig) {
+        Log-Info "Hermes config: $HermesConfig"
+    }
     Write-Host ""
     Write-Host "Synchronized files:"
     Write-Host "  - AI.md -> $claudeFile"
@@ -368,6 +380,9 @@ function Main {
     if (Test-Path -LiteralPath (Join-Path $RepoDir "skills")) {
         Write-Host "  - skills/ -> ~/.opencode/skill/"
         Write-Host "  - skills/ -> ~/.codex/skills/"
+        if (Test-Path -LiteralPath $HermesConfig) {
+            Write-Host "  - skills/ -> ~/.hermes/skills/dotai/"
+        }
     }
     if ((Test-Path -LiteralPath (Join-Path $RepoDir ".codex/prompts")) -or (Test-Path -LiteralPath (Join-Path $RepoDir ".claude/commands"))) {
         Write-Host "  - prompts/ -> ~/.codex/prompts/"

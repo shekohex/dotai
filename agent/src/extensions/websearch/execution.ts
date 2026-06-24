@@ -1,4 +1,3 @@
-import { stream } from "@earendil-works/pi-ai";
 import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_MODEL,
@@ -14,6 +13,7 @@ import {
 } from "./types.js";
 import { buildDetails, formatResult, getAssistantText } from "./parsing.js";
 import { emptyResult, extractStreamingAnswerText, parseSearchResponseText } from "./structured.js";
+import { streamModel } from "../pi-ai-models.js";
 
 function createWebSearchRequest(
   params: {
@@ -71,7 +71,7 @@ async function executeWebSearchRequest(
       .replace(/\/v1\/?$/, "")
       .replace(/\/+$/, "") + "/v1";
   const endpoint = `${baseUrl}/responses`;
-  const searchStream = stream(
+  const searchStream = streamModel(
     { ...model, api: "openai-responses" as const, baseUrl, reasoning: false },
     {
       systemPrompt: buildSystemInstruction(),
@@ -89,7 +89,7 @@ async function executeWebSearchRequest(
 }
 
 async function emitWebSearchPartials(
-  searchStream: ReturnType<typeof stream>,
+  searchStream: ReturnType<typeof streamModel>,
   request: {
     query: string;
     modelId: (typeof WEBSEARCH_MODELS)[number];
@@ -128,7 +128,7 @@ async function emitWebSearchPartials(
 }
 
 function finalizeWebSearchResponse(
-  response: Awaited<ReturnType<ReturnType<typeof stream>["result"]>>,
+  response: Awaited<ReturnType<ReturnType<typeof streamModel>["result"]>>,
   request: {
     query: string;
     modelId: (typeof WEBSEARCH_MODELS)[number];

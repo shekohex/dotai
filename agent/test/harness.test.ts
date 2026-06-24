@@ -8,7 +8,7 @@ import { calls, createTestSession, says, when, type TestSession } from "@support
 import { DefaultResourceLoader, initTheme, InteractiveMode } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { setKeybindings } from "@earendil-works/pi-tui";
-import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import stripAnsi from "strip-ansi";
 import { createPlaybookStreamFn } from "@support/pi-test-harness/playbook";
 import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
@@ -19,6 +19,7 @@ import webSearchExtension, { webSearchTool } from "../src/extensions/websearch.t
 import patchExtension from "../src/extensions/patch.ts";
 import handoffExtension from "../src/extensions/handoff.ts";
 import { createLiteLLMProviderRegistrations } from "../src/extensions/litellm.ts";
+import { registerPiAiProvider } from "../src/extensions/pi-ai-models.ts";
 import modesExtension from "../src/extensions/modes.ts";
 import interviewExtension from "../src/extensions/interview/index.ts";
 import gsdExtension from "../src/extensions/gsd/index.ts";
@@ -255,7 +256,7 @@ function createHandoffTestProviders(summaryText: string): {
   dispose: () => void;
 } {
   const registrations = [
-    registerFauxProvider({
+    fauxProvider({
       provider: "gemini",
       models: [
         {
@@ -267,7 +268,7 @@ function createHandoffTestProviders(summaryText: string): {
         },
       ],
     }),
-    registerFauxProvider({
+    fauxProvider({
       provider: "codex-openai",
       models: [
         {
@@ -286,7 +287,7 @@ function createHandoffTestProviders(summaryText: string): {
         },
       ],
     }),
-    registerFauxProvider({
+    fauxProvider({
       provider: "openai-codex",
       models: [
         {
@@ -305,7 +306,7 @@ function createHandoffTestProviders(summaryText: string): {
         },
       ],
     }),
-    registerFauxProvider({
+    fauxProvider({
       provider: "mode-provider",
       models: [
         {
@@ -324,7 +325,7 @@ function createHandoffTestProviders(summaryText: string): {
         },
       ],
     }),
-    registerFauxProvider({
+    fauxProvider({
       provider: "override-provider",
       models: [
         {
@@ -348,6 +349,9 @@ function createHandoffTestProviders(summaryText: string): {
   );
   registrations[4].setResponses(
     Array.from({ length: 8 }, () => fauxAssistantMessage("override-provider response")),
+  );
+  const unregisterPiAiProviders = registrations.map((registration) =>
+    registerPiAiProvider(registration.provider),
   );
   const modelById = new Map(
     registrations.flatMap((registration) => {
@@ -374,6 +378,7 @@ function createHandoffTestProviders(summaryText: string): {
           baseUrl: model.baseUrl,
           apiKey: "TEST_KEY",
           api: registration.api,
+          streamSimple: registration.provider.streamSimple,
           models: registration.models.map((registeredModel) => ({
             id: registeredModel.id,
             name: registeredModel.name,
@@ -392,8 +397,8 @@ function createHandoffTestProviders(summaryText: string): {
       return model as { provider: string; id: string } & Record<string, unknown>;
     },
     dispose() {
-      for (const registration of registrations) {
-        registration.unregister();
+      for (const unregisterPiAiProvider of unregisterPiAiProviders) {
+        unregisterPiAiProvider();
       }
     },
   };
@@ -403,12 +408,12 @@ function createModelFamilyTestProviders(): {
   extensionFactory: (pi: ExtensionAPI) => void;
   getModel: (id: string) => { provider: string; id: string } & Record<string, unknown>;
   setResponses: (
-    response: Parameters<ReturnType<typeof registerFauxProvider>["setResponses"]>[0][number],
+    response: Parameters<ReturnType<typeof fauxProvider>["setResponses"]>[0][number],
   ) => void;
   dispose: () => void;
 } {
   const registrations = [
-    registerFauxProvider({
+    fauxProvider({
       provider: "family-gpt",
       models: [
         {
@@ -420,7 +425,7 @@ function createModelFamilyTestProviders(): {
         },
       ],
     }),
-    registerFauxProvider({
+    fauxProvider({
       provider: "family-gpt-mini",
       models: [
         {
@@ -432,7 +437,7 @@ function createModelFamilyTestProviders(): {
         },
       ],
     }),
-    registerFauxProvider({
+    fauxProvider({
       provider: "family-codex",
       models: [
         {
@@ -444,7 +449,7 @@ function createModelFamilyTestProviders(): {
         },
       ],
     }),
-    registerFauxProvider({
+    fauxProvider({
       provider: "family-gemini",
       models: [
         {
@@ -456,7 +461,7 @@ function createModelFamilyTestProviders(): {
         },
       ],
     }),
-    registerFauxProvider({
+    fauxProvider({
       provider: "family-kimi",
       models: [
         {
@@ -468,7 +473,7 @@ function createModelFamilyTestProviders(): {
         },
       ],
     }),
-    registerFauxProvider({
+    fauxProvider({
       provider: "family-default",
       models: [
         {
@@ -488,6 +493,9 @@ function createModelFamilyTestProviders(): {
       return [model.id, model] as const;
     }),
   );
+  const unregisterPiAiProviders = registrations.map((registration) =>
+    registerPiAiProvider(registration.provider),
+  );
 
   return {
     extensionFactory(pi: ExtensionAPI) {
@@ -497,6 +505,7 @@ function createModelFamilyTestProviders(): {
           baseUrl: model.baseUrl,
           apiKey: "TEST_KEY",
           api: registration.api,
+          streamSimple: registration.provider.streamSimple,
           models: registration.models.map((registeredModel) => ({
             id: registeredModel.id,
             name: registeredModel.name,
@@ -520,8 +529,8 @@ function createModelFamilyTestProviders(): {
       }
     },
     dispose() {
-      for (const registration of registrations) {
-        registration.unregister();
+      for (const unregisterPiAiProvider of unregisterPiAiProviders) {
+        unregisterPiAiProvider();
       }
     },
   };

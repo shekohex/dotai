@@ -1,5 +1,4 @@
 import { Text } from "@earendil-works/pi-tui";
-import { stream } from "@earendil-works/pi-ai";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -30,10 +29,11 @@ import {
 } from "../src/extensions/context-prune/tool-render.js";
 import { DEFAULT_CONFIG } from "../src/extensions/context-prune/types.js";
 import { summarizeBatch, summarizeBatches } from "../src/extensions/context-prune/summarizer.js";
+import { streamModel } from "../src/extensions/pi-ai-models.js";
 
-vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
-  return { ...actual, stream: vi.fn() };
+vi.mock("../src/extensions/pi-ai-models.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/extensions/pi-ai-models.js")>();
+  return { ...actual, streamModel: vi.fn() };
 });
 
 const theme = {
@@ -130,7 +130,7 @@ function createResponseStream(text: string) {
 }
 
 function streamMock() {
-  return vi.mocked(stream);
+  return vi.mocked(streamModel);
 }
 
 afterEach(() => {

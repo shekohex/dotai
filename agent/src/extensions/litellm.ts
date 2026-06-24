@@ -1,4 +1,4 @@
-import { getModels } from "@earendil-works/pi-ai";
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../utils/error-message.js";
@@ -178,7 +178,7 @@ async function probeLiteLLMCandidate(candidate: LiteLLMCandidate): Promise<{
 }
 
 function createZaiModels(): ProviderModelConfig[] {
-  const models = getModels(ZAI_PROVIDER).map((model) => ({
+  const models = getBuiltinModels(ZAI_PROVIDER).map((model) => ({
     id: model.id,
     name: model.name,
     api: model.api,
@@ -214,7 +214,7 @@ function createZaiModels(): ProviderModelConfig[] {
 }
 
 function createCodexOpenAIModels(): ProviderModelConfig[] {
-  return getModels("openai-codex").map((model) => ({
+  return getBuiltinModels("openai-codex").map((model) => ({
     id: model.id,
     name: model.name,
     api: "openai-responses",
@@ -230,7 +230,7 @@ function createCodexOpenAIModels(): ProviderModelConfig[] {
 }
 
 function createDeepSeekModels(): ProviderModelConfig[] {
-  return getModels("deepseek").map((model) => ({
+  return getBuiltinModels("deepseek").map((model) => ({
     id: model.id,
     name: model.name,
     api: model.api,
@@ -246,7 +246,7 @@ function createDeepSeekModels(): ProviderModelConfig[] {
 }
 
 function createGeminiModels(): ProviderModelConfig[] {
-  return getModels("google").map((model) => ({
+  return getBuiltinModels("google").map((model) => ({
     id: model.id,
     name: model.name,
     api: model.api,

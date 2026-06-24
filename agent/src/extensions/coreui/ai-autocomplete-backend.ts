@@ -1,4 +1,4 @@
-import { complete, type Api, type Message, type Model } from "@earendil-works/pi-ai";
+import type { Api, Message, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
 import { escapeXml } from "../../utils/xml.js";
@@ -7,6 +7,7 @@ import {
   modelForOpenAIResponses,
   type ModelFallbackCandidate,
 } from "../model-fallbacks.js";
+import { completeModel } from "../pi-ai-models.js";
 import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import type { AiAutocompleteSettings } from "./ai-autocomplete-settings.js";
 
@@ -93,7 +94,7 @@ export function createPiAiAutocompleteBackend(
           const modelAuth = await resolveAutocompleteModelAuth(activeContext, candidate);
           if (modelAuth === undefined) continue;
 
-          const response = await complete(
+          const response = await completeModel(
             modelForOpenAIResponses(modelAuth.model),
             {
               systemPrompt: buildSystemPrompt(settings.promptFormat),

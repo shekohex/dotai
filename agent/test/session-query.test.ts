@@ -1,7 +1,6 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { stream } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type {
   ExtensionAPI,
@@ -14,10 +13,11 @@ import { executeSessionQueryRequest } from "../src/extensions/session-query/exec
 import sessionQueryExtension from "../src/extensions/session-query/index.js";
 import { isSessionQueryToolEnabled } from "../src/extensions/session-query/state.js";
 import { syncModeTools } from "../src/extensions/modes/tools.js";
+import { streamModel } from "../src/extensions/pi-ai-models.js";
 
-vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>();
-  return { ...actual, stream: vi.fn() };
+vi.mock("../src/extensions/pi-ai-models.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/extensions/pi-ai-models.js")>();
+  return { ...actual, streamModel: vi.fn() };
 });
 
 type Handler = (event: object, ctx: ExtensionContext) => unknown;
@@ -177,7 +177,7 @@ describe("session-query extension", () => {
         },
       ],
     ]);
-    vi.mocked(stream).mockImplementation((model) => {
+    vi.mocked(streamModel).mockImplementation((model) => {
       const answer = model.id === "gemini-3.1-pro-preview" ? "Changed src/main.ts." : "";
       return {
         async *[Symbol.asyncIterator]() {},
@@ -191,7 +191,7 @@ describe("session-query extension", () => {
           errorMessage: answer.length > 0 ? undefined : "provider error",
           timestamp: Date.now(),
         }),
-      } as ReturnType<typeof stream>;
+      } as ReturnType<typeof streamModel>;
     });
 
     const result = await executeSessionQueryRequest(
@@ -207,15 +207,15 @@ describe("session-query extension", () => {
       } as never,
     );
 
-    expect(vi.mocked(stream).mock.calls.map(([model]) => model.id)).toEqual([
+    expect(vi.mocked(streamModel).mock.calls.map(([model]) => model.id)).toEqual([
       "gemini-3.1-flash-lite-preview",
       "gemini-3.1-pro-preview",
     ]);
-    expect(vi.mocked(stream).mock.calls.map(([model]) => model.api)).toEqual([
+    expect(vi.mocked(streamModel).mock.calls.map(([model]) => model.api)).toEqual([
       "openai-responses",
       "openai-responses",
     ]);
-    expect(vi.mocked(stream).mock.calls.map(([model]) => model.baseUrl)).toEqual([
+    expect(vi.mocked(streamModel).mock.calls.map(([model]) => model.baseUrl)).toEqual([
       "https://litellm.example.test/v1",
       "https://litellm.example.test/v1",
     ]);

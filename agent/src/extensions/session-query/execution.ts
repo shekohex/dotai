@@ -1,4 +1,4 @@
-import { stream, type Api, type Message, type Model } from "@earendil-works/pi-ai";
+import type { Api, Message, Model } from "@earendil-works/pi-ai";
 import {
   type AgentToolUpdateCallback,
   type ExtensionContext,
@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { errorMessage } from "../../utils/error-message.js";
 import { isRecord } from "../../utils/unknown-data.js";
+import { streamModel } from "../pi-ai-models.js";
 import {
   appendCurrentModelFallback,
   DEFAULT_MODEL_FALLBACKS,
@@ -205,7 +206,7 @@ async function runSessionQuery(
     ],
     timestamp: Date.now(),
   };
-  const queryStream = stream(
+  const queryStream = streamModel(
     modelForOpenAIResponses(modelAuth.model),
     { systemPrompt: QUERY_SYSTEM_PROMPT, messages: [userMessage] },
     { apiKey: modelAuth.apiKey, headers: modelAuth.headers, signal },
@@ -216,7 +217,7 @@ async function runSessionQuery(
 }
 
 async function emitSessionQueryPartials(
-  queryStream: ReturnType<typeof stream>,
+  queryStream: ReturnType<typeof streamModel>,
   request: { sessionPath: string; question: string; sessionUuid: string },
   messageCount: number,
   onUpdate: AgentToolUpdateCallback<unknown> | undefined,
@@ -245,7 +246,7 @@ async function emitSessionQueryPartials(
 }
 
 function finalizeSessionQueryResponse(
-  response: Awaited<ReturnType<ReturnType<typeof stream>["result"]>>,
+  response: Awaited<ReturnType<ReturnType<typeof streamModel>["result"]>>,
   request: { sessionPath: string; question: string; sessionUuid: string },
   messageCount: number,
 ) {

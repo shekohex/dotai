@@ -1,4 +1,3 @@
-import { stream } from "@earendil-works/pi-ai";
 import {
   BorderedLoader,
   type ExtensionContext,
@@ -13,6 +12,7 @@ import {
   getSummaryGenerationConfig,
   streamSummaryUpdates,
 } from "./session-launch-summary-helpers.js";
+import { streamModel } from "./pi-ai-models.js";
 import { errorMessage } from "../utils/error-message.js";
 
 export type SessionModel = NonNullable<ExtensionContext["model"]>;
@@ -197,7 +197,7 @@ export async function generateContextTransferSummary(
   const userMessage = buildSummaryUserMessage(messages, goal);
 
   try {
-    const summaryStream = stream(
+    const summaryStream = streamModel(
       generation.config.model,
       { systemPrompt: CONTEXT_TRANSFER_SYSTEM_PROMPT, messages: [userMessage] },
       { apiKey: generation.config.apiKey, headers: generation.config.headers, signal },

@@ -1,4 +1,3 @@
-import { complete } from "@earendil-works/pi-ai";
 import {
   convertToLlm,
   serializeConversation,
@@ -21,6 +20,7 @@ import {
   sanitizeMessagesForCompact,
 } from "./context-prune/compact-sanitizer.js";
 import { getContextPruneAPI } from "./context-prune/public-api.js";
+import { completeModel } from "./pi-ai-models.js";
 
 type CompactionPreparation = Parameters<typeof compact>[0];
 const SUMMARY_PREFIX =
@@ -117,7 +117,7 @@ async function summarizeCompaction(
   customInstructions: string | undefined,
   signal: AbortSignal | undefined,
 ): Promise<string> {
-  const response = await complete(
+  const response = await completeModel(
     modelForOpenAIResponses(modelAuth.model),
     { messages: buildSummaryMessages(allMessages, previousSummary, customInstructions) },
     {

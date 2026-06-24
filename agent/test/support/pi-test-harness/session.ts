@@ -24,7 +24,7 @@ import {
   type ProjectTrustEventResult,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { getModel } from "@earendil-works/pi-ai";
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 import { createPlaybookStreamFn, type PlaybookState } from "./playbook.js";
 import { interceptToolExecution } from "./mock-tools.js";
 import { createMockUIContext } from "./mock-ui.js";
@@ -106,7 +106,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
   );
 
   // Use a real model definition (never actually called — playbook replaces streamFn)
-  const playbookModel = getModel("openai", "gpt-4o");
+  const playbookModel = getBuiltinModel("openai", "gpt-4o");
 
   // Create real session with in-memory persistence
   const { session, extensionsResult } = await createAgentSession({

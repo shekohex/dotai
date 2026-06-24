@@ -1,4 +1,3 @@
-import { stream } from "@earendil-works/pi-ai";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type {
@@ -12,6 +11,7 @@ import type {
 import { serializeBatchForSummarizer } from "./batch-capture.js";
 import { errorMessage, isTextContent } from "./guards.js";
 import { modelForOpenAIResponses } from "../model-fallbacks.js";
+import { streamModel } from "../pi-ai-models.js";
 
 const RATE_LIMIT_FALLBACK_DELAY_MS = 2000;
 const MIN_RATE_LIMIT_DELAY_MS = 250;
@@ -216,9 +216,9 @@ async function trySummarizeWithModel(
 
     // Pass the abort signal so the underlying fetch is cancelled immediately
     // when the user presses Esc while the tool is running.
-    const streamModel = modelForOpenAIResponses(model);
-    const responseStream = stream(
-      streamModel,
+    const requestModel = modelForOpenAIResponses(model);
+    const responseStream = streamModel(
+      requestModel,
       {
         messages: [
           {

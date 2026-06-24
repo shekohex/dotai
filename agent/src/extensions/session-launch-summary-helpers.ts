@@ -1,4 +1,4 @@
-import { stream, type Api, type Message, type Model } from "@earendil-works/pi-ai";
+import type { Api, Message, Model } from "@earendil-works/pi-ai";
 import {
   convertToLlm,
   serializeConversation,
@@ -8,6 +8,7 @@ import {
   CONTEXT_TRANSFER_MODEL,
   CONTEXT_TRANSFER_PROVIDER,
 } from "./session-launch-utils.constants.js";
+import { streamModel } from "./pi-ai-models.js";
 import { isRecord } from "../utils/unknown-data.js";
 
 type SessionModel = NonNullable<ExtensionContext["model"]>;
@@ -82,7 +83,7 @@ export function buildSummaryUserMessage(
 }
 
 export async function streamSummaryUpdates(
-  summaryStream: ReturnType<typeof stream>,
+  summaryStream: ReturnType<typeof streamModel>,
   onUpdate?: (summary: string) => void,
 ): Promise<void> {
   let lastPartialSummary = "";

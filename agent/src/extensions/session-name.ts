@@ -1,6 +1,6 @@
-import { completeSimple } from "@earendil-works/pi-ai";
 import type { Api, Message, Model, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { completeSimpleModel } from "./pi-ai-models.js";
 
 const RENAME_INTERVAL = 15;
 const MAX_TOKENS = 50;
@@ -182,7 +182,7 @@ async function generateAndSetName(
     });
   }
 
-  const response = await completeSimple(
+  const response = await completeSimpleModel(
     modelAuth.model,
     {
       systemPrompt: SYSTEM_PROMPT,

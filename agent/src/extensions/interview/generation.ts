@@ -1,4 +1,4 @@
-import { complete, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
@@ -6,6 +6,7 @@ import { createWrappedError, getErrorMessage } from "./errors.js";
 import { isNonNullObject } from "./guards.js";
 import { isRichOption, validateQuestions, type OptionValue } from "./schema.js";
 import type { AskModelOption, OptionInsightResult } from "./types.js";
+import { completeModel } from "../pi-ai-models.js";
 
 export interface GenerateModelCandidate {
   provider: string;
@@ -372,7 +373,7 @@ export async function completeForInterview<T>(options: {
     throw new Error(`No API key for ${modelRef}`);
   }
 
-  const response = await complete(model, createGenerateContext(prompt, systemPrompt), {
+  const response = await completeModel(model, createGenerateContext(prompt, systemPrompt), {
     apiKey: auth.apiKey,
     headers: auth.headers,
     signal,

@@ -3,6 +3,7 @@
 import { main } from "@earendil-works/pi-coding-agent";
 import { installBundledResourcePaths } from "./extensions/bundled-resources.js";
 import { bundledExtensionFactories } from "./extensions/index.js";
+import { isRemoteMode, parseRemoteModeArgs, runRemoteMode } from "./remote/mode.js";
 import { ensureRuntimeDefaultSettings } from "./runtime-default-settings.js";
 import { handleWrapperUpdateCommand } from "./update/command.js";
 
@@ -14,6 +15,12 @@ installBundledResourcePaths();
 if (await handleWrapperUpdateCommand({ args })) {
   process.exit(process.exitCode ?? 0);
 }
+
+if (isRemoteMode(args)) {
+  await runRemoteMode(parseRemoteModeArgs(args));
+  process.exit(0);
+}
+
 if (shouldEnsureRuntimeDefaultSettings(args)) {
   await ensureRuntimeDefaultSettings();
 }

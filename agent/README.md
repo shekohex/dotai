@@ -37,6 +37,16 @@ With a prompt:
 npm run pi -- -p "hello"
 ```
 
+## Remote mode (TCP control)
+
+`pi --mode remote` exposes a pi agent session over a TCP socket using the same JSON line protocol as `pi --mode rpc`, letting other applications control pi over an SSH port-forward instead of stdio. No subprocess, no patch-package — the session runs in-process via the pi SDK.
+
+```bash
+pi --mode remote --host 127.0.0.1 --port 0 --token <secret> [--remote-idle-timeout 300]
+```
+
+See [REMOTE.md](./REMOTE.md) for the full protocol, lifecycle, command surface, and client examples.
+
 ## Development
 
 Build the package:

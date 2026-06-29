@@ -10,6 +10,7 @@ import { defaultOpenAIBetterSettings } from "./extensions/openai-better/settings
 import { DEFAULT_CONFIG as defaultContextPruneSettings } from "./extensions/context-prune/types.js";
 import { defaultDynamicWorkflowSettings } from "./extensions/dynamic-workflows/settings.js";
 import { defaultSessionQuerySettings } from "./extensions/session-query/settings.js";
+import { defaultSessionArchiveSettings } from "./extensions/session-archive/settings.js";
 import { defaultAiAutocompleteSettings } from "./extensions/coreui/ai-autocomplete-settings.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
@@ -32,6 +33,7 @@ export type DefaultSettings = Omit<AgentSettings, "terminal"> & {
   contextPrune: typeof defaultContextPruneSettings;
   dynamic_workflows: typeof defaultDynamicWorkflowSettings;
   sessionQuery: typeof defaultSessionQuerySettings;
+  sessionArchive: typeof defaultSessionArchiveSettings;
   aiAutocomplete: typeof defaultAiAutocompleteSettings;
   openaiBetter: typeof defaultOpenAIBetterSettings;
 };
@@ -60,6 +62,7 @@ export const defaultSettings = {
   },
   dynamic_workflows: defaultDynamicWorkflowSettings,
   sessionQuery: defaultSessionQuerySettings,
+  sessionArchive: defaultSessionArchiveSettings,
   aiAutocomplete: defaultAiAutocompleteSettings,
   contextPrune: {
     ...defaultContextPruneSettings,

@@ -54,15 +54,15 @@ Extension startup output (e.g. OSC escape sequences from terminal extensions) ma
 
 ## Connection lifecycle
 
-### Single controller
+### Multiple controllers
 
-One active controller at a time. A second connection while one is live is rejected immediately:
+Multiple controllers may connect simultaneously. Events fan-out to all connected controllers (each `session.subscribe` independently). This avoids reconnect-during-long-running-sessions hitting a connection mutex — just connect again and you reattach to the live session.
+
+During shutdown, new connections are rejected:
 
 ```json
-{ "id": null, "ok": false, "error": "busy: a controller is already connected" }
+{ "id": null, "ok": false, "error": "shutting down" }
 ```
-
-The rejected connection is closed. The existing controller is unaffected.
 
 ### Authentication
 
@@ -86,9 +86,36 @@ On wrong/missing token:
 
 The connection is closed. Auth must arrive within 10 seconds or the connection is dropped with `{"id":null,"ok":false,"error":"auth timeout"}`.
 
+### Heartbeat (ping/pong)
+
+To detect dead connections (half-open SSH tunnels, crashed clients, network partitions) that TCP keepalive alone misses, the server runs an app-layer heartbeat on each connection:
+
+1. Every **10 seconds**, if the client has been idle (no message received), the server sends a `ping`:
+
+   ```json
+   { "type": "ping" }
+   ```
+
+2. The client must respond with a `pong` (or send any other message) within **5 seconds**:
+
+   ```json
+   { "type": "pong" }
+   ```
+
+3. If no response arrives within the 5-second deadline, the server assumes the client is gone and **closes that connection only**. The session and other controllers are unaffected.
+
+**Any message from the client resets the heartbeat timer** — if you're actively sending commands or streaming, no pings are sent. Pings only fire when the client goes quiet.
+
+Clients SHOULD:
+
+- Respond to every `ping` with `pong` immediately.
+- Treat a missed `pong` response as a signal that the server may have reaped them; reconnect.
+
+Clients MAY ignore `ping` messages if they send traffic frequently enough to reset the timer naturally.
+
 ### Reconnect-safe
 
-If the controller's socket drops mid-turn:
+If the controller's socket drops mid-turn (tunnel blip, crash, reap):
 
 - The **turn keeps running** to completion.
 - The **session and port stay alive**.
@@ -237,7 +264,7 @@ If the prompt is rejected (e.g. another prompt already queued and `one-at-a-time
 
 ### Events (server → client)
 
-After a successful `prompt`/`steer`/`follow_up`, agent events stream as they occur. Every `AgentSessionEvent` is emitted unfiltered via `session.subscribe`. Key types:
+After a successful `prompt`/`steer`/`follow_up`, agent events stream as they occur. Every `AgentSessionEvent` is emitted unfiltered via `session.subscribe` to **all** connected controllers. Key types:
 
 | Event                               | When                                                                |
 | ----------------------------------- | ------------------------------------------------------------------- |
@@ -255,6 +282,12 @@ After a successful `prompt`/`steer`/`follow_up`, agent events stream as they occ
 | `queue_update`                      | Steering/follow-up queue changed.                                   |
 | `session_info_changed`              | Session metadata changed.                                           |
 | `thinking_level_changed`            | Thinking level changed.                                             |
+
+In addition to agent events, the server sends heartbeat probes:
+
+| Message | When                                                                       |
+| ------- | -------------------------------------------------------------------------- |
+| `ping`  | Client idle > 10s. Client must respond with `pong` within 5s or be reaped. |
 
 #### Idle detection
 
@@ -299,7 +332,7 @@ Output writes are fire-and-forget. A backed-up socket never stalls the agent tur
 
 ## Client example
 
-Minimal Node.js client:
+Minimal Node.js client with heartbeat support:
 
 ```javascript
 import net from "node:net";
@@ -333,6 +366,12 @@ function connectRemote(host, port, token) {
         continue;
       }
 
+      // Heartbeat: respond to pings immediately.
+      if (msg.type === "ping") {
+        send({ type: "pong" });
+        continue;
+      }
+
       if (!authed) {
         if (msg.ok === true) {
           authed = true;
@@ -358,7 +397,6 @@ function connectRemote(host, port, token) {
   return new Promise((resolve, reject) => {
     sock.on("connect", () => send({ id: "auth", method: "auth", params: { token } }));
     sock.on("error", reject);
-    sock.once("data", () => {}); // wait for auth response
     setTimeout(
       () =>
         authed
@@ -419,7 +457,8 @@ cli.ts  ──isRemoteMode()──▶  runRemoteMode()
                                  │
                                  ├─ net.createServer             [mode.ts]
                                  │    ├─ token auth handshake
-                                 │    ├─ single-controller guard
+                                 │    ├─ multi-controller fan-out (events → all conns)
+                                 │    ├─ per-conn heartbeat (ping @10s, pong deadline 5s)
                                  │    └─ per-conn: session.subscribe → socket
                                  │
                                  └─ idle watcher                 (5min default → shutdown)

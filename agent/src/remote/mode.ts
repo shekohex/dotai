@@ -9,7 +9,10 @@
  *
  * Lifecycle contract:
  *
- * - Single controller at a time; 2nd rejected with `busy`.
+ * - Multiple controllers may connect simultaneously; events fan-out to all.
+ * - Heartbeat: server pings every PING_INTERVAL_MS; client must respond (pong or any message) within
+ *   PONG_DEADLINE_MS. Missed → that connection is closed and cleaned up; the session keeps
+ *   running.
  * - Controller drops mid-turn → turn keeps running, session + port stay alive. Controller rebuilds
  *   state via get_state / get_messages on reconnect.
  * - No event replay buffer; the session is the source of truth.
@@ -24,6 +27,7 @@ import type { Readable } from "node:stream";
 import { getAgentDir, type AgentSession } from "@earendil-works/pi-coding-agent";
 
 import { errorMessage } from "../utils/error-message.js";
+import { resolveCwd } from "../utils/cwd.js";
 import {
   createCommandHandler,
   type CommandHandlerContext,
@@ -39,7 +43,9 @@ import { createRemoteSession, type RemoteSessionHandle } from "./session.js";
 const KEEPALIVE_INITIAL_DELAY_MS = 15_000;
 const IDLE_POLL_INTERVAL_MS = 5_000;
 const AUTH_LINE_TIMEOUT_MS = 10_000;
-const AUTH_LINE_MAX_BYTES = 65536;
+const AUTH_LINE_MAX_BYTES = 65_536;
+const PING_INTERVAL_MS = 10_000;
+const PONG_DEADLINE_MS = 5_000;
 
 // ============================================================================
 // CLI argument parsing
@@ -65,12 +71,12 @@ export function isRemoteMode(args: string[]): boolean {
   return false;
 }
 
-export function parseRemoteModeArgs(args: string[]): RemoteModeArgs {
+export function parseRemoteModeArgs(args: string[], resolvedCwd: string): RemoteModeArgs {
   let host = "127.0.0.1";
   let port = 0;
   let token = "";
   let idleTimeoutSeconds = 300;
-  let cwd = process.cwd();
+  let cwd = resolvedCwd;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -79,7 +85,11 @@ export function parseRemoteModeArgs(args: string[]): RemoteModeArgs {
     else if (arg === "--port") port = Number.parseInt(next(), 10) || 0;
     else if (arg === "--token") token = next();
     else if (arg === "--remote-idle-timeout") idleTimeoutSeconds = Number.parseInt(next(), 10) || 0;
-    else if (arg === "--cwd") cwd = next();
+    else if (arg === "--cwd") {
+      // Expand $VAR/tilde here too, in case the launcher passes a raw --cwd
+      // that bypassed the cli.ts process.cwd() path.
+      cwd = resolveCwd(next());
+    }
   }
 
   return { host, port, token, idleTimeoutMs: idleTimeoutSeconds * 1000, cwd };
@@ -275,22 +285,62 @@ interface ControllerConnection {
   write: (obj: unknown) => void;
   detachInput: () => void;
   detachSession: (() => void) | undefined;
+  heartbeat: Heartbeat;
 }
 
-// ============================================================================
-// Remote mode
-// ============================================================================
-
 interface RemoteServerState {
-  activeConn: ControllerConnection | undefined;
+  conns: Set<ControllerConnection>;
   shuttingDown: boolean;
+}
+
+interface Heartbeat {
+  markAlive(): void;
+  stop(): void;
+}
+
+function createHeartbeat(write: (obj: unknown) => void, onDead: () => void): Heartbeat {
+  let lastHeard = Date.now();
+  let stopped = false;
+  let deadlineTimer: NodeJS.Timeout | undefined;
+
+  const pingTimer = setInterval(() => {
+    if (stopped) return;
+    if (Date.now() - lastHeard < PING_INTERVAL_MS) return;
+    // Client idle: probe.
+    write({ type: "ping" });
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+    deadlineTimer = setTimeout(() => {
+      deadlineTimer = undefined;
+      if (stopped) return;
+      if (Date.now() - lastHeard >= PONG_DEADLINE_MS) onDead();
+    }, PONG_DEADLINE_MS);
+  }, PING_INTERVAL_MS);
+  pingTimer.unref?.();
+
+  return {
+    markAlive(): void {
+      lastHeard = Date.now();
+      if (deadlineTimer !== undefined) {
+        clearTimeout(deadlineTimer);
+        deadlineTimer = undefined;
+      }
+    },
+    stop(): void {
+      stopped = true;
+      clearInterval(pingTimer);
+      if (deadlineTimer !== undefined) {
+        clearTimeout(deadlineTimer);
+        deadlineTimer = undefined;
+      }
+    },
+  };
 }
 
 export async function runRemoteMode(args: RemoteModeArgs): Promise<never> {
   const agentDir = getAgentDir();
   const handle = await createRemoteSession({ cwd: args.cwd, agentDir });
 
-  const state: RemoteServerState = { activeConn: undefined, shuttingDown: false };
+  const state: RemoteServerState = { conns: new Set(), shuttingDown: false };
   const signalCleanup: Array<() => void> = [];
   const idleWatcher = createIdleWatcher(handle.session, args.idleTimeoutMs, () => {
     shutdown(0);
@@ -301,15 +351,17 @@ export async function runRemoteMode(args: RemoteModeArgs): Promise<never> {
     state.shuttingDown = true;
     idleWatcher.stop();
     for (const cleanup of signalCleanup) cleanup();
-    const conn = state.activeConn;
-    state.activeConn = undefined;
-    conn?.detachInput();
-    conn?.detachSession?.();
-    try {
-      conn?.socket.destroy();
-    } catch {
-      // ignore
+    for (const conn of state.conns) {
+      conn.heartbeat.stop();
+      conn.detachInput();
+      conn.detachSession?.();
+      try {
+        conn.socket.destroy();
+      } catch {
+        // ignore
+      }
     }
+    state.conns.clear();
     try {
       server.close();
     } catch {
@@ -320,15 +372,15 @@ export async function runRemoteMode(args: RemoteModeArgs): Promise<never> {
   }
 
   const onControllerGone = (conn: ControllerConnection): void => {
-    if (state.activeConn !== conn) return;
-    state.activeConn = undefined;
+    if (!state.conns.has(conn)) return;
+    state.conns.delete(conn);
+    conn.heartbeat.stop();
     conn.detachSession?.();
-    // Session keeps running (locked decision); reconnect reattaches.
+    // Session keeps running; other controllers and the turn are unaffected.
   };
 
   const cmdCtx: CommandHandlerContext = {
     session: handle.session,
-    getActiveConn: () => state.activeConn,
     requestShutdown: () => {
       shutdown(0);
     },
@@ -442,9 +494,19 @@ function handleConnection(
   args: RemoteModeArgs,
   state: RemoteServerState,
   handle: RemoteSessionHandle,
-  handleCommand: (command: RemoteCommand) => Promise<CommandResponse | null>,
+  handleCommand: (
+    command: RemoteCommand,
+    write: (obj: unknown) => void,
+  ) => Promise<CommandResponse | null>,
   onControllerGone: ControllerGoneCallback,
 ): void {
+  // Reject new connections during shutdown.
+  if (state.shuttingDown) {
+    safeWrite(socket, serializeJsonLine({ id: null, ok: false, error: "shutting down" }));
+    socket.end();
+    return;
+  }
+
   socket.setNoDelay(true);
   socket.setKeepAlive(true, KEEPALIVE_INITIAL_DELAY_MS);
   socket.setTimeout(0);
@@ -465,16 +527,6 @@ function handleConnection(
     if (authTimer !== undefined) clearTimeout(authTimer);
     if (conn !== undefined) onControllerGone(conn);
   });
-
-  // Single-controller guard
-  if (state.activeConn !== undefined && !state.activeConn.socket.destroyed) {
-    safeWrite(
-      socket,
-      serializeJsonLine({ id: null, ok: false, error: "busy: a controller is already connected" }),
-    );
-    socket.end();
-    return;
-  }
 
   let authBuffer = Buffer.alloc(0);
 
@@ -514,13 +566,24 @@ function handleConnection(
       write(event);
     });
 
-    conn = { socket, write, detachInput: () => {}, detachSession };
-    state.activeConn = conn;
+    const heartbeat = createHeartbeat(write, () => {
+      // No pong in time — reap this connection only.
+      if (conn !== undefined) onControllerGone(conn);
+      try {
+        socket.destroy();
+      } catch {
+        // ignore
+      }
+    });
+
+    conn = { socket, write, detachInput: () => {}, detachSession, heartbeat };
+    state.conns.add(conn);
 
     const detachInput = attachJsonlReader(
       socket,
       (line) => {
-        void handleCommandLine(line, write, handleCommand);
+        heartbeat.markAlive();
+        void handleCommandLine(line, write, heartbeat, handleCommand);
       },
       rest.length > 0 ? rest : undefined,
     );
@@ -554,7 +617,11 @@ function parseAuthLine(line: string, expectedToken: string): AuthResult | undefi
 async function handleCommandLine(
   line: string,
   write: (obj: unknown) => void,
-  handleCommand: (command: RemoteCommand) => Promise<CommandResponse | null>,
+  heartbeat: Heartbeat,
+  handleCommand: (
+    command: RemoteCommand,
+    write: (obj: unknown) => void,
+  ) => Promise<CommandResponse | null>,
 ): Promise<void> {
   let parsed: unknown;
   try {
@@ -569,6 +636,11 @@ async function handleCommandLine(
     });
     return;
   }
+  // Pong is a heartbeat ack, not a command.
+  if (typeof parsed === "object" && parsed !== null && "type" in parsed && parsed.type === "pong") {
+    heartbeat.markAlive();
+    return;
+  }
   const command = parseRpcCommand(parsed);
   if (command === undefined) {
     write({
@@ -581,7 +653,7 @@ async function handleCommandLine(
     return;
   }
   try {
-    const response = await handleCommand(command);
+    const response = await handleCommand(command, write);
     if (response !== null) write(response);
   } catch (e) {
     write({

@@ -14,7 +14,6 @@ import { errorMessage } from "../utils/error-message.js";
 
 export interface CommandHandlerContext {
   readonly session: AgentSession;
-  getActiveConn(): { write: (obj: unknown) => void } | undefined;
   requestShutdown(): void;
 }
 
@@ -27,15 +26,19 @@ type SuccessResponse = {
   data?: object | null;
 };
 export type CommandResponse = RpcResponse | SuccessResponse;
-export type CommandHandler = (command: RemoteCommand) => Promise<CommandResponse | null>;
+export type WriteFn = (obj: unknown) => void;
+export type CommandHandler = (
+  command: RemoteCommand,
+  write: WriteFn,
+) => Promise<CommandResponse | null>;
 
 export function createCommandHandler(ctx: CommandHandlerContext): CommandHandler {
   const { session } = ctx;
-  return async (command: RemoteCommand): Promise<CommandResponse | null> => {
+  return async (command: RemoteCommand, write: WriteFn): Promise<CommandResponse | null> => {
     const id = command.id;
     switch (command.type) {
       case "prompt":
-        return handlePrompt(ctx, id, command);
+        return handlePrompt(ctx, id, command, write);
       case "steer":
         await session.steer(command.message, command.images);
         return ok(id, "steer");
@@ -139,24 +142,24 @@ function handlePrompt(
   ctx: CommandHandlerContext,
   id: string | undefined,
   command: Extract<RpcCommand, { type: "prompt" }>,
+  write: WriteFn,
 ): RpcResponse | null {
   // Async: emit the authoritative response only after prompt preflight succeeds.
   let preflightOk = false;
-  const conn = ctx.getActiveConn();
   void ctx.session
     .prompt(command.message, {
       images: command.images,
       streamingBehavior: command.streamingBehavior,
       source: "rpc",
       preflightResult: (didSucceed) => {
-        if (didSucceed && conn) {
+        if (didSucceed) {
           preflightOk = true;
-          conn.write(ok(id, "prompt"));
+          write(ok(id, "prompt"));
         }
       },
     })
     .catch((e: unknown) => {
-      if (!preflightOk && conn) conn.write(err(id, "prompt", errorMessage(e)));
+      if (!preflightOk) write(err(id, "prompt", errorMessage(e)));
     });
   return null;
 }

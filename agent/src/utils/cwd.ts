@@ -52,7 +52,8 @@ export function expandCwd(input: string): string {
 /**
  * Expand and resolve a cwd for use as the agent working directory.
  *
- * @param {string | undefined} input - Raw cwd string (may contain `~`/`$VAR`). Defaults to process.cwd().
+ * @param {string | undefined} input - Raw cwd string (may contain `~`/`$VAR`). Defaults to
+ *   process.cwd().
  * @returns {string} Resolved absolute path with `~`/`$VAR` expanded.
  */
 export function resolveCwd(input: string | undefined): string {

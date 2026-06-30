@@ -6,6 +6,7 @@ import { bundledExtensionFactories } from "./extensions/index.js";
 import { isRemoteMode, parseRemoteModeArgs, runRemoteMode } from "./remote/mode.js";
 import { ensureRuntimeDefaultSettings } from "./runtime-default-settings.js";
 import { handleWrapperUpdateCommand } from "./update/command.js";
+import { resolveCwd } from "./utils/cwd.js";
 
 process.title = "pi";
 
@@ -16,8 +17,21 @@ if (await handleWrapperUpdateCommand({ args })) {
   process.exit(process.exitCode ?? 0);
 }
 
+// Expand `~`/`$VAR` in the launch cwd before upstream reads process.cwd().
+// Upstream's normalizePath expands tilde but not $HOME/$VAR, which would
+// otherwise be treated as a relative path and produce corrupt session dirs.
+const resolvedCwd = resolveCwd(process.cwd());
+if (resolvedCwd !== process.cwd()) {
+  try {
+    process.chdir(resolvedCwd);
+  } catch {
+    // If the expanded path is unusable, leave the OS cwd untouched rather than
+    // failing to start; upstream will report any real path issue.
+  }
+}
+
 if (isRemoteMode(args)) {
-  await runRemoteMode(parseRemoteModeArgs(args));
+  await runRemoteMode(parseRemoteModeArgs(args, resolvedCwd));
   process.exit(0);
 }
 

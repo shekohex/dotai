@@ -879,6 +879,7 @@ function createInteractiveModePreview(cwd: string) {
     getShowImages: () => false,
     getImageWidthCells: () => 60,
     getCodeBlockIndent: () => 2,
+    getOutputPad: () => 0,
   };
   const sessionManager = {
     getCwd: () => cwd,

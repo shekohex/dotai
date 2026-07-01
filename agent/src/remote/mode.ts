@@ -252,6 +252,14 @@ function buildRpcCommand(
         return { ...value, type: "set_session_name", id, name: value.name };
       }
       return undefined;
+    case "get_entries":
+      if (!("since" in value)) {
+        return { ...value, type: "get_entries", id };
+      }
+      if (value.since === undefined || typeof value.since === "string") {
+        return { ...value, type: "get_entries", id, since: value.since };
+      }
+      return undefined;
     case "abort":
     case "new_session":
     case "get_state":
@@ -267,6 +275,7 @@ function buildRpcCommand(
     case "get_fork_messages":
     case "get_last_assistant_text":
     case "get_messages":
+    case "get_tree":
     case "get_commands":
       return { ...value, type, id };
     case "shutdown":

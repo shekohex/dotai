@@ -107,6 +107,20 @@ export function createCommandHandler(ctx: CommandHandlerContext): CommandHandler
       }
       case "get_messages":
         return ok(id, "get_messages", { messages: session.messages });
+      case "get_entries": {
+        let entries = session.sessionManager.getEntries();
+        if (command.since !== undefined) {
+          const sinceIndex = entries.findIndex((entry) => entry.id === command.since);
+          if (sinceIndex === -1) return err(id, "get_entries", `Entry not found: ${command.since}`);
+          entries = entries.slice(sinceIndex + 1);
+        }
+        return ok(id, "get_entries", { entries, leafId: session.sessionManager.getLeafId() });
+      }
+      case "get_tree":
+        return ok(id, "get_tree", {
+          tree: session.sessionManager.getTree(),
+          leafId: session.sessionManager.getLeafId(),
+        });
       case "get_commands":
         return ok(id, "get_commands", { commands: [] });
       case "clone":

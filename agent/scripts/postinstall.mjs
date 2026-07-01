@@ -124,9 +124,9 @@ function canApplyDependencyPatches() {
 
   const missingPackages = [];
   for (const patchFile of patchFiles) {
-    const packageName = getPatchedPackageName(patchFile);
-    if (!existsSync(join(packageDir, "node_modules", packageName))) {
-      missingPackages.push(packageName);
+    const { displayName, installPath } = getPatchedPackageInstallTarget(patchFile);
+    if (!existsSync(installPath)) {
+      missingPackages.push(displayName);
     }
   }
 
@@ -159,12 +159,20 @@ function areDependencyPatchesApplied() {
 
 /**
  * @param {string} patchFile Patch file path.
- * @returns {string} Patched package name.
+ * @returns {{ displayName: string; installPath: string }} Patched package install target.
  */
-function getPatchedPackageName(patchFile) {
+function getPatchedPackageInstallTarget(patchFile) {
   const patchFileName = basename(patchFile);
   const withoutSuffix = patchFileName.replace(/\+[^+]+\.patch$/, "");
-  return withoutSuffix.replaceAll("+", "/");
+  const packageSegments = withoutSuffix.split("++").map((segment) => segment.replaceAll("+", "/"));
+  const installPath = packageSegments.reduce(
+    (currentPath, packageName) => join(currentPath, packageName, "node_modules"),
+    join(packageDir, "node_modules"),
+  );
+  return {
+    displayName: packageSegments.join(" > "),
+    installPath: dirname(installPath),
+  };
 }
 
 function resolvePatchPackageBin() {

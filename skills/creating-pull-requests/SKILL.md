@@ -25,6 +25,7 @@ Create a PR that is ready for review, uses the correct repo and base branch, ref
 - Do not open a PR until the branch is pushed and relevant local checks are done or a clear blocker is reported
 - Do not depend on `gh pr create --fill` unless the repo template makes that the cleanest option
 - Return the PR URL after creation
+- When no repo template exists, prefer a problem-first PR body: problem, rationale, user impact, evidence, and focused visual/demo proof when useful
 
 ## Core Workflow
 
@@ -36,7 +37,7 @@ Create a PR that is ready for review, uses the correct repo and base branch, ref
 6. Identify and run the most relevant local quality checks for this repo.
 7. If checks fail, fix in-scope issues when reasonable. Otherwise stop and report the blocker instead of opening the PR.
 8. Push the branch if needed.
-9. Draft a concise PR title and body.
+9. Draft a concise PR title and body with problem, impact, and evidence clear enough for async review.
 10. Create the PR with `gh pr create`, adding `--draft` when appropriate.
 11. Verify the created PR and return the URL with a short status note.
 
@@ -154,7 +155,16 @@ Write a short title focused on the change outcome.
 
 Keep the body high-signal. Explain what this PR changes, how it was validated, and how to review it.
 
-Preferred sections when useful:
+Fallback sections when no repo template exists:
+
+- `Related: #123` when useful
+- `## What Problem This Solves`
+- `## Why This Change Was Made`
+- `## User Impact`
+- `## Evidence`
+- `## Demo` or focused before/after proof when useful
+
+Shorter fallback sections remain acceptable for small changes:
 
 - `## Summary`
 - `## Validation`
@@ -164,14 +174,59 @@ Preferred sections when useful:
 
 Rules:
 
-- Keep `## Summary` high-level
-- `## Validation` should list the commands or checks that actually ran
+- Use `What Problem This Solves` to describe current broken/confusing/expensive behavior, not implementation details
+- Use `Why This Change Was Made` to state design constraints, compatibility choices, links to specs/docs, or tradeoffs
+- Use `User Impact` for observable behavior changes, preferably concrete bullets
+- Use `Evidence` for commands, test counts, builds, screenshots, CI status, review passes, and manual verification that actually happened
+- Keep `Summary` high-level when using shorter format
+- `Validation` should list the commands or checks that actually ran when using shorter format
 - Include `No issues found` only when the listed checks passed cleanly
-- Include `## Demo` only when there is a meaningful demo, repro flow, or user-facing change
+- Include `## Demo`, screenshots, or before/after tables only when there is a meaningful demo, repro flow, or user-facing change
 - Include `## Diagram` only when Mermaid materially improves understanding
 - End with `Fixes #123`, `Closes #123`, or `Refs #123` when relevant
 
 If the repo template defines different headings, follow the repo template first and adapt the wording to stay concise.
+
+## Evidence Expectations
+
+Good evidence is concrete and independently useful to reviewers.
+
+Prefer evidence bullets like:
+
+- exact commands that passed
+- exact test names, counts, or suites when available
+- build target, simulator/device, browser, or runtime used for UI changes
+- `git diff --check`, formatters, linters, typechecks, and CI status when actually checked
+- visual capture notes, screenshot tables, or attachment links for UI changes
+- structured review or agent-review results only when such review actually ran
+- known warning-only or pre-existing failures, clearly labeled
+
+Avoid vague evidence like:
+
+- `tested locally`
+- `all tests pass` without command or scope
+- `verified manually` without scenario
+- claiming screenshots, CI, review, or device coverage that did not happen
+
+For larger PRs, include enough evidence for reviewers to trust both the main change and risky follow-ups. For small PRs, keep evidence to 1-3 bullets.
+
+## Visual Proof Guidance
+
+For UI, UX, docs rendering, CLI output, or generated artifact changes, include visual proof when useful and available.
+
+Useful formats:
+
+- before/after screenshot table
+- final-state screenshot table by theme/device/screen
+- short repro transcript or CLI output excerpt
+- linked artifact or recording
+
+Rules:
+
+- label screenshots with what changed, not only file names
+- include environment details when they affect rendering
+- keep tables scoped to high-value surfaces
+- do not add visual sections for backend-only or invisible changes
 
 ## Review Guide Expectations
 

@@ -101,9 +101,9 @@ export const webSearchTool = defineTool({
       toolTheme,
     );
   },
-  execute(_toolCallId, params, _signal, onUpdate, ctx) {
+  execute(_toolCallId, params, signal, onUpdate, ctx) {
     const request = createWebSearchRequest(params, onUpdate);
-    return executeWebSearchRequest(request, onUpdate, ctx);
+    return executeWebSearchRequest(request, signal, onUpdate, ctx);
   },
 });
 

@@ -11,9 +11,8 @@ import {
   asRecord,
   type WebSearchDetails,
 } from "./types.js";
-import { buildDetails, formatResult, getAssistantText } from "./parsing.js";
+import { buildDetails, formatResult } from "./parsing.js";
 import { emptyResult, extractStreamingAnswerText, parseSearchResponseText } from "./structured.js";
-import { streamModel } from "../pi-ai-models.js";
 
 function createWebSearchRequest(
   params: {
@@ -49,6 +48,7 @@ async function executeWebSearchRequest(
     timeoutMs: number;
     startedAt: number;
   },
+  signal: AbortSignal | undefined,
   onUpdate: AgentToolUpdateCallback<unknown> | undefined,
   ctx: ExtensionContext,
 ): Promise<{ content: Array<{ type: "text"; text: string }>; details: WebSearchDetails }> {
@@ -65,70 +65,50 @@ async function executeWebSearchRequest(
   if (auth.apiKey === undefined || auth.apiKey.length === 0) {
     throw new Error(`No API key for ${model.provider}/${model.id}`);
   }
-  const baseUrl =
-    model.baseUrl
-      .replace(/\/v1beta\/?$/, "")
-      .replace(/\/v1\/?$/, "")
-      .replace(/\/+$/, "") + "/v1";
+  const baseUrl = buildResponsesBaseUrl(model.baseUrl);
   const endpoint = `${baseUrl}/responses`;
-  const searchStream = streamModel(
-    { ...model, api: "openai-responses" as const, baseUrl, reasoning: false },
-    {
-      systemPrompt: buildSystemInstruction(),
-      messages: [{ role: "user", content: buildUserPrompt(request.query), timestamp: Date.now() }],
-    },
-    {
-      apiKey: auth.apiKey,
-      headers: auth.headers,
-      onPayload: (payload) => configureGroundedSearchPayload(payload),
-    },
-  );
-  await emitWebSearchPartials(searchStream, request, endpoint, onUpdate);
-  const response = await searchStream.result();
-  return finalizeWebSearchResponse(response, request, endpoint);
-}
-
-async function emitWebSearchPartials(
-  searchStream: ReturnType<typeof streamModel>,
-  request: {
-    query: string;
-    modelId: (typeof WEBSEARCH_MODELS)[number];
-    timeoutMs: number;
-    startedAt: number;
-  },
-  endpoint: string,
-  onUpdate: AgentToolUpdateCallback<unknown> | undefined,
-): Promise<void> {
-  let lastPartialAnswer = "";
-  for await (const event of searchStream) {
-    if (event.type !== "text_start" && event.type !== "text_delta" && event.type !== "text_end") {
-      continue;
-    }
-    const partialAnswer = extractStreamingAnswerText(getAssistantText(event.partial.content));
-    if (!partialAnswer || partialAnswer === lastPartialAnswer) {
-      continue;
-    }
-    lastPartialAnswer = partialAnswer;
-    onUpdate?.({
-      content: [{ type: "text", text: partialAnswer }],
-      details: buildDetails(
-        request.query,
-        request.modelId,
-        request.timeoutMs,
-        endpoint,
-        request.startedAt,
-        {
-          answer: partialAnswer,
-          sources: [],
-          searchQueries: [],
-        },
+  const timeout = createTimeoutSignal(request.timeoutMs, signal);
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: buildHeaders(auth.apiKey, auth.headers),
+      body: JSON.stringify(
+        configureGroundedSearchPayload({
+          model: request.modelId,
+          instructions: buildSystemInstruction(),
+          input: buildUserPrompt(request.query),
+          stream: false,
+          store: false,
+        }),
       ),
+      signal: timeout.signal,
     });
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw new Error(responseText || `Websearch request failed: ${response.status}`);
+    }
+    if (response.headers.get("content-type")?.includes("text/event-stream") === true) {
+      return finalizeResponsesApiStreamText(responseText, request, endpoint, onUpdate);
+    }
+    return finalizeResponsesApiJsonText(responseText, request, endpoint);
+  } finally {
+    timeout.clear();
   }
 }
 
-function finalizeWebSearchResponse(
-  response: Awaited<ReturnType<ReturnType<typeof streamModel>["result"]>>,
+function buildHeaders(
+  apiKey: string,
+  authHeaders: Record<string, string> | undefined,
+): Record<string, string> {
+  return {
+    ...authHeaders,
+    authorization: `Bearer ${apiKey}`,
+    "content-type": "application/json",
+  };
+}
+
+function finalizeResponsesApiJsonText(
+  responseText: string,
   request: {
     query: string;
     modelId: (typeof WEBSEARCH_MODELS)[number];
@@ -137,13 +117,67 @@ function finalizeWebSearchResponse(
   },
   endpoint: string,
 ): { content: Array<{ type: "text"; text: string }>; details: WebSearchDetails } {
-  const text = getAssistantText(response.content).trim();
-  if (response.stopReason === "aborted") {
-    throw new Error(response.errorMessage ?? "Websearch request aborted");
+  const responseJson: unknown = JSON.parse(responseText);
+  const text = extractResponsesText(responseJson).trim();
+  return finalizeSearchText(text, request, endpoint);
+}
+
+function finalizeResponsesApiStreamText(
+  responseText: string,
+  request: {
+    query: string;
+    modelId: (typeof WEBSEARCH_MODELS)[number];
+    timeoutMs: number;
+    startedAt: number;
+  },
+  endpoint: string,
+  onUpdate: AgentToolUpdateCallback<unknown> | undefined,
+): { content: Array<{ type: "text"; text: string }>; details: WebSearchDetails } {
+  let finalResponse: unknown;
+  let streamedText = "";
+  for (const event of parseResponsesStreamEvents(responseText)) {
+    const eventRecord = asRecord(event);
+    if (eventRecord?.type === "response.output_text.delta") {
+      const delta = eventRecord.delta;
+      if (typeof delta === "string") {
+        streamedText += delta;
+        const partialAnswer = extractStreamingAnswerText(streamedText);
+        if (partialAnswer) {
+          onUpdate?.({
+            content: [{ type: "text", text: partialAnswer }],
+            details: buildDetails(
+              request.query,
+              request.modelId,
+              request.timeoutMs,
+              endpoint,
+              request.startedAt,
+              { answer: partialAnswer, sources: [], searchQueries: [] },
+            ),
+          });
+        }
+      }
+    }
+    if (eventRecord?.type === "response.completed") {
+      finalResponse = eventRecord.response;
+    }
   }
-  if (response.stopReason === "error") {
-    throw new Error((response.errorMessage ?? text) || "Websearch failed");
-  }
+
+  const text = (
+    finalResponse === undefined ? streamedText : extractResponsesText(finalResponse)
+  ).trim();
+  return finalizeSearchText(text, request, endpoint);
+}
+
+function finalizeSearchText(
+  text: string,
+  request: {
+    query: string;
+    modelId: (typeof WEBSEARCH_MODELS)[number];
+    timeoutMs: number;
+    startedAt: number;
+  },
+  endpoint: string,
+): { content: Array<{ type: "text"; text: string }>; details: WebSearchDetails } {
   const result = parseSearchResponseText(text);
   if (result.answer.length === 0) {
     throw new Error("Websearch returned no answer");
@@ -159,6 +193,20 @@ function finalizeWebSearchResponse(
       result,
     ),
   };
+}
+
+function parseResponsesStreamEvents(responseText: string): unknown[] {
+  const events: unknown[] = [];
+  for (const block of responseText.split(/\n\n+/)) {
+    const dataLines = block
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trim())
+      .filter((line) => line.length > 0 && line !== "[DONE]");
+    if (dataLines.length === 0) continue;
+    events.push(JSON.parse(dataLines.join("\n")));
+  }
+  return events;
 }
 
 function resolveModel(
@@ -178,8 +226,70 @@ function configureGroundedSearchPayload(payload: unknown): unknown {
   const request = asRecord(payload);
   if (!request) return payload;
   request.tools = [{ googleSearch: {} }];
-  // LiteLLM's Responses API path rejects thinkingConfig on grounded searches
+  delete request.reasoning;
   return request;
+}
+
+function createTimeoutSignal(
+  timeoutMs: number,
+  parentSignal: AbortSignal | undefined,
+): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const abort = () => {
+    controller.abort(parentSignal?.reason);
+  };
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+  if (parentSignal?.aborted === true) {
+    abort();
+  } else {
+    parentSignal?.addEventListener("abort", abort, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    clear: () => {
+      clearTimeout(timeout);
+      parentSignal?.removeEventListener("abort", abort);
+    },
+  };
+}
+
+function buildResponsesBaseUrl(baseUrl: string | undefined): string {
+  return (
+    baseUrl
+      ?.replace(/\/v1beta\/?$/, "")
+      .replace(/\/v1\/?$/, "")
+      .replace(/\/+$/, "") ?? ""
+  ).concat("/v1");
+}
+
+function extractResponsesText(value: unknown): string {
+  const response = asRecord(value);
+  const outputText = response?.output_text;
+  if (typeof outputText === "string") {
+    return outputText;
+  }
+  const output = response?.output;
+  if (!Array.isArray(output)) {
+    return "";
+  }
+  return output
+    .flatMap((item) => {
+      const outputItem = asRecord(item);
+      const content = outputItem?.content;
+      if (!Array.isArray(content)) return [];
+      return content.flatMap((contentItem) => {
+        const contentRecord = asRecord(contentItem);
+        const text = contentRecord?.text;
+        const contentOutputText = contentRecord?.output_text;
+        if (typeof text === "string") return [text];
+        if (typeof contentOutputText === "string") return [contentOutputText];
+        return [];
+      });
+    })
+    .join("\n");
 }
 
 function buildSystemInstruction(): string {

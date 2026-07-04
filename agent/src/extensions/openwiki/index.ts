@@ -49,6 +49,7 @@ type ParsedOpenWikiCommand =
 export default function openWikiExtension(pi: ExtensionAPI): void {
   let pendingRun: PendingOpenWikiRun | undefined;
   let activeRun: ActiveOpenWikiRun | undefined;
+  const activeModesByCwd = new Map<string, string | undefined>();
 
   function resetState(): void {
     pendingRun = undefined;
@@ -56,6 +57,24 @@ export default function openWikiExtension(pi: ExtensionAPI): void {
   }
 
   pi.on("session_start", resetState);
+  pi.events.on("modes:changed", (data) => {
+    if (!isRecord(data)) {
+      return;
+    }
+
+    const cwd = data.cwd;
+    if (typeof cwd !== "string") {
+      return;
+    }
+
+    const mode = data.mode;
+    if (typeof mode === "string") {
+      activeModesByCwd.set(cwd, mode);
+      return;
+    }
+
+    activeModesByCwd.set(cwd, undefined);
+  });
 
   pi.on("input", async (event, ctx) => {
     const args = parseOpenWikiInputText(event.text);
@@ -100,6 +119,11 @@ export default function openWikiExtension(pi: ExtensionAPI): void {
     ctx: ExtensionContext,
   ): { systemPrompt: string } | undefined {
     if (pendingRun === undefined || pendingRun.cwd !== ctx.cwd) {
+      return undefined;
+    }
+
+    if (activeModesByCwd.get(ctx.cwd) !== OPENWIKI_MODE) {
+      pendingRun = undefined;
       return undefined;
     }
 

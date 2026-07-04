@@ -24,6 +24,15 @@ function resolveModeActivation(data: unknown): void {
   }
 }
 
+function createModeChangedEvent(data: unknown): { cwd: string; mode: string } | undefined {
+  if (!isRecord(data) || typeof data.mode !== "string" || !isRecord(data.ctx)) {
+    return undefined;
+  }
+
+  const cwd = data.ctx.cwd;
+  return typeof cwd === "string" ? { cwd, mode: data.mode } : undefined;
+}
+
 function createContext(cwd: string): ExtensionContext {
   return {
     cwd,
@@ -40,12 +49,27 @@ function createContext(cwd: string): ExtensionContext {
 
 function createOpenWikiHarness(cwd: string) {
   const handlers = new Map<string, Handler[]>();
+  const eventHandlers = new Map<string, Array<(data: unknown) => void>>();
   const sentMessages: Array<{ message: unknown; options: unknown }> = [];
+  const sentUserMessages: string[] = [];
   const registerCommand = vi.fn();
 
   const pi = {
     events: {
-      emit: (_eventName: string, data: unknown) => resolveModeActivation(data),
+      emit: (eventName: string, data: unknown) => {
+        if (eventName === MODE_ACTIVATE_EVENT) {
+          const modeChangedEvent = createModeChangedEvent(data);
+          if (modeChangedEvent !== undefined) {
+            for (const handler of eventHandlers.get("modes:changed") ?? []) {
+              handler(modeChangedEvent);
+            }
+          }
+          resolveModeActivation(data);
+        }
+      },
+      on(eventName: string, handler: (data: unknown) => void) {
+        eventHandlers.set(eventName, [...(eventHandlers.get(eventName) ?? []), handler]);
+      },
     },
     exec: vi.fn(async (_command: string, args: string[]) => ({
       stdout: args.includes("rev-parse") ? `${"a".repeat(40)}\n` : "",
@@ -60,6 +84,9 @@ function createOpenWikiHarness(cwd: string) {
     sendMessage(message: unknown, options: unknown) {
       sentMessages.push({ message, options });
     },
+    sendUserMessage(message: string) {
+      sentUserMessages.push(message);
+    },
   } as unknown as ExtensionAPI;
 
   openWikiExtension(pi);
@@ -71,6 +98,12 @@ function createOpenWikiHarness(cwd: string) {
     pi,
     registerCommand,
     sentMessages,
+    sentUserMessages,
+    emitModeChanged(mode: string | undefined) {
+      for (const handler of eventHandlers.get("modes:changed") ?? []) {
+        handler({ cwd, mode });
+      }
+    },
     async emit(eventName: string, event: Record<string, unknown> = {}) {
       const results: unknown[] = [];
       for (const handler of handlers.get(eventName) ?? []) {
@@ -140,6 +173,7 @@ describe("openwiki extension", () => {
     const [result] = await harness.emit("before_agent_start", { systemPrompt: "base prompt" });
 
     expect(harness.registerCommand).not.toHaveBeenCalled();
+    expect(harness.sentUserMessages).toHaveLength(0);
     expect(harness.sentMessages).toHaveLength(0);
     expect(inputResult).toEqual({
       action: "transform",
@@ -156,9 +190,25 @@ describe("openwiki extension", () => {
     });
   });
 
+  test("skips command details when current mode is not openwiki", async () => {
+    const harness = createOpenWikiHarness(await createTempCwd());
+
+    await harness.runInput("/openwiki init focus API docs");
+    harness.emitModeChanged("build");
+    const [result] = await harness.emit("before_agent_start", { systemPrompt: "base prompt" });
+
+    expect(result).toBeUndefined();
+  });
+
   test("session prompt path injects command details before model call", async () => {
     const modeResponder = (pi: ExtensionAPI) => {
-      pi.events.on(MODE_ACTIVATE_EVENT, (data) => resolveModeActivation(data));
+      pi.events.on(MODE_ACTIVATE_EVENT, (data) => {
+        const modeChangedEvent = createModeChangedEvent(data);
+        if (modeChangedEvent !== undefined) {
+          pi.events.emit("modes:changed", modeChangedEvent);
+        }
+        resolveModeActivation(data);
+      });
     };
     const session = await createTestSession({
       extensionFactories: [modeResponder, openWikiExtension],

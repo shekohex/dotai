@@ -7,6 +7,7 @@ import goalExtension from "./goal/index.js";
 import herdrAgentStateExtension from "./herdr-agent-state.js";
 import mermaidExtension from "./mermaid.js";
 import notifyExtension from "./notify/index.js";
+import openWikiExtension from "./openwiki/index.js";
 import piOscExtension from "./pi-osc/extension.js";
 import plannotatorExtension from "./plannotator.js";
 import promptStashExtension from "./prompt-stash.js";
@@ -21,6 +22,7 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "context-prune", factory: contextPruneExtension },
   { id: "mermaid", factory: mermaidExtension },
   { id: "notify", factory: notifyExtension },
+  { id: "openwiki", factory: openWikiExtension },
   { id: "goal", factory: goalExtension },
   { id: "prompt-stash", factory: promptStashExtension },
   { id: "ask-user-question", factory: askUserQuestionExtension },

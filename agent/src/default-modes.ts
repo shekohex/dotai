@@ -44,6 +44,23 @@ export const defaultModes = {
         { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
       ],
     },
+    openwiki: {
+      provider: "zai",
+      modelId: "glm-5.2",
+      thinkingLevel: "xhigh",
+      color: "success",
+      tmuxTarget: "window",
+      tools: ["*"],
+      description:
+        "Use for OpenWiki-style repository documentation init, update, and chat workflows.",
+      systemPrompt: modeSystemPrompt("openwiki"),
+      systemPromptMode: "replace",
+      fallbacks: [
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" },
+        { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
+      ],
+    },
     build: {
       provider: "codex-openai",
       modelId: "gpt-5.5",

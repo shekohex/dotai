@@ -1,19 +1,17 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test, vi } from "vitest";
 import openWikiExtension, {
   __openWikiExtensionInternalsForTests as internals,
 } from "../src/extensions/openwiki/index.js";
+import { MODE_ACTIVATE_EVENT } from "../src/extensions/modes/index.js";
 import { isRecord } from "../src/utils/unknown-data.js";
+import { createPlaybookStreamFn, says, when } from "./support/pi-test-harness/playbook.js";
+import { createTestSession } from "./support/pi-test-harness/session.js";
 
-type Handler = (event: { systemPrompt?: string }, ctx: ExtensionContext) => unknown;
-type OpenWikiCommandHandler = (args: string, ctx: ExtensionCommandContext) => unknown;
+type Handler = (event: Record<string, unknown>, ctx: ExtensionContext) => unknown;
 
 function resolveModeActivation(data: unknown): void {
   if (!isRecord(data) || !isRecord(data.done)) {
@@ -26,7 +24,7 @@ function resolveModeActivation(data: unknown): void {
   }
 }
 
-function createContext(cwd: string): ExtensionCommandContext {
+function createContext(cwd: string): ExtensionContext {
   return {
     cwd,
     model: { provider: "test-provider", id: "test-model" },
@@ -37,13 +35,13 @@ function createContext(cwd: string): ExtensionCommandContext {
     ui: {
       notify: vi.fn(),
     },
-  } as unknown as ExtensionCommandContext;
+  } as unknown as ExtensionContext;
 }
 
 function createOpenWikiHarness(cwd: string) {
   const handlers = new Map<string, Handler[]>();
   const sentMessages: Array<{ message: unknown; options: unknown }> = [];
-  let commandHandler: OpenWikiCommandHandler | undefined;
+  const registerCommand = vi.fn();
 
   const pi = {
     events: {
@@ -58,11 +56,7 @@ function createOpenWikiHarness(cwd: string) {
     on(eventName: string, handler: Handler) {
       handlers.set(eventName, [...(handlers.get(eventName) ?? []), handler]);
     },
-    registerCommand(name: string, definition: { handler: OpenWikiCommandHandler }) {
-      if (name === "openwiki") {
-        commandHandler = definition.handler;
-      }
-    },
+    registerCommand,
     sendMessage(message: unknown, options: unknown) {
       sentMessages.push({ message, options });
     },
@@ -75,19 +69,22 @@ function createOpenWikiHarness(cwd: string) {
   return {
     ctx,
     pi,
+    registerCommand,
     sentMessages,
-    async emit(eventName: string, event: { systemPrompt?: string } = {}) {
+    async emit(eventName: string, event: Record<string, unknown> = {}) {
       const results: unknown[] = [];
       for (const handler of handlers.get(eventName) ?? []) {
         results.push(await handler(event, ctx));
       }
       return results;
     },
-    async runCommand(args: string) {
-      if (commandHandler === undefined) {
-        throw new Error("openwiki command not registered");
-      }
-      await commandHandler(args, ctx);
+    async runInput(text: string) {
+      const [result] = await this.emit("input", {
+        text,
+        source: "interactive",
+        streamingBehavior: undefined,
+      });
+      return result;
     },
   };
 }
@@ -110,6 +107,10 @@ describe("openwiki extension", () => {
       command: "chat",
       additionalInstruction: "what changed?",
     });
+    expect(internals.parseOpenWikiInputText("/openwiki init focus API docs")).toBe(
+      "init focus API docs",
+    );
+    expect(internals.parseOpenWikiInputText("/openwikiinit")).toBeNull();
   });
 
   test("validates git heads before metadata uses them", async () => {
@@ -135,10 +136,15 @@ describe("openwiki extension", () => {
   test("injects openwiki command details into system prompt", async () => {
     const harness = createOpenWikiHarness(await createTempCwd());
 
-    await harness.runCommand("init focus API docs");
+    const inputResult = await harness.runInput("/openwiki init focus API docs");
     const [result] = await harness.emit("before_agent_start", { systemPrompt: "base prompt" });
 
-    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.registerCommand).not.toHaveBeenCalled();
+    expect(harness.sentMessages).toHaveLength(0);
+    expect(inputResult).toEqual({
+      action: "transform",
+      text: internals.formatOpenWikiPrompt("init"),
+    });
     expect(result).toMatchObject({
       systemPrompt: expect.stringContaining("OpenWiki command prompt:"),
     });
@@ -150,10 +156,45 @@ describe("openwiki extension", () => {
     });
   });
 
+  test("session prompt path injects command details before model call", async () => {
+    const modeResponder = (pi: ExtensionAPI) => {
+      pi.events.on(MODE_ACTIVATE_EVENT, (data) => resolveModeActivation(data));
+    };
+    const session = await createTestSession({
+      extensionFactories: [modeResponder, openWikiExtension],
+    });
+    (
+      session.session as { _modelRegistry: { hasConfiguredAuth: () => boolean } }
+    )._modelRegistry.hasConfiguredAuth = () => true;
+    let capturedSystemPrompt = "";
+    const playbook = createPlaybookStreamFn([
+      when(internals.formatOpenWikiPrompt("init"), [says("ok")]),
+    ]);
+
+    try {
+      (session.session.agent as { streamFn: typeof playbook.streamFn }).streamFn = (
+        model,
+        context,
+        options,
+      ) => {
+        capturedSystemPrompt = context.systemPrompt;
+        return playbook.streamFn(model, context, options);
+      };
+
+      await session.session.prompt("/openwiki init");
+      await session.session.agent.waitForIdle();
+
+      expect(capturedSystemPrompt).toContain("OpenWiki command prompt:");
+      expect(capturedSystemPrompt).toContain("Initialize OpenWiki documentation");
+    } finally {
+      session.dispose();
+    }
+  });
+
   test("clears pending command state on session start", async () => {
     const harness = createOpenWikiHarness(await createTempCwd());
 
-    await harness.runCommand("init focus API docs");
+    await harness.runInput("/openwiki init focus API docs");
     await harness.emit("session_start");
     const [result] = await harness.emit("before_agent_start", { systemPrompt: "base prompt" });
 

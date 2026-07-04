@@ -2,11 +2,7 @@ import { webcrypto } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { MODE_ACTIVATE_EVENT } from "../modes/index.js";
@@ -14,10 +10,8 @@ import { errorMessage } from "../../utils/error-message.js";
 import { isRecord } from "../../utils/unknown-data.js";
 
 const OPENWIKI_MODE = "openwiki";
-const OPENWIKI_COMMAND_CUSTOM_TYPE = "openwiki-command";
 const OPEN_WIKI_DIR = "openwiki";
 const UPDATE_METADATA_PATH = `${OPEN_WIKI_DIR}/.last-update.json`;
-const COMMAND_COMPLETIONS = ["init", "update", "chat", "help"] as const;
 const GIT_COMMIT_SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu;
 
 type OpenWikiCommand = "chat" | "init" | "update";
@@ -63,49 +57,42 @@ export default function openWikiExtension(pi: ExtensionAPI): void {
 
   pi.on("session_start", resetState);
 
-  pi.registerCommand("openwiki", {
-    description: "Switch to OpenWiki mode or run: /openwiki init|update|chat [message]",
-    getArgumentCompletions(prefix) {
-      const trimmedPrefix = prefix.trim().toLowerCase();
-      return COMMAND_COMPLETIONS.filter((command) => command.startsWith(trimmedPrefix)).map(
-        (value) => ({ value, label: value }),
-      );
-    },
-    handler: async (args, ctx) => {
-      const parsed = parseOpenWikiCommand(args);
+  pi.on("input", async (event, ctx) => {
+    const args = parseOpenWikiInputText(event.text);
+    if (args === null) {
+      return { action: "continue" };
+    }
 
-      if (parsed.kind === "help") {
-        sendOpenWikiHelp(pi);
-        return;
-      }
+    const parsed = parseOpenWikiCommand(args);
 
-      await activateOpenWikiMode(pi, ctx);
+    if (event.streamingBehavior !== undefined) {
+      ctx.ui.notify("Run /openwiki when the agent is idle", "warning");
+      return { action: "handled" };
+    }
 
-      if (parsed.kind === "switch") {
-        ctx.ui.notify("Switched to OpenWiki mode", "info");
-        return;
-      }
+    if (parsed.kind === "help") {
+      sendOpenWikiHelp(pi);
+      return { action: "handled" };
+    }
 
-      const context = await createRunContext(pi, parsed.command, ctx.cwd);
-      pendingRun = {
-        command: parsed.command,
-        context,
-        cwd: ctx.cwd,
-        openWikiSnapshotBefore:
-          parsed.command === "chat" ? null : await createOpenWikiContentSnapshot(ctx.cwd),
-        additionalInstruction: parsed.additionalInstruction,
-      };
+    await activateOpenWikiMode(pi, ctx);
 
-      pi.sendMessage(
-        {
-          customType: OPENWIKI_COMMAND_CUSTOM_TYPE,
-          display: true,
-          content: formatTriggerMessage(parsed.command),
-          details: { command: parsed.command },
-        },
-        { deliverAs: "steer", triggerTurn: true },
-      );
-    },
+    if (parsed.kind === "switch") {
+      ctx.ui.notify("Switched to OpenWiki mode", "info");
+      return { action: "handled" };
+    }
+
+    const context = await createRunContext(pi, parsed.command, ctx.cwd);
+    pendingRun = {
+      command: parsed.command,
+      context,
+      cwd: ctx.cwd,
+      openWikiSnapshotBefore:
+        parsed.command === "chat" ? null : await createOpenWikiContentSnapshot(ctx.cwd),
+      additionalInstruction: parsed.additionalInstruction,
+    };
+
+    return { action: "transform", text: formatOpenWikiPrompt(parsed.command) };
   });
 
   function consumePendingRun(
@@ -149,6 +136,15 @@ export default function openWikiExtension(pi: ExtensionAPI): void {
   });
 }
 
+function parseOpenWikiInputText(text: string): string | null {
+  const trimmedText = text.trim();
+  if (trimmedText === "/openwiki") {
+    return "";
+  }
+
+  return trimmedText.startsWith("/openwiki ") ? trimmedText.slice("/openwiki ".length) : null;
+}
+
 function parseOpenWikiCommand(args: string): ParsedOpenWikiCommand {
   const trimmedArgs = args.trim();
   if (trimmedArgs.length === 0) {
@@ -170,7 +166,7 @@ function parseOpenWikiCommand(args: string): ParsedOpenWikiCommand {
   return { kind: "run", command: "chat", additionalInstruction: trimmedArgs };
 }
 
-async function activateOpenWikiMode(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
+async function activateOpenWikiMode(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     pi.events.emit(MODE_ACTIVATE_EVENT, {
       ctx,
@@ -196,7 +192,7 @@ function sendOpenWikiHelp(pi: ExtensionAPI): void {
         "- `/mode openwiki` enters OpenWiki chat mode manually.",
       ].join("\n"),
     },
-    { deliverAs: "nextTurn", triggerTurn: false },
+    { triggerTurn: false },
   );
 }
 
@@ -356,8 +352,8 @@ function formatChatInstruction(additionalInstruction: string | null): string {
     : "Start an OpenWiki chat.";
 }
 
-function formatTriggerMessage(command: OpenWikiCommand): string {
-  return `OpenWiki ${command} requested. Command details are injected into the system prompt.`;
+function formatOpenWikiPrompt(command: OpenWikiCommand): string {
+  return `Run OpenWiki ${command}. Follow the OpenWiki command context injected into this turn's system prompt.`;
 }
 
 async function createRunContext(
@@ -643,4 +639,6 @@ export const __openWikiExtensionInternalsForTests = {
   createDynamicSystemPrompt,
   isGitCommitSha,
   getGitHead,
+  parseOpenWikiInputText,
+  formatOpenWikiPrompt,
 };

@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { request } from "node:http";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -10,12 +10,21 @@ import { parseConductorArgs } from "../src/conductor/commands/parser.js";
 import { runConductorCommand } from "../src/conductor/command.js";
 import {
   type GlobalConductorConfig,
+  conductorConfigJsonSchema,
   findManagedRepositoryByPath,
+  getConfigSchemaPath,
+  initConfig,
   resolveRepositoryConfig,
   validateGlobalConfig,
+  writeConductorConfigSchema,
+  writeGlobalConfig,
 } from "../src/conductor/config.js";
 import { readConductorDaemonStatus, stopConductorDaemon } from "../src/conductor/daemon.js";
-import { evaluateCondition, renderTemplate } from "../src/conductor/expression.js";
+import {
+  evaluateCondition,
+  evaluateWrappedExpression,
+  renderTemplate,
+} from "../src/conductor/expression.js";
 import {
   GhGitHubClient,
   parseGhIssueView,
@@ -61,26 +70,26 @@ import {
   verifyWebhookSignature,
 } from "../src/conductor/webhook.js";
 import { WorktreeManager, type WorktreeExec } from "../src/conductor/worktree.js";
-import { parseWorkflowFile } from "../src/conductor/workflow.js";
+import { DEFAULT_WORKFLOW_MARKDOWN, parseWorkflowFile } from "../src/conductor/workflow.js";
 import { createTempDir } from "./test-utils/temp-paths.js";
 
 describe("conductor config and workflow", () => {
   test("merges config with CLI > workflow > global precedence", () => {
     const globalRepo = managedRepo({
       dispatchLabel: "global",
-      branchTemplate: "global/{issue}",
+      branchTemplate: "global/${{ github.issue.number }}",
       statusOptions: { in_progress: "Doing" },
     });
 
     const resolved = resolveRepositoryConfig(
       globalRepo,
-      { dispatchLabel: "workflow", branchTemplate: "workflow/{issue}" },
+      { dispatchLabel: "workflow", branchTemplate: "workflow/${{ github.issue.number }}" },
       { dispatchLabel: "cli" },
       "/state",
     );
 
     expect(resolved.dispatchLabel).toBe("cli");
-    expect(resolved.branchTemplate).toBe("workflow/{issue}");
+    expect(resolved.branchTemplate).toBe("workflow/${{ github.issue.number }}");
     expect(resolved.statusOptions.in_progress).toBe("Doing");
     expect(resolved.statusOptions.done).toBe("Done");
   });
@@ -113,6 +122,34 @@ describe("conductor config and workflow", () => {
     expect(workflow.frontmatter.launchRules?.[0]?.flags).toEqual(["--mode-deep"]);
     expect(workflow.promptTemplate).toBe("Build ${{ github.issue.title }}");
   });
+
+  test("strips workflow author comments from prompt body", () => {
+    const workflow = parseWorkflowFile(
+      "/repo/.pi/WORKFLOW.md",
+      [
+        "---",
+        "dispatchLabel: ready-for-agent",
+        "---",
+        "Visible ${{ github.issue.title }}",
+        "<!-- hidden example ${{ github.issue.missing }} -->",
+        "Still visible.",
+      ].join("\n"),
+    );
+
+    expect(workflow.promptTemplate).toBe("Visible ${{ github.issue.title }}\n\nStill visible.");
+  });
+
+  test("default workflow shows feature syntax without sending author notes", () => {
+    const workflow = parseWorkflowFile("/repo/.pi/WORKFLOW.md", DEFAULT_WORKFLOW_MARKDOWN);
+    expect(workflow.frontmatter.launchRules?.map((rule) => rule.flags)).toEqual([
+      ["--mode-deep"],
+      ["--mode-painter"],
+      ["--mode-build"],
+    ]);
+    expect(DEFAULT_WORKFLOW_MARKDOWN).toContain("Conductor strips HTML comments");
+    expect(workflow.promptTemplate).toContain("Role: autonomous implementation agent");
+    expect(workflow.promptTemplate).not.toContain("Expression examples");
+  });
 });
 
 describe("conductor expressions and names", () => {
@@ -130,9 +167,81 @@ describe("conductor expressions and names", () => {
     );
   });
 
+  test("evaluates GitHub-style expression helpers", async () => {
+    const tempDir = await createTempDir("conductor-expression-");
+    await mkdir(join(tempDir, "src"), { recursive: true });
+    await writeFile(join(tempDir, "src", "a.ts"), "export const a = 1;\n");
+    await writeFile(join(tempDir, "README.md"), "demo\n");
+    const previousCi = process.env.CI;
+    const previousVar = process.env.PI_CONDUCTOR_VAR_CHANNEL;
+    const previousSecret = process.env.PI_CONDUCTOR_SECRET_TOKEN;
+    process.env.CI = "true";
+    process.env.PI_CONDUCTOR_VAR_CHANNEL = "nightly";
+    process.env.PI_CONDUCTOR_SECRET_TOKEN = "secret-token";
+    try {
+      const context = buildExpressionContext({
+        config: resolveRepositoryConfig(managedRepo({ repoPath: tempDir }), {}, {}, tempDir),
+        workflow: parseWorkflowFile("WORKFLOW.md", "Do it"),
+        workItem: workItem({
+          labels: ["Ready", "UI"],
+          projectFields: { Status: "Todo", "T-Shirt Size": "XL", Risk: 8 },
+        }),
+        plan: {
+          owner: "octo",
+          repo: "demo",
+          issueNumber: 7,
+          slug: "fix-bug",
+          branch: "pi/7-fix-bug",
+          baseRef: "main",
+          worktreePath: join(tempDir, "worktree"),
+        },
+        runId: "run-1",
+        attempt: 1,
+      });
+
+      expect(evaluateCondition("contains(github.issue.labels, 'ui')", context)).toBe(true);
+      expect(
+        evaluateCondition(
+          "github.project.fields['T-Shirt Size'] == 'xl' && github.project.fields.Risk >= 8",
+          context,
+        ),
+      ).toBe(true);
+      expect(
+        renderTemplate(
+          "${{ github.issue.labels[0] }}|${{ join(github.issue.labels, ',') }}|${{ startsWith(github.issue.title, 'fix') }}|${{ endsWith(github.issue.title, 'BUG') }}",
+          context,
+        ),
+      ).toBe("Ready|Ready,UI|true|true");
+      expect(renderTemplate("${{ github.project.missing || 'fallback' }}", context)).toBe(
+        "fallback",
+      );
+      expect(renderTemplate("${{ format('{0}/{1}', github.owner, github.repo) }}", context)).toBe(
+        "octo/demo",
+      );
+      expect(
+        renderTemplate("${{ env.CI }}:${{ vars.CHANNEL }}:${{ secrets.TOKEN }}", context),
+      ).toBe("true:nightly:secret-token");
+      expect(renderTemplate("${{ hashFiles('src/*.ts', '!src/ignore.ts') }}", context)).toMatch(
+        /^[0-9a-f]{64}$/u,
+      );
+      expect(evaluateWrappedExpression("${{ fromJSON('[1,2]')[1] }}", context)).toBe(2);
+      expect(evaluateWrappedExpression("${{ github.issue.labels.* }}", context)).toEqual([
+        "Ready",
+        "UI",
+      ]);
+      expect(
+        evaluateCondition("success() && always() && !failure() && !cancelled()", context),
+      ).toBe(true);
+    } finally {
+      restoreEnv("CI", previousCi);
+      restoreEnv("PI_CONDUCTOR_VAR_CHANNEL", previousVar);
+      restoreEnv("PI_CONDUCTOR_SECRET_TOKEN", previousSecret);
+    }
+  });
+
   test("renders branch template and run id", () => {
     expect(slugify("Fix API: retry!", 20)).toBe("fix-api-retry");
-    expect(
+    expect(() =>
       renderBranchTemplate("{prefix}/{kind}-{issue}-{slug}-{owner}-{repo}", {
         prefix: "pi",
         kind: "bug",
@@ -141,6 +250,19 @@ describe("conductor expressions and names", () => {
         owner: "Octo Org",
         repo: "Demo Repo",
       }),
+    ).toThrow("Use ${{ ... }} expressions");
+    expect(
+      renderBranchTemplate(
+        "${{ conductor.branchPrefix }}/${{ conductor.branchKind }}-${{ github.issue.number }}-${{ github.issue.slug }}-${{ github.owner }}-${{ github.repo }}",
+        {
+          prefix: "pi",
+          kind: "bug",
+          issue: 12,
+          slug: "Fix API: retry!",
+          owner: "Octo Org",
+          repo: "Demo Repo",
+        },
+      ),
     ).toBe("pi/bug-12-fix-api-retry-octo-org-demo-repo");
 
     const uuid = createUuidV7(new Date("2026-07-05T00:00:00.000Z"));
@@ -157,7 +279,17 @@ describe("conductor expressions and names", () => {
         owner: "octo",
         repo: "demo",
       }),
-    ).toThrow("Unsupported branch template placeholder {issue_id}");
+    ).toThrow("Use ${{ ... }} expressions");
+    expect(() =>
+      renderBranchTemplate("pi/${{ issue }}-${{ slug }}", {
+        prefix: "pi",
+        kind: "bug",
+        issue: 12,
+        slug: "fix",
+        owner: "octo",
+        repo: "demo",
+      }),
+    ).toThrow("Missing expression value: issue");
   });
 
   test("exposes configured project field aliases", () => {
@@ -247,6 +379,20 @@ describe("conductor store and command parser", () => {
       kind: "completion",
       shell: "bash",
     });
+    expect(parseConductorArgs(["config", "format"])).toEqual({ kind: "config-format" });
+    expect(parseConductorArgs(["config", "edit"])).toEqual({ kind: "config-edit" });
+    expect(
+      parseConductorArgs(["config", "get", "repositories[0].project.number", "--json"]),
+    ).toEqual({
+      kind: "config-get",
+      path: "repositories[0].project.number",
+      json: true,
+    });
+    expect(parseConductorArgs(["config", "set", "repositories[0].project.number", "12"])).toEqual({
+      kind: "config-set",
+      path: "repositories[0].project.number",
+      value: "12",
+    });
     expect(parseConductorArgs(["run", "--help"])).toEqual({ kind: "help", topic: "run" });
     expect(() => parseConductorArgs(["completion", "fish"])).toThrow(
       "Usage: pi conductor completion <bash|zsh>",
@@ -307,6 +453,126 @@ describe("conductor store and command parser", () => {
     expect(readSqlitePragmaValue(dbPath, "journal_mode").toLowerCase()).toBe("wal");
   });
 
+  test("writes conductor config JSON schema", async () => {
+    const tempDir = await createTempDir("conductor-schema-");
+    const configPath = join(tempDir, "config.json");
+
+    const schemaPath = await writeConductorConfigSchema(configPath);
+
+    expect(schemaPath).toBe(getConfigSchemaPath(configPath));
+    const schema = JSON.parse(await readFile(schemaPath, "utf8")) as Record<string, unknown>;
+    expect(schema).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      title: "Pi Conductor Config",
+    });
+    expect(conductorConfigJsonSchema()).toMatchObject({ title: "Pi Conductor Config" });
+  });
+
+  test("config get set and format support automation", async () => {
+    const tempDir = await createTempDir("conductor-config-automation-");
+    const configPath = join(tempDir, "conductor", "config.json");
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = tempDir;
+    await writeGlobalConfig(
+      configWithRepo(managedRepo({ project: { owner: "octo", number: 1 } })),
+      configPath,
+    );
+    try {
+      const getNumber = writableCapture();
+      await expect(
+        runConductorCommand(["config", "get", "repositories[0].project.number", "--json"], {
+          cwd: tempDir,
+          stdout: getNumber,
+        }),
+      ).resolves.toBe(0);
+      expect(getNumber.text()).toBe("1\n");
+
+      await expect(
+        runConductorCommand(["config", "set", "repositories[0].project.number", "12"], {
+          cwd: tempDir,
+          stdout: writableCapture(),
+        }),
+      ).resolves.toBe(0);
+
+      const getUpdatedNumber = writableCapture();
+      await expect(
+        runConductorCommand(["config", "get", ".repositories[0].project.number"], {
+          cwd: tempDir,
+          stdout: getUpdatedNumber,
+        }),
+      ).resolves.toBe(0);
+      expect(getUpdatedNumber.text()).toBe("12\n");
+
+      const formatOutput = writableCapture();
+      await expect(
+        runConductorCommand(["config", "format"], { cwd: tempDir, stdout: formatOutput }),
+      ).resolves.toBe(0);
+      expect(formatOutput.text()).toContain("Formatted");
+      const formatted = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+      expect(formatted.$schema).toBe("./config.schema.json");
+      await expect(
+        readFile(join(tempDir, "conductor", "config.schema.json"), "utf8"),
+      ).resolves.toContain("Pi Conductor Config");
+    } finally {
+      if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    }
+  });
+
+  test("config init rerun preserves existing repository settings", async () => {
+    const tempDir = await createTempDir("conductor-init-idempotent-");
+    const repoPath = join(tempDir, "repo");
+    const binPath = join(tempDir, "bin");
+    const configPath = join(tempDir, "config.json");
+    await mkdir(repoPath, { recursive: true });
+    await mkdir(binPath, { recursive: true });
+    await writeExecutable(
+      join(binPath, "git"),
+      ["#!/bin/sh", `echo ${shellEscape(repoPath)}`, ""].join("\n"),
+    );
+    await writeExecutable(
+      join(binPath, "gh"),
+      [
+        "#!/bin/sh",
+        `echo ${shellEscape(JSON.stringify({ nameWithOwner: "octo/demo", projectsV2: { nodes: [] } }))}`,
+        "",
+      ].join("\n"),
+    );
+    await writeGlobalConfig(
+      configWithRepo(
+        managedRepo({
+          repoPath: "/old/path",
+          project: { owner: "real-owner", number: 99 },
+          dispatchLabel: "custom-ready",
+          branchTemplate: "feature/${{ github.issue.number }}",
+        }),
+      ),
+      configPath,
+    );
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${binPath}:${previousPath ?? ""}`;
+    try {
+      const result = await initConfig(repoPath, configPath);
+      expect(result).toMatchObject({
+        repositoryAdded: false,
+        repositoryCount: 1,
+        configMigrated: true,
+      });
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+
+    const config = JSON.parse(await readFile(configPath, "utf8")) as GlobalConductorConfig;
+    expect(config.$schema).toBe("./config.schema.json");
+    expect(config.repositories[0]).toMatchObject({
+      repoPath,
+      project: { owner: "real-owner", number: 99 },
+      dispatchLabel: "custom-ready",
+      branchTemplate: "feature/${{ github.issue.number }}",
+    });
+  });
+
   test("logs command reports empty run log", async () => {
     const tempDir = await createTempDir("conductor-empty-logs-");
     const stdout = writableCapture();
@@ -316,6 +582,25 @@ describe("conductor store and command parser", () => {
     ).resolves.toBe(0);
 
     expect(stdout.text()).toBe("No logs for missing-run.\n");
+  });
+
+  test("config validate suggests init when config is missing", async () => {
+    const tempDir = await createTempDir("conductor-missing-config-");
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    const stderr = writableCapture();
+    process.env.PI_CODING_AGENT_DIR = tempDir;
+    try {
+      await expect(
+        runConductorCommand(["config", "validate"], { cwd: tempDir, stderr }),
+      ).resolves.toBe(1);
+    } finally {
+      if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    }
+
+    expect(stderr.text()).toContain("Conductor config not found:");
+    expect(stderr.text()).toContain("pi conductor config init");
+    expect(stderr.text()).not.toContain("ENOENT");
   });
 
   test("completion command prints bash and zsh scripts", async () => {
@@ -342,7 +627,7 @@ describe("conductor store and command parser", () => {
 
     expect(stdout.text()).toContain("Usage: pi conductor run");
     expect(stdout.text()).toContain("--branch-template TPL");
-    expect(stdout.text()).toContain("pi/{issue}-{slug}");
+    expect(stdout.text()).toContain("pi/${{ github.issue.number }}-${{ github.issue.slug }}");
   });
 
   test("daemon status ignores stale pid file for unrelated process", async () => {
@@ -1202,6 +1487,20 @@ function writableCapture(): { write(value: string): void; text(): string } {
       return chunks.join("");
     },
   };
+}
+
+async function writeExecutable(path: string, content: string): Promise<void> {
+  await writeFile(path, content);
+  await chmod(path, 0o755);
+}
+
+function shellEscape(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
 }
 
 function postWebhook(

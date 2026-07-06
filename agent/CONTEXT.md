@@ -45,7 +45,7 @@ A GitHub Project and repository pair that the conductor is allowed to scan, clai
 _Avoid_: any repository, unconfigured board
 
 **Dispatch Label**:
-The configurable GitHub issue label that marks a work item as eligible for conductor dispatch when other ownership rules also match.
+The configurable GitHub issue label that marks an open work item as eligible for conductor dispatch when other ownership rules also match.
 _Avoid_: hard-coded agent label, project status
 
 **Assigned Work Item**:

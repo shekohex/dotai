@@ -12,7 +12,7 @@ import {
 } from "./config.js";
 import { cleanupMergedRunArtifacts, cleanupRunsByStatus } from "./cleanup-batch.js";
 import { renderConductorComment, renderFollowUpMessages } from "./follow-up.js";
-import type { GitHubClient, PullRequestSummary } from "./github.js";
+import type { PullRequestSummary } from "./github.js";
 import {
   activeStatusForRun,
   HERDR_BLOCKED_REASON,
@@ -38,35 +38,24 @@ import {
 } from "./run-record.js";
 import {
   assertGlobalConfigReady,
+  dispatchAutomatedWorkItem,
   hasRunStatusForWorkItem,
   isEligibleForAutomatedDispatch,
+  isPullRequestMerged,
+  type ConductorOrchestratorDeps,
+  type RunOptions,
 } from "./run-status.js";
-import type { ConductorDeliveryMode, HerdrAgentStatus, HerdrSessionManager } from "./herdr.js";
+import type { ConductorDeliveryMode, HerdrAgentStatus } from "./herdr.js";
 import { selectLaunchFlags } from "./launch-rules.js";
 import { appendRunLog } from "./logging.js";
 import { renderInitialPrompt, writePromptArtifact } from "./prompt.js";
 import { createRunId, slugify } from "./run-id.js";
 import { RunRecordSchema, type RunRecord, type WorkItem } from "./store/types.js";
-import type { ConductorStore } from "./store/types.js";
 import { WorktreeManager, relativePromptPath } from "./worktree.js";
 import { loadWorkflow, workflowConfigOverrides, type WorkflowFile } from "./workflow.js";
 
-export type ConductorOrchestratorDeps = {
-  config: GlobalConductorConfig;
-  store: ConductorStore;
-  github: GitHubClient;
-  herdr: HerdrSessionManager;
-  worktrees?: WorktreeManager;
-  cwd: string;
-  now?: () => Date;
-};
-
-export type RunOptions = {
-  launchFlags?: string[];
-  configOverrides?: Partial<ManagedRepositoryConfig>;
-};
-
 export type { ReconcileScope } from "./reconcile-scope.js";
+export type { ConductorOrchestratorDeps, RunOptions } from "./run-status.js";
 
 export class ConductorOrchestrator {
   private readonly worktrees: WorktreeManager;
@@ -136,7 +125,14 @@ export class ConductorOrchestrator {
           if (await hasRunStatusForWorkItem(this.deps.store, workItem, "done")) continue;
           try {
             dispatched.push(
-              await this.dispatchWorkItem(repo, workItem, { manual: false, launchFlags: [] }),
+              ...(await dispatchAutomatedWorkItem({
+                config: runtime.config,
+                dispatch: () =>
+                  this.dispatchWorkItem(repo, workItem, { manual: false, launchFlags: [] }),
+                github: this.deps.github,
+                workItem,
+                worktrees: this.worktrees,
+              })),
             );
           } catch {
             continue;
@@ -475,7 +471,7 @@ export class ConductorOrchestrator {
       });
       return run;
     }
-    if (pr.mergedAt !== undefined) {
+    if (isPullRequestMerged(pr)) {
       const done = this.touch({ ...run, status: "done", prNumber: pr.number, prUrl: pr.url });
       await cleanupMergedRunArtifacts({
         config: repo.config,

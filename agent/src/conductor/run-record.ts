@@ -23,6 +23,7 @@ export function runToWorkItem(run: RunRecord): WorkItem {
     owner: run.owner,
     repo: run.repo,
     issueNumber: run.issueNumber,
+    issueState: "OPEN",
     issueUrl: run.issueUrl,
     title: run.issueTitle,
     body: "",

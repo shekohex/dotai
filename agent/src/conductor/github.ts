@@ -39,6 +39,7 @@ const GhRepoViewSchema = Type.Object({
 const GhIssueViewSchema = Type.Object({
   id: Type.Optional(Type.String()),
   number: Type.Number({ minimum: 1 }),
+  state: Type.Union([Type.Literal("OPEN"), Type.Literal("CLOSED")]),
   title: Type.String(),
   body: Type.Union([Type.String(), Type.Null()]),
   url: Type.String(),
@@ -366,7 +367,7 @@ export class GhGitHubClient implements GitHubClient {
           "--repo",
           `${owner}/${repo}`,
           "--json",
-          "id,number,title,body,url,labels,assignees",
+          "id,number,state,title,body,url,labels,assignees",
         ],
         undefined,
         "gh issue view",
@@ -378,6 +379,7 @@ export class GhGitHubClient implements GitHubClient {
       repo,
       issueId: parsed.id,
       issueNumber: parsed.number,
+      issueState: parsed.state,
       issueUrl: parsed.url,
       title: parsed.title,
       body: parsed.body ?? "",
@@ -699,6 +701,7 @@ function normalizeProjectItem(node: unknown, projectId: string, statusField: str
   const owner = readString(asRecord(repository?.owner)?.login);
   const repo = readString(repository?.name);
   const issueNumber = readNumber(content.number);
+  const issueState = readString(content.state);
   const title = readString(content.title);
   const url = readString(content.url);
   const projectItemId = readString(item.id);
@@ -706,6 +709,7 @@ function normalizeProjectItem(node: unknown, projectId: string, statusField: str
     owner === undefined ||
     repo === undefined ||
     issueNumber === undefined ||
+    (issueState !== "OPEN" && issueState !== "CLOSED") ||
     title === undefined ||
     url === undefined ||
     projectItemId === undefined
@@ -721,6 +725,7 @@ function normalizeProjectItem(node: unknown, projectId: string, statusField: str
       repo,
       issueId: readString(content.id),
       issueNumber,
+      issueState,
       issueUrl: url,
       title,
       body: readString(content.body) ?? "",

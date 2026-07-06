@@ -39,6 +39,7 @@ fragment ProjectItems on ProjectV2 {
         ... on Issue {
           id
           number
+          state
           title
           body
           url
@@ -74,6 +75,7 @@ fragment ProjectItems on ProjectV2 {
         ... on Issue {
           id
           number
+          state
           title
           body
           url

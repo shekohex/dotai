@@ -22,6 +22,7 @@ import {
   writeGlobalConfig,
 } from "../src/conductor/config.js";
 import { readConductorDaemonStatus, stopConductorDaemon } from "../src/conductor/daemon.js";
+import { execCommand } from "../src/conductor/exec.js";
 import {
   evaluateCondition,
   evaluateWrappedExpression,
@@ -1080,6 +1081,16 @@ describe("conductor store and command parser", () => {
 });
 
 describe("conductor adapters", () => {
+  test("exec command errors include exit details and captured output", async () => {
+    await expect(
+      execCommand(
+        process.execPath,
+        ["-e", "process.stdout.write('api says nope'); process.exit(7)"],
+        { cwd: "/tmp" },
+      ),
+    ).rejects.toThrow(/exit code: 7[\s\S]*stdout:\napi says nope[\s\S]*stderr:\n\(empty\)/);
+  });
+
   test("parses Herdr JSON and maps send delivery", () => {
     expect(
       parseHerdrWorkspaces(
@@ -1159,6 +1170,7 @@ describe("conductor adapters", () => {
         JSON.stringify({
           id: "I_1",
           number: 7,
+          state: "OPEN",
           title: "Fix bug",
           body: null,
           url: "https://github.com/octo/demo/issues/7",
@@ -1199,6 +1211,7 @@ describe("conductor adapters", () => {
       owner: "octo",
       repo: "demo",
       issueNumber: 7,
+      issueState: "OPEN",
       labels: ["ready"],
       assignees: ["octo"],
       projectStatus: "Todo",
@@ -1968,6 +1981,64 @@ describe("conductor orchestrator", () => {
     expect(await store.listRuns()).toHaveLength(1);
   });
 
+  test("automated reconcile ignores closed project items", async () => {
+    const tempDir = await createTempDir("conductor-closed-reconcile-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const github = new FakeGitHub(
+      workItem({
+        issueState: "CLOSED",
+        labels: ["ready-for-agent"],
+        assignees: ["octo"],
+      }),
+    );
+    const herdr = new FakeHerdr();
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: repoPath,
+    });
+
+    await expect(orchestrator.reconcile()).resolves.toEqual([]);
+    expect(herdr.launches).toHaveLength(0);
+    expect(await store.listRuns()).toEqual([]);
+  });
+
+  test("automated reconcile ignores project items with merged PRs", async () => {
+    const tempDir = await createTempDir("conductor-merged-reconcile-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const github = new FakeGitHub(workItem({ labels: ["ready-for-agent"], assignees: ["octo"] }));
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: "pi/7-fix-bug",
+      state: "MERGED",
+      isDraft: false,
+      mergedAt: "2026-07-05T00:00:00Z",
+      linkedIssueNumbers: [7],
+    };
+    const herdr = new FakeHerdr();
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: repoPath,
+    });
+
+    await expect(orchestrator.reconcile()).resolves.toEqual([]);
+    expect(github.findPullRequestByBranchCount).toBe(1);
+    expect(herdr.launches).toHaveLength(0);
+    expect(await store.listRuns()).toEqual([]);
+  });
+
   test("cleanup keeps completed run status when cleaning local state", async () => {
     const tempDir = await createTempDir("conductor-done-cleanup-");
     const repoPath = join(tempDir, "repo");
@@ -2467,6 +2538,7 @@ function workItem(overrides: Partial<WorkItem> = {}): WorkItem {
     repo: "demo",
     issueId: "I_1",
     issueNumber: 7,
+    issueState: "OPEN",
     issueUrl: "https://github.com/octo/demo/issues/7",
     title: "Fix bug",
     body: "Body",
@@ -2530,6 +2602,7 @@ function projectItemsGraphqlFixture(): string {
                 content: {
                   id: "I_1",
                   number: 7,
+                  state: "OPEN",
                   title: "Fix bug",
                   body: "Body",
                   url: "https://github.com/octo/demo/issues/7",

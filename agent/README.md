@@ -49,7 +49,7 @@ See [REMOTE.md](./REMOTE.md) for the full protocol, lifecycle, command surface, 
 
 ## Pi Conductor
 
-`pi conductor` is a repo/project worker for agent-driven GitHub issue work. It watches configured GitHub Projects v2 items, dispatches eligible issues into isolated worktrees, routes PR/check/comment feedback back to the running Herdr pane, and persists state in `~/.pi/agent/conductor` by default.
+`pi conductor` is a repo/project worker for agent-driven GitHub issue work. It watches configured GitHub Projects v2 items, dispatches eligible open issues without already merged conductor PRs into isolated worktrees, routes PR/check/comment feedback back to the running Herdr pane, and persists state in `~/.pi/agent/conductor` by default.
 
 Quick start:
 

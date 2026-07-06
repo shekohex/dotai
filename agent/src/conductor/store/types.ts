@@ -26,6 +26,7 @@ export const WorkItemSchema = Type.Object({
   repo: Type.String(),
   issueId: Type.Optional(Type.String()),
   issueNumber: Type.Number({ minimum: 1 }),
+  issueState: Type.Union([Type.Literal("OPEN"), Type.Literal("CLOSED")]),
   issueUrl: Type.String(),
   title: Type.String(),
   body: Type.String(),

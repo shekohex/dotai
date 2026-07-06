@@ -145,6 +145,7 @@ function sampleWorkItem(config: ResolvedRepositoryConfig): WorkItem {
     repo: config.repo,
     issueId: "sample-issue-id",
     issueNumber: 1,
+    issueState: "OPEN",
     issueUrl: `https://github.com/${config.owner}/${config.repo}/issues/1`,
     title: "Sample issue",
     body: "Sample issue body",

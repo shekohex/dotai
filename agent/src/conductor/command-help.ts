@@ -93,20 +93,20 @@ const COMMANDS: CommandHelp[] = [
       {
         flags: "--branch-template",
         value: "TPL",
-        defaultValue: "pi/{issue}-{slug}",
-        description: "Template for generated branch name.",
+        defaultValue: "pi/${{ github.issue.number }}-${{ github.issue.slug }}",
+        description: "Template for generated branch name. Supports `${{ }}` expressions only.",
       },
       {
         flags: "--branch-prefix",
         value: "PREFIX",
         defaultValue: "pi",
-        description: "Value for `{prefix}` in branch templates.",
+        description: "Value for `${{ conductor.branchPrefix }}` in branch templates.",
       },
       {
         flags: "--branch-kind",
         value: "KIND",
         defaultValue: "issue",
-        description: "Value for `{kind}` in branch templates.",
+        description: "Value for `${{ conductor.branchKind }}` in branch templates.",
       },
       {
         flags: "--worktree-root",
@@ -188,17 +188,39 @@ const COMMANDS: CommandHelp[] = [
   },
   {
     name: "config",
-    usage: "pi conductor config <init|validate>",
-    summary: "Create or validate global config.",
+    usage: "pi conductor config <init|validate|format|edit|get|set>",
+    summary: "Create, validate, edit, or automate global config.",
     description: `Config file default: ${getDefaultConfigPath()}`,
     subcommands: [
-      { name: "init", description: "Create/update global config and repo .pi/WORKFLOW.md." },
+      {
+        name: "init",
+        description:
+          "Create/update/migrate global config, schema, repo entry, and .pi/WORKFLOW.md.",
+      },
       {
         name: "validate",
         description: "Validate config, gh auth, repo paths, workflow, webhook secret.",
       },
+      { name: "format", description: "Format config JSON and rewrite schema." },
+      { name: "edit", description: "Open config in $VISUAL or $EDITOR, then validate it." },
+      { name: "get", description: "Read value by path, e.g. repositories[0].project.number." },
+      { name: "set", description: "Set value by path; values parse as JSON when possible." },
     ],
-    examples: ["pi conductor config init", "pi conductor config validate"],
+    options: [
+      {
+        flags: "--json",
+        defaultValue: "false",
+        description: "For `config get`, force JSON output for scalar values too.",
+      },
+    ],
+    examples: [
+      "pi conductor config init",
+      "pi conductor config validate",
+      "pi conductor config get repositories[0].project.number --json",
+      "pi conductor config set repositories[0].project.number 12",
+      "pi conductor config edit",
+      "pi conductor config format",
+    ],
   },
   {
     name: "completion",
@@ -241,7 +263,7 @@ export function helpText(topic?: string): string {
     `  State root: ${getDefaultConductorRoot()}`,
     "  pollingIntervalSeconds: 60",
     "  dispatchLabel: ready-for-agent",
-    "  branchTemplate: pi/{issue}-{slug}",
+    "  branchTemplate: pi/${{ github.issue.number }}-${{ github.issue.slug }}",
     "  branchPrefix: pi",
     "  branchKind: issue",
     "  statusField: Status",
@@ -312,7 +334,7 @@ _pi_conductor_completion() {
     daemon)
       COMPREPLY=( $(compgen -W "start stop restart status --help" -- "$cur") ) ;;
     config)
-      COMPREPLY=( $(compgen -W "init validate --help" -- "$cur") ) ;;
+      COMPREPLY=( $(compgen -W "init validate format edit get set --json --help" -- "$cur") ) ;;
     completion)
       COMPREPLY=( $(compgen -W "bash zsh --help" -- "$cur") ) ;;
     status|runs)
@@ -348,6 +370,10 @@ _pi_conductor() {
   config_actions=(${zshItems([
     ["init", "Create/update config"],
     ["validate", "Validate config"],
+    ["format", "Format config"],
+    ["edit", "Open editor"],
+    ["get", "Read path"],
+    ["set", "Set path"],
   ])})
   completion_actions=(${zshItems([
     ["bash", "Print bash completion"],

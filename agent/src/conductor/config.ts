@@ -11,6 +11,7 @@ import { errorMessage } from "../utils/error-message.js";
 import { asRecord, readNumber, readString } from "../utils/unknown-data.js";
 import { parseJsonValue } from "./json.js";
 import { renderBranchTemplate } from "./run-id.js";
+import { DEFAULT_WORKFLOW_MARKDOWN } from "./workflow.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -58,6 +59,7 @@ export const ManagedRepositoryConfigSchema = Type.Object({
 });
 
 export const GlobalConductorConfigSchema = Type.Object({
+  $schema: Type.Optional(Type.String()),
   version: Type.Literal(1),
   stateRoot: Type.Optional(Type.String()),
   pollingIntervalSeconds: Type.Optional(Type.Number({ minimum: 1 })),
@@ -95,6 +97,18 @@ export type ManagedRepositoryConfig = Static<typeof ManagedRepositoryConfigSchem
 export type GlobalConductorConfig = Static<typeof GlobalConductorConfigSchema>;
 export type ResolvedRepositoryConfig = Static<typeof ResolvedRepositoryConfigSchema>;
 
+export class MissingConductorConfigError extends Error {
+  constructor(readonly configPath: string) {
+    super(
+      [
+        `Conductor config not found: ${configPath}`,
+        "Run `pi conductor config init` first.",
+        "Then edit project owner/number if needed and run `pi conductor config validate`.",
+      ].join("\n"),
+    );
+  }
+}
+
 export const DEFAULT_STATUS_OPTIONS = {
   draft: "Draft",
   ready: "Todo",
@@ -106,10 +120,20 @@ export const DEFAULT_STATUS_OPTIONS = {
 
 export type ConfigInitResult = {
   configPath: string;
+  schemaPath: string;
   workflowPath: string;
   createdWorkflow: boolean;
   repository: string;
+  repositoryAdded: boolean;
+  repositoryCount: number;
+  projectOwnerHint: string;
   projectInferred: boolean;
+  configMigrated: boolean;
+};
+
+export type ConfigMigrationResult = {
+  config: GlobalConductorConfig;
+  changed: boolean;
 };
 
 export function getAgentDir(): string {
@@ -127,6 +151,10 @@ export function getDefaultConfigPath(): string {
   return join(getDefaultConductorRoot(), "config.json");
 }
 
+export function getConfigSchemaPath(configPath = getDefaultConfigPath()): string {
+  return join(dirname(configPath), "config.schema.json");
+}
+
 export function getStateRoot(config?: GlobalConductorConfig): string {
   return config?.stateRoot ?? getDefaultConductorRoot();
 }
@@ -134,8 +162,14 @@ export function getStateRoot(config?: GlobalConductorConfig): string {
 export async function readGlobalConfig(
   configPath = getDefaultConfigPath(),
 ): Promise<GlobalConductorConfig> {
-  const text = await readFile(configPath, "utf8");
-  return Value.Parse(GlobalConductorConfigSchema, parseJsonValue(text, configPath));
+  let text: string;
+  try {
+    text = await readFile(configPath, "utf8");
+  } catch (error) {
+    if (isNodeErrorCode(error, "ENOENT")) throw new MissingConductorConfigError(configPath);
+    throw error;
+  }
+  return migrateGlobalConductorConfig(parseJsonValue(text, configPath)).config;
 }
 
 export async function readOptionalGlobalConfig(
@@ -144,7 +178,7 @@ export async function readOptionalGlobalConfig(
   try {
     return await readGlobalConfig(configPath);
   } catch (error) {
-    if (isNodeErrorCode(error, "ENOENT")) return undefined;
+    if (error instanceof MissingConductorConfigError) return undefined;
     throw error;
   }
 }
@@ -157,6 +191,44 @@ export async function writeGlobalConfig(
   await mkdir(dirname(configPath), { recursive: true });
   await writeFile(`${configPath}.tmp`, `${JSON.stringify(validated, null, 2)}\n`);
   await rename(`${configPath}.tmp`, configPath);
+}
+
+export function migrateGlobalConductorConfig(input: unknown): ConfigMigrationResult {
+  const record = asRecord(input);
+  if (record === undefined) {
+    return { config: Value.Parse(GlobalConductorConfigSchema, input), changed: false };
+  }
+  let changed = false;
+  const migrated: Record<string, unknown> = { ...record };
+  if (migrated.$schema === undefined) {
+    migrated.$schema = "./config.schema.json";
+    changed = true;
+  }
+  if (migrated.version === undefined) {
+    migrated.version = 1;
+    changed = true;
+  }
+  return { config: Value.Parse(GlobalConductorConfigSchema, migrated), changed };
+}
+
+export async function writeConductorConfigSchema(
+  configPath = getDefaultConfigPath(),
+): Promise<string> {
+  const schemaPath = getConfigSchemaPath(configPath);
+  await mkdir(dirname(schemaPath), { recursive: true });
+  await writeFile(`${schemaPath}.tmp`, `${JSON.stringify(conductorConfigJsonSchema(), null, 2)}\n`);
+  await rename(`${schemaPath}.tmp`, schemaPath);
+  return schemaPath;
+}
+
+export function conductorConfigJsonSchema(): unknown {
+  return {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://github.com/shekohex/dotai/schemas/pi-conductor-config.schema.json",
+    title: "Pi Conductor Config",
+    description: "Global Pi Conductor configuration file.",
+    ...GlobalConductorConfigSchema,
+  };
 }
 
 export function resolveRepositoryConfig(
@@ -173,7 +245,8 @@ export function resolveRepositoryConfig(
     repoPath: merged.repoPath,
     project: merged.project,
     dispatchLabel: merged.dispatchLabel ?? "ready-for-agent",
-    branchTemplate: merged.branchTemplate ?? "pi/{issue}-{slug}",
+    branchTemplate:
+      merged.branchTemplate ?? "pi/${{ github.issue.number }}-${{ github.issue.slug }}",
     branchPrefix: merged.branchPrefix ?? "pi",
     branchKind: merged.branchKind ?? "issue",
     baseRef: merged.baseRef,
@@ -243,17 +316,21 @@ export async function initConfig(
 ): Promise<ConfigInitResult> {
   const repoPath = await detectGitRoot(cwd);
   const repoView = await detectGitHubRepository(repoPath);
-  const existing = await readOptionalGlobalConfig(configPath);
+  const existingResult = await readOptionalGlobalConfigForInit(configPath);
+  const existing = existingResult?.config;
   const repositories = existing?.repositories ?? [];
-  const nextRepo: ManagedRepositoryConfig = {
+  const existingRepository = repositories.find((repo) => sameRepository(repo, repoView));
+  const detectedRepo: ManagedRepositoryConfig = {
     owner: repoView.owner,
     repo: repoView.repo,
     repoPath,
     project: repoView.project ?? { owner: "TODO_PROJECT_OWNER", number: 0 },
   };
+  const nextRepo = mergeInitRepository(existingRepository, detectedRepo);
   const nextRepositories = upsertRepository(repositories, nextRepo);
   await writeGlobalConfig(
     {
+      $schema: existing?.$schema ?? "./config.schema.json",
       version: 1,
       pollingIntervalSeconds: existing?.pollingIntervalSeconds ?? 60,
       ...(existing?.stateRoot === undefined ? {} : { stateRoot: existing.stateRoot }),
@@ -262,16 +339,58 @@ export async function initConfig(
     },
     configPath,
   );
+  const schemaPath = await writeConductorConfigSchema(configPath);
 
   const workflowPath = join(repoPath, ".pi", "WORKFLOW.md");
   const createdWorkflow = await ensureWorkflowTemplate(workflowPath);
   return {
     configPath,
+    schemaPath,
     workflowPath,
     createdWorkflow,
     repository: `${repoView.owner}/${repoView.repo}`,
+    repositoryAdded: existingRepository === undefined,
+    repositoryCount: nextRepositories.length,
+    projectOwnerHint: repoView.owner,
     projectInferred: repoView.project !== undefined,
+    configMigrated: existingResult?.changed ?? false,
   };
+}
+
+async function readOptionalGlobalConfigForInit(
+  configPath: string,
+): Promise<ConfigMigrationResult | undefined> {
+  try {
+    return migrateGlobalConductorConfig(
+      parseJsonValue(await readFile(configPath, "utf8"), configPath),
+    );
+  } catch (error) {
+    if (isNodeErrorCode(error, "ENOENT")) return undefined;
+    throw error;
+  }
+}
+
+function mergeInitRepository(
+  existing: ManagedRepositoryConfig | undefined,
+  detected: ManagedRepositoryConfig,
+): ManagedRepositoryConfig {
+  if (existing === undefined) return detected;
+  return {
+    ...existing,
+    owner: detected.owner,
+    repo: detected.repo,
+    repoPath: detected.repoPath,
+    project: shouldUseDetectedProject(existing.project, detected.project)
+      ? detected.project
+      : existing.project,
+  };
+}
+
+function shouldUseDetectedProject(
+  existing: ManagedRepositoryConfig["project"],
+  detected: ManagedRepositoryConfig["project"],
+): boolean {
+  return (existing.owner.startsWith("TODO") || existing.number < 1) && detected.number > 0;
 }
 
 async function detectGitRoot(cwd: string): Promise<string> {
@@ -327,28 +446,7 @@ async function ensureWorkflowTemplate(workflowPath: string): Promise<boolean> {
   }
 
   await mkdir(dirname(workflowPath), { recursive: true });
-  await writeFile(
-    workflowPath,
-    [
-      "---",
-      'dispatchLabel: "ready-for-agent"',
-      'branchTemplate: "pi/{issue}-{slug}"',
-      "launchRules:",
-      "  - if: \"${{ contains(github.issue.labels, 'ready-for-agent') }}\"",
-      "    flags:",
-      "      - --mode-build",
-      "---",
-      "",
-      "Implement GitHub issue ${{ github.issue.number }}: ${{ github.issue.title }}.",
-      "",
-      "Issue: ${{ github.issue.url }}",
-      "Branch: ${{ conductor.branch }}",
-      "Workspace: ${{ conductor.worktreePath }}",
-      "",
-      "Open a pull request when ready. Run relevant tests and summarize proof.",
-      "",
-    ].join("\n"),
-  );
+  await writeFile(workflowPath, DEFAULT_WORKFLOW_MARKDOWN);
   return true;
 }
 
@@ -356,11 +454,19 @@ function upsertRepository(
   repositories: ManagedRepositoryConfig[],
   nextRepo: ManagedRepositoryConfig,
 ): ManagedRepositoryConfig[] {
-  const next = repositories.filter(
-    (repo) => repo.owner !== nextRepo.owner || repo.repo !== nextRepo.repo,
-  );
+  const next = repositories.filter((repo) => !sameRepository(repo, nextRepo));
   next.push(nextRepo);
   return next;
+}
+
+function sameRepository(
+  left: Pick<ManagedRepositoryConfig, "owner" | "repo">,
+  right: Pick<ManagedRepositoryConfig, "owner" | "repo">,
+): boolean {
+  return (
+    left.owner.toLowerCase() === right.owner.toLowerCase() &&
+    left.repo.toLowerCase() === right.repo.toLowerCase()
+  );
 }
 
 function mergeRepositoryConfig(

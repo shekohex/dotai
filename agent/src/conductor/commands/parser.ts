@@ -49,6 +49,14 @@ export const ParsedConductorCommandSchema = Type.Union([
   }),
   Type.Object({ kind: Type.Literal("config-init") }),
   Type.Object({ kind: Type.Literal("config-validate") }),
+  Type.Object({ kind: Type.Literal("config-format") }),
+  Type.Object({ kind: Type.Literal("config-edit") }),
+  Type.Object({
+    kind: Type.Literal("config-get"),
+    path: Type.Optional(Type.String()),
+    json: Type.Boolean(),
+  }),
+  Type.Object({ kind: Type.Literal("config-set"), path: Type.String(), value: Type.String() }),
   Type.Object({
     kind: Type.Literal("completion"),
     shell: Type.Union([Type.Literal("bash"), Type.Literal("zsh")]),
@@ -244,7 +252,25 @@ function parsePositiveInteger(value: string, flag: string): number {
 function parseConfig(args: string[]): ParsedConductorCommand {
   if (args[0] === "init") return { kind: "config-init" };
   if (args[0] === "validate") return { kind: "config-validate" };
-  throw new Error("Usage: pi conductor config <init|validate>");
+  if (args[0] === "format") return { kind: "config-format" };
+  if (args[0] === "edit") return { kind: "config-edit" };
+  if (args[0] === "get") return parseConfigGet(args.slice(1));
+  if (args[0] === "set") return parseConfigSet(args.slice(1));
+  throw new Error("Usage: pi conductor config <init|validate|format|edit|get|set>");
+}
+
+function parseConfigGet(args: string[]): ParsedConductorCommand {
+  const filtered = args.filter((arg) => arg !== "--json");
+  return { kind: "config-get", path: filtered[0], json: args.includes("--json") };
+}
+
+function parseConfigSet(args: string[]): ParsedConductorCommand {
+  const [path, ...valueParts] = args;
+  const value = valueParts.join(" ");
+  if (path === undefined || value.length === 0) {
+    throw new Error("Usage: pi conductor config set <path> <value>");
+  }
+  return { kind: "config-set", path, value };
 }
 
 function required(value: string | undefined, usage: string): string {

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   formatConfigError,
   getDefaultConfigPath,
+  type ConfigInitResult,
   type GlobalConductorConfig,
   getStateRoot,
   initConfig,
@@ -27,6 +28,13 @@ import type { ConductorStore } from "./store/types.js";
 import { formatRunsJson, formatRunsTable } from "./status-format.js";
 import { loadWorkflow, workflowConfigOverrides } from "./workflow.js";
 import { parseConductorArgs, type ParsedConductorCommand } from "./commands/parser.js";
+import {
+  editConductorConfig,
+  formatConfigValue,
+  formatConductorConfig,
+  readConductorConfigValue,
+  setConductorConfigValue,
+} from "./config-access.js";
 import { processPendingWebhookDeliveries, resolveWebhookSecret, serveWebhook } from "./webhook.js";
 
 type Writable = { write(text: string): unknown };
@@ -70,22 +78,37 @@ async function executeConductorCommand(
 
   if (command.kind === "config-init") {
     const result = await initConfig(options.cwd);
-    options.stdout.write(
-      [
-        `Config: ${result.configPath}`,
-        `Workflow: ${result.workflowPath}${result.createdWorkflow ? " created" : " exists"}`,
-        `Repository: ${result.repository}`,
-        result.projectInferred
-          ? "Project owner/number inferred. Run config validate to verify access."
-          : "Project owner/number must be filled before validate passes.",
-        "",
-      ].join("\n"),
-    );
+    options.stdout.write(formatConfigInitResult(result));
     return;
   }
 
   if (command.kind === "config-validate") {
     await validateConfigCommand(options.stdout);
+    return;
+  }
+
+  if (command.kind === "config-format") {
+    const result = await formatConductorConfig();
+    options.stdout.write(`Formatted ${result.configPath}.\nSchema: ${result.schemaPath}\n`);
+    return;
+  }
+
+  if (command.kind === "config-edit") {
+    await editConductorConfig();
+    options.stdout.write("Conductor config valid.\n");
+    return;
+  }
+
+  if (command.kind === "config-get") {
+    options.stdout.write(
+      formatConfigValue(await readConductorConfigValue(command.path), command.json),
+    );
+    return;
+  }
+
+  if (command.kind === "config-set") {
+    await setConductorConfigValue(command.path, command.value);
+    options.stdout.write(`Set ${command.path}.\n`);
     return;
   }
 
@@ -133,6 +156,42 @@ async function executeConductorCommand(
   } finally {
     await store.close?.();
   }
+}
+
+function formatConfigInitResult(result: ConfigInitResult): string {
+  const projectCommands = [
+    `gh repo view ${result.repository} --json projectsV2 --jq '.projectsV2.nodes[] | "owner=\\(.owner.login) number=\\(.number) title=\\(.title)"'`,
+    `gh project list --owner ${result.projectOwnerHint}`,
+    `gh project list --owner ${result.projectOwnerHint} --format json --jq '.projects[] | "number=\\(.number) title=\\(.title)"'`,
+    `gh project view <number> --owner <owner>`,
+  ];
+  return [
+    `Config: ${result.configPath}`,
+    `Schema: ${result.schemaPath}`,
+    `Workflow: ${result.workflowPath}${result.createdWorkflow ? " created" : " exists"}`,
+    `Repository: ${result.repository} ${result.repositoryAdded ? "added" : "updated"}`,
+    `Managed repositories: ${result.repositoryCount}`,
+    `Config migration: ${result.configMigrated ? "applied" : "no changes"}`,
+    "",
+    "Add another repository:",
+    "  cd /path/to/another/repo",
+    "  pi conductor config init",
+    "  The command upserts the current GitHub repo into config.repositories.",
+    "",
+    result.projectInferred
+      ? "Project owner/number inferred. Run `pi conductor config validate` to verify access."
+      : "Project owner/number still needs editing in config.json.",
+    "",
+    "Find GitHub Projects v2 owner/number with gh:",
+    ...projectCommands.map((command) => `  ${command}`),
+    "",
+    "Next actions:",
+    "  1. Edit config.json: set repositories[].project.owner and repositories[].project.number.",
+    "  2. Edit .pi/WORKFLOW.md for repo-specific prompt, labels, branchTemplate, and launch rules.",
+    "  3. Run `pi conductor config validate`.",
+    "  4. Run `pi conductor serve` or `pi conductor daemon start`.",
+    "",
+  ].join("\n");
 }
 
 async function executeDaemonCommand(
@@ -520,7 +579,22 @@ async function validateConfigCommand(stdout: Writable): Promise<void> {
       errors.push(`webhook secret unreadable: ${formatConfigError(error)}`);
     }
   }
-  if (errors.length > 0) throw new Error(`Invalid conductor config:\n${errors.join("\n")}`);
+  if (errors.length > 0) {
+    throw new Error(
+      [
+        "Invalid conductor config:",
+        ...errors,
+        "",
+        "Find GitHub Projects v2 owner/number with gh:",
+        ...config.repositories.flatMap((repo) => [
+          `  gh repo view ${repo.owner}/${repo.repo} --json projectsV2 --jq '.projectsV2.nodes[] | "owner=\\(.owner.login) number=\\(.number) title=\\(.title)"'`,
+          `  gh project list --owner ${repo.owner}`,
+        ]),
+        "",
+        "Then edit config.json and run `pi conductor config validate` again.",
+      ].join("\n"),
+    );
+  }
   stdout.write("Conductor config valid.\n");
 }
 

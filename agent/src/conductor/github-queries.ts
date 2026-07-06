@@ -17,6 +17,14 @@ query($owner: String!, $number: Int!) {
 }
 ${PROJECT_FIELDS_FRAGMENT}`;
 
+export function projectMetadataQuery(ownerKind: "organization" | "user"): string {
+  return `
+query($owner: String!, $number: Int!) {
+  ${ownerKind}(login: $owner) { projectV2(number: $number) { ...ProjectFields } }
+}
+${PROJECT_FIELDS_FRAGMENT}`;
+}
+
 export const PROJECT_ITEMS_QUERY = `
 query($owner: String!, $number: Int!, $cursor: String) {
   organization(login: $owner) { projectV2(number: $number) { ...ProjectItems } }
@@ -51,6 +59,42 @@ fragment ProjectItems on ProjectV2 {
     pageInfo { hasNextPage endCursor }
   }
 }`;
+
+export function projectItemsQuery(ownerKind: "organization" | "user"): string {
+  return `
+query($owner: String!, $number: Int!, $cursor: String) {
+  ${ownerKind}(login: $owner) { projectV2(number: $number) { ...ProjectItems } }
+}
+fragment ProjectItems on ProjectV2 {
+  id
+  items(first: 100, after: $cursor) {
+    nodes {
+      id
+      content {
+        ... on Issue {
+          id
+          number
+          title
+          body
+          url
+          repository { name owner { login } }
+          labels(first: 50) { nodes { name } }
+          assignees(first: 20) { nodes { login } }
+        }
+      }
+      fieldValues(first: 50) {
+        nodes {
+          ... on ProjectV2ItemFieldTextValue { text field { ... on ProjectV2FieldCommon { name } } }
+          ... on ProjectV2ItemFieldNumberValue { number field { ... on ProjectV2FieldCommon { name } } }
+          ... on ProjectV2ItemFieldDateValue { date field { ... on ProjectV2FieldCommon { name } } }
+          ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2FieldCommon { name } } }
+        }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}`;
+}
 
 export const UPDATE_PROJECT_STATUS_MUTATION = `
 mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {

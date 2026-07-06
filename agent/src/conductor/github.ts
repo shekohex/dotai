@@ -18,14 +18,18 @@ import {
 } from "./github-feedback.js";
 import { parseJsonValue } from "./json.js";
 import {
-  PROJECT_ITEMS_QUERY,
-  PROJECT_METADATA_QUERY,
+  projectItemsQuery,
+  projectMetadataQuery,
   UPDATE_PROJECT_STATUS_MUTATION,
 } from "./github-queries.js";
 import { type WorkItem, WorkItemSchema } from "./store/types.js";
 const GH_COMMAND_TIMEOUT_MS = 30_000;
+type ProjectOwnerKind = "organization" | "user";
 
 const GhUserSchema = Type.Object({ login: Type.String() });
+const GhOwnerSchema = Type.Object({
+  type: Type.Union([Type.Literal("Organization"), Type.Literal("User")]),
+});
 const GhRepoViewSchema = Type.Object({
   nameWithOwner: Type.String(),
   defaultBranchRef: Type.Object({ name: Type.String() }),
@@ -127,6 +131,8 @@ export type CommandExec = (
 ) => Promise<{ stdout: string; stderr: string }>;
 
 export class GhGitHubClient implements GitHubClient {
+  private readonly projectOwnerKinds = new Map<string, ProjectOwnerKind>();
+
   constructor(private readonly exec: CommandExec = execCommand) {}
 
   async getAuthenticatedUser(): Promise<string> {
@@ -193,6 +199,7 @@ export class GhGitHubClient implements GitHubClient {
   async listProjectItems(repo: ManagedRepositoryConfig): Promise<WorkItem[]> {
     const items: WorkItem[] = [];
     let cursor: string | undefined;
+    const ownerKind = await this.resolveProjectOwnerKind(repo.project.owner, repo.repoPath);
     while (true) {
       const page = parseProjectItemsGraphqlPage(
         await this.gh(
@@ -200,7 +207,7 @@ export class GhGitHubClient implements GitHubClient {
             "api",
             "graphql",
             "-f",
-            `query=${PROJECT_ITEMS_QUERY}`,
+            `query=${projectItemsQuery(ownerKind)}`,
             "-F",
             `owner=${repo.project.owner}`,
             "-F",
@@ -361,12 +368,13 @@ export class GhGitHubClient implements GitHubClient {
   }
 
   private async getProjectMetadata(repo: ManagedRepositoryConfig): Promise<ProjectMetadata> {
+    const ownerKind = await this.resolveProjectOwnerKind(repo.project.owner, repo.repoPath);
     const stdout = await this.gh(
       [
         "api",
         "graphql",
         "-f",
-        `query=${PROJECT_METADATA_QUERY}`,
+        `query=${projectMetadataQuery(ownerKind)}`,
         "-F",
         `owner=${repo.project.owner}`,
         "-F",
@@ -376,6 +384,21 @@ export class GhGitHubClient implements GitHubClient {
       "gh project metadata graphql",
     );
     return parseProjectMetadataGraphql(stdout);
+  }
+
+  private async resolveProjectOwnerKind(owner: string, cwd: string): Promise<ProjectOwnerKind> {
+    const cached = this.projectOwnerKinds.get(owner.toLowerCase());
+    if (cached !== undefined) return cached;
+    const parsed = Value.Parse(
+      GhOwnerSchema,
+      parseJsonValue(
+        await this.gh(["api", `users/${owner}`], cwd, "gh project owner type"),
+        "gh project owner type",
+      ),
+    );
+    const ownerKind = parsed.type === "Organization" ? "organization" : "user";
+    this.projectOwnerKinds.set(owner.toLowerCase(), ownerKind);
+    return ownerKind;
   }
 
   private async listFailedChecks(

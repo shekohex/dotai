@@ -1122,6 +1122,33 @@ describe("conductor adapters", () => {
     );
   });
 
+  test("project item query resolves org owner before GraphQL project lookup", async () => {
+    const graphqlQueries: string[] = [];
+    const client = new GhGitHubClient(async (_file, args) => {
+      if (args[0] === "api" && args[1] === "users/xirune") {
+        return { stdout: JSON.stringify({ type: "Organization" }), stderr: "" };
+      }
+      if (args[0] === "api" && args[1] === "graphql") {
+        const query = args.find((arg) => arg.startsWith("query=")) ?? "";
+        graphqlQueries.push(query);
+        if (query.includes("organization(login:") && query.includes("user(login:")) {
+          throw new Error("gh: Could not resolve to a User with the login of 'xirune'.");
+        }
+        return { stdout: projectItemsGraphqlFixture(), stderr: "" };
+      }
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+
+    await expect(
+      client.listProjectItems(
+        managedRepo({ project: { owner: "xirune", number: 1 }, repoPath: "/repo" }),
+      ),
+    ).resolves.toHaveLength(1);
+    expect(graphqlQueries).toHaveLength(1);
+    expect(graphqlQueries[0]).toContain("organization(login:");
+    expect(graphqlQueries[0]).not.toContain("user(login:");
+  });
+
   test("plans worktree commands with mocked git", async () => {
     const tempDir = await createTempDir("conductor-worktree-");
     const calls: string[][] = [];

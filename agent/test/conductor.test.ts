@@ -8,6 +8,8 @@ import { describe, expect, test } from "vitest";
 
 import { parseConductorArgs } from "../src/conductor/commands/parser.js";
 import { runConductorCommand } from "../src/conductor/command.js";
+import { HerdrBackgroundShellBackend } from "../src/extensions/coreui/background-bash-herdr-backend.js";
+import { HerdrAdapter } from "../src/subagent-sdk/herdr.js";
 import {
   type GlobalConductorConfig,
   conductorConfigJsonSchema,
@@ -124,7 +126,41 @@ describe("conductor config and workflow", () => {
     expect(workflow.frontmatter.dispatchLabel).toBe("agent-ready");
     expect(workflow.frontmatter.launchRules?.[0]?.flags).toEqual(["--mode-deep"]);
     expect(workflow.frontmatter.worktreeHooks?.postCreate).toEqual(["npm install"]);
+    expect(workflow.frontmatter.followUpRules).toBeUndefined();
     expect(workflow.promptTemplate).toBe("Build ${{ github.issue.title }}");
+  });
+
+  test("parses follow-up rules and conductor comment templates", () => {
+    const workflow = parseWorkflowFile(
+      "/repo/.pi/WORKFLOW.md",
+      [
+        "---",
+        "followUpRules:",
+        "  - name: review proof",
+        "    if: \"${{ feedback.kind == 'review' }}\"",
+        "    delivery: followUp",
+        "    template: |",
+        "      Review from ${{ github.review.author }}: ${{ feedback.body }}",
+        "  - template: |",
+        "      Always include PR ${{ github.pull_request.url }}",
+        "conductorComments:",
+        "  prAssociated:",
+        '    template: "Tracking ${{ github.pull_request.url }}"',
+        "  runBlocked:",
+        "    enabled: false",
+        "---",
+        "Do it",
+      ].join("\n"),
+    );
+
+    expect(workflow.frontmatter.followUpRules).toMatchObject([
+      { name: "review proof", delivery: "followUp" },
+      { template: "Always include PR ${{ github.pull_request.url }}\n" },
+    ]);
+    expect(workflow.frontmatter.conductorComments?.prAssociated).toMatchObject({
+      template: "Tracking ${{ github.pull_request.url }}",
+    });
+    expect(workflow.frontmatter.conductorComments?.runBlocked).toMatchObject({ enabled: false });
   });
 
   test("strips workflow author comments from prompt body", () => {
@@ -364,6 +400,28 @@ describe("conductor expressions and names", () => {
         ),
       }),
     ).toThrow("Missing expression value: github.project.priorit");
+  });
+
+  test("validates follow-up and conductor comment templates", () => {
+    const config = resolveRepositoryConfig(managedRepo(), {});
+    expect(() =>
+      validateInitialPromptTemplate({
+        config,
+        workflow: parseWorkflowFile(
+          "WORKFLOW.md",
+          [
+            "---",
+            "followUpRules:",
+            '  - template: "${{ feedback.missing }}"',
+            "conductorComments:",
+            "  prAssociated:",
+            '    template: "${{ github.pull_request.missing }}"',
+            "---",
+            "Do it",
+          ].join("\n"),
+        ),
+      }),
+    ).toThrow("Missing expression value: feedback.missing");
   });
 });
 
@@ -1122,12 +1180,13 @@ describe("conductor adapters", () => {
       parseGhPrChecks(
         JSON.stringify([{ name: "test", conclusion: "failure", link: "https://ci" }]),
       ),
-    ).toEqual([
+    ).toMatchObject([
       {
         key: "check:test:failure:https://ci",
         kind: "check",
         body: "Check test is failure.",
         url: "https://ci",
+        check: { name: "test", conclusion: "failure" },
       },
     ]);
     expect(
@@ -1312,11 +1371,19 @@ describe("conductor adapters", () => {
     const tempDir = await createTempDir("conductor-worktree-hooks-");
     const calls: Array<{ file: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv }> =
       [];
+    let registeredWorktree = "";
     const exec: WorktreeExec = async (file, args, options) => {
       calls.push({ file, args, cwd: options.cwd, env: options.env });
       if (args.includes("rev-parse")) throw new Error("missing branch");
+      if (args.includes("worktree") && args.includes("list")) {
+        return {
+          stdout: registeredWorktree.length === 0 ? "" : `worktree ${registeredWorktree}\n`,
+          stderr: "",
+        };
+      }
       if (args.includes("worktree") && args.includes("add")) {
-        await mkdir(String(args[args.length - 2]), { recursive: true });
+        registeredWorktree = String(args[args.length - 2]);
+        await mkdir(registeredWorktree, { recursive: true });
       }
       if (args.includes("config")) {
         if (args.at(-1) === "pi.conductor.hook.postCreate") {
@@ -1368,6 +1435,93 @@ describe("conductor adapters", () => {
       PI_CONDUCTOR_ISSUE_NUMBER: "7",
     });
     expect(hookCalls.at(-1)).toMatchObject({ cwd: "/repo" });
+  });
+
+  test("cleanup removes stale non-git worktree directory", async () => {
+    const tempDir = await createTempDir("conductor-stale-worktree-");
+    const calls: string[][] = [];
+    const exec: WorktreeExec = async (_file, args) => {
+      calls.push(args);
+      if (args.includes("remove")) throw new Error("not a registered worktree");
+      if (args.includes("rev-parse")) throw new Error("missing branch");
+      return { stdout: "", stderr: "" };
+    };
+    const manager = new WorktreeManager(exec);
+    const config = resolveRepositoryConfig(managedRepo(), {}, {}, tempDir);
+    const plan = manager.plan(config, workItem(), "main");
+    await mkdir(plan.worktreePath, { recursive: true });
+    await writeFile(join(plan.worktreePath, "stale.txt"), "stale");
+
+    await manager.cleanupLocal(config, plan);
+
+    expect(calls.some((args) => args.includes("status"))).toBe(false);
+    await expect(readFile(join(plan.worktreePath, "stale.txt"), "utf8")).rejects.toThrow();
+  });
+});
+
+describe("herdr background placement", () => {
+  test("background shell tabs use current Herdr workspace", async () => {
+    const previousWorkspaceId = process.env.HERDR_WORKSPACE_ID;
+    process.env.HERDR_WORKSPACE_ID = "w-run";
+    const calls: Array<{ args: string[]; command: string }> = [];
+    const backend = new HerdrBackgroundShellBackend(async (command, args) => {
+      calls.push({ command, args });
+      if (args[0] === "tab") {
+        return {
+          stdout: JSON.stringify({ result: { root_pane: { pane_id: "w-run:p2" } } }),
+          stderr: "",
+        };
+      }
+      return { stdout: "", stderr: "" };
+    });
+    try {
+      await backend.launch({
+        command: "npm test",
+        cwd: "/worktree",
+        description: "Runs tests",
+        exitFile: "/tmp/run.exit",
+        id: "run-1",
+        label: "npm test",
+        outputFile: "/tmp/run.out",
+        scriptPath: "/tmp/run.sh",
+        startedAt: 0,
+      });
+    } finally {
+      restoreEnv("HERDR_WORKSPACE_ID", previousWorkspaceId);
+    }
+
+    expect(calls[0]?.args).toEqual(
+      expect.arrayContaining(["tab", "create", "--workspace", "w-run"]),
+    );
+  });
+
+  test("subagent window panes use current Herdr workspace", async () => {
+    const previousWorkspaceId = process.env.HERDR_WORKSPACE_ID;
+    process.env.HERDR_WORKSPACE_ID = "w-run";
+    const calls: string[][] = [];
+    const adapter = new HerdrAdapter(async (_command, args) => {
+      calls.push(args);
+      if (args[0] === "tab") {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ result: { root_pane: { pane_id: "w-run:p3" } } }),
+          stderr: "",
+        };
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    }, "/repo");
+    try {
+      await adapter.createPane({
+        command: "pi --mode worker",
+        cwd: "/worktree",
+        target: "window",
+        title: "worker",
+      });
+    } finally {
+      restoreEnv("HERDR_WORKSPACE_ID", previousWorkspaceId);
+    }
+
+    expect(calls[0]).toEqual(expect.arrayContaining(["tab", "create", "--workspace", "w-run"]));
   });
 });
 
@@ -1457,6 +1611,148 @@ describe("conductor orchestrator", () => {
     expect(github.statusUpdates).toEqual(["In Progress", "Review", "Blocked"]);
     expect(github.comments.at(-1)).toContain("stopped run");
     expect(herdr.stopCount).toBe(1);
+  });
+
+  test("follow-up rules customize feedback messages and delivery", async () => {
+    const tempDir = await createTempDir("conductor-followup-rules-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(join(repoPath, ".pi"), { recursive: true });
+    await writeFile(
+      join(repoPath, ".pi", "WORKFLOW.md"),
+      [
+        "---",
+        "followUpRules:",
+        "  - name: review body",
+        "    if: \"${{ feedback.kind == 'review' }}\"",
+        "    delivery: followUp",
+        "    template: |",
+        "      Review says: ${{ github.review.body }}",
+        "  - name: urgent pr",
+        "    delivery: steer",
+        "    template: |",
+        "      PR: ${{ github.pull_request.url }}",
+        "  - name: feedback author",
+        "    delivery: steer",
+        "    template: |",
+        "      Author: ${{ feedback.author }}",
+        "conductorComments:",
+        "  prAssociated:",
+        '    template: "Custom PR associated: ${{ github.pull_request.url }}"',
+        "---",
+        "Do it",
+      ].join("\n"),
+    );
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({
+      owner: "octo",
+      repo: "demo",
+      issueNumber: 7,
+      branch: "pi/7-fix-bug",
+      status: "in_progress",
+      herdr: { paneId: "p1" },
+    });
+    await store.createRun(run);
+    const github = new FakeGitHub(workItem());
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: run.branch,
+      state: "OPEN",
+      isDraft: false,
+    };
+    github.feedback = [
+      {
+        key: "review:PRR_1",
+        kind: "review",
+        body: "Need a video.",
+        author: "reviewer",
+        review: { id: "PRR_1", body: "Need a video.", author: "reviewer" },
+      },
+    ];
+    const herdr = new FakeHerdr();
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: repoPath,
+    });
+
+    await orchestrator.reconcile();
+
+    expect(github.comments).toEqual(["Custom PR associated: https://github.com/octo/demo/pull/2"]);
+    expect(herdr.sent).toEqual([
+      expect.objectContaining({
+        delivery: "followUp",
+        message: expect.stringContaining("Review says: Need a video."),
+      }),
+      expect.objectContaining({
+        delivery: "steer",
+        message: expect.stringContaining(
+          "PR: https://github.com/octo/demo/pull/2\n\nAuthor: reviewer",
+        ),
+      }),
+    ]);
+    expect(herdr.sent[0]?.message).toContain("<!-- pi-conductor -->");
+    expect(herdr.sent[1]?.message).toContain("<!-- pi-conductor -->");
+  });
+
+  test("automated reconcile does not restart completed work", async () => {
+    const tempDir = await createTempDir("conductor-done-reconcile-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    await store.createRun(
+      runRecord({ owner: "octo", repo: "demo", issueNumber: 7, status: "done" }),
+    );
+    const github = new FakeGitHub(workItem({ labels: ["ready-for-agent"], assignees: ["octo"] }));
+    const herdr = new FakeHerdr();
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: repoPath,
+    });
+
+    await expect(orchestrator.reconcile()).resolves.toEqual([]);
+    expect(herdr.launches).toHaveLength(0);
+    expect(await store.listRuns()).toHaveLength(1);
+  });
+
+  test("cleanup keeps completed run status when cleaning local state", async () => {
+    const tempDir = await createTempDir("conductor-done-cleanup-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({
+      owner: "octo",
+      repo: "demo",
+      issueNumber: 7,
+      status: "done",
+      worktreePath: join(tempDir, "worktrees", "octo", "demo", "7"),
+    });
+    await mkdir(run.worktreePath, { recursive: true });
+    await store.createRun(run);
+    const github = new FakeGitHub(workItem());
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr: new FakeHerdr(),
+      worktrees: new WorktreeManager(async (_file, args) => {
+        if (args.includes("remove")) throw new Error("stale worktree");
+        if (args.includes("rev-parse")) throw new Error("missing branch");
+        return { stdout: "", stderr: "" };
+      }),
+      cwd: repoPath,
+    });
+
+    await expect(orchestrator.cleanup(run.runId, false)).resolves.toMatchObject({ status: "done" });
+    await expect(store.getRun(run.runId)).resolves.toMatchObject({ status: "done" });
   });
 
   test("automated reconcile ignores project items from other repositories", async () => {

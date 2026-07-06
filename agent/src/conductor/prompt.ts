@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 
 import type { ResolvedRepositoryConfig } from "./config.js";
 import { evaluateCondition, renderTemplate } from "./expression.js";
+import { validateWorkflowMessageTemplates } from "./follow-up.js";
 import { relativePromptPath, type WorktreePlan } from "./worktree.js";
 import type { RunRecord, WorkItem } from "./store/types.js";
 import type { WorkflowFile } from "./workflow.js";
@@ -134,6 +135,7 @@ export function validateInitialPromptTemplate(input: {
   renderTemplate(input.workflow.promptTemplate, context);
   for (const rule of input.workflow.frontmatter.launchRules ?? [])
     evaluateCondition(rule.if, context);
+  validateWorkflowMessageTemplates(input);
 }
 
 function sampleWorkItem(config: ResolvedRepositoryConfig): WorkItem {

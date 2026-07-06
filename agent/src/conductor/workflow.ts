@@ -12,6 +12,25 @@ export const LaunchRuleSchema = Type.Object({
   flags: Type.Array(Type.String()),
 });
 
+export const FollowUpRuleSchema = Type.Object({
+  name: Type.Optional(Type.String()),
+  if: Type.Optional(Type.String()),
+  delivery: Type.Optional(Type.Union([Type.Literal("steer"), Type.Literal("followUp")])),
+  template: Type.String(),
+});
+
+export const ConductorCommentTemplateSchema = Type.Object({
+  enabled: Type.Optional(Type.Boolean()),
+  template: Type.Optional(Type.String()),
+});
+
+export const ConductorCommentsSchema = Type.Object({
+  prAssociated: Type.Optional(ConductorCommentTemplateSchema),
+  runCompleted: Type.Optional(ConductorCommentTemplateSchema),
+  runStopped: Type.Optional(ConductorCommentTemplateSchema),
+  runBlocked: Type.Optional(ConductorCommentTemplateSchema),
+});
+
 const WorkflowWorktreeHooksSchema = Type.Object({
   postCreate: Type.Optional(Type.Array(Type.String())),
   preRemove: Type.Optional(Type.Array(Type.String())),
@@ -38,6 +57,8 @@ export const WorkflowFrontmatterSchema = Type.Object({
     }),
   ),
   launchRules: Type.Optional(Type.Array(LaunchRuleSchema)),
+  followUpRules: Type.Optional(Type.Array(FollowUpRuleSchema)),
+  conductorComments: Type.Optional(ConductorCommentsSchema),
   worktreeHooks: Type.Optional(WorkflowWorktreeHooksSchema),
 });
 
@@ -48,6 +69,9 @@ export const WorkflowFileSchema = Type.Object({
 });
 
 export type LaunchRule = Static<typeof LaunchRuleSchema>;
+export type FollowUpRule = Static<typeof FollowUpRuleSchema>;
+export type ConductorCommentTemplate = Static<typeof ConductorCommentTemplateSchema>;
+export type ConductorComments = Static<typeof ConductorCommentsSchema>;
 export type WorkflowFrontmatter = Static<typeof WorkflowFrontmatterSchema>;
 export type WorkflowFile = Static<typeof WorkflowFileSchema>;
 
@@ -147,6 +171,26 @@ export const DEFAULT_WORKFLOW_MARKDOWN = [
   "  - if: \"${{ contains(github.issue.labels, 'ready-for-agent') }}\"",
   "    flags:",
   "      - --mode-build",
+  "",
+  "# Optional Follow-Up Rules for GitHub PR feedback sent back to the Pi session.",
+  "# Rules are evaluated in order. All matching templates render; consecutive rules with the same delivery join with a blank line.",
+  "# No if means always match. delivery defaults to followUp.",
+  "# followUpRules:",
+  "#   - name: review proof",
+  "#     if: \"${{ feedback.kind == 'review' }}\"",
+  "#     delivery: followUp",
+  "#     template: |",
+  "#       GitHub review from ${{ feedback.author }} needs follow-up.",
+  "#",
+  "#       ${{ feedback.body }}",
+  "",
+  "# Optional GitHub issue comments Conductor posts for lifecycle events.",
+  "# Conductor appends a hidden <!-- pi-conductor --> marker automatically.",
+  "# conductorComments:",
+  "#   prAssociated:",
+  '#     template: "Pi Conductor associated PR: ${{ github.pull_request.url }}"',
+  "#   runBlocked:",
+  "#     enabled: false",
   "",
   "# Optional shell hooks. Commands run with cwd in the worktree for postCreate/preRemove.",
   "# Environment: REPO_ROOT, WORKTREE_PATH, BRANCH, PI_CONDUCTOR_OWNER, PI_CONDUCTOR_REPO, PI_CONDUCTOR_ISSUE_NUMBER.",

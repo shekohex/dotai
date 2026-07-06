@@ -77,10 +77,13 @@ export class WorktreeManager {
     options: { allowDirty?: boolean } = {},
   ): Promise<void> {
     this.assertOwnedWorktree(config, plan.worktreePath);
-    if (options.allowDirty !== true && (await pathExists(plan.worktreePath))) {
+    const worktreePathExists = await pathExists(plan.worktreePath);
+    const registeredWorktree =
+      worktreePathExists && (await this.pathExistsAsWorktree(config.repoPath, plan.worktreePath));
+    if (options.allowDirty !== true && registeredWorktree) {
       await this.preserveDirtyWorktree(plan.worktreePath, plan.branch);
     }
-    if (await pathExists(plan.worktreePath)) {
+    if (registeredWorktree) {
       await this.runHookPhase("preRemove", config, plan, plan.worktreePath);
     }
     await this.removeWorktree(config.repoPath, plan.worktreePath);

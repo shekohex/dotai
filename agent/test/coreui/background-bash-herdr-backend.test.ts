@@ -3,12 +3,17 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 type ExecFileCallback = (error: Error | null, stdout: string, stderr: string) => void;
 
 describe("HerdrBackgroundShellBackend", () => {
+  const originalHerdrWorkspaceId = process.env.HERDR_WORKSPACE_ID;
+
   afterEach(() => {
     vi.resetModules();
     vi.restoreAllMocks();
+    if (originalHerdrWorkspaceId === undefined) delete process.env.HERDR_WORKSPACE_ID;
+    else process.env.HERDR_WORKSPACE_ID = originalHerdrWorkspaceId;
   });
 
   test("launches background command in a new Herdr tab root pane", async () => {
+    process.env.HERDR_WORKSPACE_ID = "w1";
     const calls: Array<{ command: string; args: string[] }> = [];
     vi.doMock("node:util", () => ({
       promisify:
@@ -65,6 +70,8 @@ describe("HerdrBackgroundShellBackend", () => {
     expect(calls[0]?.args).toEqual([
       "tab",
       "create",
+      "--workspace",
+      "w1",
       "--cwd",
       "/repo",
       "--label",

@@ -108,6 +108,10 @@ Supported: dot/bracket paths, indexes, object filters (`.*.name`), functions (`c
 
 **Launch rules** (`WorkflowFrontmatterSchema` `launchRules`) are an ordered list of `{ if, flags }`. `selectLaunchFlags` picks the first rule whose `if` matches the work item and returns its `flags` as Pi launch flags (e.g. `--mode-deep`); manual `run --mode-*` flags override ([ADR 0021](../../docs/adr/0021-pi-launch-flags-come-from-ordered-rules.md)).
 
+**Follow-Up Rules** (`followUpRules`, [ADR 0053](../../docs/adr/0053-workflow-customizes-follow-ups-and-conductor-comments.md)) customize GitHub feedback messages sent back to the Pi session. Rules are ordered; every matching rule renders, consecutive same-delivery templates join with a blank line, and delivery changes produce separate `steer`/`followUp` sends. No `if` means always match; no match falls back to the built-in feedback wrapper. Context is live API/reconciliation data: `feedback.*`, `github.pull_request`, `github.review`, `github.comment`, `github.review_comment`, `github.check`, and `conductor.*`. Every rendered Follow-Up includes non-optional guidance to include `<!-- pi-conductor -->` in any GitHub comment/review response the agent posts for that feedback.
+
+**Conductor Comments** (`conductorComments`, [ADR 0053](../../docs/adr/0053-workflow-customizes-follow-ups-and-conductor-comments.md)) customize Conductor-authored GitHub issue comments for `prAssociated`, `runCompleted`, `runStopped`, and `runBlocked`. Each entry supports `template` and `enabled`; posted comments get the hidden `<!-- pi-conductor -->` marker automatically.
+
 ## Worktree hooks
 
 `WorktreeManager` runs optional shell hooks around git worktree lifecycle:
@@ -126,9 +130,11 @@ State lives under `stateRoot` (default `~/.pi/agent/conductor`, [ADR 0005](../..
 
 The store is a driver abstraction (`src/conductor/store/types.ts` `ConductorStore`) with a SQLite implementation (`store/sqlite.ts`, via `node:sqlite`) and an in-memory one (`store/memory.ts`). Tables/records: `RunRecord`, `RunEvent`, `WebhookDelivery`. SQLite enforces one active run per issue for dispatch idempotency ([ADR 0032](../../docs/adr/0032-sqlite-enforces-dispatch-idempotency.md), [0033](../../docs/adr/0033-state-store-uses-driver-abstraction.md)). Run logs live under `<stateRoot>/runs` ([ADR 0050](../../docs/adr/0050-run-logs-live-under-global-run-directory.md)); `status` is a human table with a `--json` option ([ADR 0052](../../docs/adr/0052-status-is-human-table-with-json-option.md)).
 
+Recovery notes: automated reconciliation skips already completed issues ([ADR 0055](../../docs/adr/0055-completed-work-is-not-automatically-redispatched.md)). Cleanup tolerates stale conductor-owned paths that are no longer git worktrees and removes them best-effort ([ADR 0056](../../docs/adr/0056-stale-worktree-cleanup-is-best-effort.md)). Herdr-backed background tabs use the current `HERDR_WORKSPACE_ID` so run-local tabs stay in the run workspace ([ADR 0054](../../docs/adr/0054-herdr-background-tabs-use-current-workspace.md)).
+
 ## Notes for future agents
 
 - The conductor is **independent of the extension/mode system**. It shells out to `pi` (launch flags from launch rules/manual args) and talks to GitHub via `gh` and Herdr via CLI. Do not assume it shares provider/mode config.
 - Config and the store schemas are TypeBox (`src/conductor/config.ts`, `store/types.ts`); the repo's lint rules apply — keep boundary-crossing shapes typed.
-- The full decision log is `docs/adr/0001`–`0052`. When changing conductor behavior, check whether an existing ADR governs it and update or supersede accordingly.
+- The full decision log is `docs/adr/0001`–`0056`. When changing conductor behavior, check whether an existing ADR governs it and update or supersede accordingly.
 - Tests live in `test/conductor.test.ts` — cover config, expressions, command parsing, and store behavior.

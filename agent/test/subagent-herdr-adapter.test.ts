@@ -30,16 +30,20 @@ function createExecRecorder() {
 describe("HerdrAdapter", () => {
   const originalHerdrEnv = process.env.HERDR_ENV;
   const originalHerdrPaneId = process.env.HERDR_PANE_ID;
+  const originalHerdrWorkspaceId = process.env.HERDR_WORKSPACE_ID;
 
   afterEach(() => {
     if (originalHerdrEnv === undefined) delete process.env.HERDR_ENV;
     else process.env.HERDR_ENV = originalHerdrEnv;
     if (originalHerdrPaneId === undefined) delete process.env.HERDR_PANE_ID;
     else process.env.HERDR_PANE_ID = originalHerdrPaneId;
+    if (originalHerdrWorkspaceId === undefined) delete process.env.HERDR_WORKSPACE_ID;
+    else process.env.HERDR_WORKSPACE_ID = originalHerdrWorkspaceId;
   });
 
   test("uses herdr tab create for window targets", async () => {
     process.env.HERDR_ENV = "1";
+    process.env.HERDR_WORKSPACE_ID = "w1";
     const recorder = createExecRecorder();
     const adapter = new HerdrAdapter(recorder.exec, "/repo");
 
@@ -54,6 +58,8 @@ describe("HerdrAdapter", () => {
     expect(recorder.calls[0]?.args).toEqual([
       "tab",
       "create",
+      "--workspace",
+      "w1",
       "--cwd",
       "/repo",
       "--label",

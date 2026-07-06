@@ -124,6 +124,29 @@ git config --local --add pi.conductor.hook.postCreate "cp ../.env .env || true"
 
 Hooks receive `REPO_ROOT`, `WORKTREE_PATH`, `BRANCH`, `PI_CONDUCTOR_OWNER`, `PI_CONDUCTOR_REPO`, and `PI_CONDUCTOR_ISSUE_NUMBER`. Shared hooks run before private hooks.
 
+Workflow frontmatter can also customize GitHub feedback sent to agents and Conductor-authored GitHub comments:
+
+```yaml
+followUpRules:
+  - name: review proof
+    if: "${{ feedback.kind == 'review' }}"
+    delivery: followUp
+    template: |
+      Review from ${{ feedback.author }} needs follow-up.
+
+      ${{ feedback.body }}
+
+conductorComments:
+  prAssociated:
+    template: "Tracking PR ${{ github.pull_request.url }}"
+  runBlocked:
+    enabled: false
+```
+
+Follow-up rules are ordered; all matching templates render. Consecutive matches with the same `delivery` join with a blank line. Delivery changes create separate sends. Conductor comments always get a hidden `<!-- pi-conductor -->` marker when posted.
+
+Every routed follow-up also tells the agent to include `<!-- pi-conductor -->` in any GitHub comment or review response it posts for that feedback. This avoids self-comment routing loops.
+
 Human/agent commands:
 
 ```bash

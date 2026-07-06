@@ -12,6 +12,7 @@ import {
   validateGlobalConfig,
 } from "./config.js";
 import { evaluateCondition } from "./expression.js";
+import { renderConductorComment, renderFollowUpMessages } from "./follow-up.js";
 import type { GitHubClient, PullRequestSummary } from "./github.js";
 import {
   ReconcileScopeSchema,
@@ -22,6 +23,7 @@ import {
   scopePullRequestForRun,
   shouldScanProjectItems,
 } from "./reconcile-scope.js";
+import { runToPlan, runToWorkItem, sameRepository } from "./run-record.js";
 import type { ConductorDeliveryMode, HerdrSessionManager } from "./herdr.js";
 import { appendRunLog } from "./logging.js";
 import {
@@ -118,6 +120,7 @@ export class ConductorOrchestrator {
           );
           if (active !== undefined) continue;
           if (await this.hasBlockedRun(workItem)) continue;
+          if (await this.hasCompletedRun(workItem)) continue;
           try {
             dispatched.push(
               await this.dispatchWorkItem(repo, workItem, { manual: false, launchFlags: [] }),
@@ -176,9 +179,14 @@ export class ConductorOrchestrator {
       runToWorkItem(run),
       repo.config.statusOptions.blocked,
     );
-    await this.deps.github.commentIssue(
+    await this.commentBestEffort(
       runToWorkItem(run),
-      `Pi Conductor stopped run ${run.runId}.`,
+      renderConductorComment({
+        config: repo.config,
+        event: "runStopped",
+        run: updated,
+        workflow: repo.workflow,
+      }),
     );
     await this.record(updated, "stop", {});
     return updated;
@@ -250,7 +258,9 @@ export class ConductorOrchestrator {
     } else {
       await this.worktrees.cleanupLocal(repo.config, runToPlan(run));
     }
-    const updated = this.touch(merged ? run : { ...run, status: "blocked" });
+    const updated = this.touch(
+      merged || run.status === "done" ? run : { ...run, status: "blocked" },
+    );
     await this.deps.store.updateRun(updated);
     await this.record(updated, "cleanup", { merged });
     return updated;
@@ -384,7 +394,13 @@ export class ConductorOrchestrator {
       );
       await this.commentBestEffort(
         workItem,
-        `Pi Conductor blocked run ${run.runId}.\n\nError: ${blocked.lastError ?? "unknown"}`,
+        renderConductorComment({
+          config: runtime.config,
+          error: blocked.lastError ?? "unknown",
+          event: "runBlocked",
+          run: blocked,
+          workflow: runtime.workflow,
+        }),
       );
       await this.record(blocked, "error", { message: blocked.lastError });
       throw error;
@@ -409,7 +425,7 @@ export class ConductorOrchestrator {
           ));
         if (pr === undefined) continue;
         const updated = await this.reconcilePullRequest(liveRun, pr);
-        await this.routePullRequestFeedback(updated, authenticatedLogin);
+        await this.routePullRequestFeedback(updated, pr, authenticatedLogin);
       } catch (error) {
         await this.record(run, "reconcile_run_failed", { error: errorMessage(error) });
       }
@@ -441,7 +457,13 @@ export class ConductorOrchestrator {
       );
       await this.commentBestEffort(
         runToWorkItem(done),
-        `Pi Conductor completed run ${done.runId}: ${pr.url}`,
+        renderConductorComment({
+          config: repo.config,
+          event: "runCompleted",
+          pr,
+          run: done,
+          workflow: repo.workflow,
+        }),
       );
       await this.record(done, "done", { prUrl: pr.url });
       return done;
@@ -461,9 +483,16 @@ export class ConductorOrchestrator {
         runToWorkItem(blocked),
         repo.config.statusOptions.blocked,
       );
-      await this.deps.github.commentIssue(
+      await this.commentBestEffort(
         runToWorkItem(blocked),
-        `Pi Conductor blocked run ${blocked.runId}: PR closed without merge (${pr.url}).`,
+        renderConductorComment({
+          config: repo.config,
+          error: `PR closed without merge (${pr.url})`,
+          event: "runBlocked",
+          pr,
+          run: blocked,
+          workflow: repo.workflow,
+        }),
       );
       await this.record(blocked, "blocked", { prUrl: pr.url, reason: "pr_closed" });
       return blocked;
@@ -485,9 +514,15 @@ export class ConductorOrchestrator {
       repo.config.statusOptions.in_review,
     );
     if (run.prUrl === undefined) {
-      await this.deps.github.commentIssue(
+      await this.commentBestEffort(
         runToWorkItem(inReview),
-        `Pi Conductor associated PR: ${pr.url}`,
+        renderConductorComment({
+          config: repo.config,
+          event: "prAssociated",
+          pr,
+          run: inReview,
+          workflow: repo.workflow,
+        }),
       );
     }
     await this.record(inReview, "pr_associated", { prUrl: pr.url });
@@ -496,9 +531,11 @@ export class ConductorOrchestrator {
 
   private async routePullRequestFeedback(
     run: RunRecord,
+    pr: PullRequestSummary,
     authenticatedLogin: string,
   ): Promise<RunRecord> {
     if (run.prNumber === undefined || run.status === "done" || run.paused) return run;
+    const repo = await this.getResolvedRepo(run.owner, run.repo);
     const knownKeys = new Set(run.routedFeedbackKeys ?? []);
     const feedback = await this.deps.github.listPullRequestFeedback(
       run.owner,
@@ -511,13 +548,23 @@ export class ConductorOrchestrator {
     for (const item of feedback) {
       if (knownKeys.has(item.key)) continue;
       updated = await this.ensureRunSession(updated);
-      await this.deps.herdr.send(updated.herdr, formatPullRequestFeedback(item), "followUp");
+      const messages = renderFollowUpMessages({
+        config: repo.config,
+        feedback: item,
+        pr,
+        run: updated,
+        workflow: repo.workflow,
+      });
+      for (const message of messages) {
+        await this.deps.herdr.send(updated.herdr, message.message, message.delivery);
+      }
       knownKeys.add(item.key);
       updated = this.touch({ ...updated, routedFeedbackKeys: [...knownKeys] });
       await this.deps.store.updateRun(updated);
       await this.record(updated, "feedback_routed", {
         key: item.key,
         kind: item.kind,
+        ruleNames: messages.flatMap((message) => message.ruleNames),
         url: item.url,
       });
     }
@@ -637,7 +684,8 @@ export class ConductorOrchestrator {
     } catch {}
   }
 
-  private async commentBestEffort(workItem: WorkItem, body: string): Promise<void> {
+  private async commentBestEffort(workItem: WorkItem, body: string | undefined): Promise<void> {
+    if (body === undefined || body.length === 0) return;
     try {
       await this.deps.github.commentIssue(workItem, body);
     } catch {}
@@ -660,6 +708,16 @@ export class ConductorOrchestrator {
         run.repo === workItem.repo &&
         run.issueNumber === workItem.issueNumber &&
         run.status === "blocked",
+    );
+  }
+
+  private async hasCompletedRun(workItem: WorkItem): Promise<boolean> {
+    return (await this.deps.store.listRuns()).some(
+      (run) =>
+        run.owner === workItem.owner &&
+        run.repo === workItem.repo &&
+        run.issueNumber === workItem.issueNumber &&
+        run.status === "done",
     );
   }
 
@@ -727,55 +785,4 @@ function selectLaunchFlags(
     if (evaluateCondition(rule.if, context)) return rule.flags;
   }
   return [];
-}
-
-function runToPlan(run: RunRecord): WorktreePlan {
-  return {
-    owner: run.owner,
-    repo: run.repo,
-    issueNumber: run.issueNumber,
-    slug: slugify(run.issueTitle),
-    branch: run.branch,
-    baseRef: run.baseRef,
-    worktreePath: run.worktreePath,
-  };
-}
-
-function runToWorkItem(run: RunRecord): WorkItem {
-  return {
-    projectItemId: run.projectItemId,
-    ...(run.projectId === undefined ? {} : { projectId: run.projectId }),
-    owner: run.owner,
-    repo: run.repo,
-    issueNumber: run.issueNumber,
-    issueUrl: run.issueUrl,
-    title: run.issueTitle,
-    body: "",
-    labels: [],
-    assignees: [],
-    projectFields: {},
-  };
-}
-
-function sameRepository(
-  workItem: Pick<WorkItem, "owner" | "repo">,
-  config: Pick<ResolvedRepositoryConfig, "owner" | "repo">,
-): boolean {
-  return (
-    workItem.owner.toLowerCase() === config.owner.toLowerCase() &&
-    workItem.repo.toLowerCase() === config.repo.toLowerCase()
-  );
-}
-
-function formatPullRequestFeedback(feedback: { kind: string; body: string; url?: string }): string {
-  return [
-    `GitHub PR feedback (${feedback.kind}) needs follow-up.`,
-    feedback.url === undefined ? undefined : `URL: ${feedback.url}`,
-    "",
-    feedback.body,
-    "",
-    "Address this on same branch and PR. Push fixes and summarize verification.",
-  ]
-    .filter((line) => line !== undefined)
-    .join("\n");
 }

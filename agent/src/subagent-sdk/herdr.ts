@@ -88,7 +88,16 @@ export class HerdrAdapter implements MuxAdapter {
   async createPane(options: CreatePaneOptions): Promise<{ paneId: string }> {
     const args =
       options.target === "window"
-        ? ["tab", "create", "--cwd", options.cwd, "--label", options.title, "--no-focus"]
+        ? [
+            "tab",
+            "create",
+            ...currentWorkspaceArgs(),
+            "--cwd",
+            options.cwd,
+            "--label",
+            options.title,
+            "--no-focus",
+          ]
         : [
             "pane",
             "split",
@@ -166,4 +175,9 @@ export class HerdrAdapter implements MuxAdapter {
     const detail = result.stderr.trim() || result.stdout.trim() || `exit ${result.code}`;
     throw new Error(`herdr ${action} failed: ${detail}`);
   }
+}
+
+function currentWorkspaceArgs(): string[] {
+  const workspaceId = process.env.HERDR_WORKSPACE_ID;
+  return workspaceId === undefined || workspaceId.length === 0 ? [] : ["--workspace", workspaceId];
 }

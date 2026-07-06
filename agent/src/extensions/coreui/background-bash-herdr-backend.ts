@@ -17,10 +17,12 @@ const HERDR_PANE_COMMAND_TIMEOUT_MS = 2000;
 export class HerdrBackgroundShellBackend implements BackgroundShellBackend {
   readonly name = "herdr" as const;
 
+  constructor(private readonly exec = execFileAsync) {}
+
   async isAvailable(cwd: string): Promise<boolean> {
     if (process.env.HERDR_ENV !== "1") return false;
     try {
-      await execFileAsync("herdr", ["status", "server"], {
+      await this.exec("herdr", ["status", "server"], {
         cwd,
         timeout: HERDR_AVAILABILITY_TIMEOUT_MS,
       });
@@ -31,13 +33,22 @@ export class HerdrBackgroundShellBackend implements BackgroundShellBackend {
   }
 
   async launch(input: BackgroundLaunchInput): Promise<BackgroundLaunchResult> {
-    const { stdout } = await execFileAsync(
+    const { stdout } = await this.exec(
       "herdr",
-      ["tab", "create", "--cwd", input.cwd, "--label", input.label, "--no-focus"],
+      [
+        "tab",
+        "create",
+        ...currentWorkspaceArgs(),
+        "--cwd",
+        input.cwd,
+        "--label",
+        input.label,
+        "--no-focus",
+      ],
       { cwd: input.cwd, encoding: "utf-8", timeout: HERDR_PANE_CREATE_TIMEOUT_MS },
     );
     const paneId = parseHerdrRootPaneId(stdout);
-    await execFileAsync(
+    await this.exec(
       "herdr",
       ["pane", "run", paneId, ` ${wrapCommandWithSelfClose(input.scriptPath, paneId)}`],
       {
@@ -50,7 +61,7 @@ export class HerdrBackgroundShellBackend implements BackgroundShellBackend {
 
   async targetExists(run: BackgroundShellRun): Promise<boolean> {
     try {
-      await execFileAsync("herdr", ["pane", "get", run.targetId], {
+      await this.exec("herdr", ["pane", "get", run.targetId], {
         timeout: HERDR_PANE_COMMAND_TIMEOUT_MS,
       });
       return true;
@@ -61,7 +72,7 @@ export class HerdrBackgroundShellBackend implements BackgroundShellBackend {
 
   async kill(run: BackgroundShellRun): Promise<void> {
     try {
-      await execFileAsync("herdr", ["pane", "close", run.targetId], {
+      await this.exec("herdr", ["pane", "close", run.targetId], {
         timeout: HERDR_PANE_COMMAND_TIMEOUT_MS,
       });
     } catch (error) {
@@ -88,6 +99,11 @@ export class HerdrBackgroundShellBackend implements BackgroundShellBackend {
       return `kill: unavailable · ${run.status} commands are inspect-only`;
     return `kill: K/x stop · herdr pane close ${run.targetId}`;
   }
+}
+
+function currentWorkspaceArgs(): string[] {
+  const workspaceId = process.env.HERDR_WORKSPACE_ID;
+  return workspaceId === undefined || workspaceId.length === 0 ? [] : ["--workspace", workspaceId];
 }
 
 function shellEscape(value: string): string {

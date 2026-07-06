@@ -68,6 +68,26 @@ _Avoid_: stopped run, suspended process
 A queued or delivered message from conductor or operator to the owning Pi session after initial dispatch.
 _Avoid_: new task, separate run
 
+**Feedback Kind**:
+The normalized source category for GitHub feedback routed to a Pi session, such as `review`, `review_comment`, `issue_comment`, `comment`, or `check`.
+_Avoid_: webhook event name, raw GitHub payload type
+
+**Follow-Up Rule**:
+An ordered repository workflow rule that matches routed GitHub feedback and renders the Follow-Up message sent to the owning Pi session.
+_Avoid_: hard-coded feedback prompt, workflow stage
+
+**Follow-Up Context**:
+The structured expression context available to Follow-Up Rules and their templates, including the normalized feedback, GitHub issue, pull request, run, and repository data.
+_Avoid_: raw webhook payload, prompt variables
+
+**Conductor Comment**:
+A GitHub issue comment authored by Conductor to announce lifecycle state such as associated PR, completed run, stopped run, or blocked run.
+_Avoid_: Follow-Up, PR feedback, operator review comment
+
+**Conductor Comment Template**:
+A repository workflow template that renders a Conductor Comment for a specific lifecycle event while Conductor appends its hidden marker outside the user-authored text.
+_Avoid_: Follow-Up Rule, GitHub review template
+
 **Run ID**:
 A durable conductor identifier formatted as `owner__repo__issue__uuidv7` for commands, logs, and state references.
 _Avoid_: Herdr pane id, Pi session id

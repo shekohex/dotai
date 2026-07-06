@@ -30,6 +30,11 @@ export type PullRequestFeedback = {
   body: string;
   url?: string;
   author?: string;
+  check?: Record<string, unknown>;
+  comment?: Record<string, unknown>;
+  review?: Record<string, unknown>;
+  review_comment?: Record<string, unknown>;
+  issue_comment?: Record<string, unknown>;
 };
 
 export function parseGhPrChecks(stdout: string): PullRequestFeedback[] {
@@ -44,6 +49,14 @@ export function parseGhPrChecks(stdout: string): PullRequestFeedback[] {
         key: `check:${check.name}:${conclusion}:${occurrence}`,
         kind: "check" as const,
         body: `Check ${check.name} is ${conclusion}.`,
+        check: {
+          name: check.name,
+          conclusion,
+          link: check.link ?? "",
+          bucket: check.bucket ?? "",
+          completedAt: check.completedAt ?? "",
+          startedAt: check.startedAt ?? "",
+        },
         ...(check.link === undefined || check.link === null ? {} : { url: check.link }),
       },
     ];
@@ -100,6 +113,12 @@ function normalizeFeedbackNode(
       key: `${kind}:${id}`,
       kind,
       body,
+      [kind]: {
+        id,
+        body,
+        url: url ?? "",
+        author: author ?? "",
+      },
       ...(url === undefined ? {} : { url }),
       ...(author === undefined ? {} : { author }),
     },

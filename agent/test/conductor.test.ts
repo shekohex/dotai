@@ -32,6 +32,7 @@ import {
   parseGhIssueView,
   parseGhIssueComments,
   parseGhPrChecks,
+  parseGhPullRequest,
   parseGhPrViewFeedback,
   parseGhPullRequestList,
   parseGhRepoView,
@@ -463,6 +464,7 @@ describe("conductor store and command parser", () => {
       delivery: "followUp",
     });
     expect(parseConductorArgs(["cleanup", "--merged"])).toEqual({ kind: "cleanup-merged" });
+    expect(parseConductorArgs(["cleanup", "--failed"])).toEqual({ kind: "cleanup-failed" });
     expect(parseConductorArgs(["cleanup", "--merged", "run-1"])).toEqual({
       kind: "cleanup",
       runId: "run-1",
@@ -1168,10 +1170,29 @@ describe("conductor adapters", () => {
     expect(
       parseGhPullRequestList(
         JSON.stringify([
-          { number: 4, url: "https://pr", headRefName: "pi/7-fix", state: "OPEN", isDraft: false },
+          {
+            number: 4,
+            url: "https://pr",
+            headRefName: "pi/7-fix",
+            state: "OPEN",
+            isDraft: false,
+            mergeable: "CONFLICTING",
+            mergeStateStatus: "DIRTY",
+          },
         ]),
-      )[0]?.url,
-    ).toBe("https://pr");
+      )[0],
+    ).toMatchObject({ url: "https://pr", mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" });
+    expect(
+      parseGhPullRequest(
+        JSON.stringify({
+          number: 4,
+          url: "https://pr",
+          headRefName: "pi/7-fix",
+          state: "OPEN",
+          isDraft: false,
+        }),
+      ),
+    ).toMatchObject({ number: 4, url: "https://pr" });
     expect(parseProjectItemsGraphql(projectItemsGraphqlFixture())[0]).toMatchObject({
       projectItemId: "PVTI_1",
       projectId: "PVT_1",
@@ -1257,6 +1278,18 @@ describe("conductor adapters", () => {
   test("authenticated review feedback routes unless it has conductor marker", async () => {
     const client = new GhGitHubClient(async (_file, args) => {
       if (args.includes("checks")) return { stdout: "[]", stderr: "" };
+      if (args.includes("view") && args.some((arg) => arg.includes("mergeable,mergeStateStatus"))) {
+        return {
+          stdout: JSON.stringify({
+            number: 2,
+            url: "https://github.com/octo/demo/pull/2",
+            headRefName: "pi/7-fix-bug",
+            state: "OPEN",
+            isDraft: false,
+          }),
+          stderr: "",
+        };
+      }
       if (args.includes("view")) {
         return {
           stdout: JSON.stringify({
@@ -1292,6 +1325,43 @@ describe("conductor adapters", () => {
         key: "review:PRR_1",
         author: "octo",
         body: "Static screenshot is not proof. Send a video.",
+      }),
+    ]);
+  });
+
+  test("merge conflicts route as PR feedback", async () => {
+    const client = new GhGitHubClient(async (_file, args) => {
+      if (args.includes("checks")) return { stdout: "[]", stderr: "" };
+      if (args.includes("view") && args.some((arg) => arg.includes("mergeable,mergeStateStatus"))) {
+        return {
+          stdout: JSON.stringify({
+            number: 2,
+            url: "https://github.com/octo/demo/pull/2",
+            headRefName: "pi/7-fix-bug",
+            state: "OPEN",
+            isDraft: false,
+            mergeable: "CONFLICTING",
+            mergeStateStatus: "DIRTY",
+          }),
+          stderr: "",
+        };
+      }
+      if (args.includes("view")) {
+        return {
+          stdout: JSON.stringify({ comments: [], reviewDecision: "", reviews: [] }),
+          stderr: "",
+        };
+      }
+      if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
+      if (args.at(-1) === "repos/octo/demo/issues/7/comments") return { stdout: "[]", stderr: "" };
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+
+    await expect(client.listPullRequestFeedback("octo", "demo", 2, 7, [])).resolves.toEqual([
+      expect.objectContaining({
+        key: "merge-conflict:2:CONFLICTING:DIRTY",
+        kind: "merge_conflict",
+        body: expect.stringContaining("merge conflicts"),
       }),
     ]);
   });
@@ -1442,6 +1512,43 @@ describe("conductor adapters", () => {
       PI_CONDUCTOR_ISSUE_NUMBER: "7",
     });
     expect(hookCalls.at(-1)).toMatchObject({ cwd: "/repo" });
+  });
+
+  test("refreshLocalBase rebases clean checked-out base branch", async () => {
+    const tempDir = await createTempDir("conductor-base-refresh-");
+    const calls: string[][] = [];
+    const manager = new WorktreeManager(async (_file, args) => {
+      calls.push(args);
+      if (args.includes("--show-current")) return { stdout: "main\n", stderr: "" };
+      return { stdout: "", stderr: "" };
+    });
+    const config = resolveRepositoryConfig(managedRepo({ repoPath: "/repo" }), {}, {}, tempDir);
+
+    await expect(manager.refreshLocalBase(config, "main")).resolves.toEqual({
+      status: "rebased",
+      branch: "main",
+    });
+    expect(calls).toEqual([
+      ["-C", "/repo", "fetch", "origin", "main"],
+      ["-C", "/repo", "branch", "--show-current"],
+      ["-C", "/repo", "status", "--porcelain"],
+      ["-C", "/repo", "rebase", "origin/main"],
+    ]);
+  });
+
+  test("refreshLocalBase skips non-base checkout", async () => {
+    const tempDir = await createTempDir("conductor-base-refresh-skip-");
+    const manager = new WorktreeManager(async (_file, args) => {
+      if (args.includes("--show-current")) return { stdout: "feature\n", stderr: "" };
+      return { stdout: "", stderr: "" };
+    });
+    const config = resolveRepositoryConfig(managedRepo({ repoPath: "/repo" }), {}, {}, tempDir);
+
+    await expect(manager.refreshLocalBase(config, "main")).resolves.toEqual({
+      status: "skipped",
+      branch: "feature",
+      reason: "source checkout is not on main",
+    });
   });
 
   test("cleanup removes stale non-git worktree directory", async () => {
@@ -1892,6 +1999,52 @@ describe("conductor orchestrator", () => {
 
     await expect(orchestrator.cleanup(run.runId, false)).resolves.toMatchObject({ status: "done" });
     await expect(store.getRun(run.runId)).resolves.toMatchObject({ status: "done" });
+  });
+
+  test("cleanup failed runs cleans blocked runs only", async () => {
+    const tempDir = await createTempDir("conductor-failed-cleanup-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const blocked = runRecord({
+      runId: "blocked-run",
+      status: "blocked",
+      worktreePath: join(tempDir, "worktrees", "octo", "demo", "7"),
+    });
+    const active = runRecord({
+      runId: "active-run",
+      issueNumber: 8,
+      status: "in_progress",
+      worktreePath: join(tempDir, "worktrees", "octo", "demo", "8"),
+    });
+    await store.createRun(blocked);
+    await store.createRun(active);
+    const calls: string[][] = [];
+    const worktrees = new WorktreeManager(async (_file, args) => {
+      calls.push(args);
+      if (args.includes("rev-parse")) throw new Error("missing branch");
+      return { stdout: "", stderr: "" };
+    });
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github: new FakeGitHub(workItem()),
+      herdr: new FakeHerdr(),
+      worktrees,
+      cwd: repoPath,
+    });
+
+    await expect(orchestrator.cleanupFailedRuns()).resolves.toMatchObject([
+      { runId: "blocked-run", status: "blocked" },
+    ]);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        ["-C", repoPath, "worktree", "remove", "--force", blocked.worktreePath],
+      ]),
+    );
+    expect(calls.flat()).not.toContain(active.worktreePath);
+    await expect(store.getRun("active-run")).resolves.toMatchObject({ status: "in_progress" });
   });
 
   test("automated reconcile ignores project items from other repositories", async () => {

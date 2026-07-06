@@ -25,6 +25,10 @@ export type WorktreePlan = {
   worktreePath: string;
 };
 
+export type BaseRefreshResult =
+  | { status: "rebased"; branch: string }
+  | { status: "skipped"; branch: string; reason: string };
+
 export class WorktreeManager {
   constructor(private readonly exec: WorktreeExec = defaultWorktreeExec) {}
 
@@ -97,6 +101,27 @@ export class WorktreeManager {
   ): Promise<void> {
     await this.cleanupLocal(config, plan, { allowDirty: true });
     await this.deleteRemoteBranch(config.repoPath, plan.branch);
+  }
+
+  async refreshLocalBase(
+    config: ResolvedRepositoryConfig,
+    baseRef: string,
+  ): Promise<BaseRefreshResult> {
+    await this.git(config.repoPath, ["fetch", "origin", baseRef]);
+    const branch = (await this.git(config.repoPath, ["branch", "--show-current"])).stdout.trim();
+    if (branch !== baseRef) {
+      return { status: "skipped", branch, reason: `source checkout is not on ${baseRef}` };
+    }
+    if ((await this.git(config.repoPath, ["status", "--porcelain"])).stdout.trim().length > 0) {
+      return { status: "skipped", branch, reason: "source checkout has local changes" };
+    }
+    try {
+      await this.git(config.repoPath, ["rebase", `origin/${baseRef}`]);
+    } catch (error) {
+      await this.git(config.repoPath, ["rebase", "--abort"]).catch(() => {});
+      throw error;
+    }
+    return { status: "rebased", branch };
   }
 
   private async preserveDirtyWorktree(worktreePath: string, branch: string): Promise<void> {

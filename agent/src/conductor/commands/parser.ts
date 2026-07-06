@@ -33,6 +33,7 @@ export const ParsedConductorCommandSchema = Type.Union([
   Type.Object({ kind: Type.Literal("retry"), runId: Type.String() }),
   Type.Object({ kind: Type.Literal("cleanup"), runId: Type.String(), merged: Type.Boolean() }),
   Type.Object({ kind: Type.Literal("cleanup-merged") }),
+  Type.Object({ kind: Type.Literal("cleanup-failed") }),
   Type.Object({
     kind: Type.Literal("daemon"),
     action: Type.Union([
@@ -201,10 +202,14 @@ function runOverrideKey(flag: string): string {
 function parseCleanup(args: string[]): ParsedConductorCommand {
   if (args.includes("--gc")) return parseCleanupGc(args.filter((arg) => arg !== "--gc"));
   const merged = args.includes("--merged");
-  const runIds = args.filter((arg) => arg !== "--merged");
+  const failed = args.includes("--failed");
+  if (merged && failed) throw new Error("Usage: pi conductor cleanup <run-id|--merged|--failed>");
+  const runIds = args.filter((arg) => arg !== "--merged" && arg !== "--failed");
   if (merged && runIds.length === 0) return { kind: "cleanup-merged" };
-  if (runIds.length !== 1) throw new Error("Usage: pi conductor cleanup <run-id|--merged>");
-  const runId = required(runIds[0], "cleanup <run-id|--merged>");
+  if (failed && runIds.length === 0) return { kind: "cleanup-failed" };
+  if (failed || runIds.length !== 1)
+    throw new Error("Usage: pi conductor cleanup <run-id|--merged|--failed>");
+  const runId = required(runIds[0], "cleanup <run-id|--merged|--failed>");
   return { kind: "cleanup", runId, merged };
 }
 

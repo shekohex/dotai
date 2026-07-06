@@ -22,6 +22,7 @@ import {
   projectMetadataQuery,
   UPDATE_PROJECT_STATUS_MUTATION,
 } from "./github-queries.js";
+import { mergeConflictFeedback } from "./merge-conflict-feedback.js";
 import { type WorkItem, WorkItemSchema } from "./store/types.js";
 const GH_COMMAND_TIMEOUT_MS = 30_000;
 const CONDUCTOR_COMMENT_MARKER = "<!-- pi-conductor -->";
@@ -45,19 +46,20 @@ const GhIssueViewSchema = Type.Object({
   assignees: Type.Array(Type.Object({ login: Type.String() })),
 });
 const GhGraphqlResponseSchema = Type.Object({ data: Type.Record(Type.String(), Type.Unknown()) });
-const GhPullRequestListSchema = Type.Array(
-  Type.Object({
-    number: Type.Number(),
-    url: Type.String(),
-    headRefName: Type.String(),
-    state: Type.String(),
-    isDraft: Type.Boolean(),
-    mergedAt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-    closingIssuesReferences: Type.Optional(
-      Type.Array(Type.Object({ number: Type.Number({ minimum: 1 }) })),
-    ),
-  }),
-);
+const GhPullRequestSchema = Type.Object({
+  number: Type.Number(),
+  url: Type.String(),
+  headRefName: Type.String(),
+  state: Type.String(),
+  isDraft: Type.Boolean(),
+  mergedAt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  mergeable: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  mergeStateStatus: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  closingIssuesReferences: Type.Optional(
+    Type.Array(Type.Object({ number: Type.Number({ minimum: 1 }) })),
+  ),
+});
+const GhPullRequestListSchema = Type.Array(GhPullRequestSchema);
 export {
   parseGhIssueComments,
   parseGhPrChecks,
@@ -92,6 +94,8 @@ export type PullRequestSummary = {
   state: string;
   isDraft: boolean;
   mergedAt?: string;
+  mergeable?: string;
+  mergeStateStatus?: string;
   linkedIssueNumbers?: number[];
 };
 
@@ -292,7 +296,7 @@ export class GhGitHubClient implements GitHubClient {
           "--state",
           "all",
           "--json",
-          "number,url,headRefName,state,isDraft,mergedAt,closingIssuesReferences",
+          "number,url,headRefName,state,isDraft,mergedAt,mergeable,mergeStateStatus,closingIssuesReferences",
         ],
         undefined,
         "gh pr list",
@@ -318,8 +322,37 @@ export class GhGitHubClient implements GitHubClient {
     const issueComments = await this.tryReadFeedback(() =>
       this.listIssueComments(owner, repo, issueNumber),
     );
-    return [...checks, ...viewFeedback, ...reviewComments, ...issueComments].filter(
-      (feedback) => !hasConductorMarker(feedback.body),
+    const mergeConflict = await this.tryReadFeedback(async () =>
+      mergeConflictFeedback(await this.getPullRequest(owner, repo, prNumber)),
+    );
+    return [
+      ...mergeConflict,
+      ...checks,
+      ...viewFeedback,
+      ...reviewComments,
+      ...issueComments,
+    ].filter((feedback) => !hasConductorMarker(feedback.body));
+  }
+
+  private async getPullRequest(
+    owner: string,
+    repo: string,
+    prNumber: number,
+  ): Promise<PullRequestSummary> {
+    return parseGhPullRequest(
+      await this.gh(
+        [
+          "pr",
+          "view",
+          String(prNumber),
+          "--repo",
+          `${owner}/${repo}`,
+          "--json",
+          "number,url,headRefName,state,isDraft,mergedAt,mergeable,mergeStateStatus,closingIssuesReferences",
+        ],
+        undefined,
+        "gh pr view merge state",
+      ),
     );
   }
 
@@ -541,17 +574,33 @@ export function parseGhIssueView(stdout: string): Static<typeof GhIssueViewSchem
 }
 
 export function parseGhPullRequestList(stdout: string): PullRequestSummary[] {
-  return Value.Parse(GhPullRequestListSchema, parseJsonValue(stdout, "gh pr list")).map((pr) => ({
+  return Value.Parse(GhPullRequestListSchema, parseJsonValue(stdout, "gh pr list")).map((pr) =>
+    normalizePullRequestSummary(pr),
+  );
+}
+
+export function parseGhPullRequest(stdout: string): PullRequestSummary {
+  return normalizePullRequestSummary(
+    Value.Parse(GhPullRequestSchema, parseJsonValue(stdout, "gh pr view")),
+  );
+}
+
+function normalizePullRequestSummary(pr: Static<typeof GhPullRequestSchema>): PullRequestSummary {
+  return {
     number: pr.number,
     url: pr.url,
     headRefName: pr.headRefName,
     state: pr.state,
     isDraft: pr.isDraft,
     ...(pr.mergedAt === undefined || pr.mergedAt === null ? {} : { mergedAt: pr.mergedAt }),
+    ...(pr.mergeable === undefined || pr.mergeable === null ? {} : { mergeable: pr.mergeable }),
+    ...(pr.mergeStateStatus === undefined || pr.mergeStateStatus === null
+      ? {}
+      : { mergeStateStatus: pr.mergeStateStatus }),
     ...(pr.closingIssuesReferences === undefined
       ? {}
       : { linkedIssueNumbers: pr.closingIssuesReferences.map((issue) => issue.number) }),
-  }));
+  };
 }
 
 export function parseProjectItemsGraphql(stdout: string, statusField = "Status"): WorkItem[] {

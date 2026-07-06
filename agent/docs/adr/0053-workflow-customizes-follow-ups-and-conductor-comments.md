@@ -2,6 +2,8 @@
 
 `.pi/WORKFLOW.md` frontmatter will own repository-specific Follow-Up and Conductor Comment text.
 
+Synthetic feedback is customized through Follow-Up Rules, not a separate template namespace. For example, PR merge conflicts route as `feedback.kind == 'merge_conflict'`, so repositories override that message with a normal Follow-Up Rule.
+
 Follow-Ups use ordered `followUpRules`. Every rule whose optional `if` expression matches renders its `template`. Rules without `if` always match. Matching templates are processed in author order; consecutive templates with the same `delivery` are joined with a blank line, and a delivery change starts a separate send. `delivery` defaults to `followUp`, but rules may choose `steer`. If no rule matches, Conductor uses the built-in feedback message.
 
 Conductor-authored GitHub issue comments use `conductorComments` keyed by lifecycle action: `prAssociated`, `runCompleted`, `runStopped`, and `runBlocked`. Each entry can provide `template` and `enabled`; `enabled: false` suppresses that specific comment. When a comment is posted, Conductor appends its hidden `<!-- pi-conductor -->` marker outside the repository-authored template.

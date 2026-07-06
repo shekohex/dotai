@@ -42,13 +42,13 @@ export function renderFollowUpMessages(input: {
     ];
   });
   if (rendered.length === 0) {
-    return [
+    return joinConsecutiveFollowUps([
       {
         delivery: "followUp",
         message: formatDefaultPullRequestFeedback(input.feedback),
         ruleNames: [],
       },
-    ];
+    ]);
   }
   return joinConsecutiveFollowUps(rendered);
 }
@@ -115,6 +115,7 @@ function buildFollowUpContext(input: {
       comment: input.feedback.comment ?? input.feedback.issue_comment ?? {},
       review: input.feedback.review ?? {},
       review_comment: input.feedback.review_comment ?? {},
+      merge_conflict: input.feedback.merge_conflict ?? {},
     },
   };
 }
@@ -192,6 +193,7 @@ function normalizeFeedbackContext(feedback: PullRequestFeedback): Record<string,
     comment: feedback.comment ?? feedback.issue_comment ?? {},
     review: feedback.review ?? {},
     review_comment: feedback.review_comment ?? {},
+    merge_conflict: feedback.merge_conflict ?? {},
   };
 }
 
@@ -203,6 +205,8 @@ function pullRequestContext(pr: PullRequestSummary): Record<string, unknown> {
     state: pr.state,
     draft: pr.isDraft,
     merged_at: pr.mergedAt ?? "",
+    mergeable: pr.mergeable ?? "",
+    merge_state_status: pr.mergeStateStatus ?? "",
     linked_issue_numbers: pr.linkedIssueNumbers ?? [],
   };
 }
@@ -311,6 +315,12 @@ function sampleFeedback(): PullRequestFeedback[] {
       kind: "check",
       body: "Check test is failure.",
       check: { name: "test", conclusion: "failure" },
+    },
+    {
+      key: "merge-conflict:2:CONFLICTING:DIRTY",
+      kind: "merge_conflict",
+      body: "Pull request has merge conflicts.",
+      merge_conflict: { mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" },
     },
   ];
 }

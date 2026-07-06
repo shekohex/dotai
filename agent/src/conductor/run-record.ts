@@ -1,4 +1,5 @@
-import type { ResolvedRepositoryConfig } from "./config.js";
+import type { ManagedRepositoryConfig, ResolvedRepositoryConfig } from "./config.js";
+import type { GitHubClient } from "./github.js";
 import { slugify } from "./run-id.js";
 import type { RunRecord, WorkItem } from "./store/types.js";
 import type { WorktreePlan } from "./worktree.js";
@@ -39,4 +40,42 @@ export function sameRepository(
     workItem.owner.toLowerCase() === config.owner.toLowerCase() &&
     workItem.repo.toLowerCase() === config.repo.toLowerCase()
   );
+}
+
+export async function commentWorkItemBestEffort(
+  github: GitHubClient,
+  workItem: WorkItem,
+  body: string | undefined,
+): Promise<void> {
+  if (body === undefined || body.length === 0) return;
+  try {
+    await github.commentIssue(workItem, body);
+  } catch {}
+}
+
+export async function commentRunBestEffort(
+  github: GitHubClient,
+  run: RunRecord,
+  body: string | undefined,
+): Promise<void> {
+  if (run.prNumber === undefined) {
+    await commentWorkItemBestEffort(github, runToWorkItem(run), body);
+    return;
+  }
+  await commentWorkItemBestEffort(
+    github,
+    { ...runToWorkItem(run), issueNumber: run.prNumber, issueUrl: run.prUrl ?? run.issueUrl },
+    body,
+  );
+}
+
+export async function updateProjectStatusBestEffort(
+  github: GitHubClient,
+  repo: ManagedRepositoryConfig,
+  workItem: WorkItem,
+  statusName: string,
+): Promise<void> {
+  try {
+    await github.updateProjectStatus(repo, workItem, statusName);
+  } catch {}
 }

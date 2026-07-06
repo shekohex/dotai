@@ -1,4 +1,11 @@
+import type { GlobalConductorConfig } from "./config.js";
+import { validateGlobalConfig } from "./config.js";
 import type { ConductorStore, LifecycleStatus, WorkItem } from "./store/types.js";
+
+export function assertGlobalConfigReady(config: GlobalConductorConfig): void {
+  const errors = validateGlobalConfig(config);
+  if (errors.length > 0) throw new Error(`Invalid conductor config:\n${errors.join("\n")}`);
+}
 
 export function isEligibleForAutomatedDispatch(
   workItem: WorkItem,

@@ -26,7 +26,7 @@ const GhReviewCommentsSchema = Type.Array(Type.Unknown());
 
 export type PullRequestFeedback = {
   key: string;
-  kind: "check" | "comment" | "review" | "review_comment" | "issue_comment";
+  kind: "check" | "comment" | "review" | "review_comment" | "issue_comment" | "merge_conflict";
   body: string;
   url?: string;
   author?: string;
@@ -35,6 +35,7 @@ export type PullRequestFeedback = {
   review?: Record<string, unknown>;
   review_comment?: Record<string, unknown>;
   issue_comment?: Record<string, unknown>;
+  merge_conflict?: Record<string, unknown>;
 };
 
 export function parseGhPrChecks(stdout: string): PullRequestFeedback[] {

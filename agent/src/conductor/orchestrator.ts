@@ -9,10 +9,15 @@ import {
   findManagedRepository,
   getStateRoot,
   resolveRepositoryConfig,
-  validateGlobalConfig,
 } from "./config.js";
+import { cleanupRunsByStatus, refreshLocalBaseBestEffort } from "./cleanup-batch.js";
 import { renderConductorComment, renderFollowUpMessages } from "./follow-up.js";
 import type { GitHubClient, PullRequestSummary } from "./github.js";
+import {
+  activeStatusForRun,
+  HERDR_BLOCKED_REASON,
+  isHerdrAttentionBlocked,
+} from "./herdr-attention.js";
 import {
   ReconcileScopeSchema,
   type ReconcileScope,
@@ -23,8 +28,19 @@ import {
   shouldScanProjectItems,
 } from "./reconcile-scope.js";
 import { buildRecoveryPromptContext } from "./recovery-context.js";
-import { runToPlan, runToWorkItem, sameRepository } from "./run-record.js";
-import { hasRunStatusForWorkItem, isEligibleForAutomatedDispatch } from "./run-status.js";
+import {
+  commentRunBestEffort,
+  commentWorkItemBestEffort,
+  runToPlan,
+  runToWorkItem,
+  sameRepository,
+  updateProjectStatusBestEffort,
+} from "./run-record.js";
+import {
+  assertGlobalConfigReady,
+  hasRunStatusForWorkItem,
+  isEligibleForAutomatedDispatch,
+} from "./run-status.js";
 import type { ConductorDeliveryMode, HerdrAgentStatus, HerdrSessionManager } from "./herdr.js";
 import { selectLaunchFlags } from "./launch-rules.js";
 import { appendRunLog } from "./logging.js";
@@ -34,8 +50,6 @@ import { RunRecordSchema, type RunRecord, type WorkItem } from "./store/types.js
 import type { ConductorStore } from "./store/types.js";
 import { WorktreeManager, relativePromptPath } from "./worktree.js";
 import { loadWorkflow, workflowConfigOverrides, type WorkflowFile } from "./workflow.js";
-
-const HERDR_BLOCKED_REASON = "Pi session needs operator input in Herdr";
 
 export type ConductorOrchestratorDeps = {
   config: GlobalConductorConfig;
@@ -75,7 +89,7 @@ export class ConductorOrchestrator {
   }
 
   async run(reference: string, options: RunOptions = {}): Promise<RunRecord> {
-    this.assertConfigReady();
+    assertGlobalConfigReady(this.deps.config);
     const workItem = await this.deps.github.resolveWorkItem(
       reference,
       this.deps.config,
@@ -98,7 +112,7 @@ export class ConductorOrchestrator {
   }
 
   private async reconcileOnce(scope?: ReconcileScope): Promise<RunRecord[]> {
-    this.assertConfigReady();
+    assertGlobalConfigReady(this.deps.config);
     const dispatched: RunRecord[] = [];
     const login = await this.deps.github.getAuthenticatedUser();
 
@@ -179,7 +193,8 @@ export class ConductorOrchestrator {
       runToWorkItem(run),
       repo.config.statusOptions.blocked,
     );
-    await this.commentBestEffort(
+    await commentWorkItemBestEffort(
+      this.deps.github,
       runToWorkItem(run),
       renderConductorComment({
         config: repo.config,
@@ -271,16 +286,23 @@ export class ConductorOrchestrator {
   }
 
   async cleanupMergedRuns(): Promise<RunRecord[]> {
-    const cleaned: RunRecord[] = [];
-    for (const run of await this.deps.store.listRuns()) {
-      if (run.status !== "done") continue;
-      try {
-        cleaned.push(await this.cleanup(run.runId, true));
-      } catch (error) {
-        await this.record(run, "cleanup_failed", { error: errorMessage(error), merged: true });
-      }
-    }
-    return cleaned;
+    return cleanupRunsByStatus({
+      runs: await this.deps.store.listRuns(),
+      status: "done",
+      cleanup: (run) => this.cleanup(run.runId, true),
+      recordFailure: (run, payload) =>
+        this.record(run, "cleanup_failed", { ...payload, merged: true }),
+    });
+  }
+
+  async cleanupFailedRuns(): Promise<RunRecord[]> {
+    return cleanupRunsByStatus({
+      runs: await this.deps.store.listRuns(),
+      status: "blocked",
+      cleanup: (run) => this.cleanup(run.runId, false),
+      recordFailure: (run, payload) =>
+        this.record(run, "cleanup_failed", { ...payload, failed: true }),
+    });
   }
 
   private async dispatchWorkItem(
@@ -391,12 +413,14 @@ export class ConductorOrchestrator {
         lastError: errorMessage(error),
       });
       await this.deps.store.updateRun(blocked);
-      await this.updateProjectStatusBestEffort(
+      await updateProjectStatusBestEffort(
+        this.deps.github,
         runtime.config,
         workItem,
         runtime.config.statusOptions.blocked,
       );
-      await this.commentBestEffort(
+      await commentWorkItemBestEffort(
+        this.deps.github,
         workItem,
         renderConductorComment({
           config: runtime.config,
@@ -454,13 +478,21 @@ export class ConductorOrchestrator {
     if (pr.mergedAt !== undefined) {
       const done = this.touch({ ...run, status: "done", prNumber: pr.number, prUrl: pr.url });
       await this.worktrees.cleanupMerged(repo.config, runToPlan(done));
+      await refreshLocalBaseBestEffort({
+        config: repo.config,
+        record: (kind, payload) => this.record(done, kind, payload),
+        run: done,
+        worktrees: this.worktrees,
+      });
       await this.deps.store.updateRun(done);
-      await this.updateProjectStatusBestEffort(
+      await updateProjectStatusBestEffort(
+        this.deps.github,
         repo.config,
         runToWorkItem(done),
         repo.config.statusOptions.done,
       );
-      await this.commentBestEffort(
+      await commentWorkItemBestEffort(
+        this.deps.github,
         runToWorkItem(done),
         renderConductorComment({
           config: repo.config,
@@ -488,7 +520,8 @@ export class ConductorOrchestrator {
         runToWorkItem(blocked),
         repo.config.statusOptions.blocked,
       );
-      await this.commentRunBestEffort(
+      await commentRunBestEffort(
+        this.deps.github,
         blocked,
         renderConductorComment({
           config: repo.config,
@@ -527,7 +560,8 @@ export class ConductorOrchestrator {
       repo.config.statusOptions.in_review,
     );
     if (run.prUrl === undefined) {
-      await this.commentBestEffort(
+      await commentWorkItemBestEffort(
+        this.deps.github,
         runToWorkItem(inReview),
         renderConductorComment({
           config: repo.config,
@@ -642,7 +676,6 @@ export class ConductorOrchestrator {
     await this.record(recovered, "herdr_recovered", { herdr });
     return recovered;
   }
-
   private async syncHerdrAgentStatus(run: RunRecord): Promise<RunRecord> {
     const status = await this.deps.herdr.agentStatus(run.herdr);
     if (status === undefined || status === "unknown") return run;
@@ -650,18 +683,19 @@ export class ConductorOrchestrator {
     if (isHerdrAttentionBlocked(run)) return this.unblockFromHerdrAttention(run, status);
     return run;
   }
-
   private async blockForHerdrAttention(run: RunRecord): Promise<RunRecord> {
     if (isHerdrAttentionBlocked(run) || run.status === "blocked") return run;
     const repo = await this.getResolvedRepo(run.owner, run.repo);
     const blocked = this.touch({ ...run, status: "blocked", lastError: HERDR_BLOCKED_REASON });
     await this.deps.store.updateRun(blocked);
-    await this.updateProjectStatusBestEffort(
+    await updateProjectStatusBestEffort(
+      this.deps.github,
       repo.config,
       runToWorkItem(blocked),
       repo.config.statusOptions.blocked,
     );
-    await this.commentRunBestEffort(
+    await commentRunBestEffort(
+      this.deps.github,
       blocked,
       renderConductorComment({
         config: repo.config,
@@ -674,7 +708,6 @@ export class ConductorOrchestrator {
     await this.record(blocked, "blocked", { reason: "herdr_agent_blocked" });
     return blocked;
   }
-
   private async unblockFromHerdrAttention(
     run: RunRecord,
     agentStatus: Exclude<HerdrAgentStatus, "blocked" | "unknown">,
@@ -683,7 +716,8 @@ export class ConductorOrchestrator {
     const status = run.prNumber === undefined ? "in_progress" : "in_review";
     const unblocked = this.touch({ ...run, status, lastError: undefined });
     await this.deps.store.updateRun(unblocked);
-    await this.updateProjectStatusBestEffort(
+    await updateProjectStatusBestEffort(
+      this.deps.github,
       repo.config,
       runToWorkItem(unblocked),
       status === "in_review"
@@ -693,7 +727,6 @@ export class ConductorOrchestrator {
     await this.record(unblocked, "unblocked", { reason: "herdr_agent_status", agentStatus });
     return unblocked;
   }
-
   private async loadRepositoryRuntime(
     repo: ManagedRepositoryConfig,
     cliOverrides: Partial<ManagedRepositoryConfig> = {},
@@ -710,7 +743,6 @@ export class ConductorOrchestrator {
     );
     return { workflow, config };
   }
-
   private async getResolvedRepo(
     owner: string,
     repo: string,
@@ -723,13 +755,11 @@ export class ConductorOrchestrator {
     const runtime = await this.loadRepositoryRuntime(managed);
     return { repo: managed, workflow: runtime.workflow, config: runtime.config };
   }
-
   private getManagedRepo(owner: string, repo: string): ManagedRepositoryConfig {
     const managed = findManagedRepository(this.deps.config, owner, repo);
     if (managed === undefined) throw new Error(`${owner}/${repo} is not managed by conductor`);
     return managed;
   }
-
   private async getRunOrThrow(runId: string): Promise<RunRecord> {
     const run = await this.deps.store.getRun(runId);
     if (run === undefined) throw new Error(`Run not found: ${runId}`);
@@ -751,45 +781,4 @@ export class ConductorOrchestrator {
       await appendRunLog(this.stateRoot, { runId: run.runId, kind, payload, createdAt });
     } catch {}
   }
-
-  private async commentBestEffort(workItem: WorkItem, body: string | undefined): Promise<void> {
-    if (body === undefined || body.length === 0) return;
-    try {
-      await this.deps.github.commentIssue(workItem, body);
-    } catch {}
-  }
-
-  private async commentRunBestEffort(run: RunRecord, body: string | undefined): Promise<void> {
-    if (run.prNumber === undefined) {
-      await this.commentBestEffort(runToWorkItem(run), body);
-      return;
-    }
-    await this.commentBestEffort(
-      { ...runToWorkItem(run), issueNumber: run.prNumber, issueUrl: run.prUrl ?? run.issueUrl },
-      body,
-    );
-  }
-
-  private async updateProjectStatusBestEffort(
-    repo: ManagedRepositoryConfig,
-    workItem: WorkItem,
-    statusName: string,
-  ): Promise<void> {
-    try {
-      await this.deps.github.updateProjectStatus(repo, workItem, statusName);
-    } catch {}
-  }
-
-  private assertConfigReady(): void {
-    const errors = validateGlobalConfig(this.deps.config);
-    if (errors.length > 0) throw new Error(`Invalid conductor config:\n${errors.join("\n")}`);
-  }
-}
-
-function isHerdrAttentionBlocked(run: RunRecord): boolean {
-  return run.status === "blocked" && run.lastError === HERDR_BLOCKED_REASON;
-}
-
-function activeStatusForRun(run: RunRecord): "in_progress" | "in_review" {
-  return run.prNumber === undefined ? "in_progress" : "in_review";
 }

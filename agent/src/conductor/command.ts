@@ -323,6 +323,11 @@ async function executeStatefulCommand(
     options.stdout.write(`Cleaned ${runs.length} merged run(s).\n`);
     return;
   }
+  if (command.kind === "cleanup-failed") {
+    const runs = await orchestrator.cleanupFailedRuns();
+    options.stdout.write(`Cleaned ${runs.length} failed run(s).\n`);
+    return;
+  }
   if (command.kind === "cleanup-gc") {
     const result = await store.gc({
       ...(command.olderThanDays === undefined ? {} : { olderThanDays: command.olderThanDays }),

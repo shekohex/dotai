@@ -67,6 +67,11 @@ followUpRules:
       Review from ${{ feedback.author }} needs follow-up.
 
       ${{ feedback.body }}
+  - name: merge conflict
+    if: "${{ feedback.kind == 'merge_conflict' }}"
+    delivery: followUp
+    template: |
+      PR has merge conflicts. Rebase ${{ github.pull_request.head_ref }} onto ${{ conductor.baseRef }}.
 conductorComments:
   prAssociated:
     template: "Tracking PR ${{ github.pull_request.url }}"
@@ -80,7 +85,7 @@ Prompt body should be repo-specific. Include what agent must inspect, branch/PR 
 
 `followUpRules` customize GitHub feedback messages sent to the running Pi session.
 
-- Known `feedback.kind` values: `review`, `review_comment`, `issue_comment`, `comment`, `check`.
+- Known `feedback.kind` values: `review`, `review_comment`, `issue_comment`, `comment`, `check`, `merge_conflict`.
 - `if` is optional; omitted `if` means always match.
 - `delivery` is optional; default is `followUp`; allowed values are `followUp` and `steer`.
 - All matching rules render in YAML order. Consecutive same-delivery outputs join with one blank line. Delivery changes create separate sends.
@@ -90,12 +95,14 @@ Prompt body should be repo-specific. Include what agent must inspect, branch/PR 
 Useful context:
 
 - `feedback.kind`, `feedback.key`, `feedback.body`, `feedback.url`, `feedback.author`.
-- `feedback.check`, `feedback.review`, `feedback.review_comment`, `feedback.comment`.
+- `feedback.check`, `feedback.review`, `feedback.review_comment`, `feedback.comment`, `feedback.merge_conflict`.
 - `github.pull_request.number`, `github.pull_request.url`, `github.pull_request.head_ref`, `github.pull_request.state`, `github.pull_request.draft`, `github.pull_request.merged_at`.
-- `github.review`, `github.review_comment`, `github.comment`, `github.check` mirror structured feedback when available.
+- `github.review`, `github.review_comment`, `github.comment`, `github.check`, `github.merge_conflict` mirror structured feedback when available.
 - `github.issue.number`, `github.issue.title`, `github.issue.url`, `github.repository`, `conductor.runId`, `conductor.branch`, `conductor.worktreePath`, `conductor.status`, `conductor.commentMarker`.
 
 Conductor appends safety guidance to every Follow-Up telling the agent to include `<!-- pi-conductor -->` in any GitHub comment or review response it posts for that feedback. This prevents comment loops. Custom templates can mention `${{ conductor.commentMarker }}` directly, but they do not need to duplicate the safety footer.
+
+GitHub merge conflicts route as `feedback.kind == 'merge_conflict'`; customize that text with a normal `followUpRules` entry. After a PR merges, Conductor cleans the run worktree and best-effort fetches/rebases the source repo's local base branch only when that checkout is already on the base branch and clean.
 
 Example:
 

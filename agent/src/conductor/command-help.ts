@@ -160,15 +160,21 @@ const COMMANDS: CommandHelp[] = [
   })),
   {
     name: "cleanup",
-    usage: "pi conductor cleanup <run-id|--merged|--gc> [--older-than-days N] [--no-vacuum]",
+    usage:
+      "pi conductor cleanup <run-id|--merged|--failed|--gc> [--older-than-days N] [--no-vacuum]",
     summary: "Clean worktrees or prune old state.",
     description:
-      "Without flags, cleans one run. `--merged` cleans all merged runs. `--gc` prunes old terminal events and completed/failed webhook deliveries.",
+      "Without flags, cleans one run. `--merged` cleans all merged runs. `--failed` cleans all blocked runs. `--gc` prunes old terminal events and completed/failed webhook deliveries.",
     options: [
       {
         flags: "--merged",
         defaultValue: "false",
         description: "Clean all runs whose PR branch was merged.",
+      },
+      {
+        flags: "--failed",
+        defaultValue: "false",
+        description: "Clean all blocked/failed runs.",
       },
       { flags: "--gc", defaultValue: "false", description: "Run SQLite/event retention cleanup." },
       {
@@ -183,6 +189,7 @@ const COMMANDS: CommandHelp[] = [
     examples: [
       "pi conductor cleanup <run-id>",
       "pi conductor cleanup --merged",
+      "pi conductor cleanup --failed",
       "pi conductor cleanup --gc --older-than-days 30",
     ],
   },
@@ -348,7 +355,7 @@ _pi_conductor_completion() {
     send)
       COMPREPLY=( $(compgen -W "--follow-up --now --steer --help" -- "$cur") ) ;;
     cleanup)
-      COMPREPLY=( $(compgen -W "--merged --gc --older-than-days --vacuum --no-vacuum --help" -- "$cur") ) ;;
+      COMPREPLY=( $(compgen -W "--merged --failed --gc --older-than-days --vacuum --no-vacuum --help" -- "$cur") ) ;;
     help)
       COMPREPLY=( $(compgen -W "${commandNames().join(" ")}" -- "$cur") ) ;;
     *)
@@ -396,6 +403,7 @@ _pi_conductor() {
   ])})
   cleanup_options=(${zshItems([
     ["--merged", "Clean merged runs"],
+    ["--failed", "Clean failed runs"],
     ["--gc", "Prune old state"],
     ["--older-than-days", "Retention days"],
     ["--vacuum", "Vacuum SQLite"],

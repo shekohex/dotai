@@ -69,7 +69,7 @@ A queued or delivered message from conductor or operator to the owning Pi sessio
 _Avoid_: new task, separate run
 
 **Feedback Kind**:
-The normalized source category for GitHub feedback routed to a Pi session, such as `review`, `review_comment`, `issue_comment`, `comment`, or `check`.
+The normalized source category for GitHub feedback routed to a Pi session, such as `review`, `review_comment`, `issue_comment`, `comment`, `check`, or `merge_conflict`.
 _Avoid_: webhook event name, raw GitHub payload type
 
 **Follow-Up Rule**:

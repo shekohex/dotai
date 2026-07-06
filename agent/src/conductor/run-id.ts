@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 
+import { renderTemplate } from "./expression.js";
+
 const UUID_HEX_GROUPS = [8, 12, 16, 20];
 
 export function createUuidV7(date = new Date()): string {
@@ -66,22 +68,32 @@ export function renderBranchTemplate(
     owner: sanitizeBranchSegment(input.owner),
   };
 
-  for (const placeholder of template.matchAll(/\{([^}]+)\}/g)) {
-    const key = placeholder[1];
-    if (key === undefined || values[key] === undefined) {
-      throw new Error(`Unsupported branch template placeholder ${placeholder[0]}`);
-    }
+  const context = {
+    github: {
+      repository: `${input.owner}/${input.repo}`,
+      owner: input.owner,
+      repo: input.repo,
+      issue: {
+        number: input.issue,
+        slug: values.slug,
+      },
+    },
+    conductor: {
+      branchPrefix: values.prefix,
+      branchKind: values.kind,
+    },
+  };
+
+  const expressionRendered = renderTemplate(template, context);
+  const legacyPlaceholder = /\{[^{}]+\}/u.exec(expressionRendered);
+  if (legacyPlaceholder?.[0] !== undefined) {
+    throw new Error(
+      `Unsupported branch template placeholder ${legacyPlaceholder[0]}. Use \${{ ... }} expressions.`,
+    );
   }
 
-  const rendered = template.replaceAll(/\{([a-z]+)\}/g, (match, key: string) => {
-    const value = values[key];
-    if (value === undefined) {
-      throw new Error(`Unsupported branch template placeholder ${match}`);
-    }
-    return value;
-  });
-
-  return rendered
+  return expressionRendered
+    .toLowerCase()
     .replaceAll(/[^A-Za-z0-9._/-]+/g, "-")
     .replaceAll(/\/+/g, "/")
     .replaceAll(/(^|\/)\.(?=\/|$)/g, "$1dot")

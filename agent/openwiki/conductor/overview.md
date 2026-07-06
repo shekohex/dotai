@@ -108,6 +108,18 @@ Supported: dot/bracket paths, indexes, object filters (`.*.name`), functions (`c
 
 **Launch rules** (`WorkflowFrontmatterSchema` `launchRules`) are an ordered list of `{ if, flags }`. `selectLaunchFlags` picks the first rule whose `if` matches the work item and returns its `flags` as Pi launch flags (e.g. `--mode-deep`); manual `run --mode-*` flags override ([ADR 0021](../../docs/adr/0021-pi-launch-flags-come-from-ordered-rules.md)).
 
+## Worktree hooks
+
+`WorktreeManager` runs optional shell hooks around git worktree lifecycle:
+
+| Phase        | Source keys                                                                                        | CWD           | Failure behavior          |
+| ------------ | -------------------------------------------------------------------------------------------------- | ------------- | ------------------------- |
+| `postCreate` | `.pi/WORKFLOW.md` `worktreeHooks.postCreate`, then local git config `pi.conductor.hook.postCreate` | worktree path | blocks launch             |
+| `preRemove`  | `.pi/WORKFLOW.md` `worktreeHooks.preRemove`, then local git config `pi.conductor.hook.preRemove`   | worktree path | blocks cleanup/removal    |
+| `postRemove` | `.pi/WORKFLOW.md` `worktreeHooks.postRemove`, then local git config `pi.conductor.hook.postRemove` | repo root     | best effort after removal |
+
+Hook environment: `REPO_ROOT`, `WORKTREE_PATH`, `BRANCH`, `PI_CONDUCTOR_OWNER`, `PI_CONDUCTOR_REPO`, `PI_CONDUCTOR_ISSUE_NUMBER`. Shared repo hooks belong in `.pi/WORKFLOW.md`; private/ignored hooks use `.git/config`, e.g. `git config --local --add pi.conductor.hook.postCreate "cp ../.env .env || true"`.
+
 ## State store
 
 State lives under `stateRoot` (default `~/.pi/agent/conductor`, [ADR 0005](../../docs/adr/0005-conductor-state-is-global-user-state.md)): `config.json`, `config.schema.json`, `state.sqlite`, `daemon/`, `runs/` (logs), and `worktrees/<owner>/<repo>/` ([ADR 0011](../../docs/adr/0011-worktrees-live-under-global-conductor-state.md)).

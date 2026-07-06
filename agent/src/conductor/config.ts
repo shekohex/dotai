@@ -41,6 +41,12 @@ export const ProjectConfigSchema = Type.Object({
   number: Type.Number({ minimum: 0 }),
 });
 
+export const WorktreeHooksSchema = Type.Object({
+  postCreate: Type.Optional(Type.Array(Type.String())),
+  preRemove: Type.Optional(Type.Array(Type.String())),
+  postRemove: Type.Optional(Type.Array(Type.String())),
+});
+
 export const ManagedRepositoryConfigSchema = Type.Object({
   owner: Type.String(),
   repo: Type.String(),
@@ -56,6 +62,7 @@ export const ManagedRepositoryConfigSchema = Type.Object({
   effortField: Type.Optional(Type.String()),
   priorityField: Type.Optional(Type.String()),
   statusOptions: Type.Optional(LifecycleStatusMappingSchema),
+  worktreeHooks: Type.Optional(WorktreeHooksSchema),
 });
 
 export const GlobalConductorConfigSchema = Type.Object({
@@ -89,9 +96,11 @@ export const ResolvedRepositoryConfigSchema = Type.Object({
     done: Type.String(),
     blocked: Type.String(),
   }),
+  worktreeHooks: WorktreeHooksSchema,
 });
 
 export type LifecycleStatusMapping = Static<typeof LifecycleStatusMappingSchema>;
+export type WorktreeHooks = Static<typeof WorktreeHooksSchema>;
 export type WebhookConfig = Static<typeof WebhookConfigSchema>;
 export type ManagedRepositoryConfig = Static<typeof ManagedRepositoryConfigSchema>;
 export type GlobalConductorConfig = Static<typeof GlobalConductorConfigSchema>;
@@ -255,6 +264,7 @@ export function resolveRepositoryConfig(
     effortField: merged.effortField ?? "Effort",
     priorityField: merged.priorityField ?? "Priority",
     statusOptions: merged.statusOptions,
+    worktreeHooks: merged.worktreeHooks,
   });
 }
 
@@ -497,6 +507,19 @@ function mergeRepositoryConfig(
       ...workflow.statusOptions,
       ...cli.statusOptions,
     },
+    worktreeHooks: mergeWorktreeHooks(
+      repo.worktreeHooks,
+      workflow.worktreeHooks,
+      cli.worktreeHooks,
+    ),
+  };
+}
+
+function mergeWorktreeHooks(...hooks: Array<WorktreeHooks | undefined>): WorktreeHooks {
+  return {
+    postCreate: hooks.flatMap((hook) => hook?.postCreate ?? []),
+    preRemove: hooks.flatMap((hook) => hook?.preRemove ?? []),
+    postRemove: hooks.flatMap((hook) => hook?.postRemove ?? []),
   };
 }
 

@@ -22,6 +22,7 @@ import { GhGitHubClient } from "./github.js";
 import { CliHerdrSessionManager } from "./herdr.js";
 import { readRunLogs } from "./logging.js";
 import { ConductorOrchestrator } from "./orchestrator.js";
+import { validateInitialPromptTemplate } from "./prompt.js";
 import { GITHUB_RATE_LIMIT_BACKOFF_MS, isRateLimitError } from "./rate-limit.js";
 import { SqliteConductorStore } from "./store/sqlite.js";
 import type { ConductorStore } from "./store/types.js";
@@ -499,10 +500,14 @@ async function validateServeConfig(config: GlobalConductorConfig): Promise<void>
     try {
       await access(repo.repoPath);
       const workflow = await loadWorkflow(repo.repoPath);
-      validateBranchTemplate(
-        resolveRepositoryConfig(repo, workflowConfigOverrides(workflow), {}, getStateRoot(config))
-          .branchTemplate,
+      const resolved = resolveRepositoryConfig(
+        repo,
+        workflowConfigOverrides(workflow),
+        {},
+        getStateRoot(config),
       );
+      validateBranchTemplate(resolved.branchTemplate);
+      validateInitialPromptTemplate({ config: resolved, workflow });
     } catch (error) {
       errors.push(`${repo.owner}/${repo.repo}: ${formatConfigError(error)}`);
     }
@@ -564,10 +569,14 @@ async function validateConfigCommand(stdout: Writable): Promise<void> {
     }
     try {
       const workflow = await loadWorkflow(repo.repoPath);
-      validateBranchTemplate(
-        resolveRepositoryConfig(repo, workflowConfigOverrides(workflow), {}, getStateRoot(config))
-          .branchTemplate,
+      const resolved = resolveRepositoryConfig(
+        repo,
+        workflowConfigOverrides(workflow),
+        {},
+        getStateRoot(config),
       );
+      validateBranchTemplate(resolved.branchTemplate);
+      validateInitialPromptTemplate({ config: resolved, workflow });
     } catch (error) {
       errors.push(`${repo.owner}/${repo.repo}: ${formatConfigError(error)}`);
     }

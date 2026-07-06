@@ -104,6 +104,26 @@ Workflow Markdown body comments like `<!-- author notes -->` are stripped before
 
 Workflow expressions support GitHub-style helpers such as bracket paths, object filters, bare `if:` expressions, `startsWith()`, `endsWith()`, `join()`, `format()`, `toJSON()`, `fromJSON()`, `hashFiles()`, status helpers, comparison operators, and contexts like `env`, `vars`, `secrets`, `matrix`, `needs`, `steps`, and `runner`. `env.NAME` reads the current process environment; `vars.NAME` reads `PI_CONDUCTOR_VAR_NAME`; `secrets.NAME` reads `PI_CONDUCTOR_SECRET_NAME`.
 
+Worktree hooks can prepare and clean local worktrees. Shared hooks live in `.pi/WORKFLOW.md`:
+
+```yaml
+worktreeHooks:
+  postCreate:
+    - npm install
+  preRemove:
+    - docker compose down || true
+  postRemove:
+    - echo "removed $WORKTREE_PATH"
+```
+
+Private ignored hooks live in `.git/config`:
+
+```bash
+git config --local --add pi.conductor.hook.postCreate "cp ../.env .env || true"
+```
+
+Hooks receive `REPO_ROOT`, `WORKTREE_PATH`, `BRANCH`, `PI_CONDUCTOR_OWNER`, `PI_CONDUCTOR_REPO`, and `PI_CONDUCTOR_ISSUE_NUMBER`. Shared hooks run before private hooks.
+
 Human/agent commands:
 
 ```bash

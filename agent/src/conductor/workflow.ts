@@ -12,6 +12,12 @@ export const LaunchRuleSchema = Type.Object({
   flags: Type.Array(Type.String()),
 });
 
+const WorkflowWorktreeHooksSchema = Type.Object({
+  postCreate: Type.Optional(Type.Array(Type.String())),
+  preRemove: Type.Optional(Type.Array(Type.String())),
+  postRemove: Type.Optional(Type.Array(Type.String())),
+});
+
 export const WorkflowFrontmatterSchema = Type.Object({
   dispatchLabel: Type.Optional(Type.String()),
   branchTemplate: Type.Optional(Type.String()),
@@ -32,6 +38,7 @@ export const WorkflowFrontmatterSchema = Type.Object({
     }),
   ),
   launchRules: Type.Optional(Type.Array(LaunchRuleSchema)),
+  worktreeHooks: Type.Optional(WorkflowWorktreeHooksSchema),
 });
 
 export const WorkflowFileSchema = Type.Object({
@@ -140,6 +147,18 @@ export const DEFAULT_WORKFLOW_MARKDOWN = [
   "  - if: \"${{ contains(github.issue.labels, 'ready-for-agent') }}\"",
   "    flags:",
   "      - --mode-build",
+  "",
+  "# Optional shell hooks. Commands run with cwd in the worktree for postCreate/preRemove.",
+  "# Environment: REPO_ROOT, WORKTREE_PATH, BRANCH, PI_CONDUCTOR_OWNER, PI_CONDUCTOR_REPO, PI_CONDUCTOR_ISSUE_NUMBER.",
+  "# For private/ignored hooks, use local git config instead:",
+  '#   git config --local --add pi.conductor.hook.postCreate "cp ../.env .env || true"',
+  "# worktreeHooks:",
+  "#   postCreate:",
+  "#     - npm install",
+  "#   preRemove:",
+  "#     - docker compose down || true",
+  "#   postRemove:",
+  '#     - echo "removed $WORKTREE_PATH"',
   "---",
   "",
   DEFAULT_PROMPT_BODY,
@@ -190,6 +209,7 @@ export function workflowConfigOverrides(workflow: WorkflowFile): Partial<Managed
     effortField: frontmatter.effortField,
     priorityField: frontmatter.priorityField,
     statusOptions: frontmatter.statusOptions,
+    worktreeHooks: frontmatter.worktreeHooks,
   };
 }
 

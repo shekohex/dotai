@@ -3,7 +3,7 @@ import { arch, platform, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { ResolvedRepositoryConfig } from "./config.js";
-import { renderTemplate } from "./expression.js";
+import { evaluateCondition, renderTemplate } from "./expression.js";
 import { relativePromptPath, type WorktreePlan } from "./worktree.js";
 import type { RunRecord, WorkItem } from "./store/types.js";
 import type { WorkflowFile } from "./workflow.js";
@@ -28,9 +28,9 @@ export type PromptRenderInput = {
 };
 
 export function buildExpressionContext(input: PromptRenderInput): Record<string, unknown> {
-  const projectStatus = readProjectField(input.workItem, input.config.statusField);
-  const projectEffort = readProjectField(input.workItem, input.config.effortField);
-  const projectPriority = readProjectField(input.workItem, input.config.priorityField);
+  const projectStatus = readProjectField(input.workItem, input.config.statusField) ?? "";
+  const projectEffort = readProjectField(input.workItem, input.config.effortField) ?? "";
+  const projectPriority = readProjectField(input.workItem, input.config.priorityField) ?? "";
   const issue = {
     id: input.workItem.issueId,
     number: input.workItem.issueNumber,
@@ -109,6 +109,63 @@ export function renderInitialPrompt(input: PromptRenderInput): string {
   const rendered = renderTemplate(input.workflow.promptTemplate, buildExpressionContext(input));
   if (input.recovery !== true) return rendered;
   return [formatRecoveryPromptContext(input), "", rendered].join("\n");
+}
+
+export function validateInitialPromptTemplate(input: {
+  config: ResolvedRepositoryConfig;
+  workflow: WorkflowFile;
+}): void {
+  const context = buildExpressionContext({
+    config: input.config,
+    workflow: input.workflow,
+    workItem: sampleWorkItem(input.config),
+    plan: {
+      owner: input.config.owner,
+      repo: input.config.repo,
+      issueNumber: 1,
+      slug: "sample-issue",
+      branch: "pi/1-sample-issue",
+      baseRef: input.config.baseRef ?? "main",
+      worktreePath: input.config.repoPath,
+    },
+    runId: "sample-run",
+    attempt: 1,
+  });
+  renderTemplate(input.workflow.promptTemplate, context);
+  for (const rule of input.workflow.frontmatter.launchRules ?? [])
+    evaluateCondition(rule.if, context);
+}
+
+function sampleWorkItem(config: ResolvedRepositoryConfig): WorkItem {
+  return {
+    projectItemId: "sample-project-item",
+    owner: config.owner,
+    repo: config.repo,
+    issueId: "sample-issue-id",
+    issueNumber: 1,
+    issueUrl: `https://github.com/${config.owner}/${config.repo}/issues/1`,
+    title: "Sample issue",
+    body: "Sample issue body",
+    labels: [config.dispatchLabel],
+    assignees: ["sample-user"],
+    projectStatus: "Todo",
+    projectFields: openProjectFields({
+      [config.statusField]: "Todo",
+      [config.effortField]: "M",
+      [config.priorityField]: "Medium",
+    }),
+  };
+}
+
+function openProjectFields(values: Record<string, unknown>): Record<string, unknown> {
+  return new Proxy(values, {
+    has() {
+      return true;
+    },
+    get(target, property) {
+      return typeof property === "string" ? (target[property] ?? "") : undefined;
+    },
+  });
 }
 
 function readPrefixedEnv(prefix: string): Record<string, string> {

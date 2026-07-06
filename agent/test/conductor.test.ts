@@ -51,7 +51,7 @@ import {
   type HerdrSessionManager,
 } from "../src/conductor/herdr.js";
 import { ConductorOrchestrator } from "../src/conductor/orchestrator.js";
-import { buildExpressionContext } from "../src/conductor/prompt.js";
+import { buildExpressionContext, validateInitialPromptTemplate } from "../src/conductor/prompt.js";
 import {
   createRunId,
   createUuidV7,
@@ -110,6 +110,9 @@ describe("conductor config and workflow", () => {
       [
         "---",
         "dispatchLabel: agent-ready",
+        "worktreeHooks:",
+        "  postCreate:",
+        "    - npm install",
         "launchRules:",
         "  - if: \"${{ contains(github.issue.labels, 'deep') }}\"",
         '    flags: ["--mode-deep"]',
@@ -120,6 +123,7 @@ describe("conductor config and workflow", () => {
 
     expect(workflow.frontmatter.dispatchLabel).toBe("agent-ready");
     expect(workflow.frontmatter.launchRules?.[0]?.flags).toEqual(["--mode-deep"]);
+    expect(workflow.frontmatter.worktreeHooks?.postCreate).toEqual(["npm install"]);
     expect(workflow.promptTemplate).toBe("Build ${{ github.issue.title }}");
   });
 
@@ -318,6 +322,48 @@ describe("conductor expressions and names", () => {
     expect(
       renderTemplate("${{ github.project.effort }}:${{ github.project.priority }}", context),
     ).toBe("L:High");
+  });
+
+  test("project field aliases render empty when item field is absent", () => {
+    const config = resolveRepositoryConfig(managedRepo(), {});
+    const context = buildExpressionContext({
+      config,
+      workflow: parseWorkflowFile("WORKFLOW.md", "Do it"),
+      workItem: workItem({ projectFields: { Status: "Todo" } }),
+      plan: {
+        owner: "octo",
+        repo: "demo",
+        issueNumber: 7,
+        slug: "fix-bug",
+        branch: "pi/7-fix-bug",
+        baseRef: "main",
+        worktreePath: "/tmp/worktree",
+      },
+      runId: "run-1",
+      attempt: 1,
+    });
+    expect(renderTemplate("${{ github.project.priority }}", context)).toBe("");
+    expect(renderTemplate("${{ github.project.priority || 'None' }}", context)).toBe("None");
+  });
+
+  test("validates workflow prompt and launch rule expressions", () => {
+    const config = resolveRepositoryConfig(managedRepo(), {});
+    expect(() =>
+      validateInitialPromptTemplate({
+        config,
+        workflow: parseWorkflowFile(
+          "WORKFLOW.md",
+          [
+            "---",
+            "launchRules:",
+            "  - if: github.project.priorit == 'High'",
+            "    flags: []",
+            "---",
+            "Priority: ${{ github.project.priorit }}",
+          ].join("\n"),
+        ),
+      }),
+    ).toThrow("Missing expression value: github.project.priorit");
   });
 });
 
@@ -1196,7 +1242,70 @@ describe("conductor adapters", () => {
         join(tempDir, "worktrees", "octo", "demo", "7"),
         "origin/main",
       ],
+      ["-C", "/repo", "config", "--local", "--get-all", "pi.conductor.hook.postCreate"],
     ]);
+  });
+
+  test("runs shared and private worktree hooks", async () => {
+    const tempDir = await createTempDir("conductor-worktree-hooks-");
+    const calls: Array<{ file: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv }> =
+      [];
+    const exec: WorktreeExec = async (file, args, options) => {
+      calls.push({ file, args, cwd: options.cwd, env: options.env });
+      if (args.includes("rev-parse")) throw new Error("missing branch");
+      if (args.includes("worktree") && args.includes("add")) {
+        await mkdir(String(args[args.length - 2]), { recursive: true });
+      }
+      if (args.includes("config")) {
+        if (args.at(-1) === "pi.conductor.hook.postCreate") {
+          return { stdout: "echo local-create\n", stderr: "" };
+        }
+        if (args.at(-1) === "pi.conductor.hook.preRemove") {
+          return { stdout: "echo local-remove\n", stderr: "" };
+        }
+        if (args.at(-1) === "pi.conductor.hook.postRemove") {
+          return { stdout: "echo local-removed\n", stderr: "" };
+        }
+      }
+      return { stdout: "", stderr: "" };
+    };
+    const manager = new WorktreeManager(exec);
+    const config = resolveRepositoryConfig(
+      managedRepo(),
+      {
+        worktreeHooks: {
+          postCreate: ["echo shared-create"],
+          preRemove: ["echo shared-remove"],
+          postRemove: ["echo shared-removed"],
+        },
+      },
+      {},
+      tempDir,
+    );
+    const plan = manager.plan(config, workItem(), "main");
+
+    await manager.prepare(config, plan);
+    await manager.cleanupLocal(config, plan, { allowDirty: true });
+
+    const hookCalls = calls.filter((call) => call.file !== "git");
+    expect(hookCalls.map((call) => call.args.at(-1))).toEqual([
+      "echo shared-create",
+      "echo local-create",
+      "echo shared-remove",
+      "echo local-remove",
+      "echo shared-removed",
+      "echo local-removed",
+    ]);
+    expect(hookCalls[0]).toMatchObject({ cwd: plan.worktreePath });
+    expect(hookCalls[0]?.env).toMatchObject({
+      REPO_ROOT: "/repo",
+      WORKTREE_PATH: plan.worktreePath,
+      BRANCH: plan.branch,
+      PI_CONDUCTOR_OWNER: "octo",
+      PI_CONDUCTOR_REPO: "demo",
+      PI_CONDUCTOR_ISSUE_NUMBER: "7",
+    });
+    expect(hookCalls.at(-1)).toMatchObject({ cwd: "/repo" });
   });
 });
 

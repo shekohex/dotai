@@ -12,7 +12,7 @@ const execFileAsync = promisify(execFile);
 export type WorktreeExec = (
   file: string,
   args: string[],
-  options: { cwd?: string },
+  options: { cwd?: string; env?: NodeJS.ProcessEnv },
 ) => Promise<{ stdout: string; stderr: string }>;
 
 export type WorktreePlan = {
@@ -56,6 +56,7 @@ export class WorktreeManager {
 
     if (await this.branchExists(config.repoPath, plan.branch)) {
       await this.git(config.repoPath, ["worktree", "add", plan.worktreePath, plan.branch]);
+      await this.runHookPhase("postCreate", config, plan, plan.worktreePath);
       return;
     }
 
@@ -67,6 +68,7 @@ export class WorktreeManager {
       plan.worktreePath,
       `origin/${plan.baseRef}`,
     ]);
+    await this.runHookPhase("postCreate", config, plan, plan.worktreePath);
   }
 
   async cleanupLocal(
@@ -78,8 +80,12 @@ export class WorktreeManager {
     if (options.allowDirty !== true && (await pathExists(plan.worktreePath))) {
       await this.preserveDirtyWorktree(plan.worktreePath, plan.branch);
     }
+    if (await pathExists(plan.worktreePath)) {
+      await this.runHookPhase("preRemove", config, plan, plan.worktreePath);
+    }
     await this.removeWorktree(config.repoPath, plan.worktreePath);
     await this.deleteLocalBranch(config.repoPath, plan.branch);
+    await this.runPostRemoveHooks(config, plan);
   }
 
   async cleanupMerged(
@@ -135,6 +141,60 @@ export class WorktreeManager {
     await this.git(repoPath, ["push", "origin", "--delete", branch]);
   }
 
+  private async runPostRemoveHooks(
+    config: ResolvedRepositoryConfig,
+    plan: Pick<WorktreePlan, "worktreePath" | "branch">,
+  ): Promise<void> {
+    try {
+      await this.runHookPhase("postRemove", config, plan, config.repoPath);
+    } catch {}
+  }
+
+  private async runHookPhase(
+    phase: "postCreate" | "preRemove" | "postRemove",
+    config: ResolvedRepositoryConfig,
+    plan: Pick<WorktreePlan, "worktreePath" | "branch"> &
+      Partial<Pick<WorktreePlan, "issueNumber">>,
+    cwd: string,
+  ): Promise<void> {
+    const hooks = [
+      ...(config.worktreeHooks[phase] ?? []),
+      ...(await this.readLocalHooks(config.repoPath, phase)),
+    ];
+    for (const hook of hooks) {
+      if (hook.trim().length === 0) continue;
+      await this.exec(hookShell(), hookShellArgs(hook), {
+        cwd,
+        env: {
+          ...process.env,
+          REPO_ROOT: config.repoPath,
+          WORKTREE_PATH: plan.worktreePath,
+          BRANCH: plan.branch,
+          PI_CONDUCTOR_OWNER: config.owner,
+          PI_CONDUCTOR_REPO: config.repo,
+          PI_CONDUCTOR_ISSUE_NUMBER: plan.issueNumber === undefined ? "" : String(plan.issueNumber),
+        },
+      });
+    }
+  }
+
+  private async readLocalHooks(
+    repoPath: string,
+    phase: "postCreate" | "preRemove" | "postRemove",
+  ): Promise<string[]> {
+    try {
+      const result = await this.git(repoPath, [
+        "config",
+        "--local",
+        "--get-all",
+        `pi.conductor.hook.${phase}`,
+      ]);
+      return result.stdout.split("\n").filter((line) => line.trim().length > 0);
+    } catch {
+      return [];
+    }
+  }
+
   private git(repoPath: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
     return this.exec("git", ["-C", repoPath, ...args], { cwd: repoPath });
   }
@@ -156,14 +216,24 @@ export function relativePromptPath(): string {
 async function defaultWorktreeExec(
   file: string,
   args: string[],
-  options: { cwd?: string },
+  options: { cwd?: string; env?: NodeJS.ProcessEnv },
 ): Promise<{ stdout: string; stderr: string }> {
   const result = await execFileAsync(file, args, {
     cwd: options.cwd,
+    env: options.env,
     encoding: "utf8",
     maxBuffer: 10 * 1024 * 1024,
   });
   return { stdout: result.stdout, stderr: result.stderr };
+}
+
+function hookShell(): string {
+  if (process.platform === "win32") return process.env.ComSpec ?? "cmd.exe";
+  return "/bin/sh";
+}
+
+function hookShellArgs(command: string): string[] {
+  return process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
 }
 
 async function pathExists(path: string): Promise<boolean> {

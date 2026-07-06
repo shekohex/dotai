@@ -154,7 +154,7 @@ Every routed follow-up also tells the agent to include `<!-- pi-conductor -->` i
 
 During reconciliation, Conductor also checks Herdr's JSON agent status for owned Pi panes. If Herdr reports `blocked`, Conductor moves the run/card to Blocked and posts the `runBlocked` comment on the PR when known, otherwise the issue. These Herdr attention blocks remain reconcilable so GitHub answers can still be routed into the blocked pane.
 
-GitHub merge conflicts route as `feedback.kind == 'merge_conflict'`, so repos customize that message with normal `followUpRules`. After a PR merges, Conductor cleans the run worktree and best-effort fetches/rebases the source repo's local base branch when that checkout is already on the base branch and clean.
+GitHub merge conflicts route as `feedback.kind == 'merge_conflict'`, so repos customize that message with normal `followUpRules`. After a PR merges, Conductor closes the owned Herdr pane, cleans the run worktree, and best-effort fetches/rebases the source repo's local base branch when that checkout is already on the base branch and clean.
 
 Human/agent commands:
 

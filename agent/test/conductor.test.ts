@@ -2115,11 +2115,12 @@ describe("conductor orchestrator", () => {
       mergedAt: "2026-07-05T00:00:00Z",
       linkedIssueNumbers: [7],
     };
+    const herdr = new FakeHerdr();
     const orchestrator = new ConductorOrchestrator({
       config: configWithRepo(managedRepo({ repoPath }), tempDir),
       store,
       github,
-      herdr: new FakeHerdr(),
+      herdr,
       worktrees,
       cwd: repoPath,
     });
@@ -2130,6 +2131,7 @@ describe("conductor orchestrator", () => {
     expect(calls).toEqual(
       expect.arrayContaining([["-C", repoPath, "push", "origin", "--delete", "pi/7-fix-bug"]]),
     );
+    expect(herdr.stopCount).toBe(1);
   });
 
   test("retry recovery prompt includes prior run state and PR feedback", async () => {

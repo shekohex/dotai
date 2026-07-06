@@ -10,7 +10,7 @@ import {
   getStateRoot,
   resolveRepositoryConfig,
 } from "./config.js";
-import { cleanupRunsByStatus, refreshLocalBaseBestEffort } from "./cleanup-batch.js";
+import { cleanupMergedRunArtifacts, cleanupRunsByStatus } from "./cleanup-batch.js";
 import { renderConductorComment, renderFollowUpMessages } from "./follow-up.js";
 import type { GitHubClient, PullRequestSummary } from "./github.js";
 import {
@@ -477,9 +477,10 @@ export class ConductorOrchestrator {
     }
     if (pr.mergedAt !== undefined) {
       const done = this.touch({ ...run, status: "done", prNumber: pr.number, prUrl: pr.url });
-      await this.worktrees.cleanupMerged(repo.config, runToPlan(done));
-      await refreshLocalBaseBestEffort({
+      await cleanupMergedRunArtifacts({
         config: repo.config,
+        herdr: this.deps.herdr,
+        plan: runToPlan(done),
         record: (kind, payload) => this.record(done, kind, payload),
         run: done,
         worktrees: this.worktrees,

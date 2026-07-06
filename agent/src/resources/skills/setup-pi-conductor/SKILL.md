@@ -102,7 +102,7 @@ Useful context:
 
 Conductor appends safety guidance to every Follow-Up telling the agent to include `<!-- pi-conductor -->` in any GitHub comment or review response it posts for that feedback. This prevents comment loops. Custom templates can mention `${{ conductor.commentMarker }}` directly, but they do not need to duplicate the safety footer.
 
-GitHub merge conflicts route as `feedback.kind == 'merge_conflict'`; customize that text with a normal `followUpRules` entry. After a PR merges, Conductor cleans the run worktree and best-effort fetches/rebases the source repo's local base branch only when that checkout is already on the base branch and clean.
+GitHub merge conflicts route as `feedback.kind == 'merge_conflict'`; customize that text with a normal `followUpRules` entry. After a PR merges, Conductor closes the owned Herdr pane, cleans the run worktree, and best-effort fetches/rebases the source repo's local base branch only when that checkout is already on the base branch and clean.
 
 Example:
 

@@ -1,7 +1,8 @@
 import { errorMessage } from "../utils/error-message.js";
 import type { ResolvedRepositoryConfig } from "./config.js";
+import type { HerdrSessionManager } from "./herdr.js";
 import type { LifecycleStatus, RunRecord } from "./store/types.js";
-import type { WorktreeManager } from "./worktree.js";
+import type { WorktreeManager, WorktreePlan } from "./worktree.js";
 
 export async function cleanupRunsByStatus(input: {
   runs: RunRecord[];
@@ -38,4 +39,27 @@ export async function refreshLocalBaseBestEffort(input: {
       baseRef: input.run.baseRef,
     });
   }
+}
+
+export async function cleanupMergedRunArtifacts(input: {
+  config: ResolvedRepositoryConfig;
+  herdr: HerdrSessionManager;
+  plan: Pick<WorktreePlan, "worktreePath" | "branch">;
+  record: (kind: string, payload: unknown) => Promise<void>;
+  run: RunRecord;
+  worktrees: WorktreeManager;
+}): Promise<void> {
+  try {
+    await input.herdr.stop(input.run.herdr);
+    await input.record("herdr_stopped", { herdr: input.run.herdr });
+  } catch (error) {
+    await input.record("herdr_stop_failed", { error: errorMessage(error) });
+  }
+  await input.worktrees.cleanupMerged(input.config, input.plan);
+  await refreshLocalBaseBestEffort({
+    config: input.config,
+    record: input.record,
+    run: input.run,
+    worktrees: input.worktrees,
+  });
 }

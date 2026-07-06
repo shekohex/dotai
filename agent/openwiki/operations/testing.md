@@ -34,7 +34,7 @@ The `test/` directory mirrors the extension surface:
 - `test/gsd/` — lifecycle, state/schema, orchestration, modes, drift, health, planning, UAT, verify-work, roadmap, brownfield, legacy-planning, golden-planning.
 - `test/coreui/` — background-bash (ui/messages/herdr-backend/backend), github-pull-request, plus top-level `coreui-*.test.ts` (editor, builtins, skill/github-reference-autocomplete, agent-end-summary).
 - `test/support/pi-test-harness/` — the shared harness: `mock-pi`, `mock-ui`, `mock-tools`, `sandbox`, `session`, `events`, `diagnostics`, `playbook`, `utils`, `types`.
-- Top-level: `executor`, `harness`, `review`, `tool-preview`, `commit`, `subagent`, `subagent-sdk`, `subagent-launch`, `subagent-sdk-spawn.scenarios`, `pi-tui-keys`, `pi-osc-extension`, `bundled-skills`, `inline-extension-names`, `notify-*`, `terminal-notify`, `session-name`, `review-helpers.scenarios`, plus `update/` (version, command, package-manager).
+- Top-level: `executor`, `harness`, `review`, `tool-preview`, `commit`, `subagent`, `subagent-sdk`, `subagent-launch`, `subagent-sdk-spawn.scenarios`, `pi-tui-keys`, `pi-osc-extension`, `bundled-skills`, `inline-extension-names`, `notify-*`, `terminal-notify`, `session-name`, `review-helpers.scenarios`, `conductor` (config, expression, command parsing, store), plus `update/` (version, command, package-manager).
 
 `*.scenarios.ts` files are shared scenario fixtures (not run directly). The harness alias `@support/pi-test-harness` is how tests import the mock infrastructure.
 

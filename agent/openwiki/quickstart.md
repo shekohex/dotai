@@ -11,6 +11,7 @@ The package is published to GitHub Packages and installs a single `pi` binary.
 - Adds a provider layer on top of upstream pi-ai: a LiteLLM gateway selector, model fallback chains, an OpenAI "fast"/image extension, and live usage tracking.
 - Ships a large extension surface grouped into three registries (A/B/C) plus the subagent extension — covering tool rendering, modes, sessions, workflows/goals, external tool execution, and more.
 - Includes a self-contained subagent SDK (`src/subagent-sdk/`) for spawning child agent sessions, and a remote TCP mode (`src/remote/`) for driving a session over an SSH port-forward.
+- Ships **Pi Conductor** (`pi conductor …`) — a separate command surface that turns GitHub Projects v2 work items into isolated, steerable Pi sessions (worktrees, PR-feedback routing, SQLite state). See [Pi Conductor](./conductor/overview.md).
 - Self-updates from GitHub Packages via `pi update`.
 - Carries small upstream UI/retry patches applied through `patch-package` at install time.
 
@@ -24,6 +25,7 @@ The package is published to GitHub Packages and installs a single `pi` binary.
 | `src/extensions/`                                 | ~47 bundled extensions, registered in three groups + subagent. See [Extensions catalog](./extensions/catalog.md). |
 | `src/subagent-sdk/`                               | In-process machinery for spawning child agent sessions. See [Subagent SDK](./sessions/subagent-sdk.md).           |
 | `src/remote/`                                     | TCP JSONL remote control mode. See [Remote mode](./sessions/remote.md).                                           |
+| `src/conductor/`                                  | `pi conductor` command surface — GitHub-Projects-driven run orchestration. See [Pi Conductor](./conductor/overview.md). |
 | `src/update/`                                     | `pi update` self-update from GitHub Packages. See [Build & update](./operations/build-and-update.md).             |
 | `src/resources/`                                  | Bundled prompts, themes, skills, workflows, and the GSD system. See [Resources](./resources/overview.md).         |
 | `src/utils/`                                      | Small shared helpers (cwd, xml, clipboard, browser, errors).                                                      |
@@ -42,8 +44,9 @@ The package is published to GitHub Packages and installs a single `pi` binary.
 2. `handleWrapperUpdateCommand({ args })` — intercepts `pi update`; exits if handled.
 3. `resolveCwd()` — expands `~`/`$VAR` in the launch cwd before upstream reads it.
 4. `isRemoteMode(args)` — if `pi --mode remote`, run the TCP server and exit.
-5. `ensureRuntimeDefaultSettings()` — merge any missing default keys into `~/.pi/agent/settings.json`.
-6. `main(args, { extensionFactories: bundledExtensionFactories })` — hand off to upstream pi with all bundled extensions.
+5. `args[0] === "conductor"` — if `pi conductor …`, run the conductor command router (`runConductorCommand`) and exit. See [Pi Conductor](./conductor/overview.md).
+6. `ensureRuntimeDefaultSettings()` — merge any missing default keys into `~/.pi/agent/settings.json`.
+7. `main(args, { extensionFactories: bundledExtensionFactories })` — hand off to upstream pi with all bundled extensions.
 
 Full detail in [Architecture overview](./architecture/overview.md).
 
@@ -62,6 +65,7 @@ npm run typecheck && npm run lint && npm run format:check   # quality gates
 ## Documentation map
 
 - [Architecture overview](./architecture/overview.md) — boot sequence, extension system, mode system, settings, bundled-resource injection.
+- [Pi Conductor](./conductor/overview.md) — `pi conductor` GitHub-Projects worker: config layers, command surface, run lifecycle, webhook/polling resilience, workflow expressions.
 - [Extensions catalog](./extensions/catalog.md) — all bundled extensions grouped by purpose, with key source files.
 - [Providers & models](./providers/overview.md) — LiteLLM gateway, provider roster, fallbacks, fast/image, usage tracking, auth.
 - [Subagent SDK](./sessions/subagent-sdk.md) — mux backends, lite vs process runtime, IPC, structured output.

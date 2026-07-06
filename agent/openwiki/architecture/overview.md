@@ -10,8 +10,9 @@ How `@shekohex/agent` boots, wires its extensions, resolves modes, and manages s
 2. **Update intercept** — `handleWrapperUpdateCommand({ args })` (`src/update/command.ts`). If the user ran `pi update`, it performs the GitHub Packages self-update and exits. See [Build & update](../operations/build-and-update.md#self-update).
 3. **Resolve cwd** — `resolveCwd(process.cwd())` (`src/utils/cwd.ts`) expands `~` and `$VAR`. Upstream's `normalizePath` only expands `~`, so this catches `$HOME`/`$VAR` before upstream treats them as relative paths and produces corrupt session dirs.
 4. **Remote mode** — `isRemoteMode(args)` (`src/remote/mode.ts`). If `--mode remote` is present, `runRemoteMode()` starts the TCP server and the process exits when done. See [Remote mode](../sessions/remote.md).
-5. **Seed/merge settings** — `ensureRuntimeDefaultSettings()` (`src/runtime-default-settings.ts`), skipped for `--help`/`--version`.
-6. **Hand off** — `main(args, { extensionFactories: bundledExtensionFactories })`. Upstream pi starts its interactive loop with every bundled extension registered.
+5. **Conductor** — `args[0] === "conductor"` (`src/conductor/command.ts` `runConductorCommand`). If `pi conductor …`, it seeds settings, runs the conductor command router, and exits. Conductor is a separate CLI surface, not an extension. See [Pi Conductor](../conductor/overview.md).
+6. **Seed/merge settings** — `ensureRuntimeDefaultSettings()` (`src/runtime-default-settings.ts`), skipped for `--help`/`--version`.
+7. **Hand off** — `main(args, { extensionFactories: bundledExtensionFactories })`. Upstream pi starts its interactive loop with every bundled extension registered.
 
 ```ts
 // src/cli.ts (abridged)
@@ -22,6 +23,11 @@ if (resolvedCwd !== process.cwd()) process.chdir(resolvedCwd);
 if (isRemoteMode(args)) {
   await runRemoteMode(parseRemoteModeArgs(args, resolvedCwd));
   process.exit(0);
+}
+if (args[0] === "conductor") {
+  if (shouldEnsureRuntimeDefaultSettings(args)) await ensureRuntimeDefaultSettings();
+  process.exitCode = await runConductorCommand(args.slice(1), { cwd: resolvedCwd });
+  process.exit(process.exitCode);
 }
 if (shouldEnsureRuntimeDefaultSettings(args)) await ensureRuntimeDefaultSettings();
 await main(args, { extensionFactories: bundledExtensionFactories });

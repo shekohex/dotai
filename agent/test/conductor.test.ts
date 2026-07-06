@@ -1188,6 +1188,68 @@ describe("conductor adapters", () => {
     );
   });
 
+  test("authenticated review feedback routes unless it has conductor marker", async () => {
+    const client = new GhGitHubClient(async (_file, args) => {
+      if (args.includes("checks")) return { stdout: "[]", stderr: "" };
+      if (args.includes("view")) {
+        return {
+          stdout: JSON.stringify({
+            comments: [],
+            reviewDecision: "",
+            reviews: [
+              {
+                id: "PRR_1",
+                body: "Static screenshot is not proof. Send a video.",
+                author: { login: "octo" },
+              },
+            ],
+          }),
+          stderr: "",
+        };
+      }
+      if (args.at(-1) === "repos/octo/demo/pulls/2/comments") {
+        return { stdout: "[]", stderr: "" };
+      }
+      if (args.at(-1) === "repos/octo/demo/issues/7/comments") {
+        return {
+          stdout: JSON.stringify([
+            [{ id: "ic1", body: "<!-- pi-conductor -->\nPi Conductor associated PR." }],
+          ]),
+          stderr: "",
+        };
+      }
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+
+    await expect(client.listPullRequestFeedback("octo", "demo", 2, 7, ["octo"])).resolves.toEqual([
+      expect.objectContaining({
+        key: "review:PRR_1",
+        author: "octo",
+        body: "Static screenshot is not proof. Send a video.",
+      }),
+    ]);
+  });
+
+  test("conductor issue comments carry an html marker", async () => {
+    const calls: string[][] = [];
+    const client = new GhGitHubClient(async (_file, args) => {
+      calls.push(args);
+      return { stdout: "", stderr: "" };
+    });
+
+    await client.commentIssue(workItem(), "Pi Conductor associated PR: https://github.com/pull/1");
+
+    expect(calls[0]).toEqual(
+      expect.arrayContaining([
+        "issue",
+        "comment",
+        "7",
+        "--body",
+        "Pi Conductor associated PR: https://github.com/pull/1\n\n<!-- pi-conductor -->",
+      ]),
+    );
+  });
+
   test("project item query resolves org owner before GraphQL project lookup", async () => {
     const graphqlQueries: string[] = [];
     const client = new GhGitHubClient(async (_file, args) => {

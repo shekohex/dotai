@@ -24,6 +24,7 @@ import {
 } from "./github-queries.js";
 import { type WorkItem, WorkItemSchema } from "./store/types.js";
 const GH_COMMAND_TIMEOUT_MS = 30_000;
+const CONDUCTOR_COMMENT_MARKER = "<!-- pi-conductor -->";
 type ProjectOwnerKind = "organization" | "user";
 
 const GhUserSchema = Type.Object({ login: Type.String() });
@@ -267,7 +268,7 @@ export class GhGitHubClient implements GitHubClient {
         "--repo",
         `${workItem.owner}/${workItem.repo}`,
         "--body",
-        body,
+        markConductorComment(body),
       ],
       undefined,
       "gh issue comment",
@@ -305,7 +306,7 @@ export class GhGitHubClient implements GitHubClient {
     repo: string,
     prNumber: number,
     issueNumber: number,
-    ignoredAuthors: string[],
+    _ignoredAuthors: string[],
   ): Promise<PullRequestFeedback[]> {
     const checks = await this.tryReadFeedback(() => this.listFailedChecks(owner, repo, prNumber));
     const viewFeedback = await this.tryReadFeedback(() =>
@@ -318,8 +319,7 @@ export class GhGitHubClient implements GitHubClient {
       this.listIssueComments(owner, repo, issueNumber),
     );
     return [...checks, ...viewFeedback, ...reviewComments, ...issueComments].filter(
-      (feedback) =>
-        !isIgnoredFeedbackAuthor(feedback, ignoredAuthors) && !hasConductorMarker(feedback.body),
+      (feedback) => !hasConductorMarker(feedback.body),
     );
   }
 
@@ -727,13 +727,20 @@ function selectPullRequestSummary(prs: PullRequestSummary[]): PullRequestSummary
   );
 }
 
-function isIgnoredFeedbackAuthor(feedback: PullRequestFeedback, ignoredAuthors: string[]): boolean {
-  return feedback.author !== undefined && ignoredAuthors.includes(feedback.author);
+function hasConductorMarker(body: string): boolean {
+  return (
+    hasExplicitConductorMarker(body) ||
+    /^pi conductor (associated pr|stopped run|blocked run|completed run)/iu.test(body)
+  );
 }
 
-function hasConductorMarker(body: string): boolean {
-  const normalized = body.toLowerCase();
-  return normalized.includes("pi-conductor") || normalized.includes("pi conductor");
+function markConductorComment(body: string): string {
+  if (hasExplicitConductorMarker(body)) return body;
+  return `${body}\n\n${CONDUCTOR_COMMENT_MARKER}`;
+}
+
+function hasExplicitConductorMarker(body: string): boolean {
+  return body.toLowerCase().includes(CONDUCTOR_COMMENT_MARKER);
 }
 
 function readNodes(value: unknown): unknown[] {

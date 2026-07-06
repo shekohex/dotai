@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { request } from "node:http";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, test } from "vitest";
 
@@ -734,6 +734,26 @@ describe("conductor store and command parser", () => {
         secret: { file: secretPath },
       }),
     ).rejects.toThrow("Webhook secret file is empty");
+  });
+
+  test("resolves relative webhook secret files from config directory", async () => {
+    const tempDir = await createTempDir("conductor-webhook-secret-relative-");
+    const configDir = join(tempDir, "conductor");
+    const secretPath = join(configDir, "secrets", "webhook.txt");
+    await mkdir(dirname(secretPath), { recursive: true });
+    await writeFile(secretPath, "file-secret\n");
+
+    await expect(
+      resolveWebhookSecret(
+        {
+          host: "127.0.0.1",
+          port: 8787,
+          path: "/github/webhook",
+          secret: { file: "secrets/webhook.txt" },
+        },
+        join(configDir, "config.json"),
+      ),
+    ).resolves.toBe("file-secret");
   });
 
   test("extracts scoped reconcile data from pull request webhooks", () => {

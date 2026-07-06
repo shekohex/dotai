@@ -1,12 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
+import { dirname, isAbsolute, join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
 import { errorMessage } from "../utils/error-message.js";
 import { asRecord, readNumber, readString } from "../utils/unknown-data.js";
-import type { WebhookConfig } from "./config.js";
+import { getDefaultConfigPath, type WebhookConfig } from "./config.js";
 import { parseJsonValue } from "./json.js";
 import type { ConductorOrchestrator } from "./orchestrator.js";
 import { GITHUB_RATE_LIMIT_BACKOFF_MS, isRateLimitError } from "./rate-limit.js";
@@ -46,7 +47,10 @@ const WebhookRepositoryPayloadSchema = Type.Object({
 
 export type WebhookMetadata = Static<typeof WebhookMetadataSchema>;
 
-export async function resolveWebhookSecret(config: WebhookConfig): Promise<string> {
+export async function resolveWebhookSecret(
+  config: WebhookConfig,
+  configPath = getDefaultConfigPath(),
+): Promise<string> {
   if ("env" in config.secret) {
     const value = process.env[config.secret.env];
     if (value === undefined || value.length === 0) {
@@ -54,9 +58,14 @@ export async function resolveWebhookSecret(config: WebhookConfig): Promise<strin
     }
     return value;
   }
-  const value = (await readFile(config.secret.file, "utf8")).trim();
-  if (value.length === 0) throw new Error(`Webhook secret file is empty: ${config.secret.file}`);
+  const secretPath = resolveSecretFilePath(config.secret.file, configPath);
+  const value = (await readFile(secretPath, "utf8")).trim();
+  if (value.length === 0) throw new Error(`Webhook secret file is empty: ${secretPath}`);
   return value;
+}
+
+function resolveSecretFilePath(filePath: string, configPath: string): string {
+  return isAbsolute(filePath) ? filePath : join(dirname(configPath), filePath);
 }
 
 export function verifyWebhookSignature(secret: string, body: Buffer, signature: string): boolean {

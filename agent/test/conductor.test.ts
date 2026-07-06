@@ -1253,9 +1253,40 @@ describe("conductor adapters", () => {
     expect(
       parseGhReviewComments(JSON.stringify([[{ id: "rc2", body: "Inline 2" }]])),
     ).toMatchObject([{ key: "review_comment:rc2", kind: "review_comment" }]);
-    expect(parseGhIssueComments(JSON.stringify([{ id: "ic1", body: "Issue note" }]))).toMatchObject(
-      [{ key: "issue_comment:ic1", kind: "issue_comment" }],
-    );
+    expect(
+      parseGhIssueComments(JSON.stringify([{ id: 42, node_id: "IC_1", body: "Issue note" }])),
+    ).toMatchObject([
+      { key: "issue_comment:IC_1", kind: "issue_comment", reactionSubjectId: "IC_1" },
+    ]);
+  });
+
+  test("GitHub client updates feedback reactions by node id", async () => {
+    const calls: string[][] = [];
+    const client = new GhGitHubClient(async (_file, args) => {
+      calls.push(args);
+      return { stdout: JSON.stringify({ data: {} }), stderr: "" };
+    });
+
+    await client.markFeedbackSeen("octo", "demo", {
+      key: "issue_comment:IC_1",
+      kind: "issue_comment",
+      body: "Fix this",
+      reactionSubjectId: "IC_1",
+    });
+    await client.markFeedbackHandled("octo", "demo", {
+      key: "issue_comment:IC_1",
+      kind: "issue_comment",
+      body: "Fix this",
+      reactionSubjectId: "IC_1",
+    });
+
+    expect(calls).toEqual([
+      expect.arrayContaining(["-F", "subjectId=IC_1", "-F", "content=EYES"]),
+      expect.arrayContaining(["-F", "subjectId=IC_1", "-F", "content=THUMBS_UP"]),
+      expect.arrayContaining(["-F", "subjectId=IC_1", "-F", "content=EYES"]),
+    ]);
+    expect(calls[0]?.join(" ")).toContain("addReaction");
+    expect(calls[2]?.join(" ")).toContain("removeReaction");
   });
 
   test("gh PR branch lookup includes merged and closed PRs", async () => {
@@ -1793,8 +1824,14 @@ describe("conductor orchestrator", () => {
         key: "review:PRR_1",
         kind: "review",
         body: "Need a video.",
+        reactionSubjectId: "PRR_1",
         author: "reviewer",
-        review: { id: "PRR_1", body: "Need a video.", author: "reviewer" },
+        review: {
+          id: "PRR_1",
+          reactionSubjectId: "PRR_1",
+          body: "Need a video.",
+          author: "reviewer",
+        },
       },
     ];
     const herdr = new FakeHerdr();
@@ -1823,6 +1860,60 @@ describe("conductor orchestrator", () => {
     ]);
     expect(herdr.sent[0]?.message).toContain("<!-- pi-conductor -->");
     expect(herdr.sent[1]?.message).toContain("<!-- pi-conductor -->");
+    expect(github.reactions).toEqual([
+      { action: "seen", subjectId: "PRR_1" },
+      { action: "handled", subjectId: "PRR_1" },
+    ]);
+  });
+
+  test("feedback reaction failures do not block routing", async () => {
+    const tempDir = await createTempDir("conductor-reaction-failure-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({ status: "in_review", prNumber: 2, herdr: { paneId: "p1" } });
+    await store.createRun(run);
+    const github = new FakeGitHub(workItem());
+    github.failReactions = true;
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: run.branch,
+      state: "OPEN",
+      isDraft: false,
+    };
+    github.feedback = [
+      {
+        key: "issue_comment:IC_1",
+        kind: "issue_comment",
+        body: "Please handle this.",
+        reactionSubjectId: "IC_1",
+      },
+    ];
+    const herdr = new FakeHerdr();
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: repoPath,
+    });
+
+    await orchestrator.reconcile();
+
+    expect(herdr.sent).toEqual([
+      expect.objectContaining({ message: expect.stringContaining("Please handle this.") }),
+    ]);
+    await expect(store.getRun(run.runId)).resolves.toMatchObject({
+      routedFeedbackKeys: ["issue_comment:IC_1"],
+    });
+    await expect(store.listEvents(run.runId)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "feedback_reaction_failed" }),
+        expect.objectContaining({ kind: "feedback_routed" }),
+      ]),
+    );
   });
 
   test("Herdr blocked agent marks run blocked and comments on the PR", async () => {
@@ -2006,6 +2097,37 @@ describe("conductor orchestrator", () => {
     await expect(orchestrator.reconcile()).resolves.toEqual([]);
     expect(herdr.launches).toHaveLength(0);
     expect(await store.listRuns()).toEqual([]);
+  });
+
+  test("automated reconcile blocks active runs for closed project items", async () => {
+    const tempDir = await createTempDir("conductor-closed-active-reconcile-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({ status: "in_progress", herdr: { paneId: "p1" } });
+    await store.createRun(run);
+    const github = new FakeGitHub(
+      workItem({ issueState: "CLOSED", labels: ["ready-for-agent"], assignees: ["octo"] }),
+    );
+    const herdr = new FakeHerdr();
+    herdr.paneExistsResult = false;
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: repoPath,
+    });
+
+    await expect(orchestrator.reconcile()).resolves.toEqual([]);
+    expect(herdr.stopCount).toBe(1);
+    expect(herdr.launches).toHaveLength(0);
+    expect(github.statusUpdates).toEqual(["Blocked"]);
+    await expect(store.getRun(run.runId)).resolves.toMatchObject({
+      status: "blocked",
+      lastError: "Issue is closed",
+    });
   });
 
   test("automated reconcile ignores project items with merged PRs", async () => {
@@ -2427,6 +2549,8 @@ class FakeGitHub implements GitHubClient {
   readonly statusUpdates: string[] = [];
   readonly comments: string[] = [];
   readonly commentTargets: number[] = [];
+  readonly reactions: Array<{ action: "seen" | "handled"; subjectId: string | undefined }> = [];
+  failReactions = false;
   listProjectItemsCount = 0;
   findPullRequestByBranchCount = 0;
   pr: PullRequestSummary | undefined;
@@ -2471,6 +2595,24 @@ class FakeGitHub implements GitHubClient {
 
   async listPullRequestFeedback(): Promise<PullRequestFeedback[]> {
     return this.feedback;
+  }
+
+  async markFeedbackSeen(
+    _owner: string,
+    _repo: string,
+    feedback: PullRequestFeedback,
+  ): Promise<void> {
+    if (this.failReactions) throw new Error("reaction failed");
+    this.reactions.push({ action: "seen", subjectId: feedback.reactionSubjectId });
+  }
+
+  async markFeedbackHandled(
+    _owner: string,
+    _repo: string,
+    feedback: PullRequestFeedback,
+  ): Promise<void> {
+    if (this.failReactions) throw new Error("reaction failed");
+    this.reactions.push({ action: "handled", subjectId: feedback.reactionSubjectId });
   }
 }
 

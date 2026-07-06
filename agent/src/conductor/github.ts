@@ -22,6 +22,17 @@ import {
   projectMetadataQuery,
   UPDATE_PROJECT_STATUS_MUTATION,
 } from "./github-queries.js";
+import {
+  markFeedbackHandledWithReaction,
+  markFeedbackSeenWithReaction,
+} from "./github-reactions.js";
+import type {
+  CommandExec,
+  GitHubClient,
+  GitHubRepository,
+  ProjectMetadata,
+  PullRequestSummary,
+} from "./github-types.js";
 import { mergeConflictFeedback } from "./merge-conflict-feedback.js";
 import { type WorkItem, WorkItemSchema } from "./store/types.js";
 const GH_COMMAND_TIMEOUT_MS = 30_000;
@@ -68,6 +79,13 @@ export {
   parseGhReviewComments,
 } from "./github-feedback.js";
 export type { PullRequestFeedback } from "./github-feedback.js";
+export type {
+  CommandExec,
+  GitHubClient,
+  GitHubRepository,
+  ProjectMetadata,
+  PullRequestSummary,
+} from "./github-types.js";
 
 export const IssueReferenceSchema = Type.Union([
   Type.Object({
@@ -81,60 +99,6 @@ export const IssueReferenceSchema = Type.Union([
 ]);
 
 export type IssueReference = Static<typeof IssueReferenceSchema>;
-
-export type GitHubRepository = {
-  owner: string;
-  repo: string;
-  defaultBranch: string;
-};
-
-export type PullRequestSummary = {
-  number: number;
-  url: string;
-  headRefName: string;
-  state: string;
-  isDraft: boolean;
-  mergedAt?: string;
-  mergeable?: string;
-  mergeStateStatus?: string;
-  linkedIssueNumbers?: number[];
-};
-
-export type ProjectMetadata = {
-  projectId: string;
-  fields: Map<string, { fieldId: string; options: Map<string, string> }>;
-};
-
-export interface GitHubClient {
-  getAuthenticatedUser(): Promise<string>;
-  getRepository(owner: string, repo: string): Promise<GitHubRepository>;
-  resolveWorkItem(reference: string, config: GlobalConductorConfig, cwd: string): Promise<WorkItem>;
-  listProjectItems(repo: ManagedRepositoryConfig): Promise<WorkItem[]>;
-  updateProjectStatus(
-    repo: ManagedRepositoryConfig,
-    workItem: WorkItem,
-    statusName: string,
-  ): Promise<void>;
-  commentIssue(workItem: WorkItem, body: string): Promise<void>;
-  findPullRequestByBranch(
-    owner: string,
-    repo: string,
-    branch: string,
-  ): Promise<PullRequestSummary | undefined>;
-  listPullRequestFeedback(
-    owner: string,
-    repo: string,
-    prNumber: number,
-    issueNumber: number,
-    ignoredAuthors: string[],
-  ): Promise<PullRequestFeedback[]>;
-}
-
-export type CommandExec = (
-  file: string,
-  args: string[],
-  options: { cwd?: string; timeout?: number },
-) => Promise<{ stdout: string; stderr: string }>;
 
 export class GhGitHubClient implements GitHubClient {
   private readonly projectOwnerKinds = new Map<string, ProjectOwnerKind>();
@@ -333,6 +297,25 @@ export class GhGitHubClient implements GitHubClient {
       ...reviewComments,
       ...issueComments,
     ].filter((feedback) => !hasConductorMarker(feedback.body));
+  }
+
+  async markFeedbackSeen(
+    _owner: string,
+    _repo: string,
+    feedback: PullRequestFeedback,
+  ): Promise<void> {
+    await markFeedbackSeenWithReaction((args, cwd, label) => this.gh(args, cwd, label), feedback);
+  }
+
+  async markFeedbackHandled(
+    _owner: string,
+    _repo: string,
+    feedback: PullRequestFeedback,
+  ): Promise<void> {
+    await markFeedbackHandledWithReaction(
+      (args, cwd, label) => this.gh(args, cwd, label),
+      feedback,
+    );
   }
 
   private async getPullRequest(

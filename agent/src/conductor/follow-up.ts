@@ -1,7 +1,8 @@
 import { evaluateCondition, renderTemplate } from "./expression.js";
-import type { PullRequestFeedback, PullRequestSummary } from "./github.js";
+import type { GitHubClient, PullRequestFeedback, PullRequestSummary } from "./github.js";
 import type { ConductorDeliveryMode } from "./herdr.js";
-import type { RunRecord } from "./store/types.js";
+import { reactToFeedbackBestEffort } from "./run-status.js";
+import type { HerdrHandles, RunRecord } from "./store/types.js";
 import type { WorkflowFile } from "./workflow.js";
 import type { ResolvedRepositoryConfig } from "./config.js";
 
@@ -12,6 +13,8 @@ export type RenderedFollowUpMessage = {
   message: string;
   ruleNames: string[];
 };
+
+type RepoRuntime = { config: ResolvedRepositoryConfig; workflow: WorkflowFile };
 
 const CONDUCTOR_COMMENT_MARKER = "<!-- pi-conductor -->";
 
@@ -51,6 +54,73 @@ export function renderFollowUpMessages(input: {
     ]);
   }
   return joinConsecutiveFollowUps(rendered);
+}
+
+export async function routePullRequestFeedback(input: {
+  authenticatedLogin: string;
+  ensureRunSession: (run: RunRecord) => Promise<RunRecord>;
+  getResolvedRepo: (owner: string, repo: string) => Promise<RepoRuntime>;
+  github: GitHubClient;
+  herdr: {
+    send(handles: HerdrHandles, message: string, delivery: ConductorDeliveryMode): Promise<void>;
+  };
+  pr: PullRequestSummary;
+  record: (run: RunRecord, kind: string, payload: unknown) => Promise<void>;
+  run: RunRecord;
+  touch: (run: RunRecord) => RunRecord;
+  updateRun: (run: RunRecord) => Promise<void>;
+}): Promise<RunRecord> {
+  if (input.run.prNumber === undefined || input.run.status === "done" || input.run.paused) {
+    return input.run;
+  }
+  const repo = await input.getResolvedRepo(input.run.owner, input.run.repo);
+  const knownKeys = new Set(input.run.routedFeedbackKeys ?? []);
+  const feedback = await input.github.listPullRequestFeedback(
+    input.run.owner,
+    input.run.repo,
+    input.run.prNumber,
+    input.run.issueNumber,
+    [input.authenticatedLogin],
+  );
+  let updated = input.run;
+  for (const item of feedback) {
+    if (knownKeys.has(item.key)) continue;
+    await reactToFeedbackBestEffort({
+      feedback: item,
+      github: input.github,
+      record: input.record,
+      run: updated,
+      state: "seen",
+    });
+    updated = await input.ensureRunSession(updated);
+    const messages = renderFollowUpMessages({
+      config: repo.config,
+      feedback: item,
+      pr: input.pr,
+      run: updated,
+      workflow: repo.workflow,
+    });
+    for (const message of messages) {
+      await input.herdr.send(updated.herdr, message.message, message.delivery);
+    }
+    await reactToFeedbackBestEffort({
+      feedback: item,
+      github: input.github,
+      record: input.record,
+      run: updated,
+      state: "handled",
+    });
+    knownKeys.add(item.key);
+    updated = input.touch({ ...updated, routedFeedbackKeys: [...knownKeys] });
+    await input.updateRun(updated);
+    await input.record(updated, "feedback_routed", {
+      key: item.key,
+      kind: item.kind,
+      ruleNames: messages.flatMap((message) => message.ruleNames),
+      url: item.url,
+    });
+  }
+  return updated;
 }
 
 export function renderConductorComment(input: {

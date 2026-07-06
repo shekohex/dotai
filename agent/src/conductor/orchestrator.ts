@@ -11,7 +11,7 @@ import {
   resolveRepositoryConfig,
 } from "./config.js";
 import { cleanupMergedRunArtifacts, cleanupRunsByStatus } from "./cleanup-batch.js";
-import { renderConductorComment, renderFollowUpMessages } from "./follow-up.js";
+import { renderConductorComment, routePullRequestFeedback } from "./follow-up.js";
 import type { PullRequestSummary } from "./github.js";
 import {
   activeStatusForRun,
@@ -39,6 +39,7 @@ import {
 import {
   assertGlobalConfigReady,
   dispatchAutomatedWorkItem,
+  handleClosedWorkItem,
   hasRunStatusForWorkItem,
   isEligibleForAutomatedDispatch,
   isPullRequestMerged,
@@ -113,6 +114,14 @@ export class ConductorOrchestrator {
         for (const workItem of workItems) {
           if (!sameRepository(workItem, runtime.config)) continue;
           if (!scopeMatchesWorkItem(scope, workItem)) continue;
+          if (
+            await handleClosedWorkItem({
+              blockRun: (run) => this.blockClosedIssueRun(runtime.config, run),
+              store: this.deps.store,
+              workItem,
+            })
+          )
+            continue;
           if (!isEligibleForAutomatedDispatch(workItem, runtime.config.dispatchLabel, login))
             continue;
           const active = await this.deps.store.getActiveRun(
@@ -301,6 +310,23 @@ export class ConductorOrchestrator {
     });
   }
 
+  private async blockClosedIssueRun(
+    config: ResolvedRepositoryConfig,
+    run: RunRecord,
+  ): Promise<void> {
+    const blocked = this.touch({ ...run, status: "blocked", lastError: "Issue is closed" });
+    await this.deps.store.updateRun(blocked);
+    try {
+      await this.deps.herdr.stop(run.herdr);
+      await this.record(blocked, "herdr_stopped", { herdr: run.herdr, reason: "issue_closed" });
+    } catch (error) {
+      await this.record(blocked, "herdr_stop_failed", { error: errorMessage(error) });
+    }
+    const status = config.statusOptions.blocked;
+    await updateProjectStatusBestEffort(this.deps.github, config, runToWorkItem(blocked), status);
+    await this.record(blocked, "blocked", { reason: "issue_closed" });
+  }
+
   private async dispatchWorkItem(
     repo: ManagedRepositoryConfig,
     workItem: WorkItem,
@@ -450,11 +476,30 @@ export class ConductorOrchestrator {
           ));
         if (pr === undefined) continue;
         const updated = await this.reconcilePullRequest(liveRun, pr);
-        await this.routePullRequestFeedback(updated, pr, authenticatedLogin);
+        await this.routeFeedbackForRun(updated, pr, authenticatedLogin);
       } catch (error) {
         await this.record(run, "reconcile_run_failed", { error: errorMessage(error) });
       }
     }
+  }
+
+  private routeFeedbackForRun(
+    run: RunRecord,
+    pr: PullRequestSummary,
+    authenticatedLogin: string,
+  ): Promise<RunRecord> {
+    return routePullRequestFeedback({
+      authenticatedLogin,
+      ensureRunSession: (record) => this.ensureRunSession(record),
+      getResolvedRepo: (owner, repo) => this.getResolvedRepo(owner, repo),
+      github: this.deps.github,
+      herdr: this.deps.herdr,
+      pr,
+      record: (record, kind, payload) => this.record(record, kind, payload),
+      run,
+      touch: (record) => this.touch(record),
+      updateRun: (record) => this.deps.store.updateRun(record),
+    });
   }
 
   private async reconcilePullRequest(run: RunRecord, pr: PullRequestSummary): Promise<RunRecord> {
@@ -571,48 +616,6 @@ export class ConductorOrchestrator {
     }
     await this.record(inReview, "pr_associated", { prUrl: pr.url });
     return inReview;
-  }
-
-  private async routePullRequestFeedback(
-    run: RunRecord,
-    pr: PullRequestSummary,
-    authenticatedLogin: string,
-  ): Promise<RunRecord> {
-    if (run.prNumber === undefined || run.status === "done" || run.paused) return run;
-    const repo = await this.getResolvedRepo(run.owner, run.repo);
-    const knownKeys = new Set(run.routedFeedbackKeys ?? []);
-    const feedback = await this.deps.github.listPullRequestFeedback(
-      run.owner,
-      run.repo,
-      run.prNumber,
-      run.issueNumber,
-      [authenticatedLogin],
-    );
-    let updated = run;
-    for (const item of feedback) {
-      if (knownKeys.has(item.key)) continue;
-      updated = await this.ensureRunSession(updated);
-      const messages = renderFollowUpMessages({
-        config: repo.config,
-        feedback: item,
-        pr,
-        run: updated,
-        workflow: repo.workflow,
-      });
-      for (const message of messages) {
-        await this.deps.herdr.send(updated.herdr, message.message, message.delivery);
-      }
-      knownKeys.add(item.key);
-      updated = this.touch({ ...updated, routedFeedbackKeys: [...knownKeys] });
-      await this.deps.store.updateRun(updated);
-      await this.record(updated, "feedback_routed", {
-        key: item.key,
-        kind: item.kind,
-        ruleNames: messages.flatMap((message) => message.ruleNames),
-        url: item.url,
-      });
-    }
-    return updated;
   }
 
   private async ensureRunSession(run: RunRecord): Promise<RunRecord> {

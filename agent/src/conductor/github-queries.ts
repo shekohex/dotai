@@ -107,3 +107,13 @@ mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
     value: { singleSelectOptionId: $optionId }
   }) { projectV2Item { id } }
 }`;
+
+export const ADD_REACTION_MUTATION = `
+mutation($subjectId: ID!, $content: ReactionContent!) {
+  addReaction(input: { subjectId: $subjectId, content: $content }) { reaction { content } }
+}`;
+
+export const REMOVE_REACTION_MUTATION = `
+mutation($subjectId: ID!, $content: ReactionContent!) {
+  removeReaction(input: { subjectId: $subjectId, content: $content }) { reaction { content } }
+}`;

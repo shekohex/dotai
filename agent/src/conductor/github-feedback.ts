@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
-import { asRecord, readString } from "../utils/unknown-data.js";
+import { asRecord, readNumber, readString } from "../utils/unknown-data.js";
 import { parseJsonValue } from "./json.js";
 
 const GhPrChecksSchema = Type.Array(
@@ -28,6 +28,7 @@ export type PullRequestFeedback = {
   key: string;
   kind: "check" | "comment" | "review" | "review_comment" | "issue_comment" | "merge_conflict";
   body: string;
+  reactionSubjectId?: string;
   url?: string;
   author?: string;
   check?: Record<string, unknown>;
@@ -104,8 +105,9 @@ function normalizeFeedbackNode(
   const record = asRecord(node);
   const body = readString(record?.body);
   if (record === undefined || body === undefined || body.trim().length === 0) return [];
-  const id =
-    readString(record.id) ?? readString(record.databaseId) ?? readString(record.url) ?? body;
+  const reactionSubjectId =
+    readString(record.id) ?? readString(record.node_id) ?? readString(record.nodeId);
+  const id = reactionSubjectId ?? formatFeedbackNodeFallbackId(record, body);
   const url = readString(record.url);
   const author =
     readString(asRecord(record.author)?.login) ?? readString(asRecord(record.user)?.login);
@@ -114,8 +116,10 @@ function normalizeFeedbackNode(
       key: `${kind}:${id}`,
       kind,
       body,
+      ...(reactionSubjectId === undefined ? {} : { reactionSubjectId }),
       [kind]: {
         id,
+        reactionSubjectId: reactionSubjectId ?? "",
         body,
         url: url ?? "",
         author: author ?? "",
@@ -124,6 +128,12 @@ function normalizeFeedbackNode(
       ...(author === undefined ? {} : { author }),
     },
   ];
+}
+
+function formatFeedbackNodeFallbackId(record: Record<string, unknown>, body: string): string {
+  const databaseId = readString(record.databaseId) ?? String(readNumber(record.databaseId) ?? "");
+  if (databaseId.length > 0) return databaseId;
+  return readString(record.url) ?? body;
 }
 
 function isPassingCheckConclusion(conclusion: string): boolean {

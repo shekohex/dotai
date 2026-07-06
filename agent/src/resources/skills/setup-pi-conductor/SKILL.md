@@ -102,6 +102,10 @@ Useful context:
 
 Conductor appends safety guidance to every Follow-Up telling the agent to include `<!-- pi-conductor -->` in any GitHub comment or review response it posts for that feedback. This prevents comment loops. Custom templates can mention `${{ conductor.commentMarker }}` directly, but they do not need to duplicate the safety footer.
 
+Conductor also updates reactable GitHub feedback with best-effort progress reactions: `EYES` when feedback is seen and `THUMBS_UP` after successful Herdr delivery. GitHub does not support a checkmark reaction through its reactions API. Reaction failures are event-logged and must not block routing.
+
+Automated dispatch only starts open issues. If reconcile sees a closed project item that still has an active local run, Conductor blocks that stale run and stops its Herdr pane best-effort instead of recovering or relaunching it.
+
 GitHub merge conflicts route as `feedback.kind == 'merge_conflict'`; customize that text with a normal `followUpRules` entry. After a PR merges, Conductor closes the owned Herdr pane, cleans the run worktree, and best-effort fetches/rebases the source repo's local base branch only when that checkout is already on the base branch and clean.
 
 Example:

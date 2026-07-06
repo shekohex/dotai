@@ -11,6 +11,12 @@ describe("bundled skills", () => {
     expect(skillPaths.some((path) => path.endsWith("/run-app/SKILL.md"))).toBe(true);
   });
 
+  it("includes setup-pi-conductor skill", () => {
+    const skillPaths = discoverSkillPaths();
+
+    expect(skillPaths.some((path) => path.endsWith("/setup-pi-conductor/SKILL.md"))).toBe(true);
+  });
+
   it("includes run skill generator and examples", () => {
     const skillPaths = discoverSkillPaths();
     const generatorPath = skillPaths.find((path) => path.endsWith("/run-skill-generator/SKILL.md"));

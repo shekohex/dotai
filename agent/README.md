@@ -59,6 +59,51 @@ pi conductor config validate
 pi conductor serve
 ```
 
+`config init` is safe to rerun. It reads existing config, applies structural migrations, preserves repo-specific settings, upserts the current GitHub repo into `~/.pi/agent/conductor/config.json`, writes `config.schema.json`, and creates `.pi/WORKFLOW.md` if missing. To add more repositories, run it from each checkout:
+
+```bash
+cd /path/to/another/repo
+pi conductor config init
+```
+
+Config automation commands:
+
+```bash
+pi conductor config format
+pi conductor config edit
+pi conductor config get repositories[0].project.number --json
+pi conductor config set repositories[0].project.number 12
+pi conductor config set repositories[0].dispatchLabel ready-for-agent
+```
+
+If project owner/number cannot be inferred, find GitHub Projects v2 data with:
+
+```bash
+gh repo view owner/repo --json projectsV2 --jq '.projectsV2.nodes[] | "owner=\(.owner.login) number=\(.number) title=\(.title)"'
+gh project list --owner owner
+gh project list --owner owner --format json --jq '.projects[] | "number=\(.number) title=\(.title)"'
+gh project view <number> --owner <owner>
+```
+
+Then edit:
+
+```text
+~/.pi/agent/conductor/config.json
+.pi/WORKFLOW.md
+```
+
+Branch templates use the same `${{ }}` expression style as workflow prompts:
+
+```yaml
+branchTemplate: "pi/${{ github.issue.number }}-${{ github.issue.slug }}"
+```
+
+Legacy placeholders like `{issue}` and `{slug}` are not supported.
+
+Workflow Markdown body comments like `<!-- author notes -->` are stripped before the prompt is sent to the agent, so repos can keep syntax examples and local guidance inline.
+
+Workflow expressions support GitHub-style helpers such as bracket paths, object filters, bare `if:` expressions, `startsWith()`, `endsWith()`, `join()`, `format()`, `toJSON()`, `fromJSON()`, `hashFiles()`, status helpers, comparison operators, and contexts like `env`, `vars`, `secrets`, `matrix`, `needs`, `steps`, and `runner`. `env.NAME` reads the current process environment; `vars.NAME` reads `PI_CONDUCTOR_VAR_NAME`; `secrets.NAME` reads `PI_CONDUCTOR_SECRET_NAME`.
+
 Human/agent commands:
 
 ```bash

@@ -1,6 +1,6 @@
 # Pi Conductor
 
-`pi conductor` is the repo/project worker that turns GitHub Projects v2 work items into steerable Pi coding sessions. It claims eligible issues, creates an isolated git worktree per run, launches a Pi session visible in Herdr, routes PR/check/comment feedback back to that session, and records lifecycle state in a SQLite store. It is a **separate CLI command surface** (`pi conductor <subcommand>`) that early-exits before the interactive Pi loop — it is *not* an extension.
+`pi conductor` is the repo/project worker that turns GitHub Projects v2 work items into steerable Pi coding sessions. It claims eligible issues, creates an isolated git worktree per run, launches a Pi session visible in Herdr, routes PR/check/comment feedback back to that session, and records lifecycle state in a SQLite store. It is a **separate CLI command surface** (`pi conductor <subcommand>`) that early-exits before the interactive Pi loop — it is _not_ an extension.
 
 This page documents the conductor's config model, command surface, run lifecycle, resilience model, and expression system. Decisions are recorded in the ADR set under `docs/adr/` (52 ADRs); the ubiquitous language is in `CONTEXT.md`. Both are primary sources for this page.
 
@@ -18,11 +18,11 @@ A "run" is one Pi session attached to one issue's lifecycle. The conductor:
 
 Conductor config has global, repo-workflow, and CLI layers, merged in that precedence order. All schemas are TypeBox ([ADR 0017](../../docs/adr/0017-global-conductor-config-is-json-under-pi-agent.md), [0018](../../docs/adr/0018-repo-workflow-policy-lives-under-pi.md), [0006](../../docs/adr/0006-configuration-has-global-repo-and-cli-layers.md), [0007](../../docs/adr/0007-cli-workflow-global-config-precedence.md)).
 
-| Layer | File | Scope | Defined in |
-| ----- | ---- | ----- | ---------- |
-| Global | `~/.pi/agent/conductor/config.json` (overridable via `stateRoot`) | repos list, polling interval, webhook, stateRoot | `src/conductor/config.ts` `GlobalConductorConfigSchema` |
-| Repo workflow | `<repo>/.pi/WORKFLOW.md` frontmatter | dispatch label, branch template, status field/options, launch rules, prompt template | `src/conductor/workflow.ts` `WorkflowFrontmatterSchema` |
-| CLI | `pi conductor run … --<key>=<value>` | per-invocation overrides | `src/conductor/commands/parser.ts` `configOverrides` |
+| Layer         | File                                                              | Scope                                                                                | Defined in                                              |
+| ------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Global        | `~/.pi/agent/conductor/config.json` (overridable via `stateRoot`) | repos list, polling interval, webhook, stateRoot                                     | `src/conductor/config.ts` `GlobalConductorConfigSchema` |
+| Repo workflow | `<repo>/.pi/WORKFLOW.md` frontmatter                              | dispatch label, branch template, status field/options, launch rules, prompt template | `src/conductor/workflow.ts` `WorkflowFrontmatterSchema` |
+| CLI           | `pi conductor run … --<key>=<value>`                              | per-invocation overrides                                                             | `src/conductor/commands/parser.ts` `configOverrides`    |
 
 Merge precedence (highest wins), from `mergeRepositoryConfig` (`src/conductor/config.ts`): **CLI overrides > WORKFLOW.md frontmatter > global repo entry > defaults**. `statusOptions` additionally layers over `DEFAULT_STATUS_OPTIONS` (`Draft / Todo / In Progress / Review / Done / Blocked`).
 
@@ -42,20 +42,20 @@ pi conductor serve              # foreground polling (+webhook if configured)
 
 Routed by `src/conductor/commands/parser.ts` → `runConductorCommand` (`src/conductor/command.ts`). All commands exit with a process code; stateful commands open the SQLite store.
 
-| Command | Purpose |
-| ------- | ------- |
-| `config init\|validate\|format\|edit\|get\|set` | Manage `config.json` (see layers above). |
-| `serve` | Foreground supervisor: webhook server + polling loop + hot config reload. |
-| `daemon start\|stop\|restart\|status` | Local background helper (pid/log/err files under `<stateRoot>/daemon`). |
-| `reconcile` | One-shot scan + dispatch of eligible work items. |
-| `run <owner/repo#N>` | Manual dispatch; bypasses eligibility ([ADR 0043](../../docs/adr/0043-manual-run-bypasses-eligibility.md)). Accepts multiple refs, `--mode-*` launch flags, and `--<key>=<value>` overrides. |
-| `status` / `runs` | List runs as a human table (`--json` for JSON). |
-| `logs <run-id>` | Run event log (JSONL) from `<stateRoot>/runs/...`. |
-| `send <run-id> "<msg>"` | Send a message to the session. Default delivery is `steer` (real-time); `--follow-up` queues until the session is idle ([ADR 0026](../../docs/adr/0026-send-queues-by-default-with-explicit-delivery-overrides.md), [0027](../../docs/adr/0027-follow-ups-use-herdr-idle-gate.md)). |
-| `stop\|pause\|resume\|retry <run-id>` | Lifecycle controls. `stop` cleans worktree + local branch ([ADR 0024](../../docs/adr/0024-stop-cleans-worktree-and-local-branch.md)); `pause` stops automation, not the Pi process ([ADR 0023](../../docs/adr/0023-pause-stops-automation-not-pi.md)); `retry` starts a new attempt on the same branch ([ADR 0025](../../docs/adr/0025-retry-starts-new-attempt-on-same-branch.md)). |
-| `cleanup <run-id>\|--merged` | Remove worktrees/branches. Merged runs delete their worktrees ([ADR 0019](../../docs/adr/0019-merged-runs-delete-worktrees.md)). |
-| `cleanup gc [--older-than-days N] [--vacuum]` | Delete old events/deliveries, WAL checkpoint, optional VACUUM. |
-| `help [topic]` / `completion bash\|zsh` | Help text and shell completion scripts. |
+| Command                                         | Purpose                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `config init\|validate\|format\|edit\|get\|set` | Manage `config.json` (see layers above).                                                                                                                                                                                                                                                                                                                                             |
+| `serve`                                         | Foreground supervisor: webhook server + polling loop + hot config reload.                                                                                                                                                                                                                                                                                                            |
+| `daemon start\|stop\|restart\|status`           | Local background helper (pid/log/err files under `<stateRoot>/daemon`).                                                                                                                                                                                                                                                                                                              |
+| `reconcile`                                     | One-shot scan + dispatch of eligible work items.                                                                                                                                                                                                                                                                                                                                     |
+| `run <owner/repo#N>`                            | Manual dispatch; bypasses eligibility ([ADR 0043](../../docs/adr/0043-manual-run-bypasses-eligibility.md)). Accepts multiple refs, `--mode-*` launch flags, and `--<key>=<value>` overrides.                                                                                                                                                                                         |
+| `status` / `runs`                               | List runs as a human table (`--json` for JSON).                                                                                                                                                                                                                                                                                                                                      |
+| `logs <run-id>`                                 | Run event log (JSONL) from `<stateRoot>/runs/...`.                                                                                                                                                                                                                                                                                                                                   |
+| `send <run-id> "<msg>"`                         | Send a message to the session. Default delivery is `steer` (real-time); `--follow-up` queues until the session is idle ([ADR 0026](../../docs/adr/0026-send-queues-by-default-with-explicit-delivery-overrides.md), [0027](../../docs/adr/0027-follow-ups-use-herdr-idle-gate.md)).                                                                                                  |
+| `stop\|pause\|resume\|retry <run-id>`           | Lifecycle controls. `stop` cleans worktree + local branch ([ADR 0024](../../docs/adr/0024-stop-cleans-worktree-and-local-branch.md)); `pause` stops automation, not the Pi process ([ADR 0023](../../docs/adr/0023-pause-stops-automation-not-pi.md)); `retry` starts a new attempt on the same branch ([ADR 0025](../../docs/adr/0025-retry-starts-new-attempt-on-same-branch.md)). |
+| `cleanup <run-id>\|--merged`                    | Remove worktrees/branches. Merged runs delete their worktrees ([ADR 0019](../../docs/adr/0019-merged-runs-delete-worktrees.md)).                                                                                                                                                                                                                                                     |
+| `cleanup gc [--older-than-days N] [--vacuum]`   | Delete old events/deliveries, WAL checkpoint, optional VACUUM.                                                                                                                                                                                                                                                                                                                       |
+| `help [topic]` / `completion bash\|zsh`         | Help text and shell completion scripts.                                                                                                                                                                                                                                                                                                                                              |
 
 ## Run lifecycle
 
@@ -80,10 +80,23 @@ Run IDs (`src/conductor/run-id.ts` `createRunId`): `<owner>__<repo>__<issue>__<u
 
 `serve` runs a webhook server (when configured) **and** a polling loop as a safety net ([ADR 0015](../../docs/adr/0015-webhooks-and-polling-ship-together.md), [0016](../../docs/adr/0016-webhook-listener-is-configured-explicitly.md)).
 
-- **Webhook** (`src/conductor/webhook.ts`): GitHub gets an HTTP response only after the delivery is durably recorded in SQLite — *before* reconcile work runs. Supported events: `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `pull_request_review_comment`, `check_run`, `check_suite`, `status`, `workflow_run`, `projects_v2_item`. Delivery IDs dedupe retries; failures retry with exponential backoff; GitHub rate-limit errors back off ~15 min (`rate-limit.ts` `GITHUB_RATE_LIMIT_BACKOFF_MS`). Unknown events are ACKed and ignored.
+- **Webhook** (`src/conductor/webhook.ts`): GitHub gets an HTTP response only after the delivery is durably recorded in SQLite — _before_ reconcile work runs. Supported events: `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `pull_request_review_comment`, `check_run`, `check_suite`, `status`, `workflow_run`, `projects_v2_item`. Delivery IDs dedupe retries; failures retry with exponential backoff; GitHub rate-limit errors back off ~15 min (`rate-limit.ts` `GITHUB_RATE_LIMIT_BACKOFF_MS`). Unknown events are ACKed and ignored.
 - **Crash recovery**: on startup, `processPendingWebhookDeliveries` replays deliveries left in `received`/`processing`.
 - **Polling** (`startPolling`): avoids overlapping reconcile runs, respects `pollingIntervalSeconds` (default 60, [ADR 0038](../../docs/adr/0038-polling-interval-has-config-with-default.md)), and backs off on rate-limit errors. Webhooks narrow reconcile scope to the affected repo/issue/PR/item.
 - **Hot reload** (`createConfigReloader`): watches `config.json` and each repo's `.pi/WORKFLOW.md`; on change reloads config, revalidates, swaps polling/webhook, and re-reconciles. Changing `stateRoot` requires a restart.
+
+GitHub webhook setup:
+
+| GitHub field     | Value                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------- |
+| Payload URL      | Public HTTPS URL ending with configured `webhook.path`, e.g. `https://agent.example.com/github/webhook` |
+| Content type     | `application/json`                                                                                      |
+| Secret           | Same value as `webhook.secret` env/file; Conductor verifies `X-Hub-Signature-256`                       |
+| SSL verification | Enable SSL verification                                                                                 |
+| Events           | Let me select individual events                                                                         |
+| Active           | Checked                                                                                                 |
+
+Select these individual events in GitHub: Issues, Issue comments, Pull requests, Pull request reviews, Pull request review comments, Check runs, Check suites, Statuses, and Workflow runs. Repository webhooks usually do not show a “Projects v2 items” checkbox. Conductor supports `projects_v2_item` when a webhook source exposes it, but polling remains the safety net for project-only changes such as status/field updates. Do not choose “Just the push event”; Conductor ignores push events. “Send me everything” is safe but noisy because unsupported events are ACKed and ignored.
 
 ## Workflow expressions and launch rules
 

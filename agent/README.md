@@ -133,6 +133,48 @@ pull_request_review_comment, check_run, check_suite, status, workflow_run,
 projects_v2_item
 ```
 
+GitHub webhook form choices:
+
+```text
+Payload URL: https://<public-host><webhook.path>
+Content type: application/json
+Secret: same value as webhook.secret env/file
+SSL verification: Enable SSL verification
+Events: Let me select individual events
+Active: checked
+```
+
+Select these individual events:
+
+```text
+Issues
+Issue comments
+Pull requests
+Pull request reviews
+Pull request review comments
+Check runs
+Check suites
+Statuses
+Workflow runs
+```
+
+Do not choose `Just the push event`; Conductor does not use push events. `Send me everything` works but creates noisy ignored deliveries.
+
+`projects_v2_item` deliveries are supported when a GitHub webhook source exposes them, but repository webhooks usually do not show a “Projects v2 items” checkbox. That is OK; polling remains the safety net for project-only changes such as status/field updates.
+
+Example config:
+
+```json
+{
+  "webhook": {
+    "host": "127.0.0.1",
+    "port": 8787,
+    "path": "/github/webhook",
+    "secret": { "env": "PI_CONDUCTOR_WEBHOOK_SECRET" }
+  }
+}
+```
+
 Supervisor-friendly modes:
 
 ```bash

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
 import { asRecord, readString } from "../utils/unknown-data.js";
@@ -12,6 +12,13 @@ const execFileAsync = promisify(execFile);
 const HerdrResponseSchema = Type.Object({
   result: Type.Record(Type.String(), Type.Unknown()),
 });
+const HerdrAgentStatusSchema = Type.Union([
+  Type.Literal("idle"),
+  Type.Literal("working"),
+  Type.Literal("blocked"),
+  Type.Literal("done"),
+  Type.Literal("unknown"),
+]);
 
 const SUBMIT_KEYS = {
   steer: "enter",
@@ -20,6 +27,7 @@ const SUBMIT_KEYS = {
 const HERDR_COMMAND_TIMEOUT_MS = 10_000;
 
 export type ConductorDeliveryMode = keyof typeof SUBMIT_KEYS;
+export type HerdrAgentStatus = Static<typeof HerdrAgentStatusSchema>;
 
 export type HerdrRunInput = {
   owner: string;
@@ -43,6 +51,7 @@ export interface HerdrSessionManager {
     input: Pick<HerdrRunInput, "owner" | "repo" | "issueNumber" | "slug">,
   ): Promise<HerdrLocation | undefined>;
   paneExists(handles: HerdrHandles): Promise<boolean>;
+  agentStatus(handles: HerdrHandles): Promise<HerdrAgentStatus | undefined>;
   send(handles: HerdrHandles, message: string, delivery: ConductorDeliveryMode): Promise<void>;
   stop(handles: HerdrHandles): Promise<void>;
 }
@@ -123,6 +132,18 @@ export class CliHerdrSessionManager implements HerdrSessionManager {
       return true;
     } catch (error) {
       if (isMissingHerdrTarget(error)) return false;
+      throw error;
+    }
+  }
+
+  async agentStatus(handles: HerdrHandles): Promise<HerdrAgentStatus | undefined> {
+    if (handles.paneId === undefined) return undefined;
+    try {
+      return parseHerdrAgentStatus(
+        await this.herdr(["agent", "get", handles.paneId], undefined, "herdr agent get"),
+      );
+    } catch (error) {
+      if (isMissingHerdrTarget(error)) return undefined;
       throw error;
     }
   }
@@ -248,6 +269,12 @@ export function parseHerdrPanes(stdout: string): Array<{ paneId: string; tabId: 
     const tabId = readString(entry.tab_id);
     return paneId === undefined || tabId === undefined ? [] : [{ paneId, tabId }];
   });
+}
+
+export function parseHerdrAgentStatus(stdout: string): HerdrAgentStatus | undefined {
+  const response = parseHerdrResponse(stdout, "herdr agent get");
+  const status = readString(asRecord(response.result.agent)?.agent_status);
+  return status !== undefined && Value.Check(HerdrAgentStatusSchema, status) ? status : undefined;
 }
 
 export function repositoryWorkspaceLabel(owner: string, repo: string): string {

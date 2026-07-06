@@ -11,7 +11,6 @@ import {
   resolveRepositoryConfig,
   validateGlobalConfig,
 } from "./config.js";
-import { evaluateCondition } from "./expression.js";
 import { renderConductorComment, renderFollowUpMessages } from "./follow-up.js";
 import type { GitHubClient, PullRequestSummary } from "./github.js";
 import {
@@ -23,20 +22,20 @@ import {
   scopePullRequestForRun,
   shouldScanProjectItems,
 } from "./reconcile-scope.js";
+import { buildRecoveryPromptContext } from "./recovery-context.js";
 import { runToPlan, runToWorkItem, sameRepository } from "./run-record.js";
-import type { ConductorDeliveryMode, HerdrSessionManager } from "./herdr.js";
+import { hasRunStatusForWorkItem, isEligibleForAutomatedDispatch } from "./run-status.js";
+import type { ConductorDeliveryMode, HerdrAgentStatus, HerdrSessionManager } from "./herdr.js";
+import { selectLaunchFlags } from "./launch-rules.js";
 import { appendRunLog } from "./logging.js";
-import {
-  buildExpressionContext,
-  renderInitialPrompt,
-  type RecoveryPromptFeedback,
-  writePromptArtifact,
-} from "./prompt.js";
+import { renderInitialPrompt, writePromptArtifact } from "./prompt.js";
 import { createRunId, slugify } from "./run-id.js";
 import { RunRecordSchema, type RunRecord, type WorkItem } from "./store/types.js";
 import type { ConductorStore } from "./store/types.js";
-import { type WorktreePlan, WorktreeManager, relativePromptPath } from "./worktree.js";
+import { WorktreeManager, relativePromptPath } from "./worktree.js";
 import { loadWorkflow, workflowConfigOverrides, type WorkflowFile } from "./workflow.js";
+
+const HERDR_BLOCKED_REASON = "Pi session needs operator input in Herdr";
 
 export type ConductorOrchestratorDeps = {
   config: GlobalConductorConfig;
@@ -119,8 +118,8 @@ export class ConductorOrchestrator {
             workItem.issueNumber,
           );
           if (active !== undefined) continue;
-          if (await this.hasBlockedRun(workItem)) continue;
-          if (await this.hasCompletedRun(workItem)) continue;
+          if (await hasRunStatusForWorkItem(this.deps.store, workItem, "blocked")) continue;
+          if (await hasRunStatusForWorkItem(this.deps.store, workItem, "done")) continue;
           try {
             dispatched.push(
               await this.dispatchWorkItem(repo, workItem, { manual: false, launchFlags: [] }),
@@ -161,7 +160,8 @@ export class ConductorOrchestrator {
 
   async resume(runId: string): Promise<RunRecord> {
     const run = await this.getRunOrThrow(runId);
-    const updated = this.touch({ ...run, paused: false });
+    const status = isHerdrAttentionBlocked(run) ? activeStatusForRun(run) : run.status;
+    const updated = this.touch({ ...run, paused: false, status, lastError: undefined });
     await this.deps.store.updateRun(updated);
     await this.record(updated, "resume", {});
     return updated;
@@ -214,7 +214,11 @@ export class ConductorOrchestrator {
         runId: run.runId,
         attempt: run.attempt + 1,
         recovery: true,
-        recoveryContext: await this.buildRecoveryPromptContext(run),
+        recoveryContext: await buildRecoveryPromptContext({
+          github: this.deps.github,
+          run,
+          store: this.deps.store,
+        }),
       });
       const promptArtifact = await writePromptArtifact(plan.worktreePath, prompt);
       const herdr = await this.deps.herdr.launch({
@@ -413,9 +417,10 @@ export class ConductorOrchestrator {
   ): Promise<void> {
     for (const run of await this.deps.store.listRuns()) {
       try {
-        if (run.paused || run.status === "done" || run.status === "blocked") continue;
+        if (run.paused || run.status === "done") continue;
+        if (run.status === "blocked" && !isHerdrAttentionBlocked(run)) continue;
         if (!scopeMatchesRun(scope, run)) continue;
-        const liveRun = await this.ensureRunSession(run);
+        const liveRun = await this.syncHerdrAgentStatus(await this.ensureRunSession(run));
         const pr =
           scopePullRequestForRun(scope, liveRun) ??
           (await this.deps.github.findPullRequestByBranch(
@@ -483,8 +488,8 @@ export class ConductorOrchestrator {
         runToWorkItem(blocked),
         repo.config.statusOptions.blocked,
       );
-      await this.commentBestEffort(
-        runToWorkItem(blocked),
+      await this.commentRunBestEffort(
+        blocked,
         renderConductorComment({
           config: repo.config,
           error: `PR closed without merge (${pr.url})`,
@@ -496,6 +501,14 @@ export class ConductorOrchestrator {
       );
       await this.record(blocked, "blocked", { prUrl: pr.url, reason: "pr_closed" });
       return blocked;
+    }
+
+    if (isHerdrAttentionBlocked(run)) {
+      if (run.prUrl === pr.url && run.prNumber === pr.number) return run;
+      const associated = this.touch({ ...run, prNumber: pr.number, prUrl: pr.url });
+      await this.deps.store.updateRun(associated);
+      await this.record(associated, "pr_associated", { prUrl: pr.url });
+      return associated;
     }
 
     if (run.prUrl === pr.url && run.status === "in_review" && run.prNumber === pr.number) {
@@ -607,7 +620,11 @@ export class ConductorOrchestrator {
       runId: run.runId,
       attempt: run.attempt,
       recovery: true,
-      recoveryContext: await this.buildRecoveryPromptContext(run),
+      recoveryContext: await buildRecoveryPromptContext({
+        github: this.deps.github,
+        run,
+        store: this.deps.store,
+      }),
     });
     const promptArtifact = await writePromptArtifact(plan.worktreePath, prompt);
     const herdr = await this.deps.herdr.launch({
@@ -624,6 +641,57 @@ export class ConductorOrchestrator {
     await this.deps.store.updateRun(recovered);
     await this.record(recovered, "herdr_recovered", { herdr });
     return recovered;
+  }
+
+  private async syncHerdrAgentStatus(run: RunRecord): Promise<RunRecord> {
+    const status = await this.deps.herdr.agentStatus(run.herdr);
+    if (status === undefined || status === "unknown") return run;
+    if (status === "blocked") return this.blockForHerdrAttention(run);
+    if (isHerdrAttentionBlocked(run)) return this.unblockFromHerdrAttention(run, status);
+    return run;
+  }
+
+  private async blockForHerdrAttention(run: RunRecord): Promise<RunRecord> {
+    if (isHerdrAttentionBlocked(run) || run.status === "blocked") return run;
+    const repo = await this.getResolvedRepo(run.owner, run.repo);
+    const blocked = this.touch({ ...run, status: "blocked", lastError: HERDR_BLOCKED_REASON });
+    await this.deps.store.updateRun(blocked);
+    await this.updateProjectStatusBestEffort(
+      repo.config,
+      runToWorkItem(blocked),
+      repo.config.statusOptions.blocked,
+    );
+    await this.commentRunBestEffort(
+      blocked,
+      renderConductorComment({
+        config: repo.config,
+        error: HERDR_BLOCKED_REASON,
+        event: "runBlocked",
+        run: blocked,
+        workflow: repo.workflow,
+      }),
+    );
+    await this.record(blocked, "blocked", { reason: "herdr_agent_blocked" });
+    return blocked;
+  }
+
+  private async unblockFromHerdrAttention(
+    run: RunRecord,
+    agentStatus: Exclude<HerdrAgentStatus, "blocked" | "unknown">,
+  ): Promise<RunRecord> {
+    const repo = await this.getResolvedRepo(run.owner, run.repo);
+    const status = run.prNumber === undefined ? "in_progress" : "in_review";
+    const unblocked = this.touch({ ...run, status, lastError: undefined });
+    await this.deps.store.updateRun(unblocked);
+    await this.updateProjectStatusBestEffort(
+      repo.config,
+      runToWorkItem(unblocked),
+      status === "in_review"
+        ? repo.config.statusOptions.in_review
+        : repo.config.statusOptions.in_progress,
+    );
+    await this.record(unblocked, "unblocked", { reason: "herdr_agent_status", agentStatus });
+    return unblocked;
   }
 
   private async loadRepositoryRuntime(
@@ -691,6 +759,17 @@ export class ConductorOrchestrator {
     } catch {}
   }
 
+  private async commentRunBestEffort(run: RunRecord, body: string | undefined): Promise<void> {
+    if (run.prNumber === undefined) {
+      await this.commentBestEffort(runToWorkItem(run), body);
+      return;
+    }
+    await this.commentBestEffort(
+      { ...runToWorkItem(run), issueNumber: run.prNumber, issueUrl: run.prUrl ?? run.issueUrl },
+      body,
+    );
+  }
+
   private async updateProjectStatusBestEffort(
     repo: ManagedRepositoryConfig,
     workItem: WorkItem,
@@ -701,88 +780,16 @@ export class ConductorOrchestrator {
     } catch {}
   }
 
-  private async hasBlockedRun(workItem: WorkItem): Promise<boolean> {
-    return (await this.deps.store.listRuns()).some(
-      (run) =>
-        run.owner === workItem.owner &&
-        run.repo === workItem.repo &&
-        run.issueNumber === workItem.issueNumber &&
-        run.status === "blocked",
-    );
-  }
-
-  private async hasCompletedRun(workItem: WorkItem): Promise<boolean> {
-    return (await this.deps.store.listRuns()).some(
-      (run) =>
-        run.owner === workItem.owner &&
-        run.repo === workItem.repo &&
-        run.issueNumber === workItem.issueNumber &&
-        run.status === "done",
-    );
-  }
-
-  private async buildRecoveryPromptContext(run: RunRecord): Promise<{
-    run: RunRecord;
-    feedback: RecoveryPromptFeedback[];
-    events: Array<{ kind: string; createdAt: string }>;
-  }> {
-    return {
-      run,
-      feedback: await this.readRecoveryFeedback(run),
-      events: (await this.deps.store.listEvents(run.runId, 10)).map((event) => ({
-        kind: event.kind,
-        createdAt: event.createdAt,
-      })),
-    };
-  }
-
-  private async readRecoveryFeedback(run: RunRecord): Promise<RecoveryPromptFeedback[]> {
-    if (run.prNumber === undefined) return [];
-    try {
-      const login = await this.deps.github.getAuthenticatedUser();
-      return await this.deps.github.listPullRequestFeedback(
-        run.owner,
-        run.repo,
-        run.prNumber,
-        run.issueNumber,
-        [login],
-      );
-    } catch {
-      return [];
-    }
-  }
-
   private assertConfigReady(): void {
     const errors = validateGlobalConfig(this.deps.config);
     if (errors.length > 0) throw new Error(`Invalid conductor config:\n${errors.join("\n")}`);
   }
 }
 
-export function isEligibleForAutomatedDispatch(
-  workItem: WorkItem,
-  dispatchLabel: string,
-  authenticatedLogin: string,
-): boolean {
-  return workItem.labels.includes(dispatchLabel) && workItem.assignees.includes(authenticatedLogin);
+function isHerdrAttentionBlocked(run: RunRecord): boolean {
+  return run.status === "blocked" && run.lastError === HERDR_BLOCKED_REASON;
 }
 
-function selectLaunchFlags(
-  workflow: WorkflowFile,
-  config: ResolvedRepositoryConfig,
-  workItem: WorkItem,
-  plan: WorktreePlan,
-  runId: string,
-): string[] {
-  const context = buildExpressionContext({
-    config,
-    workflow,
-    workItem,
-    plan,
-    runId,
-    attempt: 1,
-  });
-  for (const rule of workflow.frontmatter.launchRules ?? []) {
-    if (evaluateCondition(rule.if, context)) return rule.flags;
-  }
-  return [];
+function activeStatusForRun(run: RunRecord): "in_progress" | "in_review" {
+  return run.prNumber === undefined ? "in_progress" : "in_review";
 }

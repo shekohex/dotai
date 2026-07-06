@@ -45,10 +45,12 @@ import {
 import {
   CliHerdrSessionManager,
   deliveryModeToSubmitKey,
+  parseHerdrAgentStatus,
   parseHerdrPanes,
   parseHerdrTabs,
   parseHerdrWorkspaces,
   type ConductorDeliveryMode,
+  type HerdrAgentStatus,
   type HerdrRunInput,
   type HerdrSessionManager,
 } from "../src/conductor/herdr.js";
@@ -1090,6 +1092,11 @@ describe("conductor adapters", () => {
         JSON.stringify({ result: { panes: [{ pane_id: "w1:p1", tab_id: "w1:t1" }] } }),
       ),
     ).toEqual([{ paneId: "w1:p1", tabId: "w1:t1" }]);
+    expect(
+      parseHerdrAgentStatus(
+        JSON.stringify({ result: { agent: { pane_id: "w1:p1", agent_status: "blocked" } } }),
+      ),
+    ).toBe("blocked");
     expect(deliveryModeToSubmitKey("steer")).toBe("enter");
     expect(deliveryModeToSubmitKey("followUp")).toBe("alt+enter");
   });
@@ -1698,6 +1705,138 @@ describe("conductor orchestrator", () => {
     expect(herdr.sent[1]?.message).toContain("<!-- pi-conductor -->");
   });
 
+  test("Herdr blocked agent marks run blocked and comments on the PR", async () => {
+    const tempDir = await createTempDir("conductor-herdr-blocked-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({
+      status: "in_review",
+      prNumber: 2,
+      prUrl: "https://github.com/octo/demo/pull/2",
+      herdr: { paneId: "p1" },
+    });
+    await store.createRun(run);
+    const github = new FakeGitHub(workItem());
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: run.branch,
+      state: "OPEN",
+      isDraft: false,
+    };
+    const herdr = new FakeHerdr();
+    herdr.agentStatusResult = "blocked";
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: repoPath,
+    });
+
+    await orchestrator.reconcile();
+
+    await expect(store.getRun(run.runId)).resolves.toMatchObject({
+      status: "blocked",
+      lastError: "Pi session needs operator input in Herdr",
+    });
+    expect(github.statusUpdates).toEqual(["Blocked"]);
+    expect(github.comments).toEqual([expect.stringContaining("Pi Conductor blocked run run-1")]);
+    expect(github.commentTargets).toEqual([2]);
+  });
+
+  test("Herdr attention-blocked run still routes GitHub answers", async () => {
+    const tempDir = await createTempDir("conductor-herdr-blocked-feedback-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({
+      status: "blocked",
+      lastError: "Pi session needs operator input in Herdr",
+      prNumber: 2,
+      prUrl: "https://github.com/octo/demo/pull/2",
+      herdr: { paneId: "p1" },
+    });
+    await store.createRun(run);
+    const github = new FakeGitHub(workItem());
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: run.branch,
+      state: "OPEN",
+      isDraft: false,
+    };
+    github.feedback = [
+      { key: "comment:answer", kind: "issue_comment", body: "Use option B.", author: "human" },
+    ];
+    const herdr = new FakeHerdr();
+    herdr.agentStatusResult = "blocked";
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: repoPath,
+    });
+
+    await orchestrator.reconcile();
+
+    expect(herdr.sent).toEqual([
+      expect.objectContaining({
+        delivery: "followUp",
+        message: expect.stringContaining("Use option B."),
+      }),
+    ]);
+    await expect(store.getRun(run.runId)).resolves.toMatchObject({
+      status: "blocked",
+      routedFeedbackKeys: ["comment:answer"],
+    });
+  });
+
+  test("Herdr attention-blocked run unblocks when agent resumes", async () => {
+    const tempDir = await createTempDir("conductor-herdr-unblocked-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({
+      status: "blocked",
+      lastError: "Pi session needs operator input in Herdr",
+      prNumber: 2,
+      prUrl: "https://github.com/octo/demo/pull/2",
+      herdr: { paneId: "p1" },
+    });
+    await store.createRun(run);
+    const github = new FakeGitHub(workItem());
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: run.branch,
+      state: "OPEN",
+      isDraft: false,
+    };
+    const herdr = new FakeHerdr();
+    herdr.agentStatusResult = "working";
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: repoPath,
+    });
+
+    await orchestrator.reconcile();
+
+    await expect(store.getRun(run.runId)).resolves.toMatchObject({
+      status: "in_review",
+      lastError: undefined,
+    });
+    expect(github.statusUpdates).toEqual(["Review"]);
+  });
+
   test("automated reconcile does not restart completed work", async () => {
     const tempDir = await createTempDir("conductor-done-reconcile-");
     const repoPath = join(tempDir, "repo");
@@ -2061,6 +2200,7 @@ function postWebhook(
 class FakeGitHub implements GitHubClient {
   readonly statusUpdates: string[] = [];
   readonly comments: string[] = [];
+  readonly commentTargets: number[] = [];
   listProjectItemsCount = 0;
   findPullRequestByBranchCount = 0;
   pr: PullRequestSummary | undefined;
@@ -2093,7 +2233,8 @@ class FakeGitHub implements GitHubClient {
     this.statusUpdates.push(statusName);
   }
 
-  async commentIssue(_workItem: WorkItem, body: string): Promise<void> {
+  async commentIssue(workItem: WorkItem, body: string): Promise<void> {
+    this.commentTargets.push(workItem.issueNumber);
     this.comments.push(body);
   }
 
@@ -2111,6 +2252,7 @@ class FakeHerdr implements HerdrSessionManager {
   readonly launches: HerdrRunInput[] = [];
   readonly sent: Array<{ message: string; delivery: ConductorDeliveryMode }> = [];
   paneExistsResult = true;
+  agentStatusResult: HerdrAgentStatus | undefined;
   stopCount = 0;
 
   async launch(input: HerdrRunInput): Promise<HerdrHandles> {
@@ -2132,6 +2274,10 @@ class FakeHerdr implements HerdrSessionManager {
 
   async paneExists(): Promise<boolean> {
     return this.paneExistsResult;
+  }
+
+  async agentStatus(): Promise<HerdrAgentStatus | undefined> {
+    return this.agentStatusResult;
   }
 
   async stop(): Promise<void> {

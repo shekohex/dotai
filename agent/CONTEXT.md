@@ -88,6 +88,10 @@ _Avoid_: Follow-Up, PR feedback, operator review comment
 A repository workflow template that renders a Conductor Comment for a specific lifecycle event while Conductor appends its hidden marker outside the user-authored text.
 _Avoid_: Follow-Up Rule, GitHub review template
 
+**Herdr Attention Block**:
+A reversible blocked run caused by Herdr reporting the owning Pi pane as `agent_status: "blocked"`, usually because the agent needs operator input.
+_Avoid_: terminal run failure, paused run, PR failure
+
 **Run ID**:
 A durable conductor identifier formatted as `owner__repo__issue__uuidv7` for commands, logs, and state references.
 _Avoid_: Herdr pane id, Pi session id

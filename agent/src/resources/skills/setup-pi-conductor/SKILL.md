@@ -125,9 +125,11 @@ Known keys:
 - `prAssociated`: posted when Conductor associates a PR with a run.
 - `runCompleted`: posted when a PR merges and run becomes `done`.
 - `runStopped`: posted when operator stops a run.
-- `runBlocked`: posted when run becomes blocked.
+- `runBlocked`: posted when run becomes blocked, including when Herdr reports the Pi pane as `agent_status: "blocked"`.
 
 Each key supports `template` and `enabled`. `enabled: false` suppresses that specific comment.
+
+When Herdr says a conductor-owned Pi pane is blocked, Conductor moves the run and project card to Blocked and posts `runBlocked` on the PR if one is associated, otherwise on the issue. That block remains reconcilable so GitHub answers can still route into the blocked pane.
 
 ```yaml
 conductorComments:

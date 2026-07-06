@@ -147,6 +147,8 @@ Follow-up rules are ordered; all matching templates render. Consecutive matches 
 
 Every routed follow-up also tells the agent to include `<!-- pi-conductor -->` in any GitHub comment or review response it posts for that feedback. This avoids self-comment routing loops.
 
+During reconciliation, Conductor also checks Herdr's JSON agent status for owned Pi panes. If Herdr reports `blocked`, Conductor moves the run/card to Blocked and posts the `runBlocked` comment on the PR when known, otherwise the issue. These Herdr attention blocks remain reconcilable so GitHub answers can still be routed into the blocked pane.
+
 Human/agent commands:
 
 ```bash

@@ -8,12 +8,12 @@ This mode replaced an earlier `pi_rpc_bridge.py` subprocess wrapper that was fra
 
 ## Implementation
 
-| File | Role |
-| --- | --- |
-| `src/cli.ts` | `isRemoteMode(args)` intercepts before `main()`; `runRemoteMode()` then exits the process when done. |
-| `src/remote/mode.ts` | TCP server: arg parsing, JSONL framing, auth handshake, ping/pong heartbeat, per-connection lifecycle, idle watcher, shutdown. |
-| `src/remote/commands.ts` | `createCommandHandler` — dispatches command types to direct `AgentSession` API calls. |
-| `src/remote/session.ts` | `createRemoteSession` — builds an in-process `AgentSession` with the full set of bundled extensions, a noop UI context, and mode `"rpc"`. |
+| File                     | Role                                                                                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/cli.ts`             | `isRemoteMode(args)` intercepts before `main()`; `runRemoteMode()` then exits the process when done.                                      |
+| `src/remote/mode.ts`     | TCP server: arg parsing, JSONL framing, auth handshake, ping/pong heartbeat, per-connection lifecycle, idle watcher, shutdown.            |
+| `src/remote/commands.ts` | `createCommandHandler` — dispatches command types to direct `AgentSession` API calls.                                                     |
+| `src/remote/session.ts`  | `createRemoteSession` — builds an in-process `AgentSession` with the full set of bundled extensions, a noop UI context, and mode `"rpc"`. |
 
 ## Lifecycle
 

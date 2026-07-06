@@ -29,11 +29,11 @@ At runtime, `ensureRuntimeDefaultSettings()` (`src/runtime-default-settings.ts`)
 
 Three `patch-package` patches against upstream `@earendil-works` packages:
 
-| Patch | Target | Effect |
-| --- | --- | --- |
-| `@earendil-works+pi-ai+0.80.3.patch` | `pi-ai/dist/utils/retry.js` | Adds retryable error patterns: `request failed`, `failed after retries`, `no response body`, `websocket transport is not available`, `stream closed before response.completed`, `invalid codex sse json`, `invalid codex websocket json`, `error occurred while processing your request`. |
-| `@earendil-works+pi-coding-agent++@earendil-works+pi-ai+0.80.3.patch` | the **nested** copy of `pi-ai` inside `pi-coding-agent/node_modules/` | Identical retry-pattern additions (handles npm's non-deduped nested install). |
-| `@earendil-works+pi-coding-agent+0.80.3.patch` | `pi-coding-agent/dist/modes/interactive/components/tool-execution.js` | Removes an extra `Spacer(1)` in `ToolExecutionComponent` — eliminates unwanted top spacing in tool execution UI. |
+| Patch                                                                 | Target                                                                | Effect                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@earendil-works+pi-ai+0.80.3.patch`                                  | `pi-ai/dist/utils/retry.js`                                           | Adds retryable error patterns: `request failed`, `failed after retries`, `no response body`, `websocket transport is not available`, `stream closed before response.completed`, `invalid codex sse json`, `invalid codex websocket json`, `error occurred while processing your request`. |
+| `@earendil-works+pi-coding-agent++@earendil-works+pi-ai+0.80.3.patch` | the **nested** copy of `pi-ai` inside `pi-coding-agent/node_modules/` | Identical retry-pattern additions (handles npm's non-deduped nested install).                                                                                                                                                                                                             |
+| `@earendil-works+pi-coding-agent+0.80.3.patch`                        | `pi-coding-agent/dist/modes/interactive/components/tool-execution.js` | Removes an extra `Spacer(1)` in `ToolExecutionComponent` — eliminates unwanted top spacing in tool execution UI.                                                                                                                                                                          |
 
 ### Upstream patches
 
@@ -50,14 +50,14 @@ Never remove or downgrade functionality/dependencies to fix type errors — upgr
 
 `pi update` is intercepted at the top of `src/cli.ts` by `handleWrapperUpdateCommand()` (`src/update/command.ts`); if handled, the process exits. The flow:
 
-| File | Role |
-| --- | --- |
-| `src/update/command.ts` | Parses `update` args and target (`--self` / `--extensions` / `--all`, default all), orchestrates the run. |
-| `src/update/version.ts` | `getRuntimeVersion` — reads `package.json`, classifies the channel (`latest` vs `preview`; preview versions match a `dev.<commit>` pattern). |
-| `src/update/github-packages.ts` | `getLatestPackageRelease` — queries the GitHub Packages npm registry for dist-tag metadata; for the preview channel also hits the GitHub Releases API. |
-| `src/update/auth.ts` | `resolveAuthToken` — checks `$NODE_AUTH_TOKEN`/`$NPM_TOKEN`/`$GH_TOKEN`/`$GITHUB_TOKEN`, falling back to `gh auth token`. `verifyGitHubPackagesAccess` confirms the token has `read:packages`. |
+| File                            | Role                                                                                                                                                                                                                                                             |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/update/command.ts`         | Parses `update` args and target (`--self` / `--extensions` / `--all`, default all), orchestrates the run.                                                                                                                                                        |
+| `src/update/version.ts`         | `getRuntimeVersion` — reads `package.json`, classifies the channel (`latest` vs `preview`; preview versions match a `dev.<commit>` pattern).                                                                                                                     |
+| `src/update/github-packages.ts` | `getLatestPackageRelease` — queries the GitHub Packages npm registry for dist-tag metadata; for the preview channel also hits the GitHub Releases API.                                                                                                           |
+| `src/update/auth.ts`            | `resolveAuthToken` — checks `$NODE_AUTH_TOKEN`/`$NPM_TOKEN`/`$GH_TOKEN`/`$GITHUB_TOKEN`, falling back to `gh auth token`. `verifyGitHubPackagesAccess` confirms the token has `read:packages`.                                                                   |
 | `src/update/package-manager.ts` | `resolveInstallMethod` — infers npm/pnpm/bun/yarn from install-state or by probing global roots; `withTemporaryNpmrc` writes a temp `.npmrc` with `@shekohex:registry=https://npm.pkg.github.com` + the token; `createUpdateCommand` builds the install command. |
-| `src/update/install-state.ts` | Reads/writes `~/.pi/agent/install.json` (schema version, method, channel, version, commit). |
+| `src/update/install-state.ts`   | Reads/writes `~/.pi/agent/install.json` (schema version, method, channel, version, commit).                                                                                                                                                                      |
 
 Runtime steps:
 

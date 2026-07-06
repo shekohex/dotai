@@ -8,85 +8,85 @@ This page lists every extension with a one-line purpose and its key source files
 
 ## Core UI & rendering
 
-| ID | Purpose | Key files |
-| --- | --- | --- |
-| `coreui` | Rich TUI overrides: per-tool renderers (bash/read/edit/write), editor with AI autocomplete, TPS tracking, background bash (tmux/pty/herdr backends), agent-end usage summary, `@`-mention autocomplete (GitHub/skill refs), working indicator. The most invasive UI extension. | `src/extensions/coreui/` (`index.ts`, `tools*.ts`, `background-bash*.ts`, `editor.ts`, `ai-autocomplete-backend.ts`, `tps*.ts`, `agent-end-summary.ts`, `github-reference-autocomplete.ts`) |
-| `mermaid` | Renders Mermaid diagrams in the TUI (uses `mermaid` + `beautiful-mermaid`). | `src/extensions/mermaid.ts` |
-| `pi-osc` | Emits OSC escape-sequence terminal control (title spinner, tool presentations) for external terminals. | `src/extensions/pi-osc/` (`extension.ts`, `encoder.ts`, `title-spinner.ts`) |
-| `terminal-tmux-ui` | Tmux-aware terminal UI bindings. | `src/extensions/terminal-tmux-ui.ts` |
-| `warp` | Warp terminal integration (encoder/runtime). | `src/extensions/warp/` (`index.ts`, `encoder.ts`, `runtime.ts`) |
+| ID                 | Purpose                                                                                                                                                                                                                                                                        | Key files                                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `coreui`           | Rich TUI overrides: per-tool renderers (bash/read/edit/write), editor with AI autocomplete, TPS tracking, background bash (tmux/pty/herdr backends), agent-end usage summary, `@`-mention autocomplete (GitHub/skill refs), working indicator. The most invasive UI extension. | `src/extensions/coreui/` (`index.ts`, `tools*.ts`, `background-bash*.ts`, `editor.ts`, `ai-autocomplete-backend.ts`, `tps*.ts`, `agent-end-summary.ts`, `github-reference-autocomplete.ts`) |
+| `mermaid`          | Renders Mermaid diagrams in the TUI (uses `mermaid` + `beautiful-mermaid`).                                                                                                                                                                                                    | `src/extensions/mermaid.ts`                                                                                                                                                                 |
+| `pi-osc`           | Emits OSC escape-sequence terminal control (title spinner, tool presentations) for external terminals.                                                                                                                                                                         | `src/extensions/pi-osc/` (`extension.ts`, `encoder.ts`, `title-spinner.ts`)                                                                                                                 |
+| `terminal-tmux-ui` | Tmux-aware terminal UI bindings.                                                                                                                                                                                                                                               | `src/extensions/terminal-tmux-ui.ts`                                                                                                                                                        |
+| `warp`             | Warp terminal integration (encoder/runtime).                                                                                                                                                                                                                                   | `src/extensions/warp/` (`index.ts`, `encoder.ts`, `runtime.ts`)                                                                                                                             |
 
 ## Tools
 
-| ID | Purpose | Key files |
-| --- | --- | --- |
-| `patch` | `apply_patch` tool with rich diff rendering and parser. | `src/extensions/patch/` (`index.ts`, `parser.ts`, `execution.ts`, `render*.ts`) |
-| `files` | File-entry model, git-aware entry builder, diff/session-changes, selector and references for the editor. | `src/extensions/files/` (`index.ts`, `model.ts`, `entry-git.ts`, `entry-builder.ts`, `diff.ts`, `session-changes.ts`) |
-| `fff` | Overrides `find`/`grep` with FFF (`@ff-labs/fff-node`) fast file finder; FFF-backed autocomplete. Has a concurrency guard against native DB deadlocks. | `src/extensions/fff/` (`index.ts`, `tools.ts`, `autocomplete.ts`, `query.ts`) |
-| `websearch` | Web search tool. | `src/extensions/websearch.ts` |
-| `fetch` | URL fetch tool (markdown conversion). | `src/extensions/fetch/` (`index.ts`, `execution.ts`, `render.ts`) |
-| `executor` | `execute`/`resume` tools for external MCP/OpenAPI/GraphQL services; includes Docker sandbox config. | `src/extensions/executor/` (`index.ts`, `mcp-client.ts`, `http.ts`, `tools*.ts`, `docker/`) |
-| `subagent` | Registers the `subagent` tool and child-session lifecycle. Built via `createSubagentExtension`. See [Subagent SDK](../sessions/subagent-sdk.md). | `src/extensions/subagent/` (`extension.ts`, `tool.ts`, `execution.ts`, `shared.ts`) |
-| `commit` | Atomic conventional commit helper. | `src/extensions/commit.ts` |
-| `skill-read` | Lets the agent read SKILL.md files on demand. | `src/extensions/skill-read.ts` |
+| ID           | Purpose                                                                                                                                                | Key files                                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `patch`      | `apply_patch` tool with rich diff rendering and parser.                                                                                                | `src/extensions/patch/` (`index.ts`, `parser.ts`, `execution.ts`, `render*.ts`)                                       |
+| `files`      | File-entry model, git-aware entry builder, diff/session-changes, selector and references for the editor.                                               | `src/extensions/files/` (`index.ts`, `model.ts`, `entry-git.ts`, `entry-builder.ts`, `diff.ts`, `session-changes.ts`) |
+| `fff`        | Overrides `find`/`grep` with FFF (`@ff-labs/fff-node`) fast file finder; FFF-backed autocomplete. Has a concurrency guard against native DB deadlocks. | `src/extensions/fff/` (`index.ts`, `tools.ts`, `autocomplete.ts`, `query.ts`)                                         |
+| `websearch`  | Web search tool.                                                                                                                                       | `src/extensions/websearch.ts`                                                                                         |
+| `fetch`      | URL fetch tool (markdown conversion).                                                                                                                  | `src/extensions/fetch/` (`index.ts`, `execution.ts`, `render.ts`)                                                     |
+| `executor`   | `execute`/`resume` tools for external MCP/OpenAPI/GraphQL services; includes Docker sandbox config.                                                    | `src/extensions/executor/` (`index.ts`, `mcp-client.ts`, `http.ts`, `tools*.ts`, `docker/`)                           |
+| `subagent`   | Registers the `subagent` tool and child-session lifecycle. Built via `createSubagentExtension`. See [Subagent SDK](../sessions/subagent-sdk.md).       | `src/extensions/subagent/` (`extension.ts`, `tool.ts`, `execution.ts`, `shared.ts`)                                   |
+| `commit`     | Atomic conventional commit helper.                                                                                                                     | `src/extensions/commit.ts`                                                                                            |
+| `skill-read` | Lets the agent read SKILL.md files on demand.                                                                                                          | `src/extensions/skill-read.ts`                                                                                        |
 
 ## Modes & models
 
-| ID | Purpose | Key files |
-| --- | --- | --- |
-| `modes` | Mode application/switching, model failover/failure tracking, restore on resume. See [Providers & models](../providers/overview.md). | `src/extensions/modes/` (`index.ts`, `apply.ts`, `core.ts`, `failover.ts`, `model-failure.ts`, `model-health-store.ts`, `restore.ts`, `runtime.ts`) |
-| `litellm` | LiteLLM gateway discovery and provider re-registration. | `src/extensions/litellm.ts` |
-| `openusage` | Live per-provider usage/rate-limit tracking (codex/zai/google) shown in the TUI. | `src/extensions/openusage/` (`index.ts`, `controller.ts`, `providers/`, `model-map.ts`) |
-| `openai-better` | `/fast` priority service tier for Codex models + `/imagen` image generation via LiteLLM. | `src/extensions/openai-better/` (`index.ts`, `settings.ts`, `image.ts`) |
-| `model-family-system-prompt` | Swaps the base system prompt per model family (`codex`/`gpt`/`gemini`/`kimi`/`default`). | `src/extensions/model-family-system-prompt.ts`, `src/resources/system/*.md` |
-| `debug-provider-request` | Diagnostics for raw provider requests. | `src/extensions/debug-provider-request.ts` |
+| ID                           | Purpose                                                                                                                             | Key files                                                                                                                                           |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `modes`                      | Mode application/switching, model failover/failure tracking, restore on resume. See [Providers & models](../providers/overview.md). | `src/extensions/modes/` (`index.ts`, `apply.ts`, `core.ts`, `failover.ts`, `model-failure.ts`, `model-health-store.ts`, `restore.ts`, `runtime.ts`) |
+| `litellm`                    | LiteLLM gateway discovery and provider re-registration.                                                                             | `src/extensions/litellm.ts`                                                                                                                         |
+| `openusage`                  | Live per-provider usage/rate-limit tracking (codex/zai/google) shown in the TUI.                                                    | `src/extensions/openusage/` (`index.ts`, `controller.ts`, `providers/`, `model-map.ts`)                                                             |
+| `openai-better`              | `/fast` priority service tier for Codex models + `/imagen` image generation via LiteLLM.                                            | `src/extensions/openai-better/` (`index.ts`, `settings.ts`, `image.ts`)                                                                             |
+| `model-family-system-prompt` | Swaps the base system prompt per model family (`codex`/`gpt`/`gemini`/`kimi`/`default`).                                            | `src/extensions/model-family-system-prompt.ts`, `src/resources/system/*.md`                                                                         |
+| `debug-provider-request`     | Diagnostics for raw provider requests.                                                                                              | `src/extensions/debug-provider-request.ts`                                                                                                          |
 
 > `model-fallbacks` and `pi-ai-models` are not standalone registered extensions — they are shared modules consumed by the extensions above. See [Providers & models](../providers/overview.md).
 
 ## Sessions
 
-| ID | Purpose | Key files |
-| --- | --- | --- |
-| `session-query` | Query past sessions (with settings + autocomplete). | `src/extensions/session-query/` (`index.ts`, `execution.ts`, `state.ts`, `render.ts`) |
-| `session-archive` | Archive/restore sessions, sweep old ones. | `src/extensions/session-archive/` (`index.ts`, `picker.ts`, `sweep.ts`, `paths.ts`) |
-| `session-breakdown` | Per-session usage/cost breakdown tables + graphs. | `src/extensions/session-breakdown/` (`index.ts`, `compute.ts`, `metrics.ts`, `graph.ts`) |
-| `session-name` | Auto/derivable session naming. | `src/extensions/session-name.ts` |
-| `compaction` | Context compaction hooks (uses model fallbacks for the summarizer). | `src/extensions/compaction.ts` |
-| `context-prune` | Configurable context pruning with per-tool rules; summarizer backend. | `src/extensions/context-prune/` (`index.ts`, `types.ts`) |
-| `context` | `/context` command and snapshot view. | `src/extensions/context/` (`index.ts`, `command.ts`, `view.ts`) |
-| `branch-summary` | Git-branch-aware session summary (uses model fallbacks). | `src/extensions/branch-summary.ts` |
-| `handoff` | Summarizes the parent session into a child subagent's bootstrap prompt. | `src/extensions/handoff/` (`index.ts`, `launch.ts`, `args.ts`, `events.ts`) |
+| ID                  | Purpose                                                                 | Key files                                                                                |
+| ------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `session-query`     | Query past sessions (with settings + autocomplete).                     | `src/extensions/session-query/` (`index.ts`, `execution.ts`, `state.ts`, `render.ts`)    |
+| `session-archive`   | Archive/restore sessions, sweep old ones.                               | `src/extensions/session-archive/` (`index.ts`, `picker.ts`, `sweep.ts`, `paths.ts`)      |
+| `session-breakdown` | Per-session usage/cost breakdown tables + graphs.                       | `src/extensions/session-breakdown/` (`index.ts`, `compute.ts`, `metrics.ts`, `graph.ts`) |
+| `session-name`      | Auto/derivable session naming.                                          | `src/extensions/session-name.ts`                                                         |
+| `compaction`        | Context compaction hooks (uses model fallbacks for the summarizer).     | `src/extensions/compaction.ts`                                                           |
+| `context-prune`     | Configurable context pruning with per-tool rules; summarizer backend.   | `src/extensions/context-prune/` (`index.ts`, `types.ts`)                                 |
+| `context`           | `/context` command and snapshot view.                                   | `src/extensions/context/` (`index.ts`, `command.ts`, `view.ts`)                          |
+| `branch-summary`    | Git-branch-aware session summary (uses model fallbacks).                | `src/extensions/branch-summary.ts`                                                       |
+| `handoff`           | Summarizes the parent session into a child subagent's bootstrap prompt. | `src/extensions/handoff/` (`index.ts`, `launch.ts`, `args.ts`, `events.ts`)              |
 
 > `session-replacement.ts` is a shared module (stale-context error type) used by several session extensions.
 
 ## Workflows & goals
 
-| ID | Purpose | Key files |
-| --- | --- | --- |
+| ID                  | Purpose                                                                                                                                                                             | Key files                                                                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dynamic-workflows` | Loads/runs `.workflow.js` scripts with fan-out subagents, pause/resume, persistence; `/wf:<name>` routing. See [Resources → workflows](../resources/overview.md#dynamic-workflows). | `src/extensions/dynamic-workflows/` (`index.ts`, `workflow-manager.ts`, `workflow-tool.ts`, `workflow-commands.ts`, `builtin-registry.ts`, `adversarial-review.ts`, `deep-research.ts`) |
-| `goal` | Durable agent goals with autonomous continuation across compaction/resume; publishes status via `notify`. | `src/extensions/goal/` (`index.ts`, `workflow.ts`, `workflow-runtime.ts`, `tools.ts`, `commands.ts`, `state.ts`) |
-| `gsd` | "Get Shit Done" project lifecycle (project → milestone → phase) with subagent orchestration and persistent `.planning/` state. Drives the bundled `gsd/` resources. | `src/extensions/gsd/` (`index.ts`, `lifecycle/`, `state/`, `instant/`, `orchestration.ts`, `modes.ts`) |
+| `goal`              | Durable agent goals with autonomous continuation across compaction/resume; publishes status via `notify`.                                                                           | `src/extensions/goal/` (`index.ts`, `workflow.ts`, `workflow-runtime.ts`, `tools.ts`, `commands.ts`, `state.ts`)                                                                        |
+| `gsd`               | "Get Shit Done" project lifecycle (project → milestone → phase) with subagent orchestration and persistent `.planning/` state. Drives the bundled `gsd/` resources.                 | `src/extensions/gsd/` (`index.ts`, `lifecycle/`, `state/`, `instant/`, `orchestration.ts`, `modes.ts`)                                                                                  |
 
 ## Interaction & context
 
-| ID | Purpose | Key files |
-| --- | --- | --- |
+| ID                  | Purpose                                                                                                     | Key files                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `ask-user-question` | Structured multi-step questionnaires in the TUI (single/multi-select, text, screenshots) with keyboard nav. | `src/extensions/ask-user-question/` (`index.ts`, `ask-user-question.ts`, `state/`, `view/`) |
-| `references` | Repository/dashboard/wizard for cross-session references. | `src/extensions/references/` (`index.ts`, `repository.ts`, `dashboard.ts`, `wizard.ts`) |
-| `prompt-stash` | Stash/browse saved prompts (browser UI). | `src/extensions/prompt-stash/` (`index.ts`, `browser.ts`, `storage.ts`) |
-| `agents-md` | Loads `AGENTS.md` project instructions into the system prompt. | `src/extensions/agents-md.ts` |
-| `project-trust` | Project trust/directory allowlisting. | `src/extensions/project-trust.ts` |
+| `references`        | Repository/dashboard/wizard for cross-session references.                                                   | `src/extensions/references/` (`index.ts`, `repository.ts`, `dashboard.ts`, `wizard.ts`)     |
+| `prompt-stash`      | Stash/browse saved prompts (browser UI).                                                                    | `src/extensions/prompt-stash/` (`index.ts`, `browser.ts`, `storage.ts`)                     |
+| `agents-md`         | Loads `AGENTS.md` project instructions into the system prompt.                                              | `src/extensions/agents-md.ts`                                                               |
+| `project-trust`     | Project trust/directory allowlisting.                                                                       | `src/extensions/project-trust.ts`                                                           |
 
 ## Integrations & external surfaces
 
-| ID | Purpose | Key files |
-| --- | --- | --- |
-| `notify` | HTTP notification publishing (HMAC auth) for external viewers; used by `goal`. | `src/extensions/notify/` (`index.ts`, `server`-less; `client.ts`, `auth.ts`, `events.ts`, `tool.ts`) |
-| `glance` | Local web dashboard (daemon + HTTP server) for a session glance. | `src/extensions/glance/` (`index.ts`, `daemon.ts`, `server.ts`, `http.ts`), `src/resources/glance/index.html` |
-| `tmux-share` | Exposes a tmux pane in the browser (server + terminal bridge). | `src/extensions/tmux-share/` (`index.ts`, `server.ts`, `terminal.ts`, `state.ts`), `src/resources/tmux-share/index.html` |
-| `plannotator` | File-based plan mode with a vendored React review UI (annotations, approvals). `generated/` is built from `vendor/plannotator-ui`. | `src/extensions/plannotator/` (`index.ts`, `plannotator-browser.ts`, `plannotator-command-handlers.ts`, `generated/`) |
-| `auto-trees` | Auto worktree marker API for parallel work. | `src/extensions/auto-trees/` (`index.ts`, `marker-api.ts`) |
-| `cache-graph` | Prompt-cache hit/miss graph and stats view. | `src/extensions/cache-graph/` (`index.ts`, `graph-view.ts`, `stats-view.ts`, `cumulative.ts`) |
-| `agent-alerts` | Configurable agent alerts. | `src/extensions/agent-alerts/index.ts` |
-| `herdr-agent-state` | Exposes herdr workspace/agent state to pi (herdr mux backend uses this). | `src/extensions/herdr-agent-state.ts` |
-| `openwiki` | Registers the OpenWiki mode (init/update/chat for `openwiki/` docs). | `src/extensions/openwiki/index.ts`, `src/resources/modes/openwiki.md` |
+| ID                  | Purpose                                                                                                                            | Key files                                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `notify`            | HTTP notification publishing (HMAC auth) for external viewers; used by `goal`.                                                     | `src/extensions/notify/` (`index.ts`, `server`-less; `client.ts`, `auth.ts`, `events.ts`, `tool.ts`)                     |
+| `glance`            | Local web dashboard (daemon + HTTP server) for a session glance.                                                                   | `src/extensions/glance/` (`index.ts`, `daemon.ts`, `server.ts`, `http.ts`), `src/resources/glance/index.html`            |
+| `tmux-share`        | Exposes a tmux pane in the browser (server + terminal bridge).                                                                     | `src/extensions/tmux-share/` (`index.ts`, `server.ts`, `terminal.ts`, `state.ts`), `src/resources/tmux-share/index.html` |
+| `plannotator`       | File-based plan mode with a vendored React review UI (annotations, approvals). `generated/` is built from `vendor/plannotator-ui`. | `src/extensions/plannotator/` (`index.ts`, `plannotator-browser.ts`, `plannotator-command-handlers.ts`, `generated/`)    |
+| `auto-trees`        | Auto worktree marker API for parallel work.                                                                                        | `src/extensions/auto-trees/` (`index.ts`, `marker-api.ts`)                                                               |
+| `cache-graph`       | Prompt-cache hit/miss graph and stats view.                                                                                        | `src/extensions/cache-graph/` (`index.ts`, `graph-view.ts`, `stats-view.ts`, `cumulative.ts`)                            |
+| `agent-alerts`      | Configurable agent alerts.                                                                                                         | `src/extensions/agent-alerts/index.ts`                                                                                   |
+| `herdr-agent-state` | Exposes herdr workspace/agent state to pi (herdr mux backend uses this).                                                           | `src/extensions/herdr-agent-state.ts`                                                                                    |
+| `openwiki`          | Registers the OpenWiki mode (init/update/chat for `openwiki/` docs).                                                               | `src/extensions/openwiki/index.ts`, `src/resources/modes/openwiki.md`                                                    |

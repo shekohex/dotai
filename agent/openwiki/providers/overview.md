@@ -20,20 +20,20 @@ If no gateway is healthy, this extension registers nothing and upstream builtins
 
 ## Provider roster
 
-| Name used in modes | Registered by | Upstream pi-ai id | Auth / env |
-| --- | --- | --- | --- |
-| `codex-openai` | litellm (proxy when gateway up) | `openai-codex` (builtin models copied) | litellm key / `$LITELLM_API_KEY` |
-| `opencode-go` | upstream builtin | `opencode-go` | `$OPENCODE_API_KEY` (not via `/login`) |
-| `zai` | litellm (native URL) or builtin | `zai` | `$ZAI_API_KEY` |
-| `zai-coding-plan` | litellm only (synthesized) | — | litellm key |
-| `deepseek` | litellm (proxy) or builtin | `deepseek` | litellm key, or `$DEEPSEEK_API_KEY` |
-| `gemini` | litellm (proxy) or builtin | `google` | google credentials |
+| Name used in modes | Registered by                   | Upstream pi-ai id                      | Auth / env                             |
+| ------------------ | ------------------------------- | -------------------------------------- | -------------------------------------- |
+| `codex-openai`     | litellm (proxy when gateway up) | `openai-codex` (builtin models copied) | litellm key / `$LITELLM_API_KEY`       |
+| `opencode-go`      | upstream builtin                | `opencode-go`                          | `$OPENCODE_API_KEY` (not via `/login`) |
+| `zai`              | litellm (native URL) or builtin | `zai`                                  | `$ZAI_API_KEY`                         |
+| `zai-coding-plan`  | litellm only (synthesized)      | —                                      | litellm key                            |
+| `deepseek`         | litellm (proxy) or builtin      | `deepseek`                             | litellm key, or `$DEEPSEEK_API_KEY`    |
+| `gemini`           | litellm (proxy) or builtin      | `google`                               | google credentials                     |
 
 > `zai-coding-plan` exists **only** when the gateway is up — it has no builtin registration, so the default-modes fallback chains (which include it) only resolve end-to-end when a gateway is reachable. `zai` itself still works natively without a gateway.
 
 ## Model fallbacks
 
-`src/extensions/model-fallbacks.ts` defines a global chain used by background tasks (not the main chat model) that need *some* working model for cheap auxiliary calls:
+`src/extensions/model-fallbacks.ts` defines a global chain used by background tasks (not the main chat model) that need _some_ working model for cheap auxiliary calls:
 
 ```
 codex-openai/gpt-5.4-mini → zai/glm-5.2 → zai-coding-plan/glm-5.2
@@ -85,12 +85,12 @@ Settings shape (`openaiBetter`): `{ fast: { persistState, enabled, supportedMode
 
 ## Auth & environment variables
 
-| Var | Used by |
-| --- | --- |
-| `$LITELLM_API_KEY` (or `AuthStorage("litellm")`) | litellm-proxied providers + `imagen` |
-| `$ZAI_API_KEY` | `zai` (native) + `zai` usage fetch |
-| `$OPENCODE_API_KEY` | `opencode-go` (upstream builtin) |
-| `$DEEPSEEK_API_KEY` | `deepseek` when no gateway |
-| `$NODE_AUTH_TOKEN` / `$NPM_TOKEN` / `$GH_TOKEN` / `$GITHUB_TOKEN` (or `gh auth token`) | `pi update` GitHub Packages auth |
+| Var                                                                                    | Used by                              |
+| -------------------------------------------------------------------------------------- | ------------------------------------ |
+| `$LITELLM_API_KEY` (or `AuthStorage("litellm")`)                                       | litellm-proxied providers + `imagen` |
+| `$ZAI_API_KEY`                                                                         | `zai` (native) + `zai` usage fetch   |
+| `$OPENCODE_API_KEY`                                                                    | `opencode-go` (upstream builtin)     |
+| `$DEEPSEEK_API_KEY`                                                                    | `deepseek` when no gateway           |
+| `$NODE_AUTH_TOKEN` / `$NPM_TOKEN` / `$GH_TOKEN` / `$GITHUB_TOKEN` (or `gh auth token`) | `pi update` GitHub Packages auth     |
 
 `openai-better.fast.supportedModels`, `aiAutocomplete.*`, `contextPrune.*`, `dynamic_workflows.*`, `sessionQuery.*`, `sessionArchive.*`, `interview.*`, and `openaiBetter.*` are all settings keys read from `~/.pi/agent/settings.json` (or project `.pi/settings.json`).

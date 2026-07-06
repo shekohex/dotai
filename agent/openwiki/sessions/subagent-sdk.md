@@ -23,47 +23,47 @@ parent session
 
 `createDefaultMuxAdapter` (`default-mux.ts`) is a `FallbackMuxAdapter` (`fallback-mux.ts`) that tries backends in order and uses the first that's available:
 
-| Backend | File | When used | Pane id format |
-| --- | --- | --- | --- |
-| **Herdr** | `herdr.ts` | When the herdr workspace manager is present. | `w\d+:p\d+` |
-| **Tmux** | `tmux.ts` | When `$TMUX` is set (inside a tmux session). Uses `tmux` CLI (`load-buffer`/`paste-buffer`, `capture-pane`). | `%<digits>` |
-| **Pty** | `pty.ts` | Always available — in-process PTY via `zigpty` + `@xterm/headless`. Last resort. | `pty:<pid>:...` |
+| Backend   | File       | When used                                                                                                    | Pane id format  |
+| --------- | ---------- | ------------------------------------------------------------------------------------------------------------ | --------------- |
+| **Herdr** | `herdr.ts` | When the herdr workspace manager is present.                                                                 | `w\d+:p\d+`     |
+| **Tmux**  | `tmux.ts`  | When `$TMUX` is set (inside a tmux session). Uses `tmux` CLI (`load-buffer`/`paste-buffer`, `capture-pane`). | `%<digits>`     |
+| **Pty**   | `pty.ts`   | Always available — in-process PTY via `zigpty` + `@xterm/headless`. Last resort.                             | `pty:<pid>:...` |
 
 Consumers can override the chain via `adapterFactory` in the subagent extension options.
 
 ## Lite vs process runtime
 
-| Dimension | Lite | Process |
-| --- | --- | --- |
-| Child mechanism | In-process `createAgentSession` (same Node process) | Separate `pi` subprocess in a mux pane |
-| Session manager | `createLiteSessionManager` (`lite-session-manager.ts`) — in-memory or file-backed | File-backed child session path |
-| IPC | Direct event forwarding via `SubagentRuntimeEventBus` (`events.ts`) | Unix socket JSONL (`bootstrap-ipc.ts` + `ipc.ts`) |
-| Structured output | Retry loop in `lite-runtime.ts` + `lite-structured-output.ts` | Child-side `StructuredOutput` tool + `bootstrap-structured.ts` |
-| Isolation | Shared process, isolated `AgentSession` + resource loader | Full subprocess isolation |
-| UI | `lite-runtime-ui.ts` | shared `ui.ts` dashboard via `runtime-hooks.ts` |
+| Dimension         | Lite                                                                              | Process                                                        |
+| ----------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Child mechanism   | In-process `createAgentSession` (same Node process)                               | Separate `pi` subprocess in a mux pane                         |
+| Session manager   | `createLiteSessionManager` (`lite-session-manager.ts`) — in-memory or file-backed | File-backed child session path                                 |
+| IPC               | Direct event forwarding via `SubagentRuntimeEventBus` (`events.ts`)               | Unix socket JSONL (`bootstrap-ipc.ts` + `ipc.ts`)              |
+| Structured output | Retry loop in `lite-runtime.ts` + `lite-structured-output.ts`                     | Child-side `StructuredOutput` tool + `bootstrap-structured.ts` |
+| Isolation         | Shared process, isolated `AgentSession` + resource loader                         | Full subprocess isolation                                      |
+| UI                | `lite-runtime-ui.ts`                                                              | shared `ui.ts` dashboard via `runtime-hooks.ts`                |
 
 Lite is chosen when the SDK is created with `{ backend: { kind: "lite" } }`; the default extension wiring uses the process (mux-backed) path.
 
 ## Key files
 
-| File | Role |
-| --- | --- |
-| `sdk.ts` | `createSubagentSDK` — top-level factory producing a lite or process SDK. |
-| `launch.ts` | `buildLaunchCommand` — assembles the child `pi` shell command (`--session`, `--model`, `--continue`, env vars carrying bootstrap state). |
-| `bootstrap.ts` | `installChildBootstrap` — child-side entry; reads `CHILD_STATE_ENV`/`CHILD_STATE_FILE_ENV`, wires structured output + IPC + lifecycle handlers. `isChildSession()` detects child mode. |
-| `bootstrap-core.ts` | Bootstrap runtime state + structured-output state machine. |
-| `bootstrap-ipc.ts` | `registerChildIpcBridge` — forwards child events to the parent over a unix socket. |
-| `bootstrap-handlers.ts` | Registers child lifecycle handlers (`session_start`, `turn_*`, `agent_end`, `shutdown`). |
-| `bootstrap-structured.ts` | Structured-output capture, retry, persistence on the child side. |
-| `ipc.ts` | `createSubagentIpcServer` / `connectSubagentIpcClient` — JSONL-framed unix socket. |
-| `persistence.ts` / `persistence-helpers.ts` | Child session-file creation, outcome reading, ephemeral outcome files, auto-exit markers. |
-| `modes.ts` | `resolveSubagentMode` — resolves the mode spec, filters tools (patch-apply-aware), selects the model. |
-| `prompt.ts` | Subagent role prompt template. |
-| `status.ts` | `isTerminalSubagentStatus` (completed/failed/cancelled). |
-| `runtime/*.ts` | Process-runtime implementation: `base.ts` (spawn/restore skeleton), `execution.ts` (resume, state bundles), `messaging.ts` (message delivery + auto-resume), `monitoring.ts` (pane polling, output capture, auto-exit). |
-| `sdk-spawn.ts` | `createSpawnFunction` — blocking spawn with structured-output retry + `waitForCompletion`. |
-| `sdk-handle.ts` | `SDKSubagentHandle` — per-session `getState`/`sendMessage`/`cancel`/`waitForCompletion`/`captureOutput`. |
-| `schema-definitions.ts`, `types.ts`, `sdk-types.ts` | TypeBox schemas for cross-boundary data (`RuntimeSubagent`, `ChildBootstrapState`, structured-output entries). |
+| File                                                | Role                                                                                                                                                                                                                    |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sdk.ts`                                            | `createSubagentSDK` — top-level factory producing a lite or process SDK.                                                                                                                                                |
+| `launch.ts`                                         | `buildLaunchCommand` — assembles the child `pi` shell command (`--session`, `--model`, `--continue`, env vars carrying bootstrap state).                                                                                |
+| `bootstrap.ts`                                      | `installChildBootstrap` — child-side entry; reads `CHILD_STATE_ENV`/`CHILD_STATE_FILE_ENV`, wires structured output + IPC + lifecycle handlers. `isChildSession()` detects child mode.                                  |
+| `bootstrap-core.ts`                                 | Bootstrap runtime state + structured-output state machine.                                                                                                                                                              |
+| `bootstrap-ipc.ts`                                  | `registerChildIpcBridge` — forwards child events to the parent over a unix socket.                                                                                                                                      |
+| `bootstrap-handlers.ts`                             | Registers child lifecycle handlers (`session_start`, `turn_*`, `agent_end`, `shutdown`).                                                                                                                                |
+| `bootstrap-structured.ts`                           | Structured-output capture, retry, persistence on the child side.                                                                                                                                                        |
+| `ipc.ts`                                            | `createSubagentIpcServer` / `connectSubagentIpcClient` — JSONL-framed unix socket.                                                                                                                                      |
+| `persistence.ts` / `persistence-helpers.ts`         | Child session-file creation, outcome reading, ephemeral outcome files, auto-exit markers.                                                                                                                               |
+| `modes.ts`                                          | `resolveSubagentMode` — resolves the mode spec, filters tools (patch-apply-aware), selects the model.                                                                                                                   |
+| `prompt.ts`                                         | Subagent role prompt template.                                                                                                                                                                                          |
+| `status.ts`                                         | `isTerminalSubagentStatus` (completed/failed/cancelled).                                                                                                                                                                |
+| `runtime/*.ts`                                      | Process-runtime implementation: `base.ts` (spawn/restore skeleton), `execution.ts` (resume, state bundles), `messaging.ts` (message delivery + auto-resume), `monitoring.ts` (pane polling, output capture, auto-exit). |
+| `sdk-spawn.ts`                                      | `createSpawnFunction` — blocking spawn with structured-output retry + `waitForCompletion`.                                                                                                                              |
+| `sdk-handle.ts`                                     | `SDKSubagentHandle` — per-session `getState`/`sendMessage`/`cancel`/`waitForCompletion`/`captureOutput`.                                                                                                                |
+| `schema-definitions.ts`, `types.ts`, `sdk-types.ts` | TypeBox schemas for cross-boundary data (`RuntimeSubagent`, `ChildBootstrapState`, structured-output entries).                                                                                                          |
 
 ## Structured output
 

@@ -47,6 +47,72 @@ pi --mode remote --host 127.0.0.1 --port 0 --token <secret> [--remote-idle-timeo
 
 See [REMOTE.md](./REMOTE.md) for the full protocol, lifecycle, command surface, and client examples.
 
+## Pi Conductor
+
+`pi conductor` is a repo/project worker for agent-driven GitHub issue work. It watches configured GitHub Projects v2 items, dispatches eligible issues into isolated worktrees, routes PR/check/comment feedback back to the running Herdr pane, and persists state in `~/.pi/agent/conductor` by default.
+
+Quick start:
+
+```bash
+pi conductor config init
+pi conductor config validate
+pi conductor serve
+```
+
+Human/agent commands:
+
+```bash
+pi conductor help
+pi conductor run --help
+pi conductor status --json
+pi conductor run owner/repo#123 --mode-deep
+pi conductor send <run-id> "address review feedback" --follow-up
+pi conductor logs <run-id>
+pi conductor cleanup --merged
+```
+
+Shell completion:
+
+```bash
+source <(pi conductor completion bash)
+source <(pi conductor completion zsh)
+```
+
+For persistent bash completion, save the generated script into your shell completion directory. For zsh, save it as `_pi_conductor` in a directory on `fpath`.
+
+Webhook mode is enabled in `~/.pi/agent/conductor/config.json`. GitHub receives a response after the delivery is durably recorded, before any reconcile work runs. If the process crashes after ACK, startup replays `received` and `processing` deliveries from SQLite. Supported events are:
+
+```text
+issues, issue_comment, pull_request, pull_request_review,
+pull_request_review_comment, check_run, check_suite, status, workflow_run,
+projects_v2_item
+```
+
+Supervisor-friendly modes:
+
+```bash
+pi conductor serve                 # foreground, best for systemd/supervisord
+pi conductor daemon start          # local background helper
+pi conductor daemon status
+pi conductor daemon stop
+```
+
+Daemon files live under `~/.pi/agent/conductor/daemon` unless `stateRoot` is configured:
+
+```text
+conductor.pid
+conductor.log
+conductor.err.log
+```
+
+Resilience model:
+
+- Polling remains a safety net; webhooks narrow work to repo/issue/PR/project-item scope.
+- Webhook delivery IDs dedupe retries.
+- Failed delivery processing retries with exponential backoff; GitHub rate-limit errors back off for 15 minutes.
+- Polling avoids overlapping reconcile runs and backs off on rate-limit errors.
+- Unknown webhook events are ACKed and ignored to avoid needless GitHub API usage.
+
 ## Development
 
 Build the package:

@@ -19,7 +19,10 @@ installBundledResourcePaths();
 if (await handleWrapperUpdateCommand({ args })) process.exit(process.exitCode ?? 0);
 const resolvedCwd = resolveCwd(process.cwd());
 if (resolvedCwd !== process.cwd()) process.chdir(resolvedCwd);
-if (isRemoteMode(args)) { await runRemoteMode(parseRemoteModeArgs(args, resolvedCwd)); process.exit(0); }
+if (isRemoteMode(args)) {
+  await runRemoteMode(parseRemoteModeArgs(args, resolvedCwd));
+  process.exit(0);
+}
 if (shouldEnsureRuntimeDefaultSettings(args)) await ensureRuntimeDefaultSettings();
 await main(args, { extensionFactories: bundledExtensionFactories });
 ```

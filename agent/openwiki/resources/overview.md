@@ -25,14 +25,14 @@ Reusable templates injected into agent prompts: `concise.md`, `deslop.md`, `conf
 
 Each is a directory with a `SKILL.md` (and optional resources), discovered by `discoverSkillPaths()`:
 
-| Skill | Extras |
-| --- | --- |
-| `creating-goals/` | `references/PROMPT_GUIDE_GPT5_5.md`, `scripts/draft-goal.{sh,ps1}` |
-| `dynamic-workflows/` | `references/API.md`, `references/PATTERNS.md` |
-| `executor/` | — |
-| `herdr/` | — |
-| `run-app/` | `examples/{cli,electron,library,playwright,server,tui}.md` |
-| `run-skill-generator/` | `template.md` |
+| Skill                  | Extras                                                             |
+| ---------------------- | ------------------------------------------------------------------ |
+| `creating-goals/`      | `references/PROMPT_GUIDE_GPT5_5.md`, `scripts/draft-goal.{sh,ps1}` |
+| `dynamic-workflows/`   | `references/API.md`, `references/PATTERNS.md`                      |
+| `executor/`            | —                                                                  |
+| `herdr/`               | —                                                                  |
+| `run-app/`             | `examples/{cli,electron,library,playwright,server,tui}.md`         |
+| `run-skill-generator/` | `template.md`                                                      |
 
 ## dynamic workflows
 
@@ -48,15 +48,15 @@ A large project-lifecycle system (project → milestone → phase) driven by the
 
 The resource tree:
 
-| Subdir | Contents |
-| --- | --- |
-| `agents/` | 30+ subagent role prompts (`gsd-planner`, `gsd-executor`, `gsd-debugger`, `gsd-verifier`, `gsd-security-auditor`, `gsd-code-reviewer`, …). |
-| `bin/lib/*.cjs` | A bundled CLI toolchain (40+ files): `init`, `milestone`, `phase`, `roadmap`, `state`, `verify`, `validate`, `drift`, `uat`, `intel`, `audit`, … plus `*-command-router.cjs` routers. Entry: `bin/gsd-tools.cjs`. |
-| `commands/gsd/*.md` | Per-command help (`new-project`, `plan-phase`, `execute-phase`, `complete-milestone`, `debug`, `verify-work`, …). |
-| `docs/` | `overview.md`, `architecture.md`, `user-guide.md`, `command-reference.md`, `role-reference.md`, `audit.md`, `checklist.md`, `compatibility.md`. |
-| `templates/` | Project, milestone, research, UAT, validation, retrospective templates. |
-| `workflows/` | Markdown workflow definitions for the phase lifecycle (`plan-phase`, `execute-phase`, `discuss-phase`, `verify-work`, `new-milestone`, `complete-milestone`, `progress`, `diagnose-issues`, …). |
-| `references/` | Deep guides: `questioning`, `tdd`, `context-budget`, `planner-revision`, `gates`, `checkpoints`, `thinking-models-*`, `common-bug-patterns`, … |
+| Subdir              | Contents                                                                                                                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agents/`           | 30+ subagent role prompts (`gsd-planner`, `gsd-executor`, `gsd-debugger`, `gsd-verifier`, `gsd-security-auditor`, `gsd-code-reviewer`, …).                                                                        |
+| `bin/lib/*.cjs`     | A bundled CLI toolchain (40+ files): `init`, `milestone`, `phase`, `roadmap`, `state`, `verify`, `validate`, `drift`, `uat`, `intel`, `audit`, … plus `*-command-router.cjs` routers. Entry: `bin/gsd-tools.cjs`. |
+| `commands/gsd/*.md` | Per-command help (`new-project`, `plan-phase`, `execute-phase`, `complete-milestone`, `debug`, `verify-work`, …).                                                                                                 |
+| `docs/`             | `overview.md`, `architecture.md`, `user-guide.md`, `command-reference.md`, `role-reference.md`, `audit.md`, `checklist.md`, `compatibility.md`.                                                                   |
+| `templates/`        | Project, milestone, research, UAT, validation, retrospective templates.                                                                                                                                           |
+| `workflows/`        | Markdown workflow definitions for the phase lifecycle (`plan-phase`, `execute-phase`, `discuss-phase`, `verify-work`, `new-milestone`, `complete-milestone`, `progress`, `diagnose-issues`, …).                   |
+| `references/`       | Deep guides: `questioning`, `tdd`, `context-budget`, `planner-revision`, `gates`, `checkpoints`, `thinking-models-*`, `common-bug-patterns`, …                                                                    |
 
 > The `gsd/docs/` directory is itself a useful reference; GSD's own behavior is documented there in more depth than this wiki reproduces.
 

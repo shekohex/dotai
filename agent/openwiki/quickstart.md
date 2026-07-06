@@ -16,23 +16,23 @@ The package is published to GitHub Packages and installs a single `pi` binary.
 
 ## Repository layout
 
-| Path | What lives here |
-| --- | --- |
-| `src/cli.ts` | Entry point — boot sequence (see [Architecture](./architecture/overview.md)). |
-| `src/default-settings.ts`, `src/default-modes.ts` | Bundled defaults seeded into `~/.pi/agent/`. |
-| `src/mode-*.ts` | Mode registry schema, loading, and the built-in mode presets. |
-| `src/extensions/` | ~47 bundled extensions, registered in three groups + subagent. See [Extensions catalog](./extensions/catalog.md). |
-| `src/subagent-sdk/` | In-process machinery for spawning child agent sessions. See [Subagent SDK](./sessions/subagent-sdk.md). |
-| `src/remote/` | TCP JSONL remote control mode. See [Remote mode](./sessions/remote.md). |
-| `src/update/` | `pi update` self-update from GitHub Packages. See [Build & update](./operations/build-and-update.md). |
-| `src/resources/` | Bundled prompts, themes, skills, workflows, and the GSD system. See [Resources](./resources/overview.md). |
-| `src/utils/` | Small shared helpers (cwd, xml, clipboard, browser, errors). |
-| `scripts/` | Build, postinstall, settings generation, bin prep. |
-| `patches/` | `patch-package` patches against upstream pi packages. |
-| `support/oxlint-plugin-project-rules/` | Custom oxlint rules enforcing the repo's boundary/type discipline. |
-| `vendor/plannotator-ui/` | Vendored React UI built into static HTML at build time. |
-| `test/` | Vitest suite. See [Testing](./operations/testing.md). |
-| `docs/`, `REMOTE.md`, `plans/` | Additional in-repo reference docs. |
+| Path                                              | What lives here                                                                                                   |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `src/cli.ts`                                      | Entry point — boot sequence (see [Architecture](./architecture/overview.md)).                                     |
+| `src/default-settings.ts`, `src/default-modes.ts` | Bundled defaults seeded into `~/.pi/agent/`.                                                                      |
+| `src/mode-*.ts`                                   | Mode registry schema, loading, and the built-in mode presets.                                                     |
+| `src/extensions/`                                 | ~47 bundled extensions, registered in three groups + subagent. See [Extensions catalog](./extensions/catalog.md). |
+| `src/subagent-sdk/`                               | In-process machinery for spawning child agent sessions. See [Subagent SDK](./sessions/subagent-sdk.md).           |
+| `src/remote/`                                     | TCP JSONL remote control mode. See [Remote mode](./sessions/remote.md).                                           |
+| `src/update/`                                     | `pi update` self-update from GitHub Packages. See [Build & update](./operations/build-and-update.md).             |
+| `src/resources/`                                  | Bundled prompts, themes, skills, workflows, and the GSD system. See [Resources](./resources/overview.md).         |
+| `src/utils/`                                      | Small shared helpers (cwd, xml, clipboard, browser, errors).                                                      |
+| `scripts/`                                        | Build, postinstall, settings generation, bin prep.                                                                |
+| `patches/`                                        | `patch-package` patches against upstream pi packages.                                                             |
+| `support/oxlint-plugin-project-rules/`            | Custom oxlint rules enforcing the repo's boundary/type discipline.                                                |
+| `vendor/plannotator-ui/`                          | Vendored React UI built into static HTML at build time.                                                           |
+| `test/`                                           | Vitest suite. See [Testing](./operations/testing.md).                                                             |
+| `docs/`, `REMOTE.md`, `plans/`                    | Additional in-repo reference docs.                                                                                |
 
 ## Boot flow (TL;DR)
 

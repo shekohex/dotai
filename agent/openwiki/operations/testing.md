@@ -15,16 +15,16 @@ Tests run on Vitest. The suite mixes unit tests, a TUI/tool-rendering "harness",
 
 ## npm test scripts
 
-| Script | Runs |
-| --- | --- |
-| `npm test` | `vitest run` (whole suite). |
-| `npm run test:json` | `vitest run --reporter=json` and prints the results path (for tooling). |
-| `npm run test:coverage` | `vitest run --coverage`. |
-| `npm run test:tool-preview` | `vitest run ./test/tool-preview.test.ts` — the tool-preview harness. |
-| `npm run test:harness` | `vitest run` over `harness`, `review`, `coreui-editor`, `coreui-builtins`. |
-| `npm run test:subagent` | `commit`, `subagent`, `subagent-sdk`. |
-| `npm run test:executor` | `./test/executor.test.ts`. |
-| `npm run test:keys` | `./test/pi-tui-keys.test.ts`. |
+| Script                      | Runs                                                                       |
+| --------------------------- | -------------------------------------------------------------------------- |
+| `npm test`                  | `vitest run` (whole suite).                                                |
+| `npm run test:json`         | `vitest run --reporter=json` and prints the results path (for tooling).    |
+| `npm run test:coverage`     | `vitest run --coverage`.                                                   |
+| `npm run test:tool-preview` | `vitest run ./test/tool-preview.test.ts` — the tool-preview harness.       |
+| `npm run test:harness`      | `vitest run` over `harness`, `review`, `coreui-editor`, `coreui-builtins`. |
+| `npm run test:subagent`     | `commit`, `subagent`, `subagent-sdk`.                                      |
+| `npm run test:executor`     | `./test/executor.test.ts`.                                                 |
+| `npm run test:keys`         | `./test/pi-tui-keys.test.ts`.                                              |
 
 ## Test categories
 
@@ -42,17 +42,17 @@ The `test/` directory mirrors the extension surface:
 
 `support/oxlint-plugin-project-rules/` (`index.mjs` + `rules/*.mjs` + `utils/`) implements the lint discipline referenced in the root `AGENTS.md` ("import, TypeScript, TypeBox, Reflect, JSON.parse, unsafe-boundary, and complexity rules"):
 
-| Rule | Enforces |
-| --- | --- |
-| `no-unsafe-json-parse` | `JSON.parse()` results must stay `unknown` until validated. |
-| `no-reflect-outside-allowlist` | `Reflect.*` only in explicitly allowlisted boundary files. |
-| `no-object-shape-cast-from-unknown` | No `as { ... }` casts on `unknown` values. |
-| `no-dynamic-import` | Disallows runtime `import(...)`. |
-| `no-inline-import-type` | Disallows `type X = import("./x").X` — use regular imports. |
-| `no-redundant-check-after-typebox` | No extra runtime checks after `Value.Check()`/`Value.Parse()`. |
-| `no-redundant-runtime-narrowing` | No `typeof`/`Array.isArray`/`in` checks already proven by same-file TS types. |
-| `no-inline-error-message-extraction` | No repeating `error instanceof Error ? error.message : String(error)`. |
-| `no-local-unknown-record-helper` | No redefining `asRecord`/`readString` helpers locally. |
+| Rule                                 | Enforces                                                                      |
+| ------------------------------------ | ----------------------------------------------------------------------------- |
+| `no-unsafe-json-parse`               | `JSON.parse()` results must stay `unknown` until validated.                   |
+| `no-reflect-outside-allowlist`       | `Reflect.*` only in explicitly allowlisted boundary files.                    |
+| `no-object-shape-cast-from-unknown`  | No `as { ... }` casts on `unknown` values.                                    |
+| `no-dynamic-import`                  | Disallows runtime `import(...)`.                                              |
+| `no-inline-import-type`              | Disallows `type X = import("./x").X` — use regular imports.                   |
+| `no-redundant-check-after-typebox`   | No extra runtime checks after `Value.Check()`/`Value.Parse()`.                |
+| `no-redundant-runtime-narrowing`     | No `typeof`/`Array.isArray`/`in` checks already proven by same-file TS types. |
+| `no-inline-error-message-extraction` | No repeating `error instanceof Error ? error.message : String(error)`.        |
+| `no-local-unknown-record-helper`     | No redefining `asRecord`/`readString` helpers locally.                        |
 
 These directly enforce the repo's convention of TypeBox schemas at boundaries and TypeScript narrowing over defensive runtime checks in internal code. When lint complains, fix the code shape rather than fighting the rule. See `support/oxlint-plugin-project-rules/README.md`.
 

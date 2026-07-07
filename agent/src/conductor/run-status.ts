@@ -59,6 +59,7 @@ export async function hasRunStatusForWorkItem(
 
 export async function handleClosedWorkItem(input: {
   blockRun: (run: RunRecord) => Promise<void>;
+  isRunCompleted: (run: RunRecord) => Promise<boolean>;
   store: ConductorStore;
   workItem: WorkItem;
 }): Promise<boolean> {
@@ -68,7 +69,7 @@ export async function handleClosedWorkItem(input: {
     input.workItem.repo,
     input.workItem.issueNumber,
   );
-  if (active !== undefined) await input.blockRun(active);
+  if (active !== undefined && !(await input.isRunCompleted(active))) await input.blockRun(active);
   return true;
 }
 
@@ -81,6 +82,18 @@ export async function dispatchAutomatedWorkItem(input: {
 }): Promise<RunRecord[]> {
   if (await hasMergedPullRequestForWorkItem(input)) return [];
   return [await input.dispatch()];
+}
+
+export async function hasMergedPullRequestForRun(input: {
+  github: GitHubClient;
+  run: RunRecord;
+}): Promise<boolean> {
+  const pr = await input.github.findPullRequestByBranch(
+    input.run.owner,
+    input.run.repo,
+    input.run.branch,
+  );
+  return isPullRequestMergedForIssue(pr, input.run.issueNumber);
 }
 
 export async function reactToFeedbackBestEffort(input: {
@@ -124,6 +137,13 @@ export async function hasMergedPullRequestForWorkItem(input: {
 
 export function isPullRequestMerged(pr: PullRequestSummary): boolean {
   return pr.mergedAt !== undefined || pr.state.toUpperCase() === "MERGED";
+}
+
+export function isPullRequestMergedForIssue(
+  pr: PullRequestSummary | undefined,
+  issueNumber: number,
+): boolean {
+  return pr !== undefined && isPullRequestMerged(pr) && pullRequestMatchesIssue(pr, issueNumber);
 }
 
 function pullRequestMatchesIssue(pr: PullRequestSummary, issueNumber: number): boolean {

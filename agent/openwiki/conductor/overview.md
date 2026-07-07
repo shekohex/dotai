@@ -70,7 +70,7 @@ The dispatch flow (`orchestrator.ts` `dispatchWorkItem`):
 5. `createRun` in the store; move project card to `in_progress`.
 6. Prepare worktree, render + write the prompt artifact, launch the Herdr session.
 
-`reconcile` (`reconcileOnce`) scans each managed repo's project items, filters by eligibility (open issue + no merged PR for the planned branch + `dispatchLabel` + assignee), blocks stale active runs for closed project items, and dispatches the rest. `reconcileActiveRuns` re-scopes to live PR feedback and updates run status (e.g. `in_review`, `done` on merge, `blocked`). PR association is branch-first ([ADR 0028](../../docs/adr/0028-pr-association-is-branch-first.md)). Human project-card moves do not stop a run ([ADR 0044](../../docs/adr/0044-human-project-moves-do-not-stop-runs.md)).
+`reconcile` (`reconcileOnce`) scans each managed repo's project items, filters by eligibility (open issue + no merged PR for the planned branch + `dispatchLabel` + assignee), blocks stale active runs for closed project items only when their branch has no merged PR, and dispatches the rest. `reconcileActiveRuns` re-scopes to live PR feedback and updates run status (e.g. `in_review`, `done` on merge, `blocked`). PR association is branch-first ([ADR 0028](../../docs/adr/0028-pr-association-is-branch-first.md)). Human project-card moves do not stop a run ([ADR 0044](../../docs/adr/0044-human-project-moves-do-not-stop-runs.md)).
 
 ### Run IDs and branches
 

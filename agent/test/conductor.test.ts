@@ -2105,7 +2105,11 @@ describe("conductor orchestrator", () => {
     await mkdir(repoPath, { recursive: true });
     const store = new MemoryConductorStore();
     await store.init();
-    const run = runRecord({ status: "in_progress", herdr: { paneId: "p1" } });
+    const run = runRecord({
+      status: "in_progress",
+      herdr: { paneId: "p1" },
+      worktreePath: join(tempDir, "worktrees", "octo", "demo", "7"),
+    });
     await store.createRun(run);
     const github = new FakeGitHub(
       workItem({ issueState: "CLOSED", labels: ["ready-for-agent"], assignees: ["octo"] }),
@@ -2127,6 +2131,57 @@ describe("conductor orchestrator", () => {
     await expect(store.getRun(run.runId)).resolves.toMatchObject({
       status: "blocked",
       lastError: "Issue is closed",
+    });
+  });
+
+  test("closed project item with merged PR completes active run", async () => {
+    const tempDir = await createTempDir("conductor-closed-merged-reconcile-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({
+      status: "in_progress",
+      herdr: { paneId: "p1" },
+      worktreePath: join(tempDir, "worktrees", "octo", "demo", "7"),
+    });
+    await store.createRun(run);
+    const github = new FakeGitHub(
+      workItem({ issueState: "CLOSED", labels: ["ready-for-agent"], assignees: ["octo"] }),
+    );
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: run.branch,
+      state: "MERGED",
+      isDraft: false,
+      mergedAt: "2026-07-05T00:00:00Z",
+      linkedIssueNumbers: [7],
+    };
+    const herdr = new FakeHerdr();
+    const worktrees = new WorktreeManager(async (_file, args) => {
+      if (args.includes("ls-remote"))
+        return { stdout: "abc\trefs/heads/pi/7-fix-bug\n", stderr: "" };
+      if (args.includes("--show-current")) return { stdout: "feature\n", stderr: "" };
+      return { stdout: "", stderr: "" };
+    });
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      worktrees,
+      cwd: repoPath,
+    });
+
+    await expect(orchestrator.reconcile()).resolves.toEqual([]);
+
+    expect(github.statusUpdates).toEqual(["Done"]);
+    expect(herdr.stopCount).toBe(1);
+    await expect(store.getRun(run.runId)).resolves.toMatchObject({
+      status: "done",
+      prNumber: 2,
+      prUrl: "https://github.com/octo/demo/pull/2",
     });
   });
 

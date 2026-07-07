@@ -104,7 +104,7 @@ Conductor appends safety guidance to every Follow-Up telling the agent to includ
 
 Conductor also updates reactable GitHub feedback with best-effort progress reactions: `EYES` when feedback is seen and `THUMBS_UP` after successful Herdr delivery. GitHub does not support a checkmark reaction through its reactions API. Reaction failures are event-logged and must not block routing.
 
-Automated dispatch only starts open issues. If reconcile sees a closed project item that still has an active local run, Conductor blocks that stale run and stops its Herdr pane best-effort instead of recovering or relaunching it.
+Automated dispatch only starts open issues. If reconcile sees a closed project item that still has an active local run, Conductor first checks whether the run's branch has a merged PR. Merged PR finalization marks it done; otherwise Conductor blocks that stale run and stops its Herdr pane best-effort instead of recovering or relaunching it.
 
 GitHub merge conflicts route as `feedback.kind == 'merge_conflict'`; customize that text with a normal `followUpRules` entry. After a PR merges, Conductor closes the owned Herdr pane, cleans the run worktree, and best-effort fetches/rebases the source repo's local base branch only when that checkout is already on the base branch and clean.
 

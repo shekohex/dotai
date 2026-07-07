@@ -40,6 +40,7 @@ import {
   assertGlobalConfigReady,
   dispatchAutomatedWorkItem,
   handleClosedWorkItem,
+  hasMergedPullRequestForRun,
   hasRunStatusForWorkItem,
   isEligibleForAutomatedDispatch,
   isPullRequestMerged,
@@ -56,7 +57,6 @@ import { WorktreeManager, relativePromptPath } from "./worktree.js";
 import { loadWorkflow, workflowConfigOverrides, type WorkflowFile } from "./workflow.js";
 
 export type { ReconcileScope } from "./reconcile-scope.js";
-export type { ConductorOrchestratorDeps, RunOptions } from "./run-status.js";
 
 export class ConductorOrchestrator {
   private readonly worktrees: WorktreeManager;
@@ -117,6 +117,8 @@ export class ConductorOrchestrator {
           if (
             await handleClosedWorkItem({
               blockRun: (run) => this.blockClosedIssueRun(runtime.config, run),
+              isRunCompleted: (run) =>
+                hasMergedPullRequestForRun({ github: this.deps.github, run }),
               store: this.deps.store,
               workItem,
             })

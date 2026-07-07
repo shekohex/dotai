@@ -106,7 +106,7 @@ export class GhGitHubClient implements GitHubClient {
   constructor(private readonly exec: CommandExec = execCommand) {}
 
   async getAuthenticatedUser(): Promise<string> {
-    await this.exec("gh", ["auth", "status"], { timeout: 5000 });
+    await this.exec("gh", ["auth", "status"], { timeout: GH_COMMAND_TIMEOUT_MS });
     const stdout = await this.gh(["api", "user"], undefined, "gh api user");
     return parseGhUser(stdout).login;
   }

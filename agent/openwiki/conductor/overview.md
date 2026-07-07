@@ -80,6 +80,8 @@ Run IDs (`src/conductor/run-id.ts` `createRunId`): `<owner>__<repo>__<issue>__<u
 
 `serve` runs a webhook server (when configured) **and** a polling loop as a safety net ([ADR 0015](../../docs/adr/0015-webhooks-and-polling-ship-together.md), [0016](../../docs/adr/0016-webhook-listener-is-configured-explicitly.md)).
 
+GitHub operations shell out through `gh` with bounded command timeouts. A reconcile error showing `timeout: ...ms (process killed)` and `signal: SIGTERM` means Conductor killed a stuck `gh` child after the configured timeout; empty stdout/stderr is normal for that failure mode.
+
 - **Webhook** (`src/conductor/webhook.ts`): GitHub gets an HTTP response only after the delivery is durably recorded in SQLite — _before_ reconcile work runs. Supported events: `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `pull_request_review_comment`, `check_run`, `check_suite`, `status`, `workflow_run`, `projects_v2_item`. Delivery IDs dedupe retries; failures retry with exponential backoff; GitHub rate-limit errors back off ~15 min (`rate-limit.ts` `GITHUB_RATE_LIMIT_BACKOFF_MS`). Unknown events are ACKed and ignored.
 - **Crash recovery**: on startup, `processPendingWebhookDeliveries` replays deliveries left in `received`/`processing`.
 - **Polling** (`startPolling`): avoids overlapping reconcile runs, respects `pollingIntervalSeconds` (default 60, [ADR 0038](../../docs/adr/0038-polling-interval-has-config-with-default.md)), and backs off on rate-limit errors. Webhooks narrow reconcile scope to the affected repo/issue/PR/item.

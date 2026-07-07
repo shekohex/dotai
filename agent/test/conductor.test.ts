@@ -1091,6 +1091,29 @@ describe("conductor adapters", () => {
     ).rejects.toThrow(/exit code: 7[\s\S]*stdout:\napi says nope[\s\S]*stderr:\n\(empty\)/);
   });
 
+  test("exec command timeout errors identify the timeout", async () => {
+    await expect(
+      execCommand(process.execPath, ["-e", "setTimeout(() => {}, 1000)"], { timeout: 10 }),
+    ).rejects.toThrow(
+      /duration: \d+ms[\s\S]*timeout: 10ms \(process killed\)[\s\S]*signal: SIGTERM/,
+    );
+  });
+
+  test("GitHub auth status uses normal gh command timeout", async () => {
+    const calls: Array<{ args: string[]; timeout?: number }> = [];
+    const github = new GhGitHubClient(async (_file, args, options) => {
+      calls.push({ args, timeout: options.timeout });
+      if (args[0] === "api" && args[1] === "user") {
+        return { stdout: JSON.stringify({ login: "octo" }), stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+
+    await expect(github.getAuthenticatedUser()).resolves.toBe("octo");
+
+    expect(calls[0]).toEqual({ args: ["auth", "status"], timeout: 30_000 });
+  });
+
   test("parses Herdr JSON and maps send delivery", () => {
     expect(
       parseHerdrWorkspaces(

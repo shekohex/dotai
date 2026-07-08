@@ -20,7 +20,7 @@ import { completionScript, helpText } from "./command-help.js";
 import { readConductorDaemonStatus, startConductorDaemon, stopConductorDaemon } from "./daemon.js";
 import { GhGitHubClient } from "./github.js";
 import { CliHerdrSessionManager } from "./herdr.js";
-import { readRunLogs } from "./logging.js";
+import { ConsoleConductorLogger, type ConductorLogger, readRunLogs } from "./logging.js";
 import { ConductorOrchestrator } from "./orchestrator.js";
 import { validateInitialPromptTemplate } from "./prompt.js";
 import { GITHUB_RATE_LIMIT_BACKOFF_MS, isRateLimitError } from "./rate-limit.js";
@@ -28,7 +28,11 @@ import { SqliteConductorStore } from "./store/sqlite.js";
 import type { ConductorStore } from "./store/types.js";
 import { formatRunsJson, formatRunsTable } from "./status-format.js";
 import { loadWorkflow, workflowConfigOverrides } from "./workflow.js";
-import { parseConductorArgs, type ParsedConductorCommand } from "./commands/parser.js";
+import {
+  parseConductorArgs,
+  parseConductorVerbosity,
+  type ParsedConductorCommand,
+} from "./commands/parser.js";
 import {
   editConductorConfig,
   formatConfigValue,
@@ -41,6 +45,8 @@ import { processPendingWebhookDeliveries, resolveWebhookSecret, serveWebhook } f
 type Writable = { write(text: string): unknown };
 type WebhookServer = { close(): Promise<void> };
 type ReconcileFailure = { error: unknown } | null;
+type ReconcileScope = Parameters<ConductorOrchestrator["reconcile"]>[0];
+type ConductorExecutionOptions = Required<ConductorCommandOptions> & { logger: ConductorLogger };
 
 export type ConductorCommandOptions = {
   cwd: string;
@@ -54,8 +60,9 @@ export async function runConductorCommand(
 ): Promise<number> {
   const stdout = options.stdout ?? process.stdout;
   const stderr = options.stderr ?? process.stderr;
+  const logger = new ConsoleConductorLogger(stderr, parseConductorVerbosity(args));
   try {
-    await executeConductorCommand(parseConductorArgs(args), { ...options, stdout, stderr });
+    await executeConductorCommand(parseConductorArgs(args), { ...options, stdout, stderr, logger });
     return 0;
   } catch (error) {
     stderr.write(`${formatConfigError(error)}\n`);
@@ -65,7 +72,7 @@ export async function runConductorCommand(
 
 async function executeConductorCommand(
   command: ParsedConductorCommand,
-  options: Required<ConductorCommandOptions>,
+  options: ConductorExecutionOptions,
 ): Promise<void> {
   if (command.kind === "help") {
     options.stdout.write(helpText(command.topic));
@@ -141,7 +148,7 @@ async function executeConductorCommand(
     const orchestrator = new ConductorOrchestrator({
       config: loadedConfig,
       store,
-      github: new GhGitHubClient(),
+      github: new GhGitHubClient(undefined, options.logger),
       herdr: new CliHerdrSessionManager(),
       cwd: options.cwd,
     });
@@ -198,7 +205,7 @@ function formatConfigInitResult(result: ConfigInitResult): string {
 async function executeDaemonCommand(
   action: "start" | "stop" | "restart" | "status",
   config: GlobalConductorConfig | undefined,
-  options: Required<ConductorCommandOptions>,
+  options: ConductorExecutionOptions,
 ): Promise<void> {
   if (action === "start") {
     const loadedConfig = config ?? (await readGlobalConfig());
@@ -273,7 +280,7 @@ async function executeStatefulCommand(
   config: GlobalConductorConfig,
   pollingIntervalSeconds: number,
   store: ConductorStore,
-  options: Required<ConductorCommandOptions>,
+  options: ConductorExecutionOptions,
 ): Promise<void> {
   if (command.kind === "reconcile") {
     const runs = await orchestrator.reconcile();
@@ -354,35 +361,47 @@ async function serve(
   config: GlobalConductorConfig,
   pollingIntervalSeconds: number,
   store: ConductorStore,
-  options: Required<ConductorCommandOptions>,
+  options: ConductorExecutionOptions,
 ): Promise<void> {
+  options.logger.info("Conductor serve starting", {
+    repositories: config.repositories.length,
+    pollingIntervalSeconds,
+    projectScanIntervalSeconds: config.projectScanIntervalSeconds ?? pollingIntervalSeconds,
+    webhook: config.webhook !== undefined,
+  });
   await validateServeConfig(config);
+  options.logger.debug("Conductor serve config valid");
   let currentConfig = config;
-  let webhook = await startWebhook(currentConfig, store, orchestrator);
-  let interval = startPolling(orchestrator, store, currentConfig, options.stderr);
+  let webhook = await startWebhook(currentConfig, store, orchestrator, options.logger);
+  let interval = startPolling(orchestrator, store, currentConfig, options.logger);
   const reloader = createConfigReloader({
     getConfig: () => currentConfig,
-    stdout: options.stdout,
-    stderr: options.stderr,
+    logger: options.logger,
     onReload: async (nextConfig) => {
       if (getStateRoot(nextConfig) !== getStateRoot(currentConfig)) {
         throw new Error("Changing conductor stateRoot requires restarting pi conductor serve");
       }
+      options.logger.info("Conductor config reload started");
       await validateServeConfig(nextConfig);
       orchestrator.updateConfig(nextConfig);
       currentConfig = nextConfig;
       clearInterval(interval);
-      interval = startPolling(orchestrator, store, currentConfig, options.stderr);
+      interval = startPolling(orchestrator, store, currentConfig, options.logger);
       await webhook?.close();
-      webhook = await startWebhook(currentConfig, store, orchestrator);
-      await runPendingAndReconcileSafely(orchestrator, store, options.stderr);
+      webhook = await startWebhook(currentConfig, store, orchestrator, options.logger);
+      await runPendingAndReconcileSafely(orchestrator, store, options.logger);
+      options.logger.info("Conductor config reload complete", {
+        repositories: currentConfig.repositories.length,
+      });
     },
   });
-  await runPendingAndReconcileSafely(orchestrator, store, options.stderr);
+  await runPendingAndReconcileSafely(orchestrator, store, options.logger);
   options.stdout.write(
     `Pi Conductor serving ${currentConfig.repositories.length} repo(s). Poll ${pollingIntervalSeconds}s.\n`,
   );
+  options.logger.info("Conductor serve ready", { repositories: currentConfig.repositories.length });
   await waitForShutdown();
+  options.logger.info("Conductor serve shutting down");
   reloader.close();
   clearInterval(interval);
   await webhook?.close();
@@ -392,50 +411,71 @@ function startPolling(
   orchestrator: ConductorOrchestrator,
   store: ConductorStore,
   config: GlobalConductorConfig,
-  stderr: Writable,
+  logger: ConductorLogger,
 ): ReturnType<typeof setInterval> {
   let running = false;
   let backoffUntil = 0;
-  return setInterval(
-    () => {
-      if (running || Date.now() < backoffUntil) return;
-      running = true;
-      void runPendingAndReconcileSafely(orchestrator, store, stderr)
-        .then((failure) => {
-          if (failure === null || !isRateLimitError(failure.error)) return;
-          backoffUntil = Date.now() + GITHUB_RATE_LIMIT_BACKOFF_MS;
-          stderr.write(
-            `Conductor polling backed off after GitHub rate limit until ${new Date(backoffUntil).toISOString()}\n`,
-          );
-        })
-        .finally(() => {
-          running = false;
+  const pollingIntervalMs = (config.pollingIntervalSeconds ?? 60) * 1000;
+  const projectScanIntervalMs = (config.projectScanIntervalSeconds ?? 0) * 1000;
+  let lastProjectScanAt = Date.now();
+  return setInterval(() => {
+    if (running || Date.now() < backoffUntil) return;
+    const now = Date.now();
+    const scanProjects =
+      config.projectScanIntervalSeconds === undefined ||
+      now - lastProjectScanAt >= projectScanIntervalMs;
+    if (scanProjects) lastProjectScanAt = now;
+    logger.debug("Conductor polling tick started", { projectScan: scanProjects });
+    running = true;
+    void runPendingAndReconcileSafely(
+      orchestrator,
+      store,
+      logger,
+      scanProjects ? undefined : { projectScan: false, reason: "polling-active-runs" },
+    )
+      .then((failure) => {
+        if (failure === null || !isRateLimitError(failure.error)) return;
+        backoffUntil = Date.now() + GITHUB_RATE_LIMIT_BACKOFF_MS;
+        logger.warn("Conductor polling backed off after GitHub rate limit", {
+          until: new Date(backoffUntil).toISOString(),
         });
-    },
-    (config.pollingIntervalSeconds ?? 60) * 1000,
-  );
+      })
+      .finally(() => {
+        logger.debug("Conductor polling tick finished", { projectScan: scanProjects });
+        running = false;
+      });
+  }, pollingIntervalMs);
 }
 
 function startWebhook(
   config: GlobalConductorConfig,
   store: ConductorStore,
   orchestrator: ConductorOrchestrator,
+  logger: ConductorLogger,
 ): Promise<WebhookServer | undefined> {
   const noWebhook: WebhookServer | undefined = undefined;
-  return config.webhook === undefined
-    ? Promise.resolve(noWebhook)
-    : serveWebhook({
-        config: config.webhook,
-        store,
-        orchestrator,
-        repositories: config.repositories,
-      });
+  if (config.webhook === undefined) {
+    logger.info("Conductor webhook disabled");
+    return Promise.resolve(noWebhook);
+  }
+  return serveWebhook({
+    config: config.webhook,
+    store,
+    orchestrator,
+    repositories: config.repositories,
+  }).then((server) => {
+    logger.info("Conductor webhook listening", {
+      host: config.webhook?.host,
+      port: server.port,
+      path: config.webhook?.path,
+    });
+    return server;
+  });
 }
 
 function createConfigReloader(input: {
   getConfig: () => GlobalConductorConfig;
-  stdout: Writable;
-  stderr: Writable;
+  logger: ConductorLogger;
   onReload: (config: GlobalConductorConfig) => Promise<void>;
 }): { close(): void } {
   let watchers: FSWatcher[] = [];
@@ -462,11 +502,15 @@ function createConfigReloader(input: {
       try {
         watchers.push(watch(filePath, scheduleReload));
       } catch (error) {
-        input.stderr.write(
-          `Conductor hot reload watch skipped ${filePath}: ${formatConfigError(error)}\n`,
-        );
+        input.logger.warn("Conductor hot reload watch skipped", {
+          path: filePath,
+          error: formatConfigError(error),
+        });
       }
     }
+    input.logger.debug("Conductor hot reload watches installed", {
+      files: watchedConfigPaths(configToWatch),
+    });
   };
 
   const reloadConfig = async (): Promise<void> => {
@@ -474,9 +518,8 @@ function createConfigReloader(input: {
     try {
       const nextConfig = await readGlobalConfig();
       await input.onReload(nextConfig);
-      input.stdout.write("Conductor config reloaded.\n");
     } catch (error) {
-      input.stderr.write(`Conductor config reload failed: ${formatConfigError(error)}\n`);
+      input.logger.error("Conductor config reload failed", { error: formatConfigError(error) });
     } finally {
       installWatchers(input.getConfig());
     }
@@ -529,13 +572,22 @@ async function validateServeConfig(config: GlobalConductorConfig): Promise<void>
 
 async function runReconcileSafely(
   orchestrator: ConductorOrchestrator,
-  stderr: Writable,
+  logger: ConductorLogger,
+  scope?: ReconcileScope,
 ): Promise<ReconcileFailure> {
   try {
-    await orchestrator.reconcile();
+    const startedAt = Date.now();
+    const runs = await orchestrator.reconcile(scope);
+    const context = {
+      dispatched: runs.length,
+      durationMs: Date.now() - startedAt,
+      projectScan: scope?.projectScan !== false,
+    };
+    if (runs.length > 0) logger.info("Conductor reconcile dispatched runs", context);
+    else logger.debug("Conductor reconcile finished", context);
     return null;
   } catch (error) {
-    stderr.write(`Conductor reconcile failed: ${formatConfigError(error)}\n`);
+    logger.error("Conductor reconcile failed", { error: formatConfigError(error) });
     return { error };
   }
 }
@@ -543,19 +595,26 @@ async function runReconcileSafely(
 async function runPendingAndReconcileSafely(
   orchestrator: ConductorOrchestrator,
   store: ConductorStore,
-  stderr: Writable,
+  logger: ConductorLogger,
+  scope?: ReconcileScope,
 ): Promise<ReconcileFailure> {
   try {
+    logger.trace("Conductor webhook delivery recovery started");
     await processPendingWebhookDeliveries({
       store,
       orchestrator,
-      onError: (message) => stderr.write(message),
+      onError: (message) => {
+        logger.warn(message.trim());
+      },
     });
+    logger.trace("Conductor webhook delivery recovery finished");
   } catch (error) {
-    stderr.write(`Conductor webhook delivery recovery failed: ${formatConfigError(error)}\n`);
+    logger.error("Conductor webhook delivery recovery failed", {
+      error: formatConfigError(error),
+    });
     if (isRateLimitError(error)) return { error };
   }
-  return runReconcileSafely(orchestrator, stderr);
+  return runReconcileSafely(orchestrator, logger, scope);
 }
 
 async function validateConfigCommand(stdout: Writable): Promise<void> {

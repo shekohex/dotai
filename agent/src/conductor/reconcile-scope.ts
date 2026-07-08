@@ -11,6 +11,7 @@ export const ReconcileScopeSchema = Type.Object({
   prNumber: Type.Optional(Type.Number({ minimum: 1 })),
   branch: Type.Optional(Type.String()),
   projectItemId: Type.Optional(Type.String()),
+  projectScan: Type.Optional(Type.Boolean()),
   reason: Type.Optional(Type.String()),
   pullRequest: Type.Optional(
     Type.Object({
@@ -26,8 +27,14 @@ export const ReconcileScopeSchema = Type.Object({
 });
 
 export type ReconcileScope = Static<typeof ReconcileScopeSchema>;
+export {
+  dispatchProjectScanCandidates,
+  groupRepositoriesByProject,
+  listProjectScanCandidates,
+} from "./project-scan.js";
 
 export function shouldScanProjectItems(scope: ReconcileScope | undefined): boolean {
+  if (scope?.projectScan === false) return false;
   return (
     scope === undefined ||
     scope.issueNumber !== undefined ||

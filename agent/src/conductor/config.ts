@@ -70,6 +70,7 @@ export const GlobalConductorConfigSchema = Type.Object({
   version: Type.Literal(1),
   stateRoot: Type.Optional(Type.String()),
   pollingIntervalSeconds: Type.Optional(Type.Number({ minimum: 1 })),
+  projectScanIntervalSeconds: Type.Optional(Type.Number({ minimum: 1 })),
   webhook: Type.Optional(WebhookConfigSchema),
   repositories: Type.Array(ManagedRepositoryConfigSchema),
 });
@@ -343,6 +344,9 @@ export async function initConfig(
       $schema: existing?.$schema ?? "./config.schema.json",
       version: 1,
       pollingIntervalSeconds: existing?.pollingIntervalSeconds ?? 60,
+      ...(existing?.projectScanIntervalSeconds === undefined
+        ? {}
+        : { projectScanIntervalSeconds: existing.projectScanIntervalSeconds }),
       ...(existing?.stateRoot === undefined ? {} : { stateRoot: existing.stateRoot }),
       ...(existing?.webhook === undefined ? {} : { webhook: existing.webhook }),
       repositories: nextRepositories,

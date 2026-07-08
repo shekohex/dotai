@@ -47,6 +47,7 @@ export interface GitHubClient {
     prNumber: number,
     issueNumber: number,
     ignoredAuthors: string[],
+    pullRequest?: PullRequestSummary,
   ): Promise<PullRequestFeedback[]>;
   markFeedbackSeen(owner: string, repo: string, feedback: PullRequestFeedback): Promise<void>;
   markFeedbackHandled(owner: string, repo: string, feedback: PullRequestFeedback): Promise<void>;

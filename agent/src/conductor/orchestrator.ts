@@ -21,11 +21,14 @@ import {
 import {
   ReconcileScopeSchema,
   type ReconcileScope,
-  scopeMatchesRepo,
+  dispatchProjectScanCandidates,
+  groupRepositoriesByProject,
   scopeMatchesRun,
+  scopeMatchesRepo,
   scopeMatchesWorkItem,
   scopePullRequestForRun,
   shouldScanProjectItems,
+  listProjectScanCandidates,
 } from "./reconcile-scope.js";
 import { buildRecoveryPromptContext } from "./recovery-context.js";
 import {
@@ -38,11 +41,6 @@ import {
 } from "./run-record.js";
 import {
   assertGlobalConfigReady,
-  dispatchAutomatedWorkItem,
-  handleClosedWorkItem,
-  hasMergedPullRequestForRun,
-  hasRunStatusForWorkItem,
-  isEligibleForAutomatedDispatch,
   isPullRequestMerged,
   type ConductorOrchestratorDeps,
   type RunOptions,
@@ -107,49 +105,31 @@ export class ConductorOrchestrator {
     const login = await this.deps.github.getAuthenticatedUser();
 
     if (shouldScanProjectItems(scope)) {
-      for (const repo of this.deps.config.repositories) {
-        if (!scopeMatchesRepo(scope, repo)) continue;
-        const runtime = await this.loadRepositoryRuntime(repo);
-        const workItems = await this.deps.github.listProjectItems(runtime.config);
-        for (const workItem of workItems) {
-          if (!sameRepository(workItem, runtime.config)) continue;
-          if (!scopeMatchesWorkItem(scope, workItem)) continue;
-          if (
-            await handleClosedWorkItem({
-              blockRun: (run) => this.blockClosedIssueRun(runtime.config, run),
-              isRunCompleted: (run) =>
-                hasMergedPullRequestForRun({ github: this.deps.github, run }),
-              store: this.deps.store,
-              workItem,
-            })
-          )
-            continue;
-          if (!isEligibleForAutomatedDispatch(workItem, runtime.config.dispatchLabel, login))
-            continue;
-          const active = await this.deps.store.getActiveRun(
-            workItem.owner,
-            workItem.repo,
-            workItem.issueNumber,
-          );
-          if (active !== undefined) continue;
-          if (await hasRunStatusForWorkItem(this.deps.store, workItem, "blocked")) continue;
-          if (await hasRunStatusForWorkItem(this.deps.store, workItem, "done")) continue;
-          try {
-            dispatched.push(
-              ...(await dispatchAutomatedWorkItem({
-                config: runtime.config,
-                dispatch: () =>
-                  this.dispatchWorkItem(repo, workItem, { manual: false, launchFlags: [] }),
-                github: this.deps.github,
-                workItem,
-                worktrees: this.worktrees,
-              })),
-            );
-          } catch {
-            continue;
-          }
-        }
-      }
+      const groups = await groupRepositoriesByProject({
+        repositories: this.deps.config.repositories,
+        matchesRepository: (repo) => scopeMatchesRepo(scope, repo),
+        loadRuntime: async (repo) => {
+          const runtime = await this.loadRepositoryRuntime(repo);
+          return { repo, config: runtime.config };
+        },
+      });
+      const candidates = await listProjectScanCandidates({
+        groups,
+        listProjectItems: (config) => this.deps.github.listProjectItems(config),
+      });
+      dispatched.push(
+        ...(await dispatchProjectScanCandidates({
+          authenticatedLogin: login,
+          blockRun: (config, run) => this.blockClosedIssueRun(config, run),
+          candidates,
+          dispatch: (repo, workItem) =>
+            this.dispatchWorkItem(repo, workItem, { manual: false, launchFlags: [] }),
+          github: this.deps.github,
+          matchesWorkItem: (workItem) => scopeMatchesWorkItem(scope, workItem),
+          store: this.deps.store,
+          worktrees: this.worktrees,
+        })),
+      );
     }
 
     await this.reconcileActiveRuns(login, scope);
@@ -771,7 +751,6 @@ export class ConductorOrchestrator {
   private touch(run: RunRecord): RunRecord {
     return Value.Parse(RunRecordSchema, { ...run, updatedAt: this.nowIso() });
   }
-
   private nowIso(): string {
     return this.now().toISOString();
   }

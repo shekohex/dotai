@@ -4,9 +4,9 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
-import { parseConductorArgs } from "../src/conductor/commands/parser.js";
+import { parseConductorArgs, parseConductorVerbosity } from "../src/conductor/commands/parser.js";
 import { runConductorCommand } from "../src/conductor/command.js";
 import { HerdrBackgroundShellBackend } from "../src/extensions/coreui/background-bash-herdr-backend.js";
 import { HerdrAdapter } from "../src/subagent-sdk/herdr.js";
@@ -44,6 +44,7 @@ import {
   type PullRequestFeedback,
   type PullRequestSummary,
 } from "../src/conductor/github.js";
+import { ConsoleConductorLogger } from "../src/conductor/logging.js";
 import {
   CliHerdrSessionManager,
   deliveryModeToSubmitKey,
@@ -517,6 +518,21 @@ describe("conductor store and command parser", () => {
       runId: "run-1",
       message: "fix tests",
       delivery: "followUp",
+    });
+    expect(parseConductorArgs(["-vv", "serve"])).toEqual({ kind: "serve" });
+    expect(parseConductorArgs(["serve", "--verbose"])).toEqual({ kind: "serve" });
+    expect(parseConductorVerbosity(["-vv", "serve", "--verbose=3"])).toBe(5);
+    expect(parseConductorArgs(["run", "octo/demo#3", "--verbose"])).toEqual({
+      kind: "run",
+      reference: "octo/demo#3",
+      launchFlags: ["--verbose"],
+      configOverrides: {},
+    });
+    expect(parseConductorArgs(["send", "run-1", "--", "-vv"])).toEqual({
+      kind: "send",
+      runId: "run-1",
+      message: "-vv",
+      delivery: "steer",
     });
   });
 
@@ -1081,6 +1097,19 @@ describe("conductor store and command parser", () => {
 });
 
 describe("conductor adapters", () => {
+  test("console conductor logger gates verbose levels", () => {
+    const output = writableCapture();
+    const logger = new ConsoleConductorLogger(output, 1, () => new Date("2026-07-05T00:00:00Z"));
+
+    logger.info("started", { repositories: 2 });
+    logger.debug("tick", { projectScan: false });
+    logger.trace("hidden");
+
+    expect(output.text()).toContain("2026-07-05T00:00:00.000Z INFO started");
+    expect(output.text()).toContain('DEBUG tick {"projectScan":false}');
+    expect(output.text()).not.toContain("hidden");
+  });
+
   test("exec command errors include exit details and captured output", async () => {
     await expect(
       execCommand(
@@ -1099,7 +1128,7 @@ describe("conductor adapters", () => {
     );
   });
 
-  test("GitHub auth status uses normal gh command timeout", async () => {
+  test("GitHub auth status uses normal gh command timeout and caches user", async () => {
     const calls: Array<{ args: string[]; timeout?: number }> = [];
     const github = new GhGitHubClient(async (_file, args, options) => {
       calls.push({ args, timeout: options.timeout });
@@ -1110,8 +1139,159 @@ describe("conductor adapters", () => {
     });
 
     await expect(github.getAuthenticatedUser()).resolves.toBe("octo");
+    await expect(github.getAuthenticatedUser()).resolves.toBe("octo");
 
     expect(calls[0]).toEqual({ args: ["auth", "status"], timeout: 30_000 });
+    expect(calls.filter((call) => call.args[0] === "auth")).toHaveLength(1);
+    expect(calls.filter((call) => call.args[0] === "api" && call.args[1] === "user")).toHaveLength(
+      1,
+    );
+  });
+
+  test("GitHub client logs command transport at trace level", async () => {
+    const output = writableCapture();
+    const logger = new ConsoleConductorLogger(output, 2, () => new Date("2026-07-05T00:00:00Z"));
+    const github = new GhGitHubClient(async (_file, args) => {
+      if (args[0] === "api" && args[1] === "users/octo") {
+        return { stdout: JSON.stringify({ type: "Organization" }), stderr: "" };
+      }
+      if (args[0] === "api" && args[1] === "graphql") {
+        return { stdout: projectItemsGraphqlFixture(), stderr: "" };
+      }
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    }, logger);
+
+    await github.listProjectItems(managedRepo({ project: { owner: "octo", number: 1 } }));
+
+    expect(output.text()).toContain('"transport":"rest"');
+    expect(output.text()).toContain('"endpoint":"users/octo"');
+    expect(output.text()).toContain('"transport":"graphql"');
+    expect(output.text()).toContain('"action":"gh project items graphql"');
+  });
+
+  test("GitHub repository lookup caches default branch", async () => {
+    const calls: string[][] = [];
+    const github = new GhGitHubClient(async (_file, args) => {
+      calls.push(args);
+      if (args[0] === "repo" && args[1] === "view") {
+        return {
+          stdout: JSON.stringify({
+            nameWithOwner: "octo/demo",
+            defaultBranchRef: { name: "main" },
+          }),
+          stderr: "",
+        };
+      }
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+
+    await expect(github.getRepository("octo", "demo")).resolves.toMatchObject({
+      defaultBranch: "main",
+    });
+    await expect(github.getRepository("OCTO", "DEMO")).resolves.toMatchObject({
+      defaultBranch: "main",
+    });
+
+    expect(calls).toHaveLength(1);
+  });
+
+  test("GitHub project metadata is cached across status updates", async () => {
+    let metadataQueries = 0;
+    let statusMutations = 0;
+    const github = new GhGitHubClient(async (_file, args) => {
+      if (args[0] === "api" && args[1] === "users/octo") {
+        return { stdout: JSON.stringify({ type: "Organization" }), stderr: "" };
+      }
+      if (args[0] === "api" && args[1] === "graphql") {
+        const query = args.find((arg) => arg.startsWith("query=")) ?? "";
+        if (query.includes("ProjectFields")) {
+          metadataQueries += 1;
+          return {
+            stdout: JSON.stringify({
+              data: {
+                organization: {
+                  projectV2: {
+                    id: "PVT_1",
+                    fields: {
+                      nodes: [
+                        {
+                          id: "PVTSSF_1",
+                          name: "Status",
+                          options: [{ id: "todo", name: "Todo" }],
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            }),
+            stderr: "",
+          };
+        }
+        if (query.includes("updateProjectV2ItemFieldValue")) {
+          statusMutations += 1;
+          return { stdout: JSON.stringify({ data: {} }), stderr: "" };
+        }
+      }
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+    const repo = managedRepo({ project: { owner: "octo", number: 1 }, repoPath: "/repo" });
+
+    await github.updateProjectStatus(repo, workItem(), "Todo");
+    await github.updateProjectStatus(repo, workItem({ projectItemId: "PVTI_2" }), "Todo");
+
+    expect(metadataQueries).toBe(1);
+    expect(statusMutations).toBe(2);
+  });
+
+  test("GitHub project metadata cache expires", async () => {
+    let metadataQueries = 0;
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValue(1_000);
+    const github = new GhGitHubClient(async (_file, args) => {
+      if (args[0] === "api" && args[1] === "users/octo") {
+        return { stdout: JSON.stringify({ type: "Organization" }), stderr: "" };
+      }
+      if (args[0] === "api" && args[1] === "graphql") {
+        const query = args.find((arg) => arg.startsWith("query=")) ?? "";
+        if (query.includes("ProjectFields")) {
+          metadataQueries += 1;
+          return {
+            stdout: JSON.stringify({
+              data: {
+                organization: {
+                  projectV2: {
+                    id: "PVT_1",
+                    fields: {
+                      nodes: [
+                        {
+                          id: "PVTSSF_1",
+                          name: "Status",
+                          options: [{ id: "todo", name: "Todo" }],
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            }),
+            stderr: "",
+          };
+        }
+        return { stdout: JSON.stringify({ data: {} }), stderr: "" };
+      }
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+    const repo = managedRepo({ project: { owner: "octo", number: 1 }, repoPath: "/repo" });
+    try {
+      await github.updateProjectStatus(repo, workItem(), "Todo");
+      now.mockReturnValue(1_000 + 5 * 60_000 + 1);
+      await github.updateProjectStatus(repo, workItem({ projectItemId: "PVTI_2" }), "Todo");
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(metadataQueries).toBe(2);
   });
 
   test("parses Herdr JSON and maps send delivery", () => {
@@ -1433,6 +1613,82 @@ describe("conductor adapters", () => {
     ]);
   });
 
+  test("merge conflict feedback reuses known PR summary", async () => {
+    const calls: string[][] = [];
+    const client = new GhGitHubClient(async (_file, args) => {
+      calls.push(args);
+      if (args.includes("checks")) return { stdout: "[]", stderr: "" };
+      if (args.includes("view")) {
+        return {
+          stdout: JSON.stringify({ comments: [], reviewDecision: "", reviews: [] }),
+          stderr: "",
+        };
+      }
+      if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
+      if (args.at(-1) === "repos/octo/demo/issues/7/comments") return { stdout: "[]", stderr: "" };
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+
+    await expect(
+      client.listPullRequestFeedback("octo", "demo", 2, 7, [], {
+        number: 2,
+        url: "https://github.com/octo/demo/pull/2",
+        headRefName: "pi/7-fix-bug",
+        state: "OPEN",
+        isDraft: false,
+        mergeable: "CONFLICTING",
+        mergeStateStatus: "DIRTY",
+      }),
+    ).resolves.toEqual([expect.objectContaining({ kind: "merge_conflict" })]);
+    expect(calls).not.toContainEqual(
+      expect.arrayContaining(["--json", expect.stringContaining("mergeable")]),
+    );
+  });
+
+  test("merge conflict feedback refreshes incomplete PR summary", async () => {
+    const calls: string[][] = [];
+    const client = new GhGitHubClient(async (_file, args) => {
+      calls.push(args);
+      if (args.includes("checks")) return { stdout: "[]", stderr: "" };
+      if (args.includes("view") && args.some((arg) => arg.includes("mergeable,mergeStateStatus"))) {
+        return {
+          stdout: JSON.stringify({
+            number: 2,
+            url: "https://github.com/octo/demo/pull/2",
+            headRefName: "pi/7-fix-bug",
+            state: "OPEN",
+            isDraft: false,
+            mergeable: "CONFLICTING",
+            mergeStateStatus: "DIRTY",
+          }),
+          stderr: "",
+        };
+      }
+      if (args.includes("view")) {
+        return {
+          stdout: JSON.stringify({ comments: [], reviewDecision: "", reviews: [] }),
+          stderr: "",
+        };
+      }
+      if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
+      if (args.at(-1) === "repos/octo/demo/issues/7/comments") return { stdout: "[]", stderr: "" };
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+
+    await expect(
+      client.listPullRequestFeedback("octo", "demo", 2, 7, [], {
+        number: 2,
+        url: "https://github.com/octo/demo/pull/2",
+        headRefName: "pi/7-fix-bug",
+        state: "OPEN",
+        isDraft: false,
+      }),
+    ).resolves.toEqual([expect.objectContaining({ kind: "merge_conflict" })]);
+    expect(calls).toContainEqual(
+      expect.arrayContaining(["--json", expect.stringContaining("mergeable")]),
+    );
+  });
+
   test("conductor issue comments carry an html marker", async () => {
     const calls: string[][] = [];
     const client = new GhGitHubClient(async (_file, args) => {
@@ -1478,6 +1734,25 @@ describe("conductor adapters", () => {
     expect(graphqlQueries).toHaveLength(1);
     expect(graphqlQueries[0]).toContain("organization(login:");
     expect(graphqlQueries[0]).not.toContain("user(login:");
+  });
+
+  test("issue reference resolution reuses project item issue data", async () => {
+    const calls: string[][] = [];
+    const client = new GhGitHubClient(async (_file, args) => {
+      calls.push(args);
+      if (args[0] === "api" && args[1] === "users/octo") {
+        return { stdout: JSON.stringify({ type: "Organization" }), stderr: "" };
+      }
+      if (args[0] === "api" && args[1] === "graphql") {
+        return { stdout: projectItemsGraphqlFixture(), stderr: "" };
+      }
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+
+    await expect(
+      client.resolveWorkItem("octo/demo#7", configWithRepo(managedRepo()), "/repo"),
+    ).resolves.toMatchObject({ projectItemId: "PVTI_1", title: "Fix bug" });
+    expect(calls).not.toContainEqual(expect.arrayContaining(["issue", "view"]));
   });
 
   test("plans worktree commands with mocked git", async () => {
@@ -1707,6 +1982,50 @@ describe("herdr background placement", () => {
 });
 
 describe("conductor orchestrator", () => {
+  test("reconcile scans shared project once for multiple repos", async () => {
+    const tempDir = await createTempDir("conductor-shared-project-");
+    const store = new MemoryConductorStore();
+    await store.init();
+    const github = new FakeGitHub(workItem({ labels: [], assignees: [] }));
+    const config: GlobalConductorConfig = {
+      version: 1,
+      stateRoot: tempDir,
+      repositories: [
+        managedRepo({ repo: "demo", repoPath: join(tempDir, "demo") }),
+        managedRepo({ repo: "api", repoPath: join(tempDir, "api") }),
+      ],
+    };
+    const orchestrator = new ConductorOrchestrator({
+      config,
+      store,
+      github,
+      herdr: new FakeHerdr(),
+      cwd: join(tempDir, "demo"),
+    });
+
+    await orchestrator.reconcile();
+
+    expect(github.listProjectItemsCount).toBe(1);
+  });
+
+  test("active-only reconcile skips project scan", async () => {
+    const tempDir = await createTempDir("conductor-active-only-");
+    const store = new MemoryConductorStore();
+    await store.init();
+    const github = new FakeGitHub(workItem());
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath: tempDir }), tempDir),
+      store,
+      github,
+      herdr: new FakeHerdr(),
+      cwd: tempDir,
+    });
+
+    await orchestrator.reconcile({ projectScan: false });
+
+    expect(github.listProjectItemsCount).toBe(0);
+  });
+
   test("manual run creates worktree prompt and launches Herdr with fake adapters", async () => {
     const tempDir = await createTempDir("conductor-run-");
     const repoPath = join(tempDir, "repo");

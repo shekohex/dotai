@@ -5,6 +5,63 @@ import { Value } from "typebox/value";
 
 import { parseJsonValue } from "./json.js";
 
+type Writable = { write(text: string): unknown };
+
+export type ConductorLogLevel = "error" | "warn" | "info" | "debug" | "trace";
+
+export interface ConductorLogger {
+  error(message: string, context?: Record<string, unknown>): void;
+  warn(message: string, context?: Record<string, unknown>): void;
+  info(message: string, context?: Record<string, unknown>): void;
+  debug(message: string, context?: Record<string, unknown>): void;
+  trace(message: string, context?: Record<string, unknown>): void;
+}
+
+export class ConsoleConductorLogger implements ConductorLogger {
+  constructor(
+    private readonly output: Writable,
+    private readonly verbosity = 0,
+    private readonly now: () => Date = () => new Date(),
+  ) {}
+
+  error(message: string, context?: Record<string, unknown>): void {
+    this.write("error", message, context);
+  }
+
+  warn(message: string, context?: Record<string, unknown>): void {
+    this.write("warn", message, context);
+  }
+
+  info(message: string, context?: Record<string, unknown>): void {
+    this.write("info", message, context);
+  }
+
+  debug(message: string, context?: Record<string, unknown>): void {
+    if (this.verbosity >= 1) this.write("debug", message, context);
+  }
+
+  trace(message: string, context?: Record<string, unknown>): void {
+    if (this.verbosity >= 2) this.write("trace", message, context);
+  }
+
+  private write(
+    level: ConductorLogLevel,
+    message: string,
+    context: Record<string, unknown> | undefined,
+  ): void {
+    const suffix = context === undefined ? "" : ` ${JSON.stringify(context)}`;
+    this.output.write(`${this.now().toISOString()} ${level.toUpperCase()} ${message}${suffix}\n`);
+  }
+}
+
+export const noopConductorLogger: ConductorLogger = {
+  error() {},
+  warn() {},
+  info() {},
+  debug() {},
+  trace() {},
+};
+
 export const RunLogEntrySchema = Type.Object({
   runId: Type.String(),
   kind: Type.String(),

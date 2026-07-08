@@ -81,6 +81,7 @@ export async function routePullRequestFeedback(input: {
     input.run.prNumber,
     input.run.issueNumber,
     [input.authenticatedLogin],
+    input.pr,
   );
   let updated = input.run;
   for (const item of feedback) {

@@ -67,6 +67,15 @@ export const ParsedConductorCommandSchema = Type.Union([
 export type ParsedConductorCommand = Static<typeof ParsedConductorCommandSchema>;
 
 export function parseConductorArgs(args: string[]): ParsedConductorCommand {
+  const { strippedArgs } = parseConductorGlobalOptions(args);
+  return parseConductorCommand(strippedArgs);
+}
+
+export function parseConductorVerbosity(args: string[]): number {
+  return parseConductorGlobalOptions(args).verbosity;
+}
+
+function parseConductorCommand(args: string[]): ParsedConductorCommand {
   const [command, ...rest] = args;
   if (command === undefined || command === "help" || command === "--help" || command === "-h") {
     return { kind: "help", ...(rest[0] === undefined ? {} : { topic: rest[0] }) };
@@ -103,6 +112,42 @@ export function parseConductorArgs(args: string[]): ParsedConductorCommand {
   if (command === "completion") return parseCompletion(rest);
 
   throw new Error(`Unknown conductor command: ${command}`);
+}
+
+function parseConductorGlobalOptions(args: string[]): {
+  strippedArgs: string[];
+  verbosity: number;
+} {
+  const strippedArgs: string[] = [];
+  let verbosity = 0;
+  let command: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === undefined) continue;
+    if (arg === "--") {
+      strippedArgs.push(...args.slice(index));
+      break;
+    }
+    const verbose = parseVerboseFlag(arg);
+    if (verbose !== undefined && commandAllowsTrailingVerbose(command)) {
+      verbosity += verbose;
+      continue;
+    }
+    command ??= arg;
+    strippedArgs.push(arg);
+  }
+  return { strippedArgs, verbosity };
+}
+
+function commandAllowsTrailingVerbose(command: string | undefined): boolean {
+  return command === undefined || (command !== "run" && command !== "send");
+}
+
+function parseVerboseFlag(arg: string): number | undefined {
+  if (arg === "--verbose") return 1;
+  const verboseMatch = /^--verbose=(\d+)$/u.exec(arg);
+  if (verboseMatch?.[1] !== undefined) return Number(verboseMatch[1]);
+  return /^-v+$/u.test(arg) ? arg.length - 1 : undefined;
 }
 
 function parseCompletion(args: string[]): ParsedConductorCommand {

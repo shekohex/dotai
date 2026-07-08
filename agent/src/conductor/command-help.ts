@@ -21,12 +21,18 @@ type CommandHelp = {
 const COMMANDS: CommandHelp[] = [
   {
     name: "serve",
-    usage: "pi conductor serve",
+    usage: "pi conductor [-v|-vv|-vvv|--verbose] serve",
     summary: "Run foreground worker for systemd/supervisors.",
     description:
       "Starts the long-running conductor loop. It validates config, starts webhook server when configured, replays pending webhook deliveries, runs one reconcile, then polls on interval.",
-    options: [],
-    examples: ["pi conductor serve"],
+    options: [
+      {
+        flags: "-v, -vv, -vvv, --verbose",
+        defaultValue: "info",
+        description: "Increase foreground conductor log detail on stderr.",
+      },
+    ],
+    examples: ["pi conductor serve", "pi conductor -vv serve"],
   },
   {
     name: "daemon",
@@ -264,6 +270,9 @@ export function helpText(topic?: string): string {
     "",
     "Commands:",
     ...COMMANDS.map((command) => formatCommandSummary(command)),
+    "",
+    "Global options:",
+    "  -v, -vv, -vvv, --verbose    Increase foreground log detail.",
     "",
     "Global defaults:",
     `  Config: ${getDefaultConfigPath()}`,

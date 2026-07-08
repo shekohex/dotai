@@ -16,6 +16,7 @@ import {
   parseGhReviewComments,
   type PullRequestFeedback,
 } from "./github-feedback.js";
+import { execLoggedGh } from "./github-call-logging.js";
 import { parseJsonValue } from "./json.js";
 import {
   projectItemsQuery,
@@ -34,10 +35,14 @@ import type {
   PullRequestSummary,
 } from "./github-types.js";
 import { mergeConflictFeedback } from "./merge-conflict-feedback.js";
+import { noopConductorLogger, type ConductorLogger } from "./logging.js";
+import { projectKey } from "./project-key.js";
 import { type WorkItem, WorkItemSchema } from "./store/types.js";
 const GH_COMMAND_TIMEOUT_MS = 30_000;
 const CONDUCTOR_COMMENT_MARKER = "<!-- pi-conductor -->";
+const PROJECT_METADATA_CACHE_TTL_MS = 5 * 60_000;
 type ProjectOwnerKind = "organization" | "user";
+type ProjectMetadataCacheEntry = { metadata: ProjectMetadata; expiresAtMs: number };
 
 const GhUserSchema = Type.Object({ login: Type.String() });
 const GhOwnerSchema = Type.Object({
@@ -101,17 +106,35 @@ export const IssueReferenceSchema = Type.Union([
 export type IssueReference = Static<typeof IssueReferenceSchema>;
 
 export class GhGitHubClient implements GitHubClient {
+  private authenticatedUser: string | undefined;
+  private readonly repositories = new Map<string, GitHubRepository>();
+  private readonly projectMetadata = new Map<string, ProjectMetadataCacheEntry>();
   private readonly projectOwnerKinds = new Map<string, ProjectOwnerKind>();
 
-  constructor(private readonly exec: CommandExec = execCommand) {}
+  constructor(
+    private readonly exec: CommandExec = execCommand,
+    private readonly logger: ConductorLogger = noopConductorLogger,
+  ) {}
 
   async getAuthenticatedUser(): Promise<string> {
-    await this.exec("gh", ["auth", "status"], { timeout: GH_COMMAND_TIMEOUT_MS });
+    if (this.authenticatedUser !== undefined) return this.authenticatedUser;
+    await execLoggedGh({
+      action: "gh auth status",
+      args: ["auth", "status"],
+      cwd: undefined,
+      exec: this.exec,
+      logger: this.logger,
+      timeoutMs: GH_COMMAND_TIMEOUT_MS,
+    });
     const stdout = await this.gh(["api", "user"], undefined, "gh api user");
-    return parseGhUser(stdout).login;
+    this.authenticatedUser = parseGhUser(stdout).login;
+    return this.authenticatedUser;
   }
 
   async getRepository(owner: string, repo: string): Promise<GitHubRepository> {
+    const requestedKey = repositoryCacheKey(owner, repo);
+    const cached = this.repositories.get(requestedKey);
+    if (cached !== undefined) return cached;
     const parsed = parseGhRepoView(
       await this.gh(
         ["repo", "view", `${owner}/${repo}`, "--json", "nameWithOwner,defaultBranchRef"],
@@ -123,11 +146,14 @@ export class GhGitHubClient implements GitHubClient {
     if (resolvedOwner === undefined || resolvedRepo === undefined) {
       throw new Error(`gh repo view returned invalid nameWithOwner: ${parsed.nameWithOwner}`);
     }
-    return {
+    const repository = {
       owner: resolvedOwner,
       repo: resolvedRepo,
       defaultBranch: parsed.defaultBranchRef.name,
     };
+    this.repositories.set(requestedKey, repository);
+    this.repositories.set(repositoryCacheKey(resolvedOwner, resolvedRepo), repository);
+    return repository;
   }
 
   async resolveWorkItem(
@@ -142,7 +168,6 @@ export class GhGitHubClient implements GitHubClient {
 
     const repoConfig = resolveReferenceRepository(parsed, config, cwd);
     const issueNumber = parsed.kind === "issue" ? parsed.number : parsed.number;
-    const issue = await this.getIssue(repoConfig.owner, repoConfig.repo, issueNumber);
     const projectItem = (await this.listProjectItems(repoConfig)).find(
       (item) =>
         item.owner === repoConfig.owner &&
@@ -154,16 +179,7 @@ export class GhGitHubClient implements GitHubClient {
         `${repoConfig.owner}/${repoConfig.repo}#${issueNumber} is not linked to configured project ${repoConfig.project.owner}/${repoConfig.project.number}`,
       );
     }
-    return {
-      ...projectItem,
-      issueId: issue.issueId,
-      title: issue.title,
-      body: issue.body,
-      labels: issue.labels,
-      assignees: issue.assignees,
-      projectItemId: projectItem.projectItemId,
-      projectId: projectItem.projectId,
-    };
+    return projectItem;
   }
 
   async listProjectItems(repo: ManagedRepositoryConfig): Promise<WorkItem[]> {
@@ -276,6 +292,7 @@ export class GhGitHubClient implements GitHubClient {
     prNumber: number,
     issueNumber: number,
     _ignoredAuthors: string[],
+    pullRequest?: PullRequestSummary,
   ): Promise<PullRequestFeedback[]> {
     const checks = await this.tryReadFeedback(() => this.listFailedChecks(owner, repo, prNumber));
     const viewFeedback = await this.tryReadFeedback(() =>
@@ -288,7 +305,11 @@ export class GhGitHubClient implements GitHubClient {
       this.listIssueComments(owner, repo, issueNumber),
     );
     const mergeConflict = await this.tryReadFeedback(async () =>
-      mergeConflictFeedback(await this.getPullRequest(owner, repo, prNumber)),
+      mergeConflictFeedback(
+        hasMergeabilityFields(pullRequest)
+          ? pullRequest
+          : await this.getPullRequest(owner, repo, prNumber),
+      ),
     );
     return [
       ...mergeConflict,
@@ -340,52 +361,26 @@ export class GhGitHubClient implements GitHubClient {
     );
   }
 
-  private async getIssue(owner: string, repo: string, issueNumber: number): Promise<WorkItem> {
-    const parsed = parseGhIssueView(
-      await this.gh(
-        [
-          "issue",
-          "view",
-          String(issueNumber),
-          "--repo",
-          `${owner}/${repo}`,
-          "--json",
-          "id,number,state,title,body,url,labels,assignees",
-        ],
-        undefined,
-        "gh issue view",
-      ),
-    );
-    return Value.Parse(WorkItemSchema, {
-      projectItemId: "",
-      owner,
-      repo,
-      issueId: parsed.id,
-      issueNumber: parsed.number,
-      issueState: parsed.state,
-      issueUrl: parsed.url,
-      title: parsed.title,
-      body: parsed.body ?? "",
-      labels: parsed.labels.map((label) => label.name),
-      assignees: parsed.assignees.map((assignee) => assignee.login),
-      projectFields: {},
-    });
-  }
-
   private async resolveProjectItem(
     projectItemId: string,
     config: GlobalConductorConfig,
   ): Promise<WorkItem> {
+    const projectItems = new Map<string, WorkItem[]>();
     for (const repo of config.repositories) {
-      const item = (await this.listProjectItems(repo)).find(
-        (entry) => entry.projectItemId === projectItemId,
-      );
+      const key = projectKey(repo.project.owner, repo.project.number);
+      const cached = projectItems.get(key);
+      const items = cached ?? (await this.listProjectItems(repo));
+      if (cached === undefined) projectItems.set(key, items);
+      const item = items.find((entry) => entry.projectItemId === projectItemId);
       if (item !== undefined) return item;
     }
     throw new Error(`Project item is not managed by conductor: ${projectItemId}`);
   }
 
   private async getProjectMetadata(repo: ManagedRepositoryConfig): Promise<ProjectMetadata> {
+    const key = projectKey(repo.project.owner, repo.project.number);
+    const cached = this.projectMetadata.get(key);
+    if (cached !== undefined && cached.expiresAtMs > Date.now()) return cached.metadata;
     const ownerKind = await this.resolveProjectOwnerKind(repo.project.owner, repo.repoPath);
     const stdout = await this.gh(
       [
@@ -401,7 +396,12 @@ export class GhGitHubClient implements GitHubClient {
       repo.repoPath,
       "gh project metadata graphql",
     );
-    return parseProjectMetadataGraphql(stdout);
+    const metadata = parseProjectMetadataGraphql(stdout);
+    this.projectMetadata.set(key, {
+      metadata,
+      expiresAtMs: Date.now() + PROJECT_METADATA_CACHE_TTL_MS,
+    });
+    return metadata;
   }
 
   private async resolveProjectOwnerKind(owner: string, cwd: string): Promise<ProjectOwnerKind> {
@@ -502,7 +502,14 @@ export class GhGitHubClient implements GitHubClient {
   }
 
   private async gh(args: string[], cwd: string | undefined, _action: string): Promise<string> {
-    const result = await this.exec("gh", args, { cwd, timeout: GH_COMMAND_TIMEOUT_MS });
+    const result = await execLoggedGh({
+      action: _action,
+      args,
+      cwd,
+      exec: this.exec,
+      logger: this.logger,
+      timeoutMs: GH_COMMAND_TIMEOUT_MS,
+    });
     return result.stdout.trim();
   }
 }
@@ -586,6 +593,14 @@ function normalizePullRequestSummary(pr: Static<typeof GhPullRequestSchema>): Pu
       ? {}
       : { linkedIssueNumbers: pr.closingIssuesReferences.map((issue) => issue.number) }),
   };
+}
+
+function hasMergeabilityFields(pr: PullRequestSummary | undefined): pr is PullRequestSummary {
+  return pr?.mergeable !== undefined || pr?.mergeStateStatus !== undefined;
+}
+
+function repositoryCacheKey(owner: string, repo: string): string {
+  return `${owner.toLowerCase()}/${repo.toLowerCase()}`;
 }
 
 export function parseProjectItemsGraphql(stdout: string, statusField = "Status"): WorkItem[] {

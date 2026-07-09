@@ -1,4 +1,5 @@
 import { errorMessage } from "../utils/error-message.js";
+import { ConductorExecError } from "./exec.js";
 import type { CommandExec } from "./github-types.js";
 import type { ConductorLogger } from "./logging.js";
 
@@ -7,6 +8,7 @@ export async function execLoggedGh(input: {
   args: string[];
   cwd: string | undefined;
   exec: CommandExec;
+  isExpectedFailure?: (error: unknown) => boolean;
   logger: ConductorLogger;
   timeoutMs: number;
 }): Promise<{ stdout: string; stderr: string }> {
@@ -21,13 +23,27 @@ export async function execLoggedGh(input: {
     });
     return result;
   } catch (error) {
-    input.logger.warn("GitHub call failed", {
+    const message = errorMessage(error);
+    const payload = {
       ...context,
       durationMs: Date.now() - startedAt,
-      error: errorMessage(error),
-    });
+      error: message,
+    };
+    if (input.isExpectedFailure?.(error) === true) {
+      input.logger.debug("GitHub call returned expected non-success response", payload);
+      throw error;
+    }
+    input.logger.warn("GitHub call failed", payload);
     throw error;
   }
+}
+
+export function isNoChecksReportedError(error: unknown): boolean {
+  return (
+    error instanceof ConductorExecError &&
+    error.exitCode === 1 &&
+    error.stderr.includes("no checks reported")
+  );
 }
 
 function githubCallContext(

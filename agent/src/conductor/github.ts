@@ -16,7 +16,7 @@ import {
   parseGhReviewComments,
   type PullRequestFeedback,
 } from "./github-feedback.js";
-import { execLoggedGh } from "./github-call-logging.js";
+import { execLoggedGh, isNoChecksReportedError } from "./github-call-logging.js";
 import { parseJsonValue } from "./json.js";
 import {
   projectItemsQuery,
@@ -52,16 +52,6 @@ const GhRepoViewSchema = Type.Object({
   nameWithOwner: Type.String(),
   defaultBranchRef: Type.Object({ name: Type.String() }),
 });
-const GhIssueViewSchema = Type.Object({
-  id: Type.Optional(Type.String()),
-  number: Type.Number({ minimum: 1 }),
-  state: Type.Union([Type.Literal("OPEN"), Type.Literal("CLOSED")]),
-  title: Type.String(),
-  body: Type.Union([Type.String(), Type.Null()]),
-  url: Type.String(),
-  labels: Type.Array(Type.Object({ name: Type.String() })),
-  assignees: Type.Array(Type.Object({ login: Type.String() })),
-});
 const GhGraphqlResponseSchema = Type.Object({ data: Type.Record(Type.String(), Type.Unknown()) });
 const GhPullRequestSchema = Type.Object({
   number: Type.Number(),
@@ -83,6 +73,7 @@ export {
   parseGhPrViewFeedback,
   parseGhReviewComments,
 } from "./github-feedback.js";
+export { parseGhIssueView } from "./github-issue-view.js";
 export type { PullRequestFeedback } from "./github-feedback.js";
 export type {
   CommandExec,
@@ -424,21 +415,27 @@ export class GhGitHubClient implements GitHubClient {
     repo: string,
     prNumber: number,
   ): Promise<PullRequestFeedback[]> {
-    return parseGhPrChecks(
-      await this.gh(
-        [
-          "pr",
-          "checks",
-          String(prNumber),
-          "--repo",
-          `${owner}/${repo}`,
-          "--json",
-          "name,state,link,bucket,completedAt,startedAt",
-        ],
-        undefined,
-        "gh pr checks",
-      ),
-    );
+    try {
+      return parseGhPrChecks(
+        await this.gh(
+          [
+            "pr",
+            "checks",
+            String(prNumber),
+            "--repo",
+            `${owner}/${repo}`,
+            "--json",
+            "name,state,link,bucket,completedAt,startedAt",
+          ],
+          undefined,
+          "gh pr checks",
+          isNoChecksReportedError,
+        ),
+      );
+    } catch (error) {
+      if (isNoChecksReportedError(error)) return [];
+      throw error;
+    }
   }
 
   private async listViewFeedback(
@@ -501,12 +498,18 @@ export class GhGitHubClient implements GitHubClient {
     }
   }
 
-  private async gh(args: string[], cwd: string | undefined, _action: string): Promise<string> {
+  private async gh(
+    args: string[],
+    cwd: string | undefined,
+    _action: string,
+    isExpectedFailure?: (error: unknown) => boolean,
+  ): Promise<string> {
     const result = await execLoggedGh({
       action: _action,
       args,
       cwd,
       exec: this.exec,
+      isExpectedFailure,
       logger: this.logger,
       timeoutMs: GH_COMMAND_TIMEOUT_MS,
     });
@@ -559,10 +562,6 @@ export function parseGhUser(stdout: string): Static<typeof GhUserSchema> {
 
 export function parseGhRepoView(stdout: string): Static<typeof GhRepoViewSchema> {
   return Value.Parse(GhRepoViewSchema, parseJsonValue(stdout, "gh repo view"));
-}
-
-export function parseGhIssueView(stdout: string): Static<typeof GhIssueViewSchema> {
-  return Value.Parse(GhIssueViewSchema, parseJsonValue(stdout, "gh issue view"));
 }
 
 export function parseGhPullRequestList(stdout: string): PullRequestSummary[] {

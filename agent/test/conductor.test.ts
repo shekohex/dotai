@@ -22,6 +22,7 @@ import {
   writeGlobalConfig,
 } from "../src/conductor/config.js";
 import { readConductorDaemonStatus, stopConductorDaemon } from "../src/conductor/daemon.js";
+import { ConductorExecError } from "../src/conductor/exec.js";
 import { execCommand } from "../src/conductor/exec.js";
 import {
   evaluateCondition,
@@ -1555,6 +1556,91 @@ describe("conductor adapters", () => {
       expect.arrayContaining(["--json", "name,state,link,bucket,completedAt,startedAt"]),
     );
     expect(checksCall).not.toEqual(expect.arrayContaining([expect.stringContaining("conclusion")]));
+  });
+
+  test("gh PR checks no-checks response is not warned by default", async () => {
+    const output = writableCapture();
+    const client = new GhGitHubClient(
+      async (_file, args) => {
+        if (args.includes("checks")) {
+          throw new ConductorExecError({
+            file: "gh",
+            args,
+            durationMs: 50,
+            exitCode: 1,
+            stdout: "",
+            stderr: "no checks reported on the 'pi/26-example' branch",
+            timedOut: false,
+          });
+        }
+        if (args.includes("view")) {
+          return {
+            stdout: JSON.stringify({ comments: [], reviewDecision: "", reviews: [] }),
+            stderr: "",
+          };
+        }
+        if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
+        if (args.at(-1) === "repos/octo/demo/issues/7/comments")
+          return { stdout: "[]", stderr: "" };
+        throw new Error(`unexpected gh args: ${args.join(" ")}`);
+      },
+      new ConsoleConductorLogger(output, 0, () => new Date("2026-07-05T00:00:00Z")),
+    );
+
+    await expect(
+      client.listPullRequestFeedback("octo", "demo", 2, 7, [], {
+        number: 2,
+        url: "https://github.com/octo/demo/pull/2",
+        headRefName: "pi/26-example",
+        state: "OPEN",
+        isDraft: false,
+        mergeable: "MERGEABLE",
+      }),
+    ).resolves.toEqual([]);
+    expect(output.text()).not.toContain("WARN");
+  });
+
+  test("gh PR checks unexpected failure is warned", async () => {
+    const output = writableCapture();
+    const client = new GhGitHubClient(
+      async (_file, args) => {
+        if (args.includes("checks")) {
+          throw new ConductorExecError({
+            file: "gh",
+            args,
+            durationMs: 50,
+            exitCode: 1,
+            stdout: "",
+            stderr: "Unknown JSON field: conclusion",
+            timedOut: false,
+          });
+        }
+        if (args.includes("view")) {
+          return {
+            stdout: JSON.stringify({ comments: [], reviewDecision: "", reviews: [] }),
+            stderr: "",
+          };
+        }
+        if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
+        if (args.at(-1) === "repos/octo/demo/issues/7/comments")
+          return { stdout: "[]", stderr: "" };
+        throw new Error(`unexpected gh args: ${args.join(" ")}`);
+      },
+      new ConsoleConductorLogger(output, 0, () => new Date("2026-07-05T00:00:00Z")),
+    );
+
+    await expect(
+      client.listPullRequestFeedback("octo", "demo", 2, 7, [], {
+        number: 2,
+        url: "https://github.com/octo/demo/pull/2",
+        headRefName: "pi/26-example",
+        state: "OPEN",
+        isDraft: false,
+        mergeable: "MERGEABLE",
+      }),
+    ).resolves.toEqual([]);
+    expect(output.text()).toContain("WARN GitHub call failed");
+    expect(output.text()).toContain("Unknown JSON field: conclusion");
   });
 
   test("authenticated review feedback routes unless it has conductor marker", async () => {

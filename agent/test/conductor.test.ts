@@ -1537,8 +1537,10 @@ describe("conductor adapters", () => {
           stderr: "",
         };
       }
-      if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
-      if (args.at(-1) === "repos/octo/demo/issues/7/comments") return { stdout: "[]", stderr: "" };
+      if (args.at(-1)?.startsWith("repos/octo/demo/pulls/2/comments") === true)
+        return { stdout: "[]", stderr: "" };
+      if (args.at(-1)?.startsWith("repos/octo/demo/issues/7/comments") === true)
+        return { stdout: "[]", stderr: "" };
       throw new Error(`unexpected gh args: ${args.join(" ")}`);
     });
 
@@ -1556,6 +1558,12 @@ describe("conductor adapters", () => {
       expect.arrayContaining(["--json", "name,state,link,bucket,completedAt,startedAt"]),
     );
     expect(checksCall).not.toEqual(expect.arrayContaining([expect.stringContaining("conclusion")]));
+    expect(calls).toContainEqual(
+      expect.arrayContaining(["repos/octo/demo/pulls/2/comments?per_page=100"]),
+    );
+    expect(calls).toContainEqual(
+      expect.arrayContaining(["repos/octo/demo/issues/7/comments?per_page=100"]),
+    );
   });
 
   test("gh PR checks no-checks response is not warned by default", async () => {
@@ -1579,8 +1587,9 @@ describe("conductor adapters", () => {
             stderr: "",
           };
         }
-        if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
-        if (args.at(-1) === "repos/octo/demo/issues/7/comments")
+        if (args.at(-1)?.startsWith("repos/octo/demo/pulls/2/comments") === true)
+          return { stdout: "[]", stderr: "" };
+        if (args.at(-1)?.startsWith("repos/octo/demo/issues/7/comments") === true)
           return { stdout: "[]", stderr: "" };
         throw new Error(`unexpected gh args: ${args.join(" ")}`);
       },
@@ -1621,8 +1630,9 @@ describe("conductor adapters", () => {
             stderr: "",
           };
         }
-        if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
-        if (args.at(-1) === "repos/octo/demo/issues/7/comments")
+        if (args.at(-1)?.startsWith("repos/octo/demo/pulls/2/comments") === true)
+          return { stdout: "[]", stderr: "" };
+        if (args.at(-1)?.startsWith("repos/octo/demo/issues/7/comments") === true)
           return { stdout: "[]", stderr: "" };
         throw new Error(`unexpected gh args: ${args.join(" ")}`);
       },
@@ -1641,6 +1651,102 @@ describe("conductor adapters", () => {
     ).resolves.toEqual([]);
     expect(output.text()).toContain("WARN GitHub call failed");
     expect(output.text()).toContain("Unknown JSON field: conclusion");
+  });
+
+  test("gh PR feedback retries empty-output read timeouts", async () => {
+    const output = writableCapture();
+    let reviewCommentAttempts = 0;
+    const client = new GhGitHubClient(
+      async (_file, args) => {
+        if (args.includes("checks")) return { stdout: "[]", stderr: "" };
+        if (args.includes("view")) {
+          return {
+            stdout: JSON.stringify({ comments: [], reviewDecision: "", reviews: [] }),
+            stderr: "",
+          };
+        }
+        if (args.at(-1)?.startsWith("repos/octo/demo/pulls/2/comments") === true) {
+          reviewCommentAttempts += 1;
+          if (reviewCommentAttempts === 1) {
+            throw new ConductorExecError({
+              file: "gh",
+              args,
+              durationMs: 30_000,
+              signal: "SIGTERM",
+              stdout: "",
+              stderr: "",
+              timedOut: true,
+              timeoutMs: 30_000,
+            });
+          }
+          return { stdout: "[]", stderr: "" };
+        }
+        if (args.at(-1)?.startsWith("repos/octo/demo/issues/7/comments") === true)
+          return { stdout: "[]", stderr: "" };
+        throw new Error(`unexpected gh args: ${args.join(" ")}`);
+      },
+      new ConsoleConductorLogger(output, 0, () => new Date("2026-07-05T00:00:00Z")),
+    );
+
+    await expect(
+      client.listPullRequestFeedback("octo", "demo", 2, 7, [], {
+        number: 2,
+        url: "https://github.com/octo/demo/pull/2",
+        headRefName: "pi/26-example",
+        state: "OPEN",
+        isDraft: false,
+        mergeable: "MERGEABLE",
+      }),
+    ).resolves.toEqual([]);
+    expect(reviewCommentAttempts).toBe(2);
+    expect(output.text()).not.toContain("WARN");
+  });
+
+  test("gh PR feedback does not retry non-empty timeout failures", async () => {
+    const output = writableCapture();
+    let reviewCommentAttempts = 0;
+    const client = new GhGitHubClient(
+      async (_file, args) => {
+        if (args.includes("checks")) return { stdout: "[]", stderr: "" };
+        if (args.includes("view")) {
+          return {
+            stdout: JSON.stringify({ comments: [], reviewDecision: "", reviews: [] }),
+            stderr: "",
+          };
+        }
+        if (args.at(-1)?.startsWith("repos/octo/demo/pulls/2/comments") === true) {
+          reviewCommentAttempts += 1;
+          throw new ConductorExecError({
+            file: "gh",
+            args,
+            durationMs: 30_000,
+            signal: "SIGTERM",
+            stdout: "",
+            stderr: "partial GitHub response",
+            timedOut: true,
+            timeoutMs: 30_000,
+          });
+        }
+        if (args.at(-1)?.startsWith("repos/octo/demo/issues/7/comments") === true)
+          return { stdout: "[]", stderr: "" };
+        throw new Error(`unexpected gh args: ${args.join(" ")}`);
+      },
+      new ConsoleConductorLogger(output, 0, () => new Date("2026-07-05T00:00:00Z")),
+    );
+
+    await expect(
+      client.listPullRequestFeedback("octo", "demo", 2, 7, [], {
+        number: 2,
+        url: "https://github.com/octo/demo/pull/2",
+        headRefName: "pi/26-example",
+        state: "OPEN",
+        isDraft: false,
+        mergeable: "MERGEABLE",
+      }),
+    ).resolves.toEqual([]);
+    expect(reviewCommentAttempts).toBe(1);
+    expect(output.text()).toContain("WARN GitHub call failed");
+    expect(output.text()).toContain("partial GitHub response");
   });
 
   test("authenticated review feedback routes unless it has conductor marker", async () => {
@@ -1674,10 +1780,10 @@ describe("conductor adapters", () => {
           stderr: "",
         };
       }
-      if (args.at(-1) === "repos/octo/demo/pulls/2/comments") {
+      if (args.at(-1)?.startsWith("repos/octo/demo/pulls/2/comments") === true) {
         return { stdout: "[]", stderr: "" };
       }
-      if (args.at(-1) === "repos/octo/demo/issues/7/comments") {
+      if (args.at(-1)?.startsWith("repos/octo/demo/issues/7/comments") === true) {
         return {
           stdout: JSON.stringify([
             [{ id: "ic1", body: "<!-- pi-conductor -->\nPi Conductor associated PR." }],
@@ -1720,8 +1826,10 @@ describe("conductor adapters", () => {
           stderr: "",
         };
       }
-      if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
-      if (args.at(-1) === "repos/octo/demo/issues/7/comments") return { stdout: "[]", stderr: "" };
+      if (args.at(-1)?.startsWith("repos/octo/demo/pulls/2/comments") === true)
+        return { stdout: "[]", stderr: "" };
+      if (args.at(-1)?.startsWith("repos/octo/demo/issues/7/comments") === true)
+        return { stdout: "[]", stderr: "" };
       throw new Error(`unexpected gh args: ${args.join(" ")}`);
     });
 
@@ -1745,8 +1853,10 @@ describe("conductor adapters", () => {
           stderr: "",
         };
       }
-      if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
-      if (args.at(-1) === "repos/octo/demo/issues/7/comments") return { stdout: "[]", stderr: "" };
+      if (args.at(-1)?.startsWith("repos/octo/demo/pulls/2/comments") === true)
+        return { stdout: "[]", stderr: "" };
+      if (args.at(-1)?.startsWith("repos/octo/demo/issues/7/comments") === true)
+        return { stdout: "[]", stderr: "" };
       throw new Error(`unexpected gh args: ${args.join(" ")}`);
     });
 
@@ -1791,8 +1901,10 @@ describe("conductor adapters", () => {
           stderr: "",
         };
       }
-      if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
-      if (args.at(-1) === "repos/octo/demo/issues/7/comments") return { stdout: "[]", stderr: "" };
+      if (args.at(-1)?.startsWith("repos/octo/demo/pulls/2/comments") === true)
+        return { stdout: "[]", stderr: "" };
+      if (args.at(-1)?.startsWith("repos/octo/demo/issues/7/comments") === true)
+        return { stdout: "[]", stderr: "" };
       throw new Error(`unexpected gh args: ${args.join(" ")}`);
     });
 

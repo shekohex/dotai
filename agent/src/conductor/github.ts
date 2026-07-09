@@ -465,12 +465,9 @@ export class GhGitHubClient implements GitHubClient {
     repo: string,
     prNumber: number,
   ): Promise<PullRequestFeedback[]> {
+    const endpoint = `repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100`;
     return parseGhReviewComments(
-      await this.gh(
-        ["api", "--paginate", "--slurp", `repos/${owner}/${repo}/pulls/${prNumber}/comments`],
-        undefined,
-        "gh pr review comments",
-      ),
+      await this.gh(["api", "--paginate", "--slurp", endpoint], undefined, "gh pr review comments"),
     );
   }
 
@@ -479,12 +476,9 @@ export class GhGitHubClient implements GitHubClient {
     repo: string,
     issueNumber: number,
   ): Promise<PullRequestFeedback[]> {
+    const endpoint = `repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=100`;
     return parseGhIssueComments(
-      await this.gh(
-        ["api", "--paginate", "--slurp", `repos/${owner}/${repo}/issues/${issueNumber}/comments`],
-        undefined,
-        "gh issue comments",
-      ),
+      await this.gh(["api", "--paginate", "--slurp", endpoint], undefined, "gh issue comments"),
     );
   }
 

@@ -1196,9 +1196,11 @@ describe("conductor adapters", () => {
   });
 
   test("GitHub project metadata is cached across status updates", async () => {
+    const calls: string[][] = [];
     let metadataQueries = 0;
     let statusMutations = 0;
     const github = new GhGitHubClient(async (_file, args) => {
+      calls.push(args);
       if (args[0] === "api" && args[1] === "users/octo") {
         return { stdout: JSON.stringify({ type: "Organization" }), stderr: "" };
       }
@@ -1217,7 +1219,7 @@ describe("conductor adapters", () => {
                         {
                           id: "PVTSSF_1",
                           name: "Status",
-                          options: [{ id: "todo", name: "Todo" }],
+                          options: [{ id: "98236657", name: "Todo" }],
                         },
                       ],
                     },
@@ -1242,6 +1244,7 @@ describe("conductor adapters", () => {
 
     expect(metadataQueries).toBe(1);
     expect(statusMutations).toBe(2);
+    expect(calls).toContainEqual(expect.arrayContaining(["-f", "optionId=98236657"]));
   });
 
   test("GitHub project metadata cache expires", async () => {
@@ -1520,6 +1523,38 @@ describe("conductor adapters", () => {
     expect(calls[0]).toEqual(
       expect.arrayContaining(["pr", "list", "--head", "pi/7-fix-bug", "--state", "all"]),
     );
+  });
+
+  test("gh PR checks request only supported JSON fields", async () => {
+    const calls: string[][] = [];
+    const client = new GhGitHubClient(async (_file, args) => {
+      calls.push(args);
+      if (args.includes("checks")) return { stdout: "[]", stderr: "" };
+      if (args.includes("view")) {
+        return {
+          stdout: JSON.stringify({ comments: [], reviewDecision: "", reviews: [] }),
+          stderr: "",
+        };
+      }
+      if (args.at(-1) === "repos/octo/demo/pulls/2/comments") return { stdout: "[]", stderr: "" };
+      if (args.at(-1) === "repos/octo/demo/issues/7/comments") return { stdout: "[]", stderr: "" };
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+
+    await client.listPullRequestFeedback("octo", "demo", 2, 7, [], {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: "pi/7-fix-bug",
+      state: "OPEN",
+      isDraft: false,
+      mergeable: "MERGEABLE",
+    });
+
+    const checksCall = calls.find((args) => args.includes("checks"));
+    expect(checksCall).toEqual(
+      expect.arrayContaining(["--json", "name,state,link,bucket,completedAt,startedAt"]),
+    );
+    expect(checksCall).not.toEqual(expect.arrayContaining([expect.stringContaining("conclusion")]));
   });
 
   test("authenticated review feedback routes unless it has conductor marker", async () => {

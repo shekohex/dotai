@@ -150,6 +150,7 @@ async function executeConductorCommand(
       store,
       github: new GhGitHubClient(undefined, options.logger),
       herdr: new CliHerdrSessionManager(),
+      logger: options.logger,
       cwd: options.cwd,
     });
 

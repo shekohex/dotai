@@ -8,6 +8,7 @@ import { validateGlobalConfig } from "./config.js";
 import type { PullRequestFeedback } from "./github-feedback.js";
 import type { GitHubClient, PullRequestSummary } from "./github.js";
 import type { HerdrSessionManager } from "./herdr.js";
+import type { ConductorLogger } from "./logging.js";
 import type { ConductorStore, LifecycleStatus, RunRecord, WorkItem } from "./store/types.js";
 import type { WorktreeManager } from "./worktree.js";
 
@@ -16,6 +17,7 @@ export type ConductorOrchestratorDeps = {
   store: ConductorStore;
   github: GitHubClient;
   herdr: HerdrSessionManager;
+  logger?: ConductorLogger;
   worktrees?: WorktreeManager;
   cwd: string;
   now?: () => Date;

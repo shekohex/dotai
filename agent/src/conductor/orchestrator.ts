@@ -47,7 +47,7 @@ import {
 } from "./run-status.js";
 import type { ConductorDeliveryMode, HerdrAgentStatus } from "./herdr.js";
 import { selectLaunchFlags } from "./launch-rules.js";
-import { appendRunLog } from "./logging.js";
+import { appendRunLog, noopConductorLogger, type ConductorLogger } from "./logging.js";
 import { renderInitialPrompt, writePromptArtifact } from "./prompt.js";
 import { createRunId, slugify } from "./run-id.js";
 import { RunRecordSchema, type RunRecord, type WorkItem } from "./store/types.js";
@@ -60,12 +60,14 @@ export class ConductorOrchestrator {
   private readonly worktrees: WorktreeManager;
   private readonly stateRoot: string;
   private readonly now: () => Date;
+  private readonly logger: ConductorLogger;
   private reconcileQueue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly deps: ConductorOrchestratorDeps) {
     this.worktrees = deps.worktrees ?? new WorktreeManager();
     this.stateRoot = getStateRoot(deps.config);
     this.now = deps.now ?? (() => new Date());
+    this.logger = deps.logger ?? noopConductorLogger;
   }
 
   updateConfig(config: GlobalConductorConfig): void {
@@ -757,6 +759,7 @@ export class ConductorOrchestrator {
 
   private async record(run: RunRecord, kind: string, payload: unknown): Promise<void> {
     const createdAt = this.nowIso();
+    this.logger.debug("Conductor run event", { runId: run.runId, kind });
     await this.deps.store.appendEvent({ runId: run.runId, kind, payload, createdAt });
     try {
       await appendRunLog(this.stateRoot, { runId: run.runId, kind, payload, createdAt });

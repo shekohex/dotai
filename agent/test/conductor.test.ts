@@ -2721,6 +2721,14 @@ describe("conductor orchestrator", () => {
     expect(calls).toEqual(
       expect.arrayContaining([["-C", repoPath, "push", "origin", "--delete", "pi/7-fix-bug"]]),
     );
+    await expect(store.listEvents(run.runId)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "cleanup_merged_started" }),
+        expect.objectContaining({ kind: "herdr_stopped" }),
+        expect.objectContaining({ kind: "cleanup_merged_artifacts" }),
+        expect.objectContaining({ kind: "base_refresh" }),
+      ]),
+    );
     expect(herdr.stopCount).toBe(1);
   });
 

@@ -49,13 +49,30 @@ export async function cleanupMergedRunArtifacts(input: {
   run: RunRecord;
   worktrees: WorktreeManager;
 }): Promise<void> {
+  await input.record("cleanup_merged_started", {
+    branch: input.plan.branch,
+    worktreePath: input.plan.worktreePath,
+  });
   try {
     await input.herdr.stop(input.run.herdr);
     await input.record("herdr_stopped", { herdr: input.run.herdr });
   } catch (error) {
     await input.record("herdr_stop_failed", { error: errorMessage(error) });
   }
-  await input.worktrees.cleanupMerged(input.config, input.plan);
+  try {
+    await input.worktrees.cleanupMerged(input.config, input.plan);
+    await input.record("cleanup_merged_artifacts", {
+      branch: input.plan.branch,
+      worktreePath: input.plan.worktreePath,
+    });
+  } catch (error) {
+    await input.record("cleanup_merged_failed", {
+      branch: input.plan.branch,
+      error: errorMessage(error),
+      worktreePath: input.plan.worktreePath,
+    });
+    throw error;
+  }
   await refreshLocalBaseBestEffort({
     config: input.config,
     record: input.record,

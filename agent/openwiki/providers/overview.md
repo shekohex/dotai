@@ -2,7 +2,7 @@
 
 How the wrapper resolves which model/provider serves a request. This sits on top of upstream pi-ai's builtin providers and adds a gateway selector, synthesized providers, fallback chains, a usage tracker, and an OpenAI fast/image extension.
 
-The default model is `openai-codex` / `gpt-5.5` (`src/default-settings.ts`), but at runtime the **active mode** (`src/default-modes.ts`) usually decides the provider+model — e.g. `build` → `codex-openai/gpt-5.5`, `cheap-review` → `zai/glm-5.2`, `rush` → `opencode-go/deepseek-v4-flash`. See [Architecture → Mode system](../architecture/overview.md#mode-system).
+The default model is `openai-codex` / `gpt-5.5` (`src/default-settings.ts`), but at runtime the **active mode** (`src/default-modes.ts`) usually decides the provider+model — e.g. `build` → `codex-openai/gpt-5.6-terra`, `cheap-review` → `zai/glm-5.2`, `rush` → `opencode-go/deepseek-v4-flash`. See [Architecture → Mode system](../architecture/overview.md#mode-system).
 
 ## LiteLLM gateway selection
 
@@ -10,7 +10,7 @@ The default model is `openai-codex` / `gpt-5.5` (`src/default-settings.ts`), but
 
 - **Candidate priority** (first healthy wins): `lan` (`192.168.1.116:4000`) → `tail` (`100.100.1.116:4000`) → `public` (`ai-gateway.0iq.xyz`). Probed via `GET /health/readiness` with a 1s timeout; the result is cached.
 - When a gateway is alive it registers, through the gateway:
-  - `codex-openai` — `openai-responses` API, models copied from `getBuiltinModels("openai-codex")`, key from `AuthStorage("litellm")` or `$LITELLM_API_KEY`.
+  - `codex-openai` — `openai-responses` API, models copied from `getBuiltinModels("openai-codex")` (with `gpt-5.6-luna`/`sol`/`terra` overridden to a 372k context window), key from `AuthStorage("litellm")` or `$LITELLM_API_KEY`.
   - `zai-coding-plan`, `deepseek` — proxied through the gateway, litellm key.
   - `gemini` — proxied to `<gateway>/v1beta` via `google-generative-ai` (only when the winning candidate has an `origin`).
 - `zai` is **never proxied** — it always uses its native `https://api.z.ai/api/coding/paas/v4` URL with `$ZAI_API_KEY`.

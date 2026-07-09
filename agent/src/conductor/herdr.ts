@@ -1,24 +1,18 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { Type, type Static } from "typebox";
-import { Value } from "typebox/value";
 
-import { asRecord, readString } from "../utils/unknown-data.js";
-import { parseJsonValue } from "./json.js";
+import {
+  HerdrClient,
+  isMissingHerdrTarget,
+  parseHerdrAgentStatus,
+  parseHerdrPanes,
+  parseHerdrTabs,
+  parseHerdrWorkspaces,
+  type HerdrAgentStatus,
+} from "../herdr/client.js";
 import type { HerdrHandles } from "./store/types.js";
 
 const execFileAsync = promisify(execFile);
-
-const HerdrResponseSchema = Type.Object({
-  result: Type.Record(Type.String(), Type.Unknown()),
-});
-const HerdrAgentStatusSchema = Type.Union([
-  Type.Literal("idle"),
-  Type.Literal("working"),
-  Type.Literal("blocked"),
-  Type.Literal("done"),
-  Type.Literal("unknown"),
-]);
 
 const SUBMIT_KEYS = {
   steer: "enter",
@@ -27,7 +21,8 @@ const SUBMIT_KEYS = {
 const HERDR_COMMAND_TIMEOUT_MS = 10_000;
 
 export type ConductorDeliveryMode = keyof typeof SUBMIT_KEYS;
-export type HerdrAgentStatus = Static<typeof HerdrAgentStatusSchema>;
+export type { HerdrAgentStatus } from "../herdr/client.js";
+export { parseHerdrAgentStatus, parseHerdrPanes, parseHerdrTabs, parseHerdrWorkspaces };
 
 export type HerdrRunInput = {
   owner: string;
@@ -78,11 +73,7 @@ export class CliHerdrSessionManager implements HerdrSessionManager {
     }
     if (paneId === undefined) throw new Error(`Herdr tab ${tab.tabId} has no pane`);
 
-    await this.herdr(
-      ["pane", "run", paneId, buildPiLaunchCommand(input)],
-      input.worktreePath,
-      "herdr pane run",
-    );
+    await this.client().runPane(paneId, buildPiLaunchCommand(input), { cwd: input.worktreePath });
 
     return { workspaceId, tabId: tab.tabId, paneId, workspaceLabel, tabLabel };
   }
@@ -113,35 +104,20 @@ export class CliHerdrSessionManager implements HerdrSessionManager {
     delivery: ConductorDeliveryMode,
   ): Promise<void> {
     if (handles.paneId === undefined) throw new Error("Run has no live Herdr pane handle");
-    await this.herdr(
-      ["pane", "send-text", handles.paneId, `\u001B[200~${message}\u001B[201~`],
-      undefined,
-      "herdr pane send-text",
-    );
-    await this.herdr(
-      ["pane", "send-keys", handles.paneId, SUBMIT_KEYS[delivery]],
-      undefined,
-      "herdr pane send-keys",
-    );
+    const client = this.client();
+    await client.sendText(handles.paneId, `\u001B[200~${message}\u001B[201~`);
+    await client.sendKeys(handles.paneId, SUBMIT_KEYS[delivery]);
   }
 
-  async paneExists(handles: HerdrHandles): Promise<boolean> {
-    if (handles.paneId === undefined) return false;
-    try {
-      await this.herdr(["pane", "get", handles.paneId], undefined, "herdr pane get");
-      return true;
-    } catch (error) {
-      if (isMissingHerdrTarget(error)) return false;
-      throw error;
-    }
+  paneExists(handles: HerdrHandles): Promise<boolean> {
+    if (handles.paneId === undefined) return Promise.resolve(false);
+    return this.client().paneExists(handles.paneId);
   }
 
   async agentStatus(handles: HerdrHandles): Promise<HerdrAgentStatus | undefined> {
     if (handles.paneId === undefined) return undefined;
     try {
-      return parseHerdrAgentStatus(
-        await this.herdr(["agent", "get", handles.paneId], undefined, "herdr agent get"),
-      );
+      return await this.client().agentStatus(handles.paneId);
     } catch (error) {
       if (isMissingHerdrTarget(error)) return undefined;
       throw error;
@@ -151,7 +127,7 @@ export class CliHerdrSessionManager implements HerdrSessionManager {
   async stop(handles: HerdrHandles): Promise<void> {
     if (handles.paneId === undefined) return;
     try {
-      await this.herdr(["pane", "close", handles.paneId], undefined, "herdr pane close");
+      await this.client().closePane(handles.paneId);
     } catch (error) {
       if (!isMissingHerdrTarget(error)) throw error;
     }
@@ -161,20 +137,7 @@ export class CliHerdrSessionManager implements HerdrSessionManager {
     const existing = (await this.listWorkspaces()).find((entry) => entry.label === label);
     if (existing !== undefined) return existing.workspaceId;
 
-    const response = parseHerdrResponse(
-      await this.herdr(
-        ["workspace", "create", "--cwd", cwd, "--label", label, "--no-focus"],
-        cwd,
-        "herdr workspace create",
-      ),
-      "herdr workspace create",
-    );
-    const workspaceId =
-      readString(asRecord(response.result.workspace)?.workspace_id) ??
-      readString(response.result.workspace_id);
-    if (workspaceId === undefined)
-      throw new Error("herdr workspace create did not return workspace_id");
-    return workspaceId;
+    return this.client().createWorkspace({ cwd, label });
   }
 
   private async ensureTab(
@@ -193,88 +156,40 @@ export class CliHerdrSessionManager implements HerdrSessionManager {
     label: string,
     cwd: string,
   ): Promise<{ tabId: string; paneId?: string }> {
-    const response = parseHerdrResponse(
-      await this.herdr(
-        ["tab", "create", "--workspace", workspaceId, "--cwd", cwd, "--label", label, "--no-focus"],
-        cwd,
-        "herdr tab create",
-      ),
-      "herdr tab create",
-    );
-    const tabId =
-      readString(asRecord(response.result.tab)?.tab_id) ?? readString(response.result.tab_id);
-    const paneId =
-      readString(asRecord(response.result.root_pane)?.pane_id) ??
-      readString(asRecord(response.result.pane)?.pane_id);
-    if (tabId === undefined) throw new Error("herdr tab create did not return tab_id");
-    return { tabId, paneId };
+    const tab = await this.client().createTab({ cwd, label, workspaceId });
+    if (tab.tabId === undefined) throw new Error("herdr tab create did not return tab_id");
+    return { tabId: tab.tabId, paneId: tab.paneId };
   }
 
   private async closeTab(tabId: string): Promise<void> {
     try {
-      await this.herdr(["tab", "close", tabId], undefined, "herdr tab close");
+      await this.client().closeTab(tabId);
     } catch (error) {
       if (!isMissingHerdrTarget(error)) throw error;
     }
   }
 
-  private async listWorkspaces(): Promise<Array<{ workspaceId: string; label: string }>> {
-    return parseHerdrWorkspaces(
-      await this.herdr(["workspace", "list"], undefined, "herdr workspace list"),
-    );
+  private listWorkspaces(): Promise<Array<{ workspaceId: string; label: string }>> {
+    return this.client().listWorkspaces();
   }
 
-  private async listTabs(workspaceId: string): Promise<Array<{ tabId: string; label: string }>> {
-    return parseHerdrTabs(
-      await this.herdr(["tab", "list", "--workspace", workspaceId], undefined, "herdr tab list"),
-    );
+  private listTabs(workspaceId: string): Promise<Array<{ tabId: string; label: string }>> {
+    return this.client().listTabs(workspaceId);
   }
 
   private async findPaneForTab(workspaceId: string, tabId: string): Promise<string | undefined> {
-    return parseHerdrPanes(
-      await this.herdr(["pane", "list", "--workspace", workspaceId], undefined, "herdr pane list"),
-    ).find((pane) => pane.tabId === tabId)?.paneId;
+    return (await this.client().listPanes(workspaceId)).find((pane) => pane.tabId === tabId)
+      ?.paneId;
   }
 
-  private async herdr(args: string[], cwd: string | undefined, _action: string): Promise<string> {
-    const result = await this.exec("herdr", args, { cwd, timeout: HERDR_COMMAND_TIMEOUT_MS });
-    return result.stdout.trim();
+  private client(): HerdrClient {
+    return new HerdrClient((args, options) =>
+      this.exec("herdr", args, {
+        cwd: options.cwd,
+        timeout: options.timeout ?? HERDR_COMMAND_TIMEOUT_MS,
+      }),
+    );
   }
-}
-
-export function parseHerdrWorkspaces(
-  stdout: string,
-): Array<{ workspaceId: string; label: string }> {
-  const response = parseHerdrResponse(stdout, "herdr workspace list");
-  return readHerdrList(response.result.workspaces).flatMap((entry) => {
-    const workspaceId = readString(entry.workspace_id);
-    const label = readString(entry.label);
-    return workspaceId === undefined || label === undefined ? [] : [{ workspaceId, label }];
-  });
-}
-
-export function parseHerdrTabs(stdout: string): Array<{ tabId: string; label: string }> {
-  const response = parseHerdrResponse(stdout, "herdr tab list");
-  return readHerdrList(response.result.tabs).flatMap((entry) => {
-    const tabId = readString(entry.tab_id);
-    const label = readString(entry.label);
-    return tabId === undefined || label === undefined ? [] : [{ tabId, label }];
-  });
-}
-
-export function parseHerdrPanes(stdout: string): Array<{ paneId: string; tabId: string }> {
-  const response = parseHerdrResponse(stdout, "herdr pane list");
-  return readHerdrList(response.result.panes).flatMap((entry) => {
-    const paneId = readString(entry.pane_id);
-    const tabId = readString(entry.tab_id);
-    return paneId === undefined || tabId === undefined ? [] : [{ paneId, tabId }];
-  });
-}
-
-export function parseHerdrAgentStatus(stdout: string): HerdrAgentStatus | undefined {
-  const response = parseHerdrResponse(stdout, "herdr agent get");
-  const status = readString(asRecord(response.result.agent)?.agent_status);
-  return status !== undefined && Value.Check(HerdrAgentStatusSchema, status) ? status : undefined;
 }
 
 export function repositoryWorkspaceLabel(owner: string, repo: string): string {
@@ -299,24 +214,8 @@ function buildPiLaunchCommand(input: HerdrRunInput): string {
   ].join(" ");
 }
 
-function parseHerdrResponse(stdout: string, label: string): { result: Record<string, unknown> } {
-  return Value.Parse(HerdrResponseSchema, parseJsonValue(stdout, label));
-}
-
-function readHerdrList(value: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
-    const record = asRecord(entry);
-    return record === undefined ? [] : [record];
-  });
-}
-
 function shellEscape(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-function isMissingHerdrTarget(error: unknown): boolean {
-  return error instanceof Error && error.message.toLowerCase().includes("not found");
 }
 
 async function defaultHerdrExec(

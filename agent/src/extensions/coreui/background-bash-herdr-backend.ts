@@ -1,7 +1,12 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { asRecord, readString } from "../../utils/unknown-data.js";
+import {
+  HerdrClient,
+  currentHerdrWorkspaceId,
+  isMissingHerdrTarget,
+  isRunningInHerdr,
+} from "../../herdr/client.js";
 import type {
   BackgroundLaunchInput,
   BackgroundLaunchResult,
@@ -20,9 +25,9 @@ export class HerdrBackgroundShellBackend implements BackgroundShellBackend {
   constructor(private readonly exec = execFileAsync) {}
 
   async isAvailable(cwd: string): Promise<boolean> {
-    if (process.env.HERDR_ENV !== "1") return false;
+    if (!isRunningInHerdr()) return false;
     try {
-      await this.exec("herdr", ["status", "server"], {
+      await this.client().statusServer({
         cwd,
         timeout: HERDR_AVAILABILITY_TIMEOUT_MS,
       });
@@ -33,38 +38,25 @@ export class HerdrBackgroundShellBackend implements BackgroundShellBackend {
   }
 
   async launch(input: BackgroundLaunchInput): Promise<BackgroundLaunchResult> {
-    const { stdout } = await this.exec(
-      "herdr",
-      [
-        "tab",
-        "create",
-        ...currentWorkspaceArgs(),
-        "--cwd",
-        input.cwd,
-        "--label",
-        input.label,
-        "--no-focus",
-      ],
-      { cwd: input.cwd, encoding: "utf-8", timeout: HERDR_PANE_CREATE_TIMEOUT_MS },
-    );
-    const paneId = parseHerdrRootPaneId(stdout);
-    await this.exec(
-      "herdr",
-      ["pane", "run", paneId, ` ${wrapCommandWithSelfClose(input.scriptPath, paneId)}`],
-      {
-        cwd: input.cwd,
-        timeout: HERDR_PANE_COMMAND_TIMEOUT_MS,
-      },
-    );
+    const client = this.client();
+    const { paneId } = await client.createTab({
+      cwd: input.cwd,
+      label: input.label,
+      workspaceId: currentHerdrWorkspaceId(),
+      timeout: HERDR_PANE_CREATE_TIMEOUT_MS,
+    });
+    await client.runPane(paneId, ` ${wrapCommandWithSelfClose(input.scriptPath, paneId)}`, {
+      cwd: input.cwd,
+      timeout: HERDR_PANE_COMMAND_TIMEOUT_MS,
+    });
     return { backend: this.name, targetId: paneId, targetLabel: `herdr pane ${paneId}` };
   }
 
   async targetExists(run: BackgroundShellRun): Promise<boolean> {
     try {
-      await this.exec("herdr", ["pane", "get", run.targetId], {
+      return await this.client().paneExists(run.targetId, {
         timeout: HERDR_PANE_COMMAND_TIMEOUT_MS,
       });
-      return true;
     } catch {
       return false;
     }
@@ -72,11 +64,11 @@ export class HerdrBackgroundShellBackend implements BackgroundShellBackend {
 
   async kill(run: BackgroundShellRun): Promise<void> {
     try {
-      await this.exec("herdr", ["pane", "close", run.targetId], {
+      await this.client().closePane(run.targetId, {
         timeout: HERDR_PANE_COMMAND_TIMEOUT_MS,
       });
     } catch (error) {
-      if (!isMissingTargetError(error)) throw error;
+      if (!isMissingHerdrTarget(error)) throw error;
     }
   }
 
@@ -99,11 +91,16 @@ export class HerdrBackgroundShellBackend implements BackgroundShellBackend {
       return `kill: unavailable · ${run.status} commands are inspect-only`;
     return `kill: K/x stop · herdr pane close ${run.targetId}`;
   }
-}
 
-function currentWorkspaceArgs(): string[] {
-  const workspaceId = process.env.HERDR_WORKSPACE_ID;
-  return workspaceId === undefined || workspaceId.length === 0 ? [] : ["--workspace", workspaceId];
+  private client(): HerdrClient {
+    return new HerdrClient(async (args, options) => {
+      const result = await this.exec("herdr", args, {
+        ...options,
+        encoding: "utf-8",
+      });
+      return { stdout: result.stdout, stderr: result.stderr };
+    });
+  }
 }
 
 function shellEscape(value: string): string {
@@ -112,26 +109,4 @@ function shellEscape(value: string): string {
 
 function wrapCommandWithSelfClose(command: string, paneId: string): string {
   return `{ ${shellEscape(command)}; }; __pi_background_status=$?; herdr pane close ${shellEscape(paneId)}; exit $__pi_background_status`;
-}
-
-function isMissingTargetError(error: unknown): boolean {
-  const record = asRecord(error);
-  const text = [
-    readString(record?.stderr),
-    readString(record?.stdout),
-    error instanceof Error ? error.message : undefined,
-  ]
-    .filter((value) => value !== undefined)
-    .join("\n")
-    .toLowerCase();
-  return text.includes("not found");
-}
-
-function parseHerdrRootPaneId(stdout: string): string {
-  const parsed = JSON.parse(stdout) as unknown;
-  const paneId = asRecord(asRecord(asRecord(parsed)?.result)?.root_pane)?.pane_id;
-  if (typeof paneId !== "string" || paneId.length === 0) {
-    throw new Error("herdr tab create did not return root pane id");
-  }
-  return paneId;
 }

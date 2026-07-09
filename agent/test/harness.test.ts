@@ -995,15 +995,15 @@ function renderSessionChatLines(testSession: TestSession, width = 120): string[]
   } as never);
 
   try {
-    const sessionContext = (
+    const entries = (
       testSession.session as {
         sessionManager: {
-          buildSessionContext: () => { messages: Array<{ role: string; content: unknown }> };
+          buildContextEntries: () => unknown[];
         };
       }
-    ).sessionManager.buildSessionContext();
+    ).sessionManager.buildContextEntries();
 
-    (mode as any).renderSessionContext(sessionContext);
+    (mode as any).renderSessionEntries(entries);
     return (mode as any).chatContainer
       .render(width)
       .map((line: string) => stripAnsi(line).trimEnd());

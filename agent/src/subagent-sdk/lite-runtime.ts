@@ -599,8 +599,10 @@ export class LiteRuntime {
         break;
       case "auto_retry_end":
       case "auto_retry_start":
+      case "agent_settled":
       case "compaction_end":
       case "compaction_start":
+      case "entry_appended":
       case "queue_update":
       case "session_info_changed":
       case "thinking_level_changed":

@@ -776,15 +776,13 @@ timedTest(
     const mode = createInteractiveModePreview(cwd);
 
     try {
-      (mode as any).renderSessionContext({
-        messages: [
-          { role: "user", content: "Run the reads" },
-          createAssistantToolCall("tool-1", `${cwd}/a.ts`),
-          createAssistantToolCall("tool-2", `${cwd}/b.ts`),
-          { role: "assistant", content: [{ type: "text", text: "Tool output interrupted." }] },
-          createAssistantToolCall("tool-3", `${cwd}/c.ts`),
-        ],
-      });
+      (mode as any).renderSessionItems([
+        { role: "user", content: "Run the reads" },
+        createAssistantToolCall("tool-1", `${cwd}/a.ts`),
+        createAssistantToolCall("tool-2", `${cwd}/b.ts`),
+        { role: "assistant", content: [{ type: "text", text: "Tool output interrupted." }] },
+        createAssistantToolCall("tool-3", `${cwd}/c.ts`),
+      ]);
 
       const lines = (mode as any).chatContainer
         .render(120)
@@ -880,6 +878,7 @@ function createInteractiveModePreview(cwd: string) {
     getImageWidthCells: () => 60,
     getCodeBlockIndent: () => 2,
     getOutputPad: () => 0,
+    getShowCacheMissNotices: () => false,
   };
   const sessionManager = {
     getCwd: () => cwd,

@@ -1,8 +1,8 @@
 diff --git a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-index fd52e8b..b821192 100644
+index b3c27c8..6b70506 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-@@ -42,6 +42,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -43,6 +43,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "connection.?lost",
      "other side closed",
      "fetch failed",
@@ -12,7 +12,7 @@ index fd52e8b..b821192 100644
      "upstream.?connect",
      "reset before headers",
      "socket hang up",
-@@ -51,17 +54,22 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -53,17 +56,22 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      // WebSocket transports can report close/error text instead of HTTP/fetch text.
      "websocket.?closed",
      "websocket.?error",
@@ -24,13 +24,13 @@ index fd52e8b..b821192 100644
      "stream ended before message_stop",
 +    "stream closed before response\\.completed",
      "http2 request did not get a response",
-+    "invalid codex sse json",
-+    "invalid codex websocket json",
      // Provider-requested retry delay cap failures should flow through the outer
      // retry policy so callers can surface/abort the backoff (#1123).
      "retry delay",
      // Explicit retry guidance emitted mid-stream by OpenAI Responses and Bedrock
      // stream exceptions (#6019).
++    "invalid codex sse json",
++    "invalid codex websocket json",
 +    "error occurred while processing your request",
      "you can retry your request",
      "try your request again",

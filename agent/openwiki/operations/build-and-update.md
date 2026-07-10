@@ -27,13 +27,12 @@ At runtime, `ensureRuntimeDefaultSettings()` (`src/runtime-default-settings.ts`)
 
 ## Patches (`patches/`)
 
-Three `patch-package` patches against upstream `@earendil-works` packages:
+Two `patch-package` patches against upstream `@earendil-works` packages:
 
 | Patch                                                                 | Target                                                                | Effect                                                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@earendil-works+pi-ai+0.80.3.patch`                                  | `pi-ai/dist/utils/retry.js`                                           | Adds retryable error patterns: `request failed`, `failed after retries`, `no response body`, `websocket transport is not available`, `stream closed before response.completed`, `invalid codex sse json`, `invalid codex websocket json`, `error occurred while processing your request`. |
-| `@earendil-works+pi-coding-agent++@earendil-works+pi-ai+0.80.5.patch` | the **nested** copy of `pi-ai` inside `pi-coding-agent/node_modules/` | Identical retry-pattern additions (handles npm's non-deduped nested install).                                                                                                                                                                                                             |
-| `@earendil-works+pi-coding-agent+0.80.5.patch`                        | `pi-coding-agent/dist/modes/interactive/components/tool-execution.js` | Removes an extra `Spacer(1)` in `ToolExecutionComponent` — eliminates unwanted top spacing in tool execution UI.                                                                                                                                                                          |
+| `@earendil-works+pi-ai+0.80.6.patch`                                  | `pi-ai/dist/utils/retry.js`                                           | Adds retryable error patterns: `request failed`, `failed after retries`, `no response body`, `websocket transport is not available`, `stream closed before response.completed`, `invalid codex sse json`, `invalid codex websocket json`, `error occurred while processing your request`. |
+| `@earendil-works+pi-coding-agent++@earendil-works+pi-ai+0.80.6.patch` | the **nested** copy of `pi-ai` inside `pi-coding-agent/node_modules/` | Identical retry-pattern additions (handles npm's non-deduped nested install).                                                                                                                                                                                                             |
 
 ### Upstream patches
 

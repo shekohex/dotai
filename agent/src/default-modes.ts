@@ -25,8 +25,8 @@ export const defaultModes = {
         "Use for cheap exploration, parallel scenario probes, and disposable implementation passes.",
       fallbacks: [
         { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
-        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
-        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "max" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "max" },
       ],
     },
     docs: {
@@ -40,14 +40,14 @@ export const defaultModes = {
         "Use for technical writing, docs, GitHub issues/PRs, release notes, and human-readable refinement.",
       fallbacks: [
         { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" },
-        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
-        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "max" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "max" },
       ],
     },
     openwiki: {
       provider: "zai",
       modelId: "glm-5.2",
-      thinkingLevel: "xhigh",
+      thinkingLevel: "max",
       color: "success",
       tmuxTarget: "window",
       tools: ["*"],
@@ -56,7 +56,7 @@ export const defaultModes = {
       systemPrompt: modeSystemPrompt("openwiki"),
       systemPromptMode: "replace",
       fallbacks: [
-        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "max" },
         { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" },
         { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
       ],
@@ -64,7 +64,7 @@ export const defaultModes = {
     build: {
       provider: "codex-openai",
       modelId: "gpt-5.6-terra",
-      thinkingLevel: "high",
+      thinkingLevel: "max",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
@@ -74,7 +74,7 @@ export const defaultModes = {
     deep: {
       provider: "codex-openai",
       modelId: "gpt-5.6-sol",
-      thinkingLevel: "xhigh",
+      thinkingLevel: "max",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
@@ -84,7 +84,7 @@ export const defaultModes = {
     review: {
       provider: "codex-openai",
       modelId: "gpt-5.6-sol",
-      thinkingLevel: "xhigh",
+      thinkingLevel: "max",
       color: "muted",
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch"],
@@ -97,7 +97,7 @@ export const defaultModes = {
     "cheap-review": {
       provider: "zai",
       modelId: "glm-5.2",
-      thinkingLevel: "xhigh",
+      thinkingLevel: "max",
       color: "muted",
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch"],
@@ -106,7 +106,7 @@ export const defaultModes = {
         "Use first for cheap correctness review; run many in parallel before escalating to review.",
       systemPrompt: modeSystemPrompt("review"),
       systemPromptMode: "replace",
-      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
+      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "max" }],
     },
     "fast-review": {
       provider: "opencode-go",
@@ -122,8 +122,8 @@ export const defaultModes = {
       systemPromptMode: "replace",
       fallbacks: [
         { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "high" },
-        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
-        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "max" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "max" },
       ],
     },
     commiter: {
@@ -153,14 +153,14 @@ export const defaultModes = {
       systemPromptMode: "replace",
       fallbacks: [
         { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
-        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
-        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "max" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "max" },
       ],
     },
     painter: {
       provider: "zai",
       modelId: "glm-5.2",
-      thinkingLevel: "xhigh",
+      thinkingLevel: "max",
       color: "bashMode",
       tmuxTarget: "window",
       tools: ["*"],
@@ -168,12 +168,12 @@ export const defaultModes = {
         "Use for frontend, UI, UX polish, design-system fidelity, accessibility, and visual verification.",
       systemPrompt: modeSystemPrompt("painter"),
       systemPromptMode: "append",
-      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" }],
+      fallbacks: [{ provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "max" }],
     },
     ask: {
       provider: "codex-openai",
       modelId: "gpt-5.6-luna",
-      thinkingLevel: "medium",
+      thinkingLevel: "max",
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch", "execute", "subagent"],
       autoExit: true,
@@ -194,7 +194,7 @@ export const defaultModes = {
     websearch: {
       provider: "zai",
       modelId: "glm-5.2",
-      thinkingLevel: "xhigh",
+      thinkingLevel: "max",
       color: "muted",
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch"],
@@ -215,8 +215,8 @@ export const defaultModes = {
       systemPromptMode: "replace",
       fallbacks: [
         { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
-        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "xhigh" },
-        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "xhigh" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "max" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "max" },
       ],
     },
   },

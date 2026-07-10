@@ -214,6 +214,7 @@ function createZaiModels(): ProviderModelConfig[] {
         medium: "high",
         high: "high",
         xhigh: "max",
+        max: "max",
       },
     },
   ];

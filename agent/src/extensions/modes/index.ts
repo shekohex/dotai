@@ -1,4 +1,8 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ExtensionFactory,
+} from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { fuzzyFilter, type AutocompleteItem } from "@earendil-works/pi-tui";
 
@@ -48,6 +52,7 @@ import {
   syncErrorUI as syncErrorUIState,
 } from "./runtime.js";
 import { isEphemeralSession } from "./session.js";
+import type { ModeStartupSelection } from "./startup-selection.js";
 
 export const MODE_STATE_ENTRY = "mode-state";
 export const MODE_MODEL_OVERRIDE_ENTRY = "mode-model-override-state";
@@ -383,7 +388,7 @@ function ensureModesReady(ctx: ExtensionContext): Promise<boolean> {
   });
 }
 
-export default function modesExtension(pi: ExtensionAPI): void {
+function registerModesExtension(pi: ExtensionAPI, startupSelection: ModeStartupSelection): void {
   const registeredModeFlags = new Map<string, string>();
   const { showModePicker, cycleMode, restoreMode, activateMode } = createModeActionHandlers({
     runtime,
@@ -401,6 +406,13 @@ export default function modesExtension(pi: ExtensionAPI): void {
     setStatus,
     appendModeState,
     emitModeChanged,
+    applyStartupModelOverride: (modeName, ctx) => {
+      if (!startupSelection.hasExplicitModel || ctx.model === undefined) return;
+      runtime.sessionModelOverrides.set(modeName, {
+        provider: ctx.model.provider,
+        modelId: ctx.model.id,
+      });
+    },
     getStartupModeSelection: (extensionApi) =>
       getStartupModeSelection(extensionApi, orderedModeNames(runtime.data)),
     notifyStartupModeConflict,
@@ -474,3 +486,13 @@ export default function modesExtension(pi: ExtensionAPI): void {
     unregisterModeEventHandlers();
   });
 }
+
+const defaultModeStartupSelection: ModeStartupSelection = { hasExplicitModel: false };
+
+export function createModesExtension(startupSelection: ModeStartupSelection): ExtensionFactory {
+  return (pi) => {
+    registerModesExtension(pi, startupSelection);
+  };
+}
+
+export default createModesExtension(defaultModeStartupSelection);

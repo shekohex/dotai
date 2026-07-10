@@ -9,6 +9,8 @@ import {
   installInlineExtensionNamePatch,
   setInlineExtensionName,
 } from "./inline-extension-names.js";
+import { createModesExtension } from "./modes/index.js";
+import type { ModeStartupSelection } from "./modes/startup-selection.js";
 import { createSubagentExtension } from "./subagent.js";
 
 export interface BundledExtensionDefinition {
@@ -47,3 +49,20 @@ export function findBundledExtensionDefinitionByFactory(
 export const bundledExtensionFactories: ExtensionFactory[] = bundledExtensionDefinitions.map(
   (definition) => definition.factory,
 );
+
+export function createBundledExtensionFactories(options: {
+  modeStartupSelection?: ModeStartupSelection;
+}): ExtensionFactory[] {
+  const modeStartupSelection = options.modeStartupSelection;
+  if (modeStartupSelection?.hasExplicitModel !== true) {
+    return bundledExtensionFactories;
+  }
+
+  return bundledExtensionDefinitions.map((definition) => {
+    if (definition.id !== "modes") {
+      return definition.factory;
+    }
+
+    return setInlineExtensionName(createModesExtension(modeStartupSelection), definition.id);
+  });
+}

@@ -2,6 +2,7 @@
 
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai";
 
 // ── Playbook types ──────────────────────────────────────────
 
@@ -97,6 +98,8 @@ export interface TestSessionOptions {
   agentDir?: string;
   /** System prompt override */
   systemPrompt?: string;
+  /** Model selected before session_start handlers run. */
+  initialModel?: Model<Api>;
 
   /** Mock tool execution (intercepts tool.execute()) */
   mockTools?: Record<string, MockToolHandler>;

@@ -58,6 +58,7 @@ Modes are preset bundles of (provider, model, thinking level, tools, system prom
 - **Presets** — `src/default-modes.ts` defines the built-in modes (`build`, `deep`, `review`, `cheap-review`, `fast-review`, `commiter`, `search`, `docs`, `rush`, `painter`, `ask`, `worker`, `websearch`, `poke`, `openwiki`). Mode system prompts are read from `src/resources/modes/<mode>.md` at module load.
 - **Registry** — `src/mode-loading.ts` merges built-in mode sources into a `ModesFile`, validates consistency (`currentMode` must exist in `modes`), and exposes `loadModeRegistry(Sync)`, `resolveModeSpec`, and `registerBuiltInModes`/`unregisterBuiltInModes` for other extensions to contribute modes.
 - **Runtime application** — the `modes` extension (`src/extensions/modes/`) reads `~/.pi/agent/modes.json`, applies the active mode's model + tools + system prompt, handles model failover (`failover.ts`, `model-failure.ts`, `model-health-store.ts`), and restores the mode on session resume (`restore.ts`). See [Providers & models](../providers/overview.md) for how providers/fallbacks resolve.
+- **CLI model override** — `src/cli.ts` parses upstream CLI arguments before calling `main()`. An explicit `--model` becomes an in-memory override for the restored mode's primary provider/model. It wins for that Pi process while the mode still supplies thinking level, tools, system prompt, and fallback chain. The override is not written to session mode state, so a later run without `--model` restores normal mode behavior.
 
 ## Settings
 

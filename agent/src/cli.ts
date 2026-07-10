@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-import { main } from "@earendil-works/pi-coding-agent";
+import { main, parseArgs } from "@earendil-works/pi-coding-agent";
 import { runConductorCommand } from "./conductor/command.js";
 import { installBundledResourcePaths } from "./extensions/bundled-resources.js";
-import { bundledExtensionFactories } from "./extensions/index.js";
+import { createBundledExtensionFactories } from "./extensions/index.js";
+import { createModeStartupSelection } from "./extensions/modes/startup-selection.js";
 import { isRemoteMode, parseRemoteModeArgs, runRemoteMode } from "./remote/mode.js";
 import { ensureRuntimeDefaultSettings } from "./runtime-default-settings.js";
 import { handleWrapperUpdateCommand } from "./update/command.js";
@@ -48,7 +49,10 @@ if (shouldEnsureRuntimeDefaultSettings(args)) {
   await ensureRuntimeDefaultSettings();
 }
 
-await main(args, { extensionFactories: bundledExtensionFactories });
+const modeStartupSelection = createModeStartupSelection(parseArgs(args));
+await main(args, {
+  extensionFactories: createBundledExtensionFactories({ modeStartupSelection }),
+});
 
 function shouldEnsureRuntimeDefaultSettings(cliArgs: string[]): boolean {
   return !cliArgs.some(

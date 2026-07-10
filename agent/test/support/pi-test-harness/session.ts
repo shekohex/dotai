@@ -106,7 +106,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
   );
 
   // Use a real model definition (never actually called — playbook replaces streamFn)
-  const playbookModel = getBuiltinModel("openai", "gpt-4o");
+  const playbookModel = options.initialModel ?? getBuiltinModel("openai", "gpt-4o");
 
   // Create real session with in-memory persistence
   const { session, extensionsResult } = await createAgentSession({

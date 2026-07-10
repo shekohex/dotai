@@ -4,6 +4,8 @@ How the wrapper resolves which model/provider serves a request. This sits on top
 
 The default model is `openai-codex` / `gpt-5.5` (`src/default-settings.ts`), but at runtime the **active mode** (`src/default-modes.ts`) usually decides the provider+model — e.g. `build` → `codex-openai/gpt-5.6-terra`, `cheap-review` → `zai/glm-5.2`, `rush` → `opencode-go/deepseek-v4-flash`. See [Architecture → Mode system](../architecture/overview.md#mode-system).
 
+An explicit `--model` takes precedence over the active mode's primary model for the current Pi process. It keeps the mode's thinking level, tools, system prompt, and fallback chain, and is not persisted as a mode-model override. `--provider` participates only when paired with `--model`, per upstream Pi CLI parsing.
+
 ## LiteLLM gateway selection
 
 `src/extensions/litellm.ts` discovers a local/team OpenAI-compatible proxy (LiteLLM) and, when one is healthy, **re-registers providers to route through it** instead of their native endpoints.

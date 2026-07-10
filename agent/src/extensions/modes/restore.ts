@@ -54,6 +54,7 @@ type ModeRestoreDeps = {
   syncModeTools: (pi: ExtensionAPI, ctx: ExtensionContext, spec: ModeSpec | undefined) => void;
   setStatus: (ctx: ExtensionContext, modeName: string | undefined) => void;
   emitModeChanged: (pi: ExtensionAPI, ctx: ExtensionContext, payload: ModeChangedPayload) => void;
+  applyStartupModelOverride: (modeName: string, ctx: ExtensionContext) => void;
   getStartupModeSelection: (pi: ExtensionAPI) => {
     selectedMode?: string;
     requestedModes: string[];
@@ -113,6 +114,7 @@ async function tryRestoreFromStartupMode(
     return false;
   }
 
+  deps.applyStartupModelOverride(startupModeSelection.selectedMode, ctx);
   await deps.applyMode(pi, ctx, startupModeSelection.selectedMode, "session_start", "restore", {
     persist: true,
     appendState: false,
@@ -130,6 +132,7 @@ async function tryRestoreFromSessionMode(
     return false;
   }
 
+  deps.applyStartupModelOverride(sessionMode, ctx);
   await deps.applyMode(pi, ctx, sessionMode, "session_start", "restore", {
     persist: false,
     appendState: false,
@@ -149,6 +152,7 @@ async function tryRestoreFromPersistedMode(
     return false;
   }
 
+  deps.applyStartupModelOverride(deps.runtime.data.currentMode, ctx);
   await deps.applyMode(pi, ctx, deps.runtime.data.currentMode, "session_start", "restore", {
     persist: false,
     appendState: false,

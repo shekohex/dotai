@@ -54,6 +54,7 @@ type ModeActionDeps = {
     activeMode: string | undefined,
   ) => void;
   emitModeChanged: (pi: ExtensionAPI, ctx: ExtensionContext, payload: ModeChangedPayload) => void;
+  applyStartupModelOverride: (modeName: string, ctx: ExtensionContext) => void;
   getStartupModeSelection: (pi: ExtensionAPI) => {
     selectedMode?: string;
     requestedModes: string[];
@@ -119,6 +120,7 @@ export function createModeActionHandlers(deps: ModeActionDeps) {
     syncModeTools: deps.syncModeTools,
     setStatus: deps.setStatus,
     emitModeChanged: deps.emitModeChanged,
+    applyStartupModelOverride: deps.applyStartupModelOverride,
     getStartupModeSelection: deps.getStartupModeSelection,
     notifyStartupModeConflict: deps.notifyStartupModeConflict,
   });

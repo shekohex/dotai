@@ -5,7 +5,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { calls, createTestSession, says, when, type TestSession } from "@support/pi-test-harness";
-import { DefaultResourceLoader, initTheme, InteractiveMode } from "@earendil-works/pi-coding-agent";
+import {
+  DefaultResourceLoader,
+  initTheme,
+  InteractiveMode,
+  parseArgs,
+} from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { setKeybindings } from "@earendil-works/pi-tui";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
@@ -20,7 +25,8 @@ import patchExtension from "../src/extensions/patch.ts";
 import handoffExtension from "../src/extensions/handoff.ts";
 import { createLiteLLMProviderRegistrations } from "../src/extensions/litellm.ts";
 import { registerPiAiProvider } from "../src/extensions/pi-ai-models.ts";
-import modesExtension from "../src/extensions/modes.ts";
+import modesExtension, { createModesExtension } from "../src/extensions/modes.ts";
+import { createModeStartupSelection } from "../src/extensions/modes/startup-selection.ts";
 import interviewExtension from "../src/extensions/interview/index.ts";
 import gsdExtension from "../src/extensions/gsd/index.ts";
 import { bundledExtensionFactories } from "../src/extensions/index.ts";
@@ -273,6 +279,13 @@ function createHandoffTestProviders(summaryText: string): {
       models: [
         {
           id: "gpt-5.5",
+          reasoning: true,
+          input: ["text"],
+          contextWindow: 128_000,
+          maxTokens: 8_192,
+        },
+        {
+          id: "gpt-5.6-terra",
           reasoning: true,
           input: ["text"],
           contextWindow: 128_000,
@@ -1582,6 +1595,50 @@ timedTest("handoff command starts the new session in the requested mode", async 
     expect(restoreEvents[0]?.spec?.provider).toBe("mode-provider");
     expect(restoreEvents[0]?.spec?.modelId).toBe("mode-model");
     expect(restoreEvents[0]?.spec?.thinkingLevel).toBe("high");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("modes extension preserves an explicit startup model", async () => {
+  const cwd = await createTempDir("agent-mode-explicit-startup-model-");
+  let session: TestSession | undefined;
+  const observedModeChanges: CapturedModeChange[] = [];
+  const providers = createHandoffTestProviders("## Context\nCaptured.\n\n## Task\nContinue.");
+
+  try {
+    session = await createTestSession({
+      cwd,
+      initialModel: providers.getModel("override-model") as never,
+      extensionFactories: [
+        createModesExtension(
+          createModeStartupSelection(
+            parseArgs(["--provider", "override-provider", "--model", "override-model"]),
+          ),
+        ),
+        createModeChangeCaptureExtension(observedModeChanges),
+        providers.extensionFactory,
+      ],
+    });
+    patchHarnessAgent(session);
+
+    const model = session.session as {
+      model: { provider: string; id: string };
+      thinkingLevel: string;
+    };
+    expect(model.model.provider).toBe("override-provider");
+    expect(model.model.id).toBe("override-model");
+    expect(model.thinkingLevel).toBe("high");
+    expect(observedModeChanges.at(-1)?.mode).toBe("build");
+    expect(observedModeChanges.at(-1)?.spec?.provider).toBe("override-provider");
+    expect(observedModeChanges.at(-1)?.spec?.modelId).toBe("override-model");
+
+    await session.run(when("Keep selected model", [says("Kept.")]));
+
+    expect(model.model.provider).toBe("override-provider");
+    expect(model.model.id).toBe("override-model");
   } finally {
     session?.dispose();
     providers.dispose();

@@ -63,8 +63,8 @@ export const defaultModes = {
     },
     build: {
       provider: "codex-openai",
-      modelId: "gpt-5.6-terra",
-      thinkingLevel: "max",
+      modelId: "gpt-5.6-sol",
+      thinkingLevel: "medium",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],

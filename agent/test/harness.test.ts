@@ -1630,7 +1630,7 @@ timedTest("modes extension preserves an explicit startup model", async () => {
     };
     expect(model.model.provider).toBe("override-provider");
     expect(model.model.id).toBe("override-model");
-    expect(model.thinkingLevel).toBe("high");
+    expect(model.thinkingLevel).toBe("medium");
     expect(observedModeChanges.at(-1)?.mode).toBe("build");
     expect(observedModeChanges.at(-1)?.spec?.provider).toBe("override-provider");
     expect(observedModeChanges.at(-1)?.spec?.modelId).toBe("override-model");

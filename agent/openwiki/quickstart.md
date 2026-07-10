@@ -1,6 +1,6 @@
 # OpenWiki quickstart
 
-`@shekohex/agent` is a TypeScript wrapper around [`@earendil-works/pi-coding-agent`](https://github.com/earendil-works/pi) (currently `0.80.5`). It keeps the upstream `pi` command, the `.pi` project folder, and the `~/.pi` user config unchanged, then layers on team defaults: a bundled model/provider setup (LiteLLM gateway + several providers), ~47 extensions, themes, system prompts, skills, dynamic workflows, a self-update path, and a couple of alternative ways to drive a session (subagents, remote TCP mode).
+`@shekohex/agent` is a TypeScript wrapper around [`@earendil-works/pi-coding-agent`](https://github.com/earendil-works/pi) (currently `0.80.6`). It keeps the upstream `pi` command, the `.pi` project folder, and the `~/.pi` user config unchanged, then layers on team defaults: a bundled model/provider setup (LiteLLM gateway + several providers), ~48 extensions, themes, system prompts, skills, dynamic workflows, a self-update path, and a couple of alternative ways to drive a session (subagents, remote TCP mode).
 
 The package is published to GitHub Packages and installs a single `pi` binary.
 
@@ -22,7 +22,7 @@ The package is published to GitHub Packages and installs a single `pi` binary.
 | `src/cli.ts`                                      | Entry point — boot sequence (see [Architecture](./architecture/overview.md)).                                           |
 | `src/default-settings.ts`, `src/default-modes.ts` | Bundled defaults seeded into `~/.pi/agent/`.                                                                            |
 | `src/mode-*.ts`                                   | Mode registry schema, loading, and the built-in mode presets.                                                           |
-| `src/extensions/`                                 | ~47 bundled extensions, registered in three groups + subagent. See [Extensions catalog](./extensions/catalog.md).       |
+| `src/extensions/`                                 | ~48 bundled extensions, registered in three groups + subagent. See [Extensions catalog](./extensions/catalog.md).       |
 | `src/subagent-sdk/`                               | In-process machinery for spawning child agent sessions. See [Subagent SDK](./sessions/subagent-sdk.md).                 |
 | `src/remote/`                                     | TCP JSONL remote control mode. See [Remote mode](./sessions/remote.md).                                                 |
 | `src/conductor/`                                  | `pi conductor` command surface — GitHub-Projects-driven run orchestration. See [Pi Conductor](./conductor/overview.md). |

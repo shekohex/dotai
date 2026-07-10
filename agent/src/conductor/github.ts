@@ -145,7 +145,7 @@ export class GhGitHubClient implements GitHubClient {
       store?: Pick<ConductorStore, "getGitHubSyncState" | "setGitHubSyncState">;
     } = {},
   ) {
-    this.rateLimitGate = new GitHubRateLimitGate(options);
+    this.rateLimitGate = new GitHubRateLimitGate({ ...options, logger: this.logger });
     this.sleep =
       options.sleep ??
       ((milliseconds) =>

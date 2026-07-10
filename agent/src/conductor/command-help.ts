@@ -24,12 +24,13 @@ const COMMANDS: CommandHelp[] = [
     usage: "pi conductor [-v|-vv|-vvv|--verbose] serve",
     summary: "Run foreground worker for systemd/supervisors.",
     description:
-      "Starts the long-running conductor loop. It validates config, starts webhook server when configured, replays pending webhook deliveries, runs one reconcile, then polls on interval.",
+      "Starts the long-running conductor loop. It validates config, starts webhook and polling schedulers, then becomes ready while due reconciliation and pending-delivery recovery continue in background. Polling resumes from last successful per-repository timestamps persisted in SQLite.",
     options: [
       {
         flags: "-v, -vv, -vvv, --verbose",
         defaultValue: "info",
-        description: "Increase foreground conductor log detail on stderr.",
+        description:
+          "Increase foreground log detail. Info shows scheduler decisions and slow operations; -v adds polling/webhook state; -vv adds GitHub call timing.",
       },
     ],
     examples: ["pi conductor serve", "pi conductor -vv serve"],

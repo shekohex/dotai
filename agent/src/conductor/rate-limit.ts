@@ -2,6 +2,7 @@ import { errorMessage } from "../utils/error-message.js";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
+import { noopConductorLogger, type ConductorLogger } from "./logging.js";
 import type { ConductorStore } from "./store/types.js";
 
 export const GITHUB_RATE_LIMIT_BACKOFF_MS = 15 * 60_000;
@@ -24,6 +25,7 @@ export class GitHubRateLimitGate {
   constructor(
     private readonly options: {
       host?: string;
+      logger?: ConductorLogger;
       now?: () => Date;
       store?: Pick<ConductorStore, "getGitHubSyncState" | "setGitHubSyncState">;
     } = {},
@@ -71,13 +73,23 @@ export class GitHubRateLimitGate {
       blockedUntil: new Date(blockedUntilMs).toISOString(),
       reason,
     });
+    this.logger().warn("GitHub rate limit gate closed", {
+      host: this.host(),
+      reason,
+      until: state.blockedUntil,
+    });
     try {
       await this.options.store?.setGitHubSyncState({
         key: this.stateKey(),
         value: state,
         updatedAt: this.now().toISOString(),
       });
-    } catch {}
+    } catch (error) {
+      this.logger().warn("GitHub rate limit state persistence failed", {
+        error: errorMessage(error),
+        host: this.host(),
+      });
+    }
   }
 
   private async load(): Promise<void> {
@@ -94,17 +106,36 @@ export class GitHubRateLimitGate {
       try {
         const state = Value.Parse(GitHubRateLimitStateSchema, stored.value);
         this.blockedUntilMs = Date.parse(state.blockedUntil);
-      } catch {}
+        this.logger().info("GitHub rate limit state restored", {
+          active: this.blockedUntilMs > this.now().getTime(),
+          host: this.host(),
+          reason: state.reason,
+          until: state.blockedUntil,
+        });
+      } catch (error) {
+        this.logger().warn("GitHub rate limit state invalid", {
+          error: errorMessage(error),
+          host: this.host(),
+        });
+      }
     }
     this.loaded = true;
   }
 
   private stateKey(): string {
-    return `github-rate-limit:${this.options.host ?? process.env.GH_HOST ?? "github.com"}`;
+    return `github-rate-limit:${this.host()}`;
   }
 
   private now(): Date {
     return (this.options.now ?? (() => new Date()))();
+  }
+
+  private host(): string {
+    return this.options.host ?? process.env.GH_HOST ?? "github.com";
+  }
+
+  private logger(): ConductorLogger {
+    return this.options.logger ?? noopConductorLogger;
   }
 }
 

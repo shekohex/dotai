@@ -47,7 +47,7 @@ import {
   type PullRequestSnapshot,
   type PullRequestSummary,
 } from "../src/conductor/github.js";
-import { ConsoleConductorLogger } from "../src/conductor/logging.js";
+import { ConsoleConductorLogger, noopConductorLogger } from "../src/conductor/logging.js";
 import {
   CliHerdrSessionManager,
   deliveryModeToSubmitKey,
@@ -61,6 +61,7 @@ import {
   type HerdrSessionManager,
 } from "../src/conductor/herdr.js";
 import { ConductorOrchestrator, type ReconcileScope } from "../src/conductor/orchestrator.js";
+import { startConductorPolling } from "../src/conductor/polling.js";
 import { createPollingPlans } from "../src/conductor/polling-schedule.js";
 import { buildExpressionContext, validateInitialPromptTemplate } from "../src/conductor/prompt.js";
 import { rateLimitRetryAt } from "../src/conductor/rate-limit.js";
@@ -827,6 +828,140 @@ describe("conductor store and command parser", () => {
     );
   });
 
+  test("polling starts stale plans immediately and resumes fresh plans from SQLite state", async () => {
+    const tempDir = await createTempDir("conductor-polling-state-");
+    const store = new SqliteConductorStore(join(tempDir, "state.sqlite"));
+    await store.init();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-10T13:16:33.000Z"));
+    try {
+      const config: GlobalConductorConfig = {
+        version: 1,
+        pollingIntervalSeconds: 120,
+        projectScanIntervalSeconds: 120,
+        repositories: [managedRepo()],
+      };
+      const scopes: ReconcileScope[] = [];
+      const logEntries: Array<{ message: string; context?: Record<string, unknown> }> = [];
+      const logger = {
+        ...noopConductorLogger,
+        info(message: string, context?: Record<string, unknown>) {
+          logEntries.push({ message, context });
+        },
+      };
+      const orchestrator = {
+        reconcile(scope: ReconcileScope) {
+          scopes.push(scope);
+          return Promise.resolve([]);
+        },
+      } as unknown as ConductorOrchestrator;
+
+      let polling = startConductorPolling({
+        config,
+        logger,
+        orchestrator,
+        store,
+      });
+      await polling.ready;
+
+      expect(scopes.map((scope) => scope.reason).toSorted()).toEqual([
+        "polling-active-runs",
+        "polling-project-scan",
+      ]);
+      await expect(
+        store.getGitHubSyncState("polling:polling-active-runs:octo/demo"),
+      ).resolves.toMatchObject({ updatedAt: "2026-07-10T13:16:33.000Z" });
+      polling.close();
+
+      scopes.length = 0;
+      polling = startConductorPolling({
+        config,
+        logger,
+        orchestrator,
+        store,
+      });
+      await polling.ready;
+      await vi.advanceTimersByTimeAsync(119_999);
+      expect(scopes).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(scopes).toHaveLength(2);
+      expect(logEntries.map((entry) => entry.message)).toEqual(
+        expect.arrayContaining([
+          "Conductor polling plan due; reconciling now",
+          "Conductor polling plan scheduled",
+        ]),
+      );
+      expect(logEntries).toContainEqual({
+        message: "Conductor polling plan scheduled",
+        context: expect.objectContaining({
+          delayMs: 120_000,
+          lastSuccessAt: "2026-07-10T13:16:33.000Z",
+          source: "persisted",
+        }),
+      });
+      polling.close();
+
+      scopes.length = 0;
+      polling = startConductorPolling({
+        config,
+        forceInitial: true,
+        logger,
+        orchestrator,
+        store,
+      });
+      await polling.ready;
+      expect(scopes).toHaveLength(2);
+      polling.close();
+    } finally {
+      vi.useRealTimers();
+      store.close();
+    }
+  });
+
+  test("polling scheduler readiness does not wait for a due GitHub reconcile", async () => {
+    vi.useFakeTimers();
+    const store = new MemoryConductorStore();
+    await store.init();
+    const reconcile = deferred<RunRecord[]>();
+    const warnings: string[] = [];
+    let calls = 0;
+    const orchestrator = {
+      reconcile() {
+        calls += 1;
+        return reconcile.promise;
+      },
+    } as unknown as ConductorOrchestrator;
+    const logger = {
+      ...noopConductorLogger,
+      warn(message: string) {
+        warnings.push(message);
+      },
+    };
+    let polling: ReturnType<typeof startConductorPolling> | undefined;
+    try {
+      polling = startConductorPolling({
+        config: {
+          version: 1,
+          pollingIntervalSeconds: 120,
+          repositories: [managedRepo()],
+        },
+        logger,
+        orchestrator,
+        store,
+      });
+
+      await expect(polling.ready).resolves.toBeUndefined();
+      expect(calls).toBe(2);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(warnings).toContain("Conductor polling tick still running");
+    } finally {
+      polling?.close();
+      reconcile.resolve([]);
+      await vi.advanceTimersByTimeAsync(0);
+      vi.useRealTimers();
+    }
+  });
+
   test("rate-limit retry timing honors GitHub hints", () => {
     const now = new Date("2026-07-05T00:00:00.000Z");
     expect(rateLimitRetryAt(new Error("retry-after: 60"), now).toISOString()).toBe(
@@ -1223,11 +1358,19 @@ describe("conductor store and command parser", () => {
       },
     } as unknown as ConductorOrchestrator;
     process.env.TEST_SECRET = "secret";
+    const logMessages: string[] = [];
+    const logger = {
+      ...noopConductorLogger,
+      debug(message: string) {
+        logMessages.push(message);
+      },
+    };
     const server = await serveWebhook({
       config: { host: "127.0.0.1", port: 0, path: "/hook", secret: { env: "TEST_SECRET" } },
       store,
       orchestrator,
       repositories: [{ owner: "octo", repo: "demo" }],
+      logger,
     });
     try {
       const response = await Promise.race([
@@ -1238,6 +1381,7 @@ describe("conductor store and command parser", () => {
         delay(250).then(() => undefined),
       ]);
       expect(response).toEqual({ statusCode: 202, body: "accepted" });
+      expect(logMessages).toContain("Conductor webhook delivery recorded");
       await reconcileStarted.promise;
       await expect(store.getDelivery("delivery-ack")).resolves.toMatchObject({
         status: "processing",
@@ -2015,6 +2159,7 @@ describe("conductor adapters", () => {
   test("GraphQL budget closes the gate before the next call", async () => {
     const store = new MemoryConductorStore();
     await store.init();
+    const output = writableCapture();
     let calls = 0;
     const client = new GhGitHubClient(
       async () => {
@@ -2035,13 +2180,15 @@ describe("conductor adapters", () => {
           stderr: "",
         };
       },
-      undefined,
+      new ConsoleConductorLogger(output, 0, () => new Date("2026-07-05T00:00:00.000Z")),
       { store, now: () => new Date("2026-07-05T00:00:00.000Z") },
     );
 
     await expect(client.getProjectItem("PVTI_1")).resolves.toBeUndefined();
     await expect(client.getProjectItem("PVTI_2")).rejects.toThrow("rate limit");
     expect(calls).toBe(1);
+    expect(output.text()).toContain("WARN GitHub rate limit gate closed");
+    expect(output.text()).toContain("GraphQL budget reserve reached: 50 remaining");
   });
 
   test("missing GraphQL rate-limit metadata does not fail the GitHub read", async () => {

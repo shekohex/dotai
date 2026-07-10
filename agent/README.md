@@ -252,6 +252,9 @@ Resilience model:
 - Webhook delivery IDs dedupe retries.
 - Failed delivery processing retries with exponential backoff; GitHub rate-limit errors back off for 15 minutes.
 - Polling avoids overlapping reconcile runs and backs off on rate-limit errors.
+- Successful polling timestamps persist per repository and plan in SQLite. Startup runs missing/stale plans immediately in background; fresh plans wait only their remaining interval.
+- `serve ready` means webhook, recovery, and polling schedulers are active. It does not wait for a potentially slow GitHub reconcile.
+- Info logs show startup phases, polling due/scheduled decisions, rate-limit gate changes, webhook batches, and operations still running after 30 seconds. Use `-v` for per-tick/state details and `-vv` for individual GitHub call timing.
 - Unknown webhook events are ACKed and ignored to avoid needless GitHub API usage.
 
 ## Development

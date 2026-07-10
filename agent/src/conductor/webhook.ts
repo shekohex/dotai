@@ -10,6 +10,7 @@ import { asRecord, readNumber, readString } from "../utils/unknown-data.js";
 import { getDefaultConfigPath, type WebhookConfig } from "./config.js";
 import { parseJsonValue } from "./json.js";
 import { createCheckFeedbackKey, type PullRequestFeedback } from "./github-feedback.js";
+import { noopConductorLogger, type ConductorLogger } from "./logging.js";
 import type { ConductorOrchestrator } from "./orchestrator.js";
 import { isRateLimitError, rateLimitRetryAt } from "./rate-limit.js";
 import { ReconcileScopeSchema, type ReconcileScope } from "./reconcile-scope.js";
@@ -86,10 +87,14 @@ export async function serveWebhook(input: {
   store: ConductorStore;
   orchestrator: ConductorOrchestrator;
   repositories: Array<{ owner: string; repo: string }>;
+  logger?: ConductorLogger;
 }): Promise<{ port: number; close(): Promise<void> }> {
   const secret = await resolveWebhookSecret(input.config);
   const server = createServer((request, response) => {
     void handleWebhookRequest({ ...input, secret, request, response }).catch((error: unknown) => {
+      (input.logger ?? noopConductorLogger).error("Conductor webhook request failed", {
+        error: errorMessage(error),
+      });
       response.statusCode = error instanceof WebhookHttpError ? error.statusCode : 500;
       response.end(errorMessage(error));
     });
@@ -116,6 +121,7 @@ async function handleWebhookRequest(input: {
   store: ConductorStore;
   orchestrator: ConductorOrchestrator;
   repositories: Array<{ owner: string; repo: string }>;
+  logger?: ConductorLogger;
   secret: string;
   request: IncomingMessage;
   response: ServerResponse;
@@ -134,6 +140,10 @@ async function handleWebhookRequest(input: {
   });
 
   if (!verifyWebhookSignature(input.secret, body, metadata.signature)) {
+    input.logger?.warn("Conductor webhook signature rejected", {
+      deliveryId: metadata.deliveryId,
+      eventName: metadata.eventName,
+    });
     input.response.statusCode = 401;
     input.response.end("invalid signature");
     return;
@@ -146,6 +156,11 @@ async function handleWebhookRequest(input: {
   }
 
   if (!isSupportedWebhookEvent(metadata.eventName)) {
+    input.logger?.debug("Conductor webhook event ignored", {
+      deliveryId: metadata.deliveryId,
+      eventName: metadata.eventName,
+      reason: "unsupported_event",
+    });
     input.response.statusCode = 202;
     input.response.end("ignored unsupported event");
     return;
@@ -157,6 +172,12 @@ async function handleWebhookRequest(input: {
     repositoryFullName !== undefined &&
     !isManagedRepository(repositoryFullName, input.repositories)
   ) {
+    input.logger?.debug("Conductor webhook event ignored", {
+      deliveryId: metadata.deliveryId,
+      eventName: metadata.eventName,
+      reason: "unmanaged_repository",
+      repository: repositoryFullName,
+    });
     input.response.statusCode = 202;
     input.response.end("ignored unmanaged repository");
     return;
@@ -175,12 +196,21 @@ async function handleWebhookRequest(input: {
     },
   });
   const existing = recorded ? undefined : await input.store.getDelivery(metadata.deliveryId);
+  input.logger?.debug(
+    recorded ? "Conductor webhook delivery recorded" : "Conductor webhook delivery duplicate",
+    {
+      deliveryId: metadata.deliveryId,
+      eventName: metadata.eventName,
+      repository: repositoryFullName,
+    },
+  );
   input.response.statusCode = recorded ? 202 : 200;
   input.response.end(recorded ? "accepted" : "duplicate");
   if (recorded || existing?.status === "failed") {
     schedulePendingWebhookDeliveries({
       store: input.store,
       orchestrator: input.orchestrator,
+      logger: input.logger,
     });
   }
 }
@@ -188,17 +218,23 @@ async function handleWebhookRequest(input: {
 function schedulePendingWebhookDeliveries(input: {
   store: ConductorStore;
   orchestrator: ConductorOrchestrator;
+  logger?: ConductorLogger;
 }): void {
   if (pendingDeliveryTimer !== undefined) return;
   pendingDeliveryTimer = setTimeout(() => {
     pendingDeliveryTimer = undefined;
-    void processPendingWebhookDeliveries(input).catch(() => {});
+    void processPendingWebhookDeliveries(input).catch((error: unknown) => {
+      input.logger?.error("Conductor webhook delivery processing failed", {
+        error: errorMessage(error),
+      });
+    });
   }, WEBHOOK_COALESCE_DELAY_MS);
 }
 
 export function processPendingWebhookDeliveries(input: {
   store: ConductorStore;
   orchestrator: ConductorOrchestrator;
+  logger?: ConductorLogger;
   onError?: (message: string) => void;
 }): Promise<void> {
   if (pendingDeliveryProcessing !== undefined) {
@@ -214,6 +250,7 @@ export function processPendingWebhookDeliveries(input: {
 async function processPendingWebhookDeliveriesLoop(input: {
   store: ConductorStore;
   orchestrator: ConductorOrchestrator;
+  logger?: ConductorLogger;
   onError?: (message: string) => void;
 }): Promise<void> {
   do {
@@ -225,6 +262,7 @@ async function processPendingWebhookDeliveriesLoop(input: {
 async function processPendingWebhookDeliveriesOnce(input: {
   store: ConductorStore;
   orchestrator: ConductorOrchestrator;
+  logger?: ConductorLogger;
   onError?: (message: string) => void;
 }): Promise<void> {
   if (Date.now() < webhookBackoffUntil) return;
@@ -239,12 +277,21 @@ async function processPendingWebhookDeliveriesOnce(input: {
         (delivery.nextAttemptAt === undefined || Date.parse(delivery.nextAttemptAt) <= Date.now()),
     ),
   ];
-  for (const deliveryGroup of groupWebhookDeliveries(deliveries)) {
+  const deliveryGroups = groupWebhookDeliveries(deliveries);
+  const batchStartedAt = Date.now();
+  if (deliveries.length > 0) {
+    input.logger?.info("Conductor webhook delivery batch started", {
+      deliveries: deliveries.length,
+      groups: deliveryGroups.length,
+    });
+  }
+  for (const deliveryGroup of deliveryGroups) {
     try {
       await processRecordedDeliveryGroup(
         input.store,
         input.orchestrator,
         deliveryGroup,
+        input.logger,
         input.onError,
       );
     } catch (error) {
@@ -255,6 +302,13 @@ async function processPendingWebhookDeliveriesOnce(input: {
       );
       throw error;
     }
+  }
+  if (deliveries.length > 0) {
+    input.logger?.info("Conductor webhook delivery batch finished", {
+      deliveries: deliveries.length,
+      durationMs: Date.now() - batchStartedAt,
+      groups: deliveryGroups.length,
+    });
   }
 }
 
@@ -297,9 +351,15 @@ async function processRecordedDeliveryGroup(
   store: ConductorStore,
   orchestrator: ConductorOrchestrator,
   deliveries: WebhookDelivery[],
+  logger: ConductorLogger | undefined,
   onError: ((message: string) => void) | undefined,
 ): Promise<void> {
   const attempts = new Map<string, number>();
+  const startedAt = Date.now();
+  logger?.debug("Conductor webhook delivery group started", {
+    deliveries: deliveries.map((delivery) => delivery.deliveryId),
+    events: [...new Set(deliveries.map((delivery) => delivery.eventName))],
+  });
   try {
     for (const delivery of deliveries) {
       const attempt = (delivery.attempts ?? 0) + 1;
@@ -312,7 +372,16 @@ async function processRecordedDeliveryGroup(
         processedAt: new Date().toISOString(),
       });
     }
+    logger?.debug("Conductor webhook delivery group finished", {
+      deliveries: deliveries.length,
+      durationMs: Date.now() - startedAt,
+    });
   } catch (error) {
+    logger?.warn("Conductor webhook delivery group failed", {
+      deliveries: deliveries.map((delivery) => delivery.deliveryId),
+      durationMs: Date.now() - startedAt,
+      error: errorMessage(error),
+    });
     for (const delivery of deliveries) {
       try {
         const attempt = attempts.get(delivery.deliveryId) ?? delivery.attempts ?? 1;

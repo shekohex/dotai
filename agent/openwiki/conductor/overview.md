@@ -20,7 +20,7 @@ Conductor config has global, repo-workflow, and CLI layers, merged in that prece
 
 | Layer         | File                                                              | Scope                                                                                | Defined in                                              |
 | ------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| Global        | `~/.pi/agent/conductor/config.json` (overridable via `stateRoot`) | repos list, polling interval, webhook, stateRoot                                     | `src/conductor/config.ts` `GlobalConductorConfigSchema` |
+| Global        | `~/.pi/agent/conductor/config.json` (overridable via `stateRoot`) | repos list, fallback/webhook polling intervals, webhook listener, stateRoot          | `src/conductor/config.ts` `GlobalConductorConfigSchema` |
 | Repo workflow | `<repo>/.pi/WORKFLOW.md` frontmatter                              | dispatch label, branch template, status field/options, launch rules, prompt template | `src/conductor/workflow.ts` `WorkflowFrontmatterSchema` |
 | CLI           | `pi conductor run … --<key>=<value>`                              | per-invocation overrides                                                             | `src/conductor/commands/parser.ts` `configOverrides`    |
 
@@ -37,6 +37,35 @@ pi conductor serve              # foreground polling (+webhook if configured)
 ```
 
 `config init` is idempotent and safe to rerun: it migrates config structure, preserves repo-specific settings, and upserts the current GitHub repo. To manage more repositories, run it from each checkout. Config automation commands (`config get/set/format/edit`) operate on the global config via dot/bracket paths (e.g. `repositories[0].project.number`).
+
+Mark webhook coverage per repository only after its GitHub webhook is active:
+
+```json
+{
+  "pollingIntervalSeconds": 60,
+  "projectScanIntervalSeconds": 300,
+  "webhookPollingIntervalSeconds": 900,
+  "webhookProjectScanIntervalSeconds": 1800,
+  "repositories": [
+    {
+      "owner": "octo",
+      "repo": "with-hook",
+      "repoPath": "/repos/with-hook",
+      "project": { "owner": "octo", "number": 1 },
+      "webhookEnabled": true
+    },
+    {
+      "owner": "octo",
+      "repo": "without-hook",
+      "repoPath": "/repos/without-hook",
+      "project": { "owner": "octo", "number": 2 },
+      "webhookEnabled": false
+    }
+  ]
+}
+```
+
+`webhookEnabled` defaults to `false`. Repositories without webhook coverage keep the fallback polling cadence. Webhook-enabled repositories use slower active-run and Project V2 safety reconciliation. If repositories sharing one project have mixed coverage, that project stays on fallback project scanning so no work item is missed.
 
 ## Command surface
 
@@ -82,9 +111,10 @@ Run IDs (`src/conductor/run-id.ts` `createRunId`): `<owner>__<repo>__<issue>__<u
 
 GitHub operations shell out through `gh` with bounded command timeouts. A reconcile error showing `timeout: ...ms (process killed)` and `signal: SIGTERM` means Conductor killed a stuck `gh` child after the configured timeout; empty stdout/stderr is normal for that failure mode.
 
-- **Webhook** (`src/conductor/webhook.ts`): GitHub gets an HTTP response only after the delivery is durably recorded in SQLite — _before_ reconcile work runs. Supported events: `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `pull_request_review_comment`, `check_run`, `check_suite`, `status`, `workflow_run`, `projects_v2_item`. Delivery IDs dedupe retries; failures retry with exponential backoff; GitHub rate-limit errors back off ~15 min (`rate-limit.ts` `GITHUB_RATE_LIMIT_BACKOFF_MS`). Unknown events are ACKed and ignored.
+- **Webhook** (`src/conductor/webhook.ts`): GitHub gets an HTTP response only after the delivery is durably recorded in SQLite — _before_ reconcile work runs. Supported events: `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `pull_request_review_comment`, `check_run`, `check_suite`, `status`, `workflow_run`, `projects_v2_item`. Actionable review/comment/check payloads route directly without re-fetching all PR feedback. Deliveries for the same PR coalesce briefly before reconciliation. Delivery IDs dedupe retries; failures retry with exponential backoff; GitHub rate-limit errors honor reset/retry hints. Unknown events are ACKed and ignored.
 - **Crash recovery**: on startup, `processPendingWebhookDeliveries` replays deliveries left in `received`/`processing`.
-- **Polling** (`startPolling`): avoids overlapping reconcile runs, respects `pollingIntervalSeconds` (default 60, [ADR 0038](../../docs/adr/0038-polling-interval-has-config-with-default.md)), and backs off on rate-limit errors. Webhooks narrow reconcile scope to the affected repo/issue/PR/item.
+- **Polling** (`polling.ts`): uses separate jittered plans for fallback active runs, fallback Project V2 discovery, webhook active-run safety, and webhook Project V2 safety. Defaults are 60 seconds, the fallback poll interval, 15 minutes, and 30 minutes respectively. Repositories without `webhookEnabled` continue polling normally.
+- **GitHub synchronization** (`github.ts`, `github-snapshot.ts`, `github-projects.ts`): active PR reconciliation uses one GraphQL snapshot instead of separate PR/check/review/comment calls. Truncated snapshot connections fall back to paginated reads. Project item webhooks resolve one `node_id` instead of scanning the whole project. GraphQL budget metadata closes a persisted rate-limit gate before quota exhaustion.
 - **Hot reload** (`createConfigReloader`): watches `config.json` and each repo's `.pi/WORKFLOW.md`; on change reloads config, revalidates, swaps polling/webhook, and re-reconciles. Changing `stateRoot` requires a restart.
 
 GitHub webhook setup:
@@ -98,7 +128,7 @@ GitHub webhook setup:
 | Events           | Let me select individual events                                                                         |
 | Active           | Checked                                                                                                 |
 
-Select these individual events in GitHub: Issues, Issue comments, Pull requests, Pull request reviews, Pull request review comments, Check runs, Check suites, Statuses, and Workflow runs. Repository webhooks usually do not show a “Projects v2 items” checkbox. Conductor supports `projects_v2_item` when a webhook source exposes it, but polling remains the safety net for project-only changes such as status/field updates. Do not choose “Just the push event”; Conductor ignores push events. “Send me everything” is safe but noisy because unsupported events are ACKed and ignored.
+Select these individual events in GitHub: Issues, Issue comments, Pull requests, Pull request reviews, Pull request review comments, Check runs, Check suites, Statuses, Workflow runs, and Pushes. Push events trigger targeted mergeability refreshes only when the pushed branch is an active run's PR base branch. `projects_v2_item` is available only to organization webhooks for organization-level projects; repository webhooks and user-owned projects cannot subscribe to it. Project polling therefore remains required for project-only changes such as status/field updates. Project webhook events are also in public preview. Do not choose “Just the push event”; Conductor still needs the other selected events. “Send me everything” is safe but noisy because unsupported events are ACKed and ignored.
 
 ## Workflow expressions and launch rules
 

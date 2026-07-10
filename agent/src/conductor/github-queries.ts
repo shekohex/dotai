@@ -14,6 +14,7 @@ export const PROJECT_METADATA_QUERY = `
 query($owner: String!, $number: Int!) {
   organization(login: $owner) { projectV2(number: $number) { ...ProjectFields } }
   user(login: $owner) { projectV2(number: $number) { ...ProjectFields } }
+  rateLimit { cost limit remaining resetAt used }
 }
 ${PROJECT_FIELDS_FRAGMENT}`;
 
@@ -21,6 +22,7 @@ export function projectMetadataQuery(ownerKind: "organization" | "user"): string
   return `
 query($owner: String!, $number: Int!) {
   ${ownerKind}(login: $owner) { projectV2(number: $number) { ...ProjectFields } }
+  rateLimit { cost limit remaining resetAt used }
 }
 ${PROJECT_FIELDS_FRAGMENT}`;
 }
@@ -29,6 +31,7 @@ export const PROJECT_ITEMS_QUERY = `
 query($owner: String!, $number: Int!, $cursor: String) {
   organization(login: $owner) { projectV2(number: $number) { ...ProjectItems } }
   user(login: $owner) { projectV2(number: $number) { ...ProjectItems } }
+  rateLimit { cost limit remaining resetAt used }
 }
 fragment ProjectItems on ProjectV2 {
   id
@@ -65,6 +68,7 @@ export function projectItemsQuery(ownerKind: "organization" | "user"): string {
   return `
 query($owner: String!, $number: Int!, $cursor: String) {
   ${ownerKind}(login: $owner) { projectV2(number: $number) { ...ProjectItems } }
+  rateLimit { cost limit remaining resetAt used }
 }
 fragment ProjectItems on ProjectV2 {
   id
@@ -97,6 +101,45 @@ fragment ProjectItems on ProjectV2 {
   }
 }`;
 }
+
+export const PROJECT_ITEM_QUERY = `
+query($itemId: ID!) {
+  node(id: $itemId) {
+    ... on ProjectV2Item {
+      id
+      project {
+        id
+        number
+        owner {
+          ... on Organization { login }
+          ... on User { login }
+        }
+      }
+      content {
+        ... on Issue {
+          id
+          number
+          state
+          title
+          body
+          url
+          repository { name owner { login } }
+          labels(first: 50) { nodes { name } }
+          assignees(first: 20) { nodes { login } }
+        }
+      }
+      fieldValues(first: 50) {
+        nodes {
+          ... on ProjectV2ItemFieldTextValue { text field { ... on ProjectV2FieldCommon { name } } }
+          ... on ProjectV2ItemFieldNumberValue { number field { ... on ProjectV2FieldCommon { name } } }
+          ... on ProjectV2ItemFieldDateValue { date field { ... on ProjectV2FieldCommon { name } } }
+          ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2FieldCommon { name } } }
+        }
+      }
+    }
+  }
+  rateLimit { cost limit remaining resetAt used }
+}`;
 
 export const UPDATE_PROJECT_STATUS_MUTATION = `
 mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {

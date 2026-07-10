@@ -2,6 +2,8 @@ import { Value } from "typebox/value";
 
 import {
   type ConductorStore,
+  type GitHubSyncState,
+  GitHubSyncStateSchema,
   type RunEvent,
   RunEventSchema,
   type RunRecord,
@@ -22,6 +24,7 @@ export class MemoryConductorStore implements ConductorStore {
   private readonly runs = new Map<string, RunRecord>();
   private events: RunEvent[] = [];
   private readonly deliveries = new Map<string, WebhookDelivery>();
+  private readonly githubSyncStates = new Map<string, GitHubSyncState>();
 
   init(): Promise<void> {
     return Promise.resolve();
@@ -141,6 +144,17 @@ export class MemoryConductorStore implements ConductorStore {
     );
   }
 
+  getGitHubSyncState(key: string): Promise<GitHubSyncState | undefined> {
+    const state = this.githubSyncStates.get(key);
+    return Promise.resolve(state === undefined ? undefined : structuredClone(state));
+  }
+
+  setGitHubSyncState(state: GitHubSyncState): Promise<void> {
+    const validated = Value.Parse(GitHubSyncStateSchema, state);
+    this.githubSyncStates.set(validated.key, structuredClone(validated));
+    return Promise.resolve();
+  }
+
   gc(options: StoreGcOptions = {}): Promise<StoreGcResult> {
     const validated = Value.Parse(StoreGcOptionsSchema, options);
     const cutoff = gcCutoffIso(validated.olderThanDays ?? DEFAULT_GC_RETENTION_DAYS);
@@ -162,6 +176,9 @@ export class MemoryConductorStore implements ConductorStore {
         this.deliveries.delete(deliveryId);
         deletedDeliveries += 1;
       }
+    }
+    for (const [key, state] of this.githubSyncStates) {
+      if (state.updatedAt < cutoff) this.githubSyncStates.delete(key);
     }
     return Promise.resolve(
       Value.Parse(StoreGcResultSchema, {

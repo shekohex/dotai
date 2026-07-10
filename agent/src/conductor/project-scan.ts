@@ -11,6 +11,7 @@ import {
 } from "./run-status.js";
 import type { ConductorStore, RunRecord, WorkItem } from "./store/types.js";
 import type { WorktreeManager } from "./worktree.js";
+import { isRateLimitError } from "./rate-limit.js";
 
 export type ProjectScanRuntime = {
   repo: ManagedRepositoryConfig;
@@ -27,6 +28,35 @@ type ProjectScanDispatchInput = {
   store: ConductorStore;
   worktrees: WorktreeManager;
 };
+
+export async function reconcileProjectScan(
+  input: Omit<ProjectScanDispatchInput, "candidates"> & {
+    repositories: ManagedRepositoryConfig[];
+    matchesRepository(repo: ManagedRepositoryConfig): boolean;
+    loadRuntime(repo: ManagedRepositoryConfig): Promise<ProjectScanRuntime>;
+    listProjectItems(config: ResolvedRepositoryConfig): Promise<WorkItem[]>;
+  },
+): Promise<RunRecord[]> {
+  const groups = await groupRepositoriesByProject({
+    repositories: input.repositories,
+    matchesRepository: (repo) => input.matchesRepository(repo),
+    loadRuntime: (repo) => input.loadRuntime(repo),
+  });
+  const candidates = await listProjectScanCandidates({
+    groups,
+    listProjectItems: (config) => input.listProjectItems(config),
+  });
+  return dispatchProjectScanCandidates({
+    authenticatedLogin: input.authenticatedLogin,
+    blockRun: (config, run) => input.blockRun(config, run),
+    candidates,
+    dispatch: (repo, workItem) => input.dispatch(repo, workItem),
+    github: input.github,
+    matchesWorkItem: (workItem) => input.matchesWorkItem(workItem),
+    store: input.store,
+    worktrees: input.worktrees,
+  });
+}
 
 export async function groupRepositoriesByProject(input: {
   repositories: ManagedRepositoryConfig[];
@@ -61,6 +91,44 @@ export async function listProjectScanCandidates(input: {
   return candidates;
 }
 
+export async function reconcileProjectItemScope(input: {
+  authenticatedLogin: string;
+  blockRun(config: ResolvedRepositoryConfig, run: RunRecord): Promise<void>;
+  dispatch(repo: ManagedRepositoryConfig, workItem: WorkItem): Promise<RunRecord>;
+  github: GitHubClient;
+  loadRuntime(repo: ManagedRepositoryConfig): Promise<ProjectScanRuntime>;
+  projectItemId: string;
+  repositories: ManagedRepositoryConfig[];
+  store: ConductorStore;
+  worktrees: WorktreeManager;
+}): Promise<RunRecord[]> {
+  const snapshot = await input.github.getProjectItem(input.projectItemId);
+  if (snapshot === undefined) return [];
+  const repo = input.repositories.find(
+    (entry) =>
+      sameRepository(snapshot.workItem, entry) &&
+      entry.project.owner.toLowerCase() === snapshot.project.owner.toLowerCase() &&
+      entry.project.number === snapshot.project.number,
+  );
+  if (repo === undefined) return [];
+  const runtime = await input.loadRuntime(repo);
+  const projectStatus = snapshot.workItem.projectFields[runtime.config.statusField];
+  const workItem = {
+    ...snapshot.workItem,
+    ...(typeof projectStatus === "string" ? { projectStatus } : {}),
+  };
+  return dispatchProjectScanCandidates({
+    authenticatedLogin: input.authenticatedLogin,
+    blockRun: (config, run) => input.blockRun(config, run),
+    candidates: [{ repo, config: runtime.config, workItem }],
+    dispatch: (managedRepo, candidate) => input.dispatch(managedRepo, candidate),
+    github: input.github,
+    matchesWorkItem: () => true,
+    store: input.store,
+    worktrees: input.worktrees,
+  });
+}
+
 export async function dispatchProjectScanCandidates(
   input: ProjectScanDispatchInput,
 ): Promise<RunRecord[]> {
@@ -83,7 +151,8 @@ export async function dispatchProjectScanCandidates(
           worktrees: input.worktrees,
         })),
       );
-    } catch {
+    } catch (error) {
+      if (isRateLimitError(error)) throw error;
       continue;
     }
   }

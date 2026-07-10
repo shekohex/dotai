@@ -12,6 +12,9 @@ export type PullRequestSummary = {
   number: number;
   url: string;
   headRefName: string;
+  baseRefName?: string;
+  baseRefOid?: string;
+  headRefOid?: string;
   state: string;
   isDraft: boolean;
   mergedAt?: string;
@@ -20,15 +23,31 @@ export type PullRequestSummary = {
   linkedIssueNumbers?: number[];
 };
 
+export type PullRequestSnapshot = {
+  pullRequest?: PullRequestSummary;
+  feedback: PullRequestFeedback[];
+  feedbackComplete?: boolean;
+};
+
 export type ProjectMetadata = {
   projectId: string;
   fields: Map<string, { fieldId: string; options: Map<string, string> }>;
+};
+
+export type ProjectItemSnapshot = {
+  project: {
+    id: string;
+    owner: string;
+    number: number;
+  };
+  workItem: WorkItem;
 };
 
 export interface GitHubClient {
   getAuthenticatedUser(): Promise<string>;
   getRepository(owner: string, repo: string): Promise<GitHubRepository>;
   resolveWorkItem(reference: string, config: GlobalConductorConfig, cwd: string): Promise<WorkItem>;
+  getProjectItem(projectItemId: string): Promise<ProjectItemSnapshot | undefined>;
   listProjectItems(repo: ManagedRepositoryConfig): Promise<WorkItem[]>;
   updateProjectStatus(
     repo: ManagedRepositoryConfig,
@@ -41,6 +60,19 @@ export interface GitHubClient {
     repo: string,
     branch: string,
   ): Promise<PullRequestSummary | undefined>;
+  getPullRequestSnapshot(input: {
+    owner: string;
+    repo: string;
+    issueNumber: number;
+    prNumber?: number;
+    branch: string;
+  }): Promise<PullRequestSnapshot>;
+  getPullRequestMergeState(input: {
+    owner: string;
+    repo: string;
+    prNumber?: number;
+    branch: string;
+  }): Promise<PullRequestSummary | undefined>;
   listPullRequestFeedback(
     owner: string,
     repo: string,

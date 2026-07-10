@@ -11,8 +11,8 @@ import {
   resolveRepositoryConfig,
 } from "./config.js";
 import { cleanupMergedRunArtifacts, cleanupRunsByStatus } from "./cleanup-batch.js";
-import { renderConductorComment, routePullRequestFeedback } from "./follow-up.js";
-import type { PullRequestSummary } from "./github.js";
+import { renderConductorComment } from "./follow-up.js";
+import { isRateLimitError, reconcileMergeConflict, type PullRequestSummary } from "./github.js";
 import {
   activeStatusForRun,
   HERDR_BLOCKED_REASON,
@@ -21,14 +21,13 @@ import {
 import {
   ReconcileScopeSchema,
   type ReconcileScope,
-  dispatchProjectScanCandidates,
-  groupRepositoriesByProject,
+  readPullRequestReconcileSnapshot,
+  reconcileProjectItemScope,
+  reconcileProjectScan,
   scopeMatchesRun,
   scopeMatchesRepo,
   scopeMatchesWorkItem,
-  scopePullRequestForRun,
   shouldScanProjectItems,
-  listProjectScanCandidates,
 } from "./reconcile-scope.js";
 import { buildRecoveryPromptContext } from "./recovery-context.js";
 import {
@@ -106,35 +105,47 @@ export class ConductorOrchestrator {
     const dispatched: RunRecord[] = [];
     const login = await this.deps.github.getAuthenticatedUser();
 
-    if (shouldScanProjectItems(scope)) {
-      const groups = await groupRepositoriesByProject({
-        repositories: this.deps.config.repositories,
-        matchesRepository: (repo) => scopeMatchesRepo(scope, repo),
-        loadRuntime: async (repo) => {
-          const runtime = await this.loadRepositoryRuntime(repo);
-          return { repo, config: runtime.config };
-        },
-      });
-      const candidates = await listProjectScanCandidates({
-        groups,
-        listProjectItems: (config) => this.deps.github.listProjectItems(config),
-      });
+    if (scope?.projectItemId !== undefined) {
       dispatched.push(
-        ...(await dispatchProjectScanCandidates({
+        ...(await reconcileProjectItemScope({
           authenticatedLogin: login,
           blockRun: (config, run) => this.blockClosedIssueRun(config, run),
-          candidates,
           dispatch: (repo, workItem) =>
             this.dispatchWorkItem(repo, workItem, { manual: false, launchFlags: [] }),
           github: this.deps.github,
+          loadRuntime: async (repo) => {
+            const runtime = await this.loadRepositoryRuntime(repo);
+            return { repo, config: runtime.config };
+          },
+          projectItemId: scope.projectItemId,
+          repositories: this.deps.config.repositories,
+          store: this.deps.store,
+          worktrees: this.worktrees,
+        })),
+      );
+    } else if (shouldScanProjectItems(scope)) {
+      dispatched.push(
+        ...(await reconcileProjectScan({
+          authenticatedLogin: login,
+          blockRun: (config, run) => this.blockClosedIssueRun(config, run),
+          dispatch: (repo, workItem) =>
+            this.dispatchWorkItem(repo, workItem, { manual: false, launchFlags: [] }),
+          github: this.deps.github,
+          listProjectItems: (config) => this.deps.github.listProjectItems(config),
+          loadRuntime: async (repo) => {
+            const runtime = await this.loadRepositoryRuntime(repo);
+            return { repo, config: runtime.config };
+          },
+          matchesRepository: (repo) => scopeMatchesRepo(scope, repo),
           matchesWorkItem: (workItem) => scopeMatchesWorkItem(scope, workItem),
+          repositories: this.deps.config.repositories,
           store: this.deps.store,
           worktrees: this.worktrees,
         })),
       );
     }
 
-    await this.reconcileActiveRuns(login, scope);
+    if (scope?.activeRuns !== false) await this.reconcileActiveRuns(login, scope);
     return dispatched;
   }
 
@@ -344,7 +355,7 @@ export class ConductorOrchestrator {
       options.launchFlags.length > 0
         ? options.launchFlags
         : selectLaunchFlags(runtime.workflow, runtime.config, workItem, plan, runId);
-    const createdAt = this.nowIso();
+    const createdAt = this.now().toISOString();
     const run = Value.Parse(RunRecordSchema, {
       runId,
       owner: workItem.owner,
@@ -451,39 +462,40 @@ export class ConductorOrchestrator {
         if (run.status === "blocked" && !isHerdrAttentionBlocked(run)) continue;
         if (!scopeMatchesRun(scope, run)) continue;
         const liveRun = await this.syncHerdrAgentStatus(await this.ensureRunSession(run));
-        const pr =
-          scopePullRequestForRun(scope, liveRun) ??
-          (await this.deps.github.findPullRequestByBranch(
-            liveRun.owner,
-            liveRun.repo,
-            liveRun.branch,
-          ));
+        const snapshot = await readPullRequestReconcileSnapshot({
+          github: this.deps.github,
+          run: liveRun,
+          scope,
+        });
+        const pr = snapshot.pullRequest;
         if (pr === undefined) continue;
         const updated = await this.reconcilePullRequest(liveRun, pr);
-        await this.routeFeedbackForRun(updated, pr, authenticatedLogin);
+        if (
+          updated.status === "done" ||
+          (updated.status === "blocked" && !isHerdrAttentionBlocked(updated))
+        ) {
+          continue;
+        }
+        await reconcileMergeConflict({
+          authenticatedLogin,
+          attentionBlocked: isHerdrAttentionBlocked(updated),
+          ensureRunSession: (record) => this.ensureRunSession(record),
+          feedback: snapshot.feedback,
+          getResolvedRepo: (owner, repo) => this.getResolvedRepo(owner, repo),
+          github: this.deps.github,
+          herdr: this.deps.herdr,
+          now: this.now,
+          pr,
+          record: (record, kind, payload) => this.record(record, kind, payload),
+          run: updated,
+          store: this.deps.store,
+          touch: (record) => this.touch(record),
+        });
       } catch (error) {
         await this.record(run, "reconcile_run_failed", { error: errorMessage(error) });
+        if (isRateLimitError(error)) throw error;
       }
     }
-  }
-
-  private routeFeedbackForRun(
-    run: RunRecord,
-    pr: PullRequestSummary,
-    authenticatedLogin: string,
-  ): Promise<RunRecord> {
-    return routePullRequestFeedback({
-      authenticatedLogin,
-      ensureRunSession: (record) => this.ensureRunSession(record),
-      getResolvedRepo: (owner, repo) => this.getResolvedRepo(owner, repo),
-      github: this.deps.github,
-      herdr: this.deps.herdr,
-      pr,
-      record: (record, kind, payload) => this.record(record, kind, payload),
-      run,
-      touch: (record) => this.touch(record),
-      updateRun: (record) => this.deps.store.updateRun(record),
-    });
   }
 
   private async reconcilePullRequest(run: RunRecord, pr: PullRequestSummary): Promise<RunRecord> {
@@ -570,7 +582,11 @@ export class ConductorOrchestrator {
       return associated;
     }
 
-    if (run.prUrl === pr.url && run.status === "in_review" && run.prNumber === pr.number) {
+    if (
+      run.prUrl === pr.url &&
+      run.prNumber === pr.number &&
+      (run.status === "in_review" || run.mergeConflict !== undefined)
+    ) {
       return run;
     }
     const inReview = this.touch({
@@ -751,14 +767,11 @@ export class ConductorOrchestrator {
   }
 
   private touch(run: RunRecord): RunRecord {
-    return Value.Parse(RunRecordSchema, { ...run, updatedAt: this.nowIso() });
-  }
-  private nowIso(): string {
-    return this.now().toISOString();
+    return Value.Parse(RunRecordSchema, { ...run, updatedAt: this.now().toISOString() });
   }
 
   private async record(run: RunRecord, kind: string, payload: unknown): Promise<void> {
-    const createdAt = this.nowIso();
+    const createdAt = this.now().toISOString();
     this.logger.debug("Conductor run event", { runId: run.runId, kind });
     await this.deps.store.appendEvent({ runId: run.runId, kind, payload, createdAt });
     try {

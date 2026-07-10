@@ -209,9 +209,10 @@ Check runs
 Check suites
 Statuses
 Workflow runs
+Pushes
 ```
 
-Do not choose `Just the push event`; Conductor does not use push events. `Send me everything` works but creates noisy ignored deliveries.
+Push events trigger targeted mergeability refreshes only when the pushed branch is an active run's PR base branch. Do not choose `Just the push event`; Conductor still needs the PR, review, comment, and check events above. `Send me everything` works but creates noisy ignored deliveries.
 
 `projects_v2_item` deliveries are supported when a GitHub webhook source exposes them, but repository webhooks usually do not show a “Projects v2 items” checkbox. That is OK; polling remains the safety net for project-only changes such as status/field updates.
 

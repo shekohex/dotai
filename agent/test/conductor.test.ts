@@ -42,7 +42,9 @@ import {
   parseGhUser,
   parseProjectItemsGraphql,
   type GitHubClient,
+  type ProjectItemSnapshot,
   type PullRequestFeedback,
+  type PullRequestSnapshot,
   type PullRequestSummary,
 } from "../src/conductor/github.js";
 import { ConsoleConductorLogger } from "../src/conductor/logging.js";
@@ -58,8 +60,10 @@ import {
   type HerdrRunInput,
   type HerdrSessionManager,
 } from "../src/conductor/herdr.js";
-import { ConductorOrchestrator } from "../src/conductor/orchestrator.js";
+import { ConductorOrchestrator, type ReconcileScope } from "../src/conductor/orchestrator.js";
+import { createPollingPlans } from "../src/conductor/polling-schedule.js";
 import { buildExpressionContext, validateInitialPromptTemplate } from "../src/conductor/prompt.js";
+import { rateLimitRetryAt } from "../src/conductor/rate-limit.js";
 import {
   createRunId,
   createUuidV7,
@@ -573,6 +577,16 @@ describe("conductor store and command parser", () => {
         lastError: "boom",
       });
       await expect(store.listDeliveriesByStatus("failed")).resolves.toHaveLength(1);
+      await store.setGitHubSyncState({
+        key: "rate-limit:github.com",
+        value: { graphql: { remaining: 42 } },
+        updatedAt: "2026-07-05T00:00:00.000Z",
+      });
+      await expect(store.getGitHubSyncState("rate-limit:github.com")).resolves.toEqual({
+        key: "rate-limit:github.com",
+        value: { graphql: { remaining: 42 } },
+        updatedAt: "2026-07-05T00:00:00.000Z",
+      });
     } finally {
       store.close();
     }
@@ -756,6 +770,96 @@ describe("conductor store and command parser", () => {
     expect(stdout.text()).toContain("pi/${{ github.issue.number }}-${{ github.issue.slug }}");
   });
 
+  test("polling plans keep non-webhook repos on fallback cadence", () => {
+    const plans = createPollingPlans({
+      version: 1,
+      pollingIntervalSeconds: 60,
+      projectScanIntervalSeconds: 300,
+      webhookPollingIntervalSeconds: 900,
+      webhookProjectScanIntervalSeconds: 1800,
+      webhook: {
+        host: "127.0.0.1",
+        port: 8787,
+        path: "/github/webhook",
+        secret: { env: "WEBHOOK_SECRET" },
+      },
+      repositories: [
+        managedRepo({
+          repo: "with-hook",
+          webhookEnabled: true,
+          project: { owner: "octo", number: 1 },
+        }),
+        managedRepo({
+          repo: "without-hook",
+          webhookEnabled: false,
+          project: { owner: "octo", number: 2 },
+        }),
+      ],
+    });
+
+    expect(plans).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          intervalSeconds: 60,
+          projectScan: false,
+          reason: "polling-active-runs",
+          repositories: [{ owner: "octo", repo: "without-hook" }],
+        }),
+        expect.objectContaining({
+          intervalSeconds: 300,
+          projectScan: true,
+          reason: "polling-project-scan",
+          repositories: [{ owner: "octo", repo: "without-hook" }],
+        }),
+        expect.objectContaining({
+          intervalSeconds: 900,
+          projectScan: false,
+          reason: "webhook-safety-active-runs",
+          repositories: [{ owner: "octo", repo: "with-hook" }],
+        }),
+        expect.objectContaining({
+          intervalSeconds: 1800,
+          projectScan: true,
+          reason: "webhook-safety-project-scan",
+          repositories: [{ owner: "octo", repo: "with-hook" }],
+        }),
+      ]),
+    );
+  });
+
+  test("rate-limit retry timing honors GitHub hints", () => {
+    const now = new Date("2026-07-05T00:00:00.000Z");
+    expect(rateLimitRetryAt(new Error("retry-after: 60"), now).toISOString()).toBe(
+      "2026-07-05T00:01:00.000Z",
+    );
+    expect(rateLimitRetryAt(new Error("x-ratelimit-reset: 1783213200"), now).toISOString()).toBe(
+      "2026-07-05T01:00:00.000Z",
+    );
+    expect(rateLimitRetryAt(new Error("GitHub rate limit"), now).toISOString()).toBe(
+      "2026-07-05T00:15:00.000Z",
+    );
+    expect(rateLimitRetryAt(new Error("GitHub secondary rate limit"), now).toISOString()).toBe(
+      "2026-07-05T00:01:00.000Z",
+    );
+  });
+
+  test("repository webhook coverage requires a configured listener", () => {
+    const config: GlobalConductorConfig = {
+      version: 1,
+      repositories: [managedRepo({ webhookEnabled: true })],
+    };
+
+    expect(validateGlobalConfig(config)).toContain(
+      "octo/demo: webhookEnabled requires global webhook listener configuration",
+    );
+    expect(
+      createPollingPlans({
+        ...config,
+        repositories: [managedRepo({ webhookEnabled: false })],
+      }).map((plan) => plan.reason),
+    ).toEqual(["polling-active-runs", "polling-project-scan"]);
+  });
+
   test("daemon status ignores stale pid file for unrelated process", async () => {
     const tempDir = await createTempDir("conductor-daemon-stale-");
     const daemonDir = join(tempDir, "daemon");
@@ -901,7 +1005,132 @@ describe("conductor store and command parser", () => {
       repo: "demo",
       prNumber: 2,
       branch: "pi/7-fix-bug",
+      feedback: [],
       pullRequest: { number: 2, state: "MERGED", mergedAt: "2026-07-05T00:00:00Z" },
+    });
+  });
+
+  test("mergeability webhooks request targeted probes", () => {
+    expect(
+      readWebhookReconcileScope("pull_request", {
+        action: "synchronize",
+        repository: { full_name: "octo/demo" },
+        pull_request: {
+          number: 2,
+          html_url: "https://github.com/octo/demo/pull/2",
+          state: "open",
+          draft: false,
+          head: { ref: "pi/7-fix-bug", sha: "head-2" },
+          base: { ref: "main", sha: "base-2" },
+          mergeable: false,
+          mergeable_state: "dirty",
+        },
+      }),
+    ).toMatchObject({
+      mergeabilityProbe: true,
+      pullRequest: {
+        baseRefName: "main",
+        baseRefOid: "base-2",
+        headRefOid: "head-2",
+        mergeable: "CONFLICTING",
+        mergeStateStatus: "DIRTY",
+      },
+    });
+    expect(
+      readWebhookReconcileScope("push", {
+        ref: "refs/heads/main",
+        repository: { full_name: "octo/demo" },
+      }),
+    ).toMatchObject({
+      baseBranch: "main",
+      feedback: [],
+      mergeabilityProbe: true,
+      projectScan: false,
+    });
+    expect(
+      readWebhookReconcileScope("push", {
+        ref: "refs/tags/v1.0.0",
+        repository: { full_name: "octo/demo" },
+      }),
+    ).toMatchObject({ activeRuns: false, projectScan: false });
+  });
+
+  test("extracts actionable feedback directly from webhook payloads", () => {
+    expect(
+      readWebhookReconcileScope("pull_request_review_comment", {
+        repository: { full_name: "octo/demo" },
+        pull_request: {
+          number: 2,
+          html_url: "https://github.com/octo/demo/pull/2",
+          state: "open",
+          draft: false,
+          head: { ref: "pi/7-fix-bug" },
+        },
+        comment: {
+          node_id: "PRRC_1",
+          body: "Please cover the failure path",
+          html_url: "https://github.com/octo/demo/pull/2#discussion_r1",
+          user: { login: "reviewer" },
+        },
+      }),
+    ).toMatchObject({
+      feedback: [
+        {
+          key: "review_comment:PRRC_1",
+          kind: "review_comment",
+          body: "Please cover the failure path",
+          reactionSubjectId: "PRRC_1",
+          author: "reviewer",
+        },
+      ],
+    });
+    expect(
+      readWebhookReconcileScope("pull_request_review", {
+        repository: { full_name: "octo/demo" },
+        pull_request: {
+          number: 2,
+          html_url: "https://github.com/octo/demo/pull/2",
+          state: "open",
+          draft: false,
+          head: { ref: "pi/7-fix-bug" },
+        },
+        review: {
+          node_id: "PRR_1",
+          body: "",
+          state: "changes_requested",
+          html_url: "https://github.com/octo/demo/pull/2#pullrequestreview-1",
+          user: { login: "reviewer" },
+        },
+      }),
+    ).toMatchObject({
+      feedback: [
+        {
+          key: "review:PRR_1",
+          kind: "review",
+          body: "Pull request review requested changes.",
+        },
+      ],
+    });
+    expect(
+      readWebhookReconcileScope("check_run", {
+        repository: { full_name: "octo/demo" },
+        check_run: {
+          id: 10,
+          node_id: "CR_10",
+          name: "test",
+          conclusion: "failure",
+          html_url: "https://github.com/octo/demo/actions/runs/10",
+          pull_requests: [{ number: 2, head_branch: "pi/7-fix-bug" }],
+        },
+      }),
+    ).toMatchObject({
+      feedback: [
+        {
+          key: "check:test:failure:https://github.com/octo/demo/actions/runs/10",
+          kind: "check",
+          body: "Check test is failure.",
+        },
+      ],
     });
   });
 
@@ -945,11 +1174,27 @@ describe("conductor store and command parser", () => {
       ],
       ["status", { branches: [{ name: "pi/7-fix-bug" }] }, { branch: "pi/7-fix-bug" }],
       [
+        "push",
+        { ref: "refs/heads/main" },
+        { baseBranch: "main", mergeabilityProbe: true, projectScan: false },
+      ],
+      [
         "workflow_run",
         { workflow_run: { pull_requests: [{ number: 2, head_branch: "pi/7-fix-bug" }] } },
         { prNumber: 2, branch: "pi/7-fix-bug" },
       ],
-      ["projects_v2_item", { projects_v2_item: { id: "PVTI_1" } }, { projectItemId: "PVTI_1" }],
+      [
+        "projects_v2_item",
+        {
+          projects_v2_item: {
+            id: 123,
+            node_id: "PVTI_1",
+            project_node_id: "PVT_1",
+            content_node_id: "I_1",
+          },
+        },
+        { projectItemId: "PVTI_1" },
+      ],
     ];
 
     expect(new Set(cases.map(([eventName]) => eventName))).toEqual(
@@ -1059,6 +1304,55 @@ describe("conductor store and command parser", () => {
       status: "failed",
       attempts: 3,
       lastError: "Webhook delivery exceeded max attempts while processing",
+    });
+  });
+
+  test("webhook delivery bursts coalesce by pull request", async () => {
+    const store = new MemoryConductorStore();
+    await store.init();
+    for (const [deliveryId, key] of [
+      ["delivery-review", "review:R_1"],
+      ["delivery-comment", "review_comment:C_1"],
+    ] as const) {
+      await store.recordDelivery({
+        deliveryId,
+        eventName: "pull_request_review_comment",
+        receivedAt: new Date().toISOString(),
+        status: "received",
+        metadata: {
+          scope: {
+            owner: "octo",
+            repo: "demo",
+            prNumber: 2,
+            branch: "pi/7-fix-bug",
+            feedback: [
+              {
+                key,
+                kind: key.startsWith("review:") ? "review" : "review_comment",
+                body: key,
+              },
+            ],
+          },
+        },
+      });
+    }
+    const scopes: ReconcileScope[] = [];
+    const orchestrator = {
+      async reconcile(scope: ReconcileScope) {
+        scopes.push(scope);
+        return [];
+      },
+    } as unknown as ConductorOrchestrator;
+
+    await processPendingWebhookDeliveries({ store, orchestrator });
+
+    expect(scopes).toHaveLength(1);
+    expect(scopes[0]?.feedback).toHaveLength(2);
+    await expect(store.getDelivery("delivery-review")).resolves.toMatchObject({
+      status: "processed",
+    });
+    await expect(store.getDelivery("delivery-comment")).resolves.toMatchObject({
+      status: "processed",
     });
   });
 
@@ -1651,6 +1945,454 @@ describe("conductor adapters", () => {
     ).resolves.toEqual([]);
     expect(output.text()).toContain("WARN GitHub call failed");
     expect(output.text()).toContain("Unknown JSON field: conclusion");
+  });
+
+  test("gh PR feedback propagates rate-limit failures", async () => {
+    const client = new GhGitHubClient(async (_file, args) => {
+      throw new ConductorExecError({
+        file: "gh",
+        args,
+        durationMs: 50,
+        exitCode: 1,
+        stdout: "",
+        stderr: "GraphQL: API rate limit exceeded",
+        timedOut: false,
+      });
+    });
+
+    await expect(
+      client.listPullRequestFeedback("octo", "demo", 2, 7, [], {
+        number: 2,
+        url: "https://github.com/octo/demo/pull/2",
+        headRefName: "pi/7-fix-bug",
+        state: "OPEN",
+        isDraft: false,
+        mergeable: "MERGEABLE",
+      }),
+    ).rejects.toThrow("GraphQL: API rate limit exceeded");
+  });
+
+  test("GitHub rate-limit gate survives client restart", async () => {
+    const store = new MemoryConductorStore();
+    await store.init();
+    let currentTime = new Date("2026-07-05T00:00:00.000Z");
+    const now = () => currentTime;
+    let calls = 0;
+    const first = new GhGitHubClient(
+      async (_file, args) => {
+        calls += 1;
+        throw new ConductorExecError({
+          file: "gh",
+          args,
+          durationMs: 50,
+          exitCode: 1,
+          stdout: "",
+          stderr: "GraphQL: API rate limit exceeded",
+          timedOut: false,
+        });
+      },
+      undefined,
+      { store, now },
+    );
+
+    await expect(first.getProjectItem("PVTI_1")).rejects.toThrow("rate limit exceeded");
+    const second = new GhGitHubClient(
+      async () => {
+        calls += 1;
+        return { stdout: JSON.stringify({ data: { node: null } }), stderr: "" };
+      },
+      undefined,
+      { store, now },
+    );
+
+    await expect(second.getProjectItem("PVTI_1")).rejects.toThrow("rate limit");
+    expect(calls).toBe(1);
+    currentTime = new Date("2026-07-05T00:16:00.000Z");
+    await expect(second.getProjectItem("PVTI_1")).resolves.toBeUndefined();
+    expect(calls).toBe(2);
+  });
+
+  test("GraphQL budget closes the gate before the next call", async () => {
+    const store = new MemoryConductorStore();
+    await store.init();
+    let calls = 0;
+    const client = new GhGitHubClient(
+      async () => {
+        calls += 1;
+        return {
+          stdout: JSON.stringify({
+            data: {
+              node: null,
+              rateLimit: {
+                cost: 1,
+                limit: 5000,
+                remaining: 50,
+                resetAt: "2026-07-05T01:00:00.000Z",
+                used: 4950,
+              },
+            },
+          }),
+          stderr: "",
+        };
+      },
+      undefined,
+      { store, now: () => new Date("2026-07-05T00:00:00.000Z") },
+    );
+
+    await expect(client.getProjectItem("PVTI_1")).resolves.toBeUndefined();
+    await expect(client.getProjectItem("PVTI_2")).rejects.toThrow("rate limit");
+    expect(calls).toBe(1);
+  });
+
+  test("missing GraphQL rate-limit metadata does not fail the GitHub read", async () => {
+    const client = new GhGitHubClient(async () => ({
+      stdout: JSON.stringify({ data: { node: null, rateLimit: null } }),
+      stderr: "",
+    }));
+
+    await expect(client.getProjectItem("PVTI_1")).resolves.toBeUndefined();
+  });
+
+  test("GitHub client reads PR lifecycle and feedback in one GraphQL call", async () => {
+    const calls: string[][] = [];
+    const client = new GhGitHubClient(async (_file, args) => {
+      calls.push(args);
+      return {
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                number: 2,
+                url: "https://github.com/octo/demo/pull/2",
+                headRefName: "pi/7-fix-bug",
+                state: "OPEN",
+                isDraft: false,
+                mergedAt: null,
+                mergeable: "MERGEABLE",
+                mergeStateStatus: "CLEAN",
+                reviewDecision: "CHANGES_REQUESTED",
+                closingIssuesReferences: { nodes: [{ number: 7 }] },
+                comments: {
+                  nodes: [
+                    {
+                      id: "IC_1",
+                      body: "Please add a test",
+                      url: "https://github.com/octo/demo/pull/2#issuecomment-1",
+                      author: { login: "reviewer" },
+                    },
+                  ],
+                },
+                reviews: { nodes: [] },
+                reviewThreads: { nodes: [] },
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          contexts: {
+                            nodes: [
+                              {
+                                id: "CR_1",
+                                name: "test",
+                                status: "COMPLETED",
+                                conclusion: "FAILURE",
+                                detailsUrl: "https://github.com/octo/demo/actions/runs/1",
+                                startedAt: "2026-07-05T00:00:00Z",
+                                completedAt: "2026-07-05T00:01:00Z",
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+              issue: {
+                comments: {
+                  nodes: [
+                    {
+                      id: "IC_2",
+                      body: "Issue follow-up",
+                      url: "https://github.com/octo/demo/issues/7#issuecomment-2",
+                      author: { login: "maintainer" },
+                    },
+                  ],
+                },
+              },
+            },
+            rateLimit: {
+              cost: 1,
+              limit: 5000,
+              remaining: 4000,
+              resetAt: "2026-07-05T01:00:00Z",
+              used: 1000,
+            },
+          },
+        }),
+        stderr: "",
+      };
+    });
+
+    const snapshot = await client.getPullRequestSnapshot({
+      owner: "octo",
+      repo: "demo",
+      issueNumber: 7,
+      prNumber: 2,
+      branch: "pi/7-fix-bug",
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(snapshot.pullRequest).toMatchObject({ number: 2, linkedIssueNumbers: [7] });
+    expect(snapshot.feedback.map((feedback) => feedback.kind)).toEqual(
+      expect.arrayContaining(["check", "comment", "issue_comment", "review"]),
+    );
+    expect(snapshot.feedback).toContainEqual(
+      expect.objectContaining({
+        key: "check:test:failure:https://github.com/octo/demo/actions/runs/1",
+      }),
+    );
+  });
+
+  test("GitHub client retries transient unknown mergeability", async () => {
+    const responses = [
+      { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" },
+      { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" },
+      { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" },
+      { mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" },
+    ];
+    const delays: number[] = [];
+    let calls = 0;
+    const client = new GhGitHubClient(
+      async () => {
+        const mergeState = responses[calls];
+        calls += 1;
+        return {
+          stdout: JSON.stringify({
+            data: {
+              repository: {
+                pullRequest: {
+                  number: 2,
+                  url: "https://github.com/octo/demo/pull/2",
+                  headRefName: "pi/7-fix-bug",
+                  headRefOid: "head-2",
+                  baseRefName: "main",
+                  baseRefOid: "base-2",
+                  state: "OPEN",
+                  isDraft: false,
+                  ...mergeState,
+                },
+              },
+              rateLimit: {
+                cost: 1,
+                limit: 5000,
+                remaining: 4000,
+                resetAt: "2026-07-05T01:00:00Z",
+                used: 1000,
+              },
+            },
+          }),
+          stderr: "",
+        };
+      },
+      undefined,
+      {
+        sleep: (milliseconds) => {
+          delays.push(milliseconds);
+          return Promise.resolve();
+        },
+      },
+    );
+
+    await expect(
+      client.getPullRequestMergeState({
+        owner: "octo",
+        repo: "demo",
+        prNumber: 2,
+        branch: "pi/7-fix-bug",
+      }),
+    ).resolves.toMatchObject({
+      baseRefName: "main",
+      baseRefOid: "base-2",
+      headRefOid: "head-2",
+      mergeable: "CONFLICTING",
+      mergeStateStatus: "DIRTY",
+    });
+    expect(calls).toBe(4);
+    expect(delays).toEqual([2000, 5000, 15000]);
+  });
+
+  test("GitHub safety snapshot refreshes unknown mergeability", async () => {
+    let calls = 0;
+    const client = new GhGitHubClient(async () => {
+      calls += 1;
+      const pullRequest = {
+        number: 2,
+        url: "https://github.com/octo/demo/pull/2",
+        headRefName: "pi/7-fix-bug",
+        headRefOid: "head-2",
+        baseRefName: "main",
+        baseRefOid: "base-2",
+        state: "OPEN",
+        isDraft: false,
+        mergeable: calls === 1 ? "UNKNOWN" : "CONFLICTING",
+        mergeStateStatus: calls === 1 ? "UNKNOWN" : "DIRTY",
+        closingIssuesReferences: { nodes: [{ number: 7 }] },
+        comments: { nodes: [] },
+        reviews: { nodes: [] },
+        reviewThreads: { nodes: [] },
+        commits: { nodes: [] },
+      };
+      return {
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequest,
+              issue: { comments: { nodes: [] } },
+            },
+            rateLimit: {
+              cost: 1,
+              limit: 5000,
+              remaining: 4000,
+              resetAt: "2026-07-05T01:00:00Z",
+              used: 1000,
+            },
+          },
+        }),
+        stderr: "",
+      };
+    });
+
+    await expect(
+      client.getPullRequestSnapshot({
+        owner: "octo",
+        repo: "demo",
+        issueNumber: 7,
+        prNumber: 2,
+        branch: "pi/7-fix-bug",
+      }),
+    ).resolves.toMatchObject({
+      pullRequest: {
+        mergeable: "CONFLICTING",
+        mergeStateStatus: "DIRTY",
+        linkedIssueNumbers: [7],
+      },
+    });
+    expect(calls).toBe(2);
+  });
+
+  test("GitHub client falls back to paginated reads when snapshot feedback is truncated", async () => {
+    const calls: string[][] = [];
+    const client = new GhGitHubClient(async (_file, args) => {
+      calls.push(args);
+      if (args[0] === "api" && args[1] === "graphql") {
+        return {
+          stdout: JSON.stringify({
+            data: {
+              repository: {
+                pullRequest: {
+                  number: 2,
+                  url: "https://github.com/octo/demo/pull/2",
+                  headRefName: "pi/7-fix-bug",
+                  state: "OPEN",
+                  isDraft: false,
+                  mergeable: "MERGEABLE",
+                  mergeStateStatus: "CLEAN",
+                  closingIssuesReferences: { nodes: [{ number: 7 }] },
+                  comments: { nodes: [], pageInfo: { hasPreviousPage: true } },
+                  reviews: { nodes: [], pageInfo: { hasPreviousPage: false } },
+                  reviewThreads: { nodes: [], pageInfo: { hasPreviousPage: false } },
+                  commits: { nodes: [] },
+                },
+                issue: { comments: { nodes: [], pageInfo: { hasPreviousPage: false } } },
+              },
+              rateLimit: {
+                cost: 1,
+                limit: 5000,
+                remaining: 4000,
+                resetAt: "2026-07-05T01:00:00Z",
+                used: 1000,
+              },
+            },
+          }),
+          stderr: "",
+        };
+      }
+      if (args.includes("checks")) return { stdout: "[]", stderr: "" };
+      if (args.includes("view")) {
+        return {
+          stdout: JSON.stringify({ comments: [], reviewDecision: null, reviews: [] }),
+          stderr: "",
+        };
+      }
+      if (args.at(-1)?.startsWith("repos/octo/demo/pulls/2/comments") === true) {
+        return { stdout: "[]", stderr: "" };
+      }
+      if (args.at(-1)?.startsWith("repos/octo/demo/issues/7/comments") === true) {
+        return { stdout: "[]", stderr: "" };
+      }
+      throw new Error(`unexpected gh args: ${args.join(" ")}`);
+    });
+
+    await expect(
+      client.getPullRequestSnapshot({
+        owner: "octo",
+        repo: "demo",
+        issueNumber: 7,
+        prNumber: 2,
+        branch: "pi/7-fix-bug",
+      }),
+    ).resolves.toMatchObject({ feedback: [], feedbackComplete: true });
+    expect(calls).toHaveLength(5);
+  });
+
+  test("GitHub client resolves one Project V2 item", async () => {
+    let calls = 0;
+    const client = new GhGitHubClient(async () => {
+      calls += 1;
+      return {
+        stdout: JSON.stringify({
+          data: {
+            node: {
+              id: "PVTI_1",
+              project: {
+                id: "PVT_1",
+                number: 1,
+                owner: { login: "octo" },
+              },
+              content: {
+                id: "I_1",
+                number: 7,
+                state: "OPEN",
+                title: "Fix bug",
+                body: "Details",
+                url: "https://github.com/octo/demo/issues/7",
+                repository: { name: "demo", owner: { login: "octo" } },
+                labels: { nodes: [{ name: "ready-for-agent" }] },
+                assignees: { nodes: [{ login: "octo" }] },
+              },
+              fieldValues: {
+                nodes: [{ name: "Todo", field: { name: "Status" } }],
+              },
+            },
+            rateLimit: {
+              cost: 1,
+              limit: 5000,
+              remaining: 4000,
+              resetAt: "2026-07-05T01:00:00Z",
+              used: 1000,
+            },
+          },
+        }),
+        stderr: "",
+      };
+    });
+
+    await expect(client.getProjectItem("PVTI_1")).resolves.toMatchObject({
+      project: { id: "PVT_1", owner: "octo", number: 1 },
+      workItem: { projectItemId: "PVTI_1", issueNumber: 7, projectStatus: "Todo" },
+    });
+    expect(calls).toBe(1);
   });
 
   test("gh PR feedback retries empty-output read timeouts", async () => {
@@ -2256,6 +2998,257 @@ describe("conductor orchestrator", () => {
 
     await orchestrator.reconcile({ projectScan: false });
 
+    expect(github.listProjectItemsCount).toBe(0);
+  });
+
+  test("active-run rate limits abort reconciliation", async () => {
+    const tempDir = await createTempDir("conductor-rate-limit-propagation-");
+    const store = new MemoryConductorStore();
+    await store.init();
+    await store.createRun(runRecord({ status: "in_review", prNumber: 2 }));
+    const github = new FakeGitHub(workItem());
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: "pi/7-fix-bug",
+      state: "OPEN",
+      isDraft: false,
+    };
+    github.feedbackError = new Error("GitHub secondary rate limit");
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath: tempDir }), tempDir),
+      store,
+      github,
+      herdr: new FakeHerdr(),
+      cwd: tempDir,
+    });
+
+    await expect(orchestrator.reconcile({ projectScan: false })).rejects.toThrow(
+      "GitHub secondary rate limit",
+    );
+  });
+
+  test("active-run safety reconciliation reads one GitHub snapshot", async () => {
+    const tempDir = await createTempDir("conductor-pr-snapshot-");
+    const store = new MemoryConductorStore();
+    await store.init();
+    await store.createRun(runRecord({ status: "in_review", prNumber: 2 }));
+    const github = new FakeGitHub(workItem());
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: "pi/7-fix-bug",
+      state: "OPEN",
+      isDraft: false,
+    };
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath: tempDir }), tempDir),
+      store,
+      github,
+      herdr: new FakeHerdr(),
+      cwd: tempDir,
+    });
+
+    await orchestrator.reconcile({ projectScan: false });
+
+    expect(github.pullRequestSnapshotCount).toBe(1);
+    expect(github.findPullRequestByBranchCount).toBe(0);
+  });
+
+  test("merge conflict episodes resolve and rearm", async () => {
+    const tempDir = await createTempDir("conductor-merge-conflict-episode-");
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({
+      status: "in_review",
+      prNumber: 2,
+      prUrl: "https://github.com/octo/demo/pull/2",
+    });
+    await store.createRun(run);
+    const github = new FakeGitHub(workItem());
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: run.branch,
+      headRefOid: "head-2",
+      baseRefName: "main",
+      baseRefOid: "base-2",
+      state: "OPEN",
+      isDraft: false,
+      mergeable: "CONFLICTING",
+      mergeStateStatus: "DIRTY",
+    };
+    const herdr = new FakeHerdr();
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath: tempDir }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: tempDir,
+      now: () => new Date("2026-07-05T00:00:00.000Z"),
+    });
+    const scope = readWebhookReconcileScope("pull_request", {
+      action: "synchronize",
+      repository: { full_name: "octo/demo" },
+      pull_request: {
+        number: 2,
+        html_url: github.pr.url,
+        state: "open",
+        draft: false,
+        head: { ref: run.branch, sha: "head-2" },
+        base: { ref: "main", sha: "base-2" },
+      },
+    });
+    if (scope === undefined) throw new Error("Expected pull request webhook scope");
+
+    await orchestrator.reconcile(scope);
+    await orchestrator.reconcile(scope);
+
+    expect(herdr.sent).toHaveLength(1);
+    await expect(store.getRun(run.runId)).resolves.toMatchObject({
+      status: "in_progress",
+      mergeConflict: {
+        fingerprint: "2:base-2:head-2",
+        baseRefName: "main",
+      },
+    });
+
+    github.pr = {
+      ...github.pr,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+    };
+    await orchestrator.reconcile(scope);
+
+    const resolved = await store.getRun(run.runId);
+    expect(resolved).toMatchObject({ status: "in_review" });
+    expect(resolved).not.toHaveProperty("mergeConflict");
+
+    github.pr = {
+      ...github.pr,
+      mergeable: "CONFLICTING",
+      mergeStateStatus: "DIRTY",
+    };
+    await orchestrator.reconcile(scope);
+
+    expect(herdr.sent).toHaveLength(2);
+    expect(herdr.sent[0]?.message).toContain("Fetch main");
+    await expect(store.getRun(run.runId)).resolves.toMatchObject({
+      status: "in_progress",
+      mergeConflict: { fingerprint: "2:base-2:head-2" },
+    });
+    expect(github.statusUpdates).toEqual(["In Progress", "Review", "In Progress"]);
+    await expect(store.listEvents(run.runId)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "merge_conflict_detected" }),
+        expect.objectContaining({ kind: "merge_conflict_resolved" }),
+      ]),
+    );
+  });
+
+  test("base branch push probes active pull request mergeability", async () => {
+    const tempDir = await createTempDir("conductor-base-push-mergeability-");
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({
+      status: "in_review",
+      prNumber: 2,
+      prUrl: "https://github.com/octo/demo/pull/2",
+    });
+    await store.createRun(run);
+    const github = new FakeGitHub(workItem());
+    github.pr = {
+      number: 2,
+      url: run.prUrl,
+      headRefName: run.branch,
+      headRefOid: "head-2",
+      baseRefName: run.baseRef,
+      baseRefOid: "base-2",
+      state: "OPEN",
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+    };
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath: tempDir }), tempDir),
+      store,
+      github,
+      herdr: new FakeHerdr(),
+      cwd: tempDir,
+    });
+    const scope = readWebhookReconcileScope("push", {
+      ref: "refs/heads/main",
+      repository: { full_name: "octo/demo" },
+    });
+
+    await orchestrator.reconcile(scope);
+
+    expect(github.pullRequestMergeStateCount).toBe(1);
+    expect(github.pullRequestSnapshotCount).toBe(0);
+  });
+
+  test("pull request webhook probes its exact PR before association", async () => {
+    const tempDir = await createTempDir("conductor-pr-webhook-mergeability-");
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord();
+    await store.createRun(run);
+    const github = new FakeGitHub(workItem());
+    github.pr = {
+      number: 2,
+      url: "https://github.com/octo/demo/pull/2",
+      headRefName: run.branch,
+      headRefOid: "head-2",
+      baseRefName: run.baseRef,
+      baseRefOid: "base-2",
+      state: "OPEN",
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+    };
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath: tempDir }), tempDir),
+      store,
+      github,
+      herdr: new FakeHerdr(),
+      cwd: tempDir,
+    });
+    const scope = readWebhookReconcileScope("pull_request", {
+      action: "opened",
+      repository: { full_name: "octo/demo" },
+      pull_request: {
+        number: 2,
+        html_url: github.pr.url,
+        state: "open",
+        draft: false,
+        head: { ref: run.branch, sha: "head-2" },
+        base: { ref: run.baseRef, sha: "base-2" },
+      },
+    });
+
+    await orchestrator.reconcile(scope);
+
+    expect(github.pullRequestMergeStateInputs).toEqual([
+      expect.objectContaining({ prNumber: 2, branch: run.branch }),
+    ]);
+  });
+
+  test("project item webhook resolves only the changed work item", async () => {
+    const tempDir = await createTempDir("conductor-project-item-scope-");
+    const store = new MemoryConductorStore();
+    await store.init();
+    const github = new FakeGitHub(workItem({ labels: [], assignees: [] }));
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath: tempDir }), tempDir),
+      store,
+      github,
+      herdr: new FakeHerdr(),
+      cwd: tempDir,
+    });
+
+    await orchestrator.reconcile({ projectItemId: "PVTI_1" });
+
+    expect(github.getProjectItemCount).toBe(1);
     expect(github.listProjectItemsCount).toBe(0);
   });
 
@@ -3106,6 +4099,44 @@ describe("conductor orchestrator", () => {
     expect(github.listProjectItemsCount).toBe(0);
     expect(github.findPullRequestByBranchCount).toBe(0);
   });
+
+  test("scoped webhook feedback routes without a GitHub snapshot read", async () => {
+    const tempDir = await createTempDir("conductor-scoped-feedback-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({ status: "in_review", prNumber: 2 });
+    await store.createRun(run);
+    const github = new FakeGitHub(workItem());
+    const herdr = new FakeHerdr();
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github,
+      herdr,
+      cwd: repoPath,
+    });
+
+    await orchestrator.reconcile({
+      owner: "octo",
+      repo: "demo",
+      prNumber: 2,
+      branch: run.branch,
+      feedback: [
+        {
+          key: "review_comment:PRRC_1",
+          kind: "review_comment",
+          body: "Please cover the failure path",
+          reactionSubjectId: "PRRC_1",
+        },
+      ],
+    });
+
+    expect(github.pullRequestSnapshotCount).toBe(0);
+    expect(herdr.sent).toHaveLength(1);
+    expect(herdr.sent[0]?.message).toContain("Please cover the failure path");
+  });
 });
 
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
@@ -3190,9 +4221,19 @@ class FakeGitHub implements GitHubClient {
   readonly reactions: Array<{ action: "seen" | "handled"; subjectId: string | undefined }> = [];
   failReactions = false;
   listProjectItemsCount = 0;
+  getProjectItemCount = 0;
   findPullRequestByBranchCount = 0;
+  pullRequestSnapshotCount = 0;
+  pullRequestMergeStateCount = 0;
+  pullRequestMergeStateInputs: Array<{
+    owner: string;
+    repo: string;
+    prNumber?: number;
+    branch: string;
+  }> = [];
   pr: PullRequestSummary | undefined;
   feedback: PullRequestFeedback[] = [];
+  feedbackError: Error | undefined;
 
   constructor(private readonly item: WorkItem) {}
 
@@ -3213,6 +4254,14 @@ class FakeGitHub implements GitHubClient {
     return [this.item];
   }
 
+  async getProjectItem(): Promise<ProjectItemSnapshot> {
+    this.getProjectItemCount += 1;
+    return {
+      project: { id: "PVT_1", owner: "octo", number: 1 },
+      workItem: this.item,
+    };
+  }
+
   async updateProjectStatus(
     _repo: unknown,
     _workItem: WorkItem,
@@ -3231,7 +4280,25 @@ class FakeGitHub implements GitHubClient {
     return this.pr;
   }
 
+  async getPullRequestSnapshot(): Promise<PullRequestSnapshot> {
+    this.pullRequestSnapshotCount += 1;
+    if (this.feedbackError !== undefined) throw this.feedbackError;
+    return { pullRequest: this.pr, feedback: this.feedback };
+  }
+
+  async getPullRequestMergeState(input: {
+    owner: string;
+    repo: string;
+    prNumber?: number;
+    branch: string;
+  }): Promise<PullRequestSummary | undefined> {
+    this.pullRequestMergeStateCount += 1;
+    this.pullRequestMergeStateInputs.push(input);
+    return this.pr;
+  }
+
   async listPullRequestFeedback(): Promise<PullRequestFeedback[]> {
+    if (this.feedbackError !== undefined) throw this.feedbackError;
     return this.feedback;
   }
 

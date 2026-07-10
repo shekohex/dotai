@@ -63,6 +63,7 @@ export const ManagedRepositoryConfigSchema = Type.Object({
   priorityField: Type.Optional(Type.String()),
   statusOptions: Type.Optional(LifecycleStatusMappingSchema),
   worktreeHooks: Type.Optional(WorktreeHooksSchema),
+  webhookEnabled: Type.Optional(Type.Boolean()),
 });
 
 export const GlobalConductorConfigSchema = Type.Object({
@@ -71,6 +72,8 @@ export const GlobalConductorConfigSchema = Type.Object({
   stateRoot: Type.Optional(Type.String()),
   pollingIntervalSeconds: Type.Optional(Type.Number({ minimum: 1 })),
   projectScanIntervalSeconds: Type.Optional(Type.Number({ minimum: 1 })),
+  webhookPollingIntervalSeconds: Type.Optional(Type.Number({ minimum: 1 })),
+  webhookProjectScanIntervalSeconds: Type.Optional(Type.Number({ minimum: 1 })),
   webhook: Type.Optional(WebhookConfigSchema),
   repositories: Type.Array(ManagedRepositoryConfigSchema),
 });
@@ -280,6 +283,9 @@ export function validateGlobalConfig(config: GlobalConductorConfig): string[] {
     if (repo.project.owner.startsWith("TODO")) errors.push(`${key}: project.owner is TODO`);
     if (repo.project.number < 1) errors.push(`${key}: project.number must be set`);
     if (repo.repoPath.trim().length === 0) errors.push(`${key}: repoPath is empty`);
+    if (repo.webhookEnabled === true && config.webhook === undefined) {
+      errors.push(`${key}: webhookEnabled requires global webhook listener configuration`);
+    }
     if (repo.branchTemplate !== undefined) {
       try {
         validateBranchTemplate(repo.branchTemplate);
@@ -347,6 +353,12 @@ export async function initConfig(
       ...(existing?.projectScanIntervalSeconds === undefined
         ? {}
         : { projectScanIntervalSeconds: existing.projectScanIntervalSeconds }),
+      ...(existing?.webhookPollingIntervalSeconds === undefined
+        ? {}
+        : { webhookPollingIntervalSeconds: existing.webhookPollingIntervalSeconds }),
+      ...(existing?.webhookProjectScanIntervalSeconds === undefined
+        ? {}
+        : { webhookProjectScanIntervalSeconds: existing.webhookProjectScanIntervalSeconds }),
       ...(existing?.stateRoot === undefined ? {} : { stateRoot: existing.stateRoot }),
       ...(existing?.webhook === undefined ? {} : { webhook: existing.webhook }),
       repositories: nextRepositories,

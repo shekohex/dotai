@@ -96,7 +96,7 @@ Useful context:
 
 - `feedback.kind`, `feedback.key`, `feedback.body`, `feedback.url`, `feedback.author`.
 - `feedback.check`, `feedback.review`, `feedback.review_comment`, `feedback.comment`, `feedback.merge_conflict`.
-- `github.pull_request.number`, `github.pull_request.url`, `github.pull_request.head_ref`, `github.pull_request.state`, `github.pull_request.draft`, `github.pull_request.merged_at`.
+- `github.pull_request.number`, `github.pull_request.url`, `github.pull_request.head_ref`, `github.pull_request.head_oid`, `github.pull_request.base_ref`, `github.pull_request.base_oid`, `github.pull_request.state`, `github.pull_request.draft`, `github.pull_request.merged_at`.
 - `github.review`, `github.review_comment`, `github.comment`, `github.check`, `github.merge_conflict` mirror structured feedback when available.
 - `github.issue.number`, `github.issue.title`, `github.issue.url`, `github.repository`, `conductor.runId`, `conductor.branch`, `conductor.worktreePath`, `conductor.status`, `conductor.commentMarker`.
 
@@ -106,7 +106,7 @@ Conductor also updates reactable GitHub feedback with best-effort progress react
 
 Automated dispatch only starts open issues. If reconcile sees a closed project item that still has an active local run, Conductor first checks whether the run's branch has a merged PR. Merged PR finalization marks it done; otherwise Conductor blocks that stale run and stops its Herdr pane best-effort instead of recovering or relaunching it.
 
-GitHub merge conflicts route as `feedback.kind == 'merge_conflict'`; customize that text with a normal `followUpRules` entry. After a PR merges, Conductor closes the owned Herdr pane, cleans the run worktree, and best-effort fetches/rebases the source repo's local base branch only when that checkout is already on the base branch and clean.
+GitHub merge conflicts route as `feedback.kind == 'merge_conflict'`; customize that text with a normal `followUpRules` entry. Conflict detection moves the run to In Progress, resolution returns it to Review, and later conflicts route again. Pull request changes and pushes to an active PR's base branch trigger targeted mergeability probes; GitHub `UNKNOWN` results retry after 2, 5, and 15 seconds. After a PR merges, Conductor closes the owned Herdr pane, cleans the run worktree, and best-effort fetches/rebases the source repo's local base branch only when that checkout is already on the base branch and clean.
 
 Example:
 
@@ -167,7 +167,7 @@ Hook environment: `REPO_ROOT`, `WORKTREE_PATH`, `BRANCH`, `PI_CONDUCTOR_OWNER`, 
 
 ## Webhook Notes
 
-If user wants webhooks, configure `webhook` in global config and tell them the GitHub settings: payload URL `https://<public-host><path>`, content type `application/json`, secret matching config, SSL enabled, and selected events for Issues, Issue comments, Pull requests, Pull request reviews/comments, Check runs, Check suites, Statuses, and Workflow runs. Polling remains safety net.
+If user wants webhooks, configure `webhook` in global config and tell them the GitHub settings: payload URL `https://<public-host><path>`, content type `application/json`, secret matching config, SSL enabled, and selected events for Issues, Issue comments, Pull requests, Pull request reviews/comments, Check runs, Check suites, Statuses, Workflow runs, and Pushes. Push events are used only for active PR base-branch mergeability refreshes. Polling remains safety net.
 
 ## Verification
 

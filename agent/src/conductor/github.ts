@@ -1,7 +1,6 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
-import { asRecord, readNumber, readString } from "../utils/unknown-data.js";
 import type { ManagedRepositoryConfig } from "./config.js";
 import {
   findManagedRepository,
@@ -19,6 +18,22 @@ import {
 import { execLoggedGh, isNoChecksReportedError } from "./github-call-logging.js";
 import { parseJsonValue } from "./json.js";
 import {
+  isMergeabilityPending,
+  parsePullRequestMergeStateGraphql,
+  pullRequestMergeStateQuery,
+} from "./github-merge-state.js";
+import {
+  parsePullRequestSnapshotGraphql,
+  pullRequestSnapshotQuery,
+  readGraphqlRateLimit,
+} from "./github-snapshot.js";
+import {
+  parseProjectItemGraphql,
+  parseProjectItemsGraphqlPage,
+  parseProjectMetadataGraphql,
+} from "./github-projects.js";
+import {
+  PROJECT_ITEM_QUERY,
   projectItemsQuery,
   projectMetadataQuery,
   UPDATE_PROJECT_STATUS_MUTATION,
@@ -31,16 +46,21 @@ import type {
   CommandExec,
   GitHubClient,
   GitHubRepository,
+  ProjectItemSnapshot,
   ProjectMetadata,
+  PullRequestSnapshot,
   PullRequestSummary,
 } from "./github-types.js";
 import { mergeConflictFeedback } from "./merge-conflict-feedback.js";
 import { noopConductorLogger, type ConductorLogger } from "./logging.js";
 import { projectKey } from "./project-key.js";
-import { type WorkItem, WorkItemSchema } from "./store/types.js";
+import { GitHubRateLimitGate, isRateLimitError } from "./rate-limit.js";
+import type { ConductorStore } from "./store/types.js";
+import type { WorkItem } from "./store/types.js";
 const GH_COMMAND_TIMEOUT_MS = 30_000;
 const CONDUCTOR_COMMENT_MARKER = "<!-- pi-conductor -->";
 const PROJECT_METADATA_CACHE_TTL_MS = 5 * 60_000;
+const MERGEABILITY_RETRY_DELAYS_MS = [2_000, 5_000, 15_000] as const;
 type ProjectOwnerKind = "organization" | "user";
 type ProjectMetadataCacheEntry = { metadata: ProjectMetadata; expiresAtMs: number };
 
@@ -52,11 +72,13 @@ const GhRepoViewSchema = Type.Object({
   nameWithOwner: Type.String(),
   defaultBranchRef: Type.Object({ name: Type.String() }),
 });
-const GhGraphqlResponseSchema = Type.Object({ data: Type.Record(Type.String(), Type.Unknown()) });
 const GhPullRequestSchema = Type.Object({
   number: Type.Number(),
   url: Type.String(),
   headRefName: Type.String(),
+  headRefOid: Type.Optional(Type.String()),
+  baseRefName: Type.Optional(Type.String()),
+  baseRefOid: Type.Optional(Type.String()),
   state: Type.String(),
   isDraft: Type.Boolean(),
   mergedAt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -74,12 +96,21 @@ export {
   parseGhReviewComments,
 } from "./github-feedback.js";
 export { parseGhIssueView } from "./github-issue-view.js";
+export { reconcileMergeConflict } from "./merge-conflict-reconcile.js";
+export { isRateLimitError } from "./rate-limit.js";
+export {
+  parseProjectItemsGraphql,
+  parseProjectItemsGraphqlPage,
+  parseProjectMetadataGraphql,
+} from "./github-projects.js";
 export type { PullRequestFeedback } from "./github-feedback.js";
 export type {
   CommandExec,
   GitHubClient,
   GitHubRepository,
+  ProjectItemSnapshot,
   ProjectMetadata,
+  PullRequestSnapshot,
   PullRequestSummary,
 } from "./github-types.js";
 
@@ -101,22 +132,31 @@ export class GhGitHubClient implements GitHubClient {
   private readonly repositories = new Map<string, GitHubRepository>();
   private readonly projectMetadata = new Map<string, ProjectMetadataCacheEntry>();
   private readonly projectOwnerKinds = new Map<string, ProjectOwnerKind>();
+  private readonly rateLimitGate: GitHubRateLimitGate;
+  private readonly sleep: (milliseconds: number) => Promise<void>;
 
   constructor(
     private readonly exec: CommandExec = execCommand,
     private readonly logger: ConductorLogger = noopConductorLogger,
-  ) {}
+    options: {
+      host?: string;
+      now?: () => Date;
+      sleep?: (milliseconds: number) => Promise<void>;
+      store?: Pick<ConductorStore, "getGitHubSyncState" | "setGitHubSyncState">;
+    } = {},
+  ) {
+    this.rateLimitGate = new GitHubRateLimitGate(options);
+    this.sleep =
+      options.sleep ??
+      ((milliseconds) =>
+        new Promise((resolve) => {
+          setTimeout(resolve, milliseconds);
+        }));
+  }
 
   async getAuthenticatedUser(): Promise<string> {
     if (this.authenticatedUser !== undefined) return this.authenticatedUser;
-    await execLoggedGh({
-      action: "gh auth status",
-      args: ["auth", "status"],
-      cwd: undefined,
-      exec: this.exec,
-      logger: this.logger,
-      timeoutMs: GH_COMMAND_TIMEOUT_MS,
-    });
+    await this.gh(["auth", "status"], undefined, "gh auth status");
     const stdout = await this.gh(["api", "user"], undefined, "gh api user");
     this.authenticatedUser = parseGhUser(stdout).login;
     return this.authenticatedUser;
@@ -173,29 +213,38 @@ export class GhGitHubClient implements GitHubClient {
     return projectItem;
   }
 
+  async getProjectItem(projectItemId: string): Promise<ProjectItemSnapshot | undefined> {
+    const stdout = await this.gh(
+      ["api", "graphql", "-f", `query=${PROJECT_ITEM_QUERY}`, "-F", `itemId=${projectItemId}`],
+      undefined,
+      "gh project item graphql",
+    );
+    await this.rateLimitGate.recordGraphqlBudget(readGraphqlRateLimit(stdout));
+    return parseProjectItemGraphql(stdout);
+  }
+
   async listProjectItems(repo: ManagedRepositoryConfig): Promise<WorkItem[]> {
     const items: WorkItem[] = [];
     let cursor: string | undefined;
     const ownerKind = await this.resolveProjectOwnerKind(repo.project.owner, repo.repoPath);
     while (true) {
-      const page = parseProjectItemsGraphqlPage(
-        await this.gh(
-          [
-            "api",
-            "graphql",
-            "-f",
-            `query=${projectItemsQuery(ownerKind)}`,
-            "-F",
-            `owner=${repo.project.owner}`,
-            "-F",
-            `number=${repo.project.number}`,
-            ...(cursor === undefined ? [] : ["-F", `cursor=${cursor}`]),
-          ],
-          repo.repoPath,
-          "gh project items graphql",
-        ),
-        repo.statusField ?? "Status",
+      const stdout = await this.gh(
+        [
+          "api",
+          "graphql",
+          "-f",
+          `query=${projectItemsQuery(ownerKind)}`,
+          "-F",
+          `owner=${repo.project.owner}`,
+          "-F",
+          `number=${repo.project.number}`,
+          ...(cursor === undefined ? [] : ["-F", `cursor=${cursor}`]),
+        ],
+        repo.repoPath,
+        "gh project items graphql",
       );
+      await this.rateLimitGate.recordGraphqlBudget(readGraphqlRateLimit(stdout));
+      const page = parseProjectItemsGraphqlPage(stdout, repo.statusField ?? "Status");
       items.push(...page.items);
       if (!page.hasNextPage || page.endCursor === undefined) return items;
       cursor = page.endCursor;
@@ -268,13 +317,100 @@ export class GhGitHubClient implements GitHubClient {
           "--state",
           "all",
           "--json",
-          "number,url,headRefName,state,isDraft,mergedAt,mergeable,mergeStateStatus,closingIssuesReferences",
+          "number,url,headRefName,headRefOid,baseRefName,baseRefOid,state,isDraft,mergedAt,mergeable,mergeStateStatus,closingIssuesReferences",
         ],
         undefined,
         "gh pr list",
       ),
     );
     return selectPullRequestSummary(parsed);
+  }
+
+  async getPullRequestSnapshot(input: {
+    owner: string;
+    repo: string;
+    issueNumber: number;
+    prNumber?: number;
+    branch: string;
+  }): Promise<PullRequestSnapshot> {
+    const selector = input.prNumber === undefined ? "branch" : "number";
+    const stdout = await this.gh(
+      [
+        "api",
+        "graphql",
+        "-f",
+        `query=${pullRequestSnapshotQuery(selector)}`,
+        "-F",
+        `owner=${input.owner}`,
+        "-F",
+        `repo=${input.repo}`,
+        "-F",
+        `issueNumber=${input.issueNumber}`,
+        "-F",
+        input.prNumber === undefined ? `branch=${input.branch}` : `prNumber=${input.prNumber}`,
+      ],
+      undefined,
+      "gh pull request snapshot graphql",
+    );
+    await this.rateLimitGate.recordGraphqlBudget(readGraphqlRateLimit(stdout));
+    let snapshot = parsePullRequestSnapshotGraphql(stdout);
+    if (isMergeabilityPending(snapshot.pullRequest)) {
+      const mergeState = await this.getPullRequestMergeState(input);
+      if (snapshot.pullRequest !== undefined && mergeState !== undefined) {
+        snapshot = {
+          ...snapshot,
+          pullRequest: { ...snapshot.pullRequest, ...mergeState },
+        };
+      }
+    }
+    if (snapshot.feedbackComplete === false && snapshot.pullRequest !== undefined) {
+      snapshot = {
+        ...snapshot,
+        feedback: await this.listPullRequestFeedback(
+          input.owner,
+          input.repo,
+          snapshot.pullRequest.number,
+          input.issueNumber,
+          [],
+          snapshot.pullRequest,
+        ),
+        feedbackComplete: true,
+      };
+    }
+    return snapshot;
+  }
+
+  async getPullRequestMergeState(input: {
+    owner: string;
+    repo: string;
+    prNumber?: number;
+    branch: string;
+  }): Promise<PullRequestSummary | undefined> {
+    const selector = input.prNumber === undefined ? "branch" : "number";
+    let pullRequest: PullRequestSummary | undefined;
+    for (let attempt = 0; attempt <= MERGEABILITY_RETRY_DELAYS_MS.length; attempt += 1) {
+      if (attempt > 0) await this.sleep(MERGEABILITY_RETRY_DELAYS_MS[attempt - 1] ?? 0);
+      const stdout = await this.gh(
+        [
+          "api",
+          "graphql",
+          "-f",
+          `query=${pullRequestMergeStateQuery(selector)}`,
+          "-F",
+          `owner=${input.owner}`,
+          "-F",
+          `repo=${input.repo}`,
+          "-F",
+          input.prNumber === undefined ? `branch=${input.branch}` : `prNumber=${input.prNumber}`,
+        ],
+        undefined,
+        "gh pull request merge state graphql",
+      );
+      await this.rateLimitGate.recordGraphqlBudget(readGraphqlRateLimit(stdout));
+      pullRequest = parsePullRequestMergeStateGraphql(stdout);
+      if (!isMergeabilityPending(pullRequest)) return pullRequest;
+    }
+    return pullRequest;
   }
 
   async listPullRequestFeedback(
@@ -344,7 +480,7 @@ export class GhGitHubClient implements GitHubClient {
           "--repo",
           `${owner}/${repo}`,
           "--json",
-          "number,url,headRefName,state,isDraft,mergedAt,mergeable,mergeStateStatus,closingIssuesReferences",
+          "number,url,headRefName,headRefOid,baseRefName,baseRefOid,state,isDraft,mergedAt,mergeable,mergeStateStatus,closingIssuesReferences",
         ],
         undefined,
         "gh pr view merge state",
@@ -388,6 +524,7 @@ export class GhGitHubClient implements GitHubClient {
       "gh project metadata graphql",
     );
     const metadata = parseProjectMetadataGraphql(stdout);
+    await this.rateLimitGate.recordGraphqlBudget(readGraphqlRateLimit(stdout));
     this.projectMetadata.set(key, {
       metadata,
       expiresAtMs: Date.now() + PROJECT_METADATA_CACHE_TTL_MS,
@@ -487,7 +624,8 @@ export class GhGitHubClient implements GitHubClient {
   ): Promise<PullRequestFeedback[]> {
     try {
       return await read();
-    } catch {
+    } catch (error) {
+      if (isRateLimitError(error)) throw error;
       return [];
     }
   }
@@ -498,16 +636,22 @@ export class GhGitHubClient implements GitHubClient {
     _action: string,
     isExpectedFailure?: (error: unknown) => boolean,
   ): Promise<string> {
-    const result = await execLoggedGh({
-      action: _action,
-      args,
-      cwd,
-      exec: this.exec,
-      isExpectedFailure,
-      logger: this.logger,
-      timeoutMs: GH_COMMAND_TIMEOUT_MS,
-    });
-    return result.stdout.trim();
+    await this.rateLimitGate.assertOpen();
+    try {
+      const result = await execLoggedGh({
+        action: _action,
+        args,
+        cwd,
+        exec: this.exec,
+        isExpectedFailure,
+        logger: this.logger,
+        timeoutMs: GH_COMMAND_TIMEOUT_MS,
+      });
+      return result.stdout.trim();
+    } catch (error) {
+      await this.rateLimitGate.recordFailure(error);
+      throw error;
+    }
   }
 }
 
@@ -575,6 +719,9 @@ function normalizePullRequestSummary(pr: Static<typeof GhPullRequestSchema>): Pu
     number: pr.number,
     url: pr.url,
     headRefName: pr.headRefName,
+    ...(pr.headRefOid === undefined ? {} : { headRefOid: pr.headRefOid }),
+    ...(pr.baseRefName === undefined ? {} : { baseRefName: pr.baseRefName }),
+    ...(pr.baseRefOid === undefined ? {} : { baseRefOid: pr.baseRefOid }),
     state: pr.state,
     isDraft: pr.isDraft,
     ...(pr.mergedAt === undefined || pr.mergedAt === null ? {} : { mergedAt: pr.mergedAt }),
@@ -594,63 +741,6 @@ function hasMergeabilityFields(pr: PullRequestSummary | undefined): pr is PullRe
 
 function repositoryCacheKey(owner: string, repo: string): string {
   return `${owner.toLowerCase()}/${repo.toLowerCase()}`;
-}
-
-export function parseProjectItemsGraphql(stdout: string, statusField = "Status"): WorkItem[] {
-  return parseProjectItemsGraphqlPage(stdout, statusField).items;
-}
-
-export function parseProjectItemsGraphqlPage(
-  stdout: string,
-  statusField = "Status",
-): { items: WorkItem[]; hasNextPage: boolean; endCursor?: string } {
-  const response = Value.Parse(
-    GhGraphqlResponseSchema,
-    parseJsonValue(stdout, "gh project items graphql"),
-  );
-  const project = readProject(response.data);
-  const projectId = readString(project.id);
-  const items = asRecord(project.items);
-  const itemNodes = readNodes(items?.nodes);
-  const pageInfo = asRecord(items?.pageInfo);
-  if (projectId === undefined) throw new Error("Project GraphQL response missing project id");
-
-  return {
-    items: itemNodes.flatMap((node) => normalizeProjectItem(node, projectId, statusField)),
-    hasNextPage: pageInfo?.hasNextPage === true,
-    ...(readString(pageInfo?.endCursor) === undefined
-      ? {}
-      : { endCursor: readString(pageInfo?.endCursor) }),
-  };
-}
-
-export function parseProjectMetadataGraphql(stdout: string): ProjectMetadata {
-  const response = Value.Parse(
-    GhGraphqlResponseSchema,
-    parseJsonValue(stdout, "gh project metadata graphql"),
-  );
-  const project = readProject(response.data);
-  const projectId = readString(project.id);
-  if (projectId === undefined) throw new Error("Project GraphQL response missing project id");
-
-  const fields = new Map<string, { fieldId: string; options: Map<string, string> }>();
-  for (const fieldNode of readNodes(asRecord(project.fields)?.nodes)) {
-    const field = asRecord(fieldNode);
-    const name = readString(field?.name);
-    const fieldId = readString(field?.id);
-    if (name === undefined || fieldId === undefined) continue;
-    const options = new Map<string, string>();
-    const optionNodes = Array.isArray(field?.options) ? field.options : [];
-    for (const optionNode of optionNodes) {
-      const option = asRecord(optionNode);
-      const optionName = readString(option?.name);
-      const optionId = readString(option?.id);
-      if (optionName !== undefined && optionId !== undefined) options.set(optionName, optionId);
-    }
-    fields.set(name, { fieldId, options });
-  }
-
-  return { projectId, fields };
 }
 
 function resolveReferenceRepository(
@@ -676,94 +766,6 @@ function resolveReferenceRepository(
   return repo;
 }
 
-function readProject(data: Record<string, unknown>): Record<string, unknown> {
-  const organizationProject = asRecord(asRecord(data.organization)?.projectV2);
-  if (organizationProject !== undefined) return organizationProject;
-  const userProject = asRecord(asRecord(data.user)?.projectV2);
-  if (userProject !== undefined) return userProject;
-  throw new Error("Project GraphQL response did not include organization or user projectV2");
-}
-
-function normalizeProjectItem(node: unknown, projectId: string, statusField: string): WorkItem[] {
-  const item = asRecord(node);
-  const content = asRecord(item?.content);
-  if (item === undefined || content === undefined) return [];
-  const repository = asRecord(content.repository);
-  const owner = readString(asRecord(repository?.owner)?.login);
-  const repo = readString(repository?.name);
-  const issueNumber = readNumber(content.number);
-  const issueState = readString(content.state);
-  const title = readString(content.title);
-  const url = readString(content.url);
-  const projectItemId = readString(item.id);
-  if (
-    owner === undefined ||
-    repo === undefined ||
-    issueNumber === undefined ||
-    (issueState !== "OPEN" && issueState !== "CLOSED") ||
-    title === undefined ||
-    url === undefined ||
-    projectItemId === undefined
-  ) {
-    return [];
-  }
-
-  return [
-    Value.Parse(WorkItemSchema, {
-      projectItemId,
-      projectId,
-      owner,
-      repo,
-      issueId: readString(content.id),
-      issueNumber,
-      issueState,
-      issueUrl: url,
-      title,
-      body: readString(content.body) ?? "",
-      labels: readNameNodes(asRecord(content.labels)?.nodes),
-      assignees: readLoginNodes(asRecord(content.assignees)?.nodes),
-      projectStatus: readProjectStatus(item, statusField),
-      projectFields: readProjectFields(item),
-    }),
-  ];
-}
-
-function readProjectStatus(item: Record<string, unknown>, statusField: string): string | undefined {
-  const fields = readProjectFields(item);
-  const status = fields[statusField];
-  return typeof status === "string" ? status : undefined;
-}
-
-function readProjectFields(item: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const fieldValueNode of readNodes(asRecord(item.fieldValues)?.nodes)) {
-    const fieldValue = asRecord(fieldValueNode);
-    const fieldName = readString(asRecord(fieldValue?.field)?.name);
-    if (fieldName === undefined) continue;
-    const value =
-      readString(fieldValue?.name) ??
-      readString(fieldValue?.text) ??
-      readString(fieldValue?.date) ??
-      readNumber(fieldValue?.number);
-    if (value !== undefined) result[fieldName] = value;
-  }
-  return result;
-}
-
-function readNameNodes(value: unknown): string[] {
-  return readNodes(value).flatMap((node) => {
-    const name = readString(asRecord(node)?.name);
-    return name === undefined ? [] : [name];
-  });
-}
-
-function readLoginNodes(value: unknown): string[] {
-  return readNodes(value).flatMap((node) => {
-    const login = readString(asRecord(node)?.login);
-    return login === undefined ? [] : [login];
-  });
-}
-
 function selectPullRequestSummary(prs: PullRequestSummary[]): PullRequestSummary | undefined {
   return (
     prs.find((pr) => pr.mergedAt !== undefined) ??
@@ -786,8 +788,4 @@ function markConductorComment(body: string): string {
 
 function hasExplicitConductorMarker(body: string): boolean {
   return body.toLowerCase().includes(CONDUCTOR_COMMENT_MARKER);
-}
-
-function readNodes(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
 }

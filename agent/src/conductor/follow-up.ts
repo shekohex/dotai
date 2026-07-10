@@ -65,6 +65,7 @@ export async function routePullRequestFeedback(input: {
     send(handles: HerdrHandles, message: string, delivery: ConductorDeliveryMode): Promise<void>;
   };
   pr: PullRequestSummary;
+  feedback?: PullRequestFeedback[];
   record: (run: RunRecord, kind: string, payload: unknown) => Promise<void>;
   run: RunRecord;
   touch: (run: RunRecord) => RunRecord;
@@ -75,14 +76,16 @@ export async function routePullRequestFeedback(input: {
   }
   const repo = await input.getResolvedRepo(input.run.owner, input.run.repo);
   const knownKeys = new Set(input.run.routedFeedbackKeys ?? []);
-  const feedback = await input.github.listPullRequestFeedback(
-    input.run.owner,
-    input.run.repo,
-    input.run.prNumber,
-    input.run.issueNumber,
-    [input.authenticatedLogin],
-    input.pr,
-  );
+  const feedback =
+    input.feedback ??
+    (await input.github.listPullRequestFeedback(
+      input.run.owner,
+      input.run.repo,
+      input.run.prNumber,
+      input.run.issueNumber,
+      [input.authenticatedLogin],
+      input.pr,
+    ));
   let updated = input.run;
   for (const item of feedback) {
     if (knownKeys.has(item.key)) continue;
@@ -273,6 +276,9 @@ function pullRequestContext(pr: PullRequestSummary): Record<string, unknown> {
     number: pr.number,
     url: pr.url,
     head_ref: pr.headRefName,
+    head_oid: pr.headRefOid ?? "",
+    base_ref: pr.baseRefName ?? "",
+    base_oid: pr.baseRefOid ?? "",
     state: pr.state,
     draft: pr.isDraft,
     merged_at: pr.mergedAt ?? "",

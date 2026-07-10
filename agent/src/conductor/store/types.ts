@@ -19,6 +19,16 @@ export const HerdrHandlesSchema = Type.Object({
 
 export type HerdrHandles = Static<typeof HerdrHandlesSchema>;
 
+export const MergeConflictEpisodeSchema = Type.Object({
+  fingerprint: Type.String(),
+  baseRefName: Type.String(),
+  baseRefOid: Type.String(),
+  headRefOid: Type.String(),
+  detectedAt: Type.String(),
+});
+
+export type MergeConflictEpisode = Static<typeof MergeConflictEpisodeSchema>;
+
 export const WorkItemSchema = Type.Object({
   projectItemId: Type.String(),
   projectId: Type.Optional(Type.String()),
@@ -59,6 +69,7 @@ export const RunRecordSchema = Type.Object({
   prNumber: Type.Optional(Type.Number({ minimum: 1 })),
   prUrl: Type.Optional(Type.String()),
   routedFeedbackKeys: Type.Optional(Type.Array(Type.String())),
+  mergeConflict: Type.Optional(MergeConflictEpisodeSchema),
   lastError: Type.Optional(Type.String()),
   createdAt: Type.String(),
   updatedAt: Type.String(),
@@ -95,6 +106,14 @@ export const WebhookDeliverySchema = Type.Object({
 });
 
 export type WebhookDelivery = Static<typeof WebhookDeliverySchema>;
+
+export const GitHubSyncStateSchema = Type.Object({
+  key: Type.String(),
+  value: Type.Unknown(),
+  updatedAt: Type.String(),
+});
+
+export type GitHubSyncState = Static<typeof GitHubSyncStateSchema>;
 
 export const StoreGcOptionsSchema = Type.Object({
   olderThanDays: Type.Optional(Type.Number({ minimum: 1 })),
@@ -136,6 +155,8 @@ export interface ConductorStore {
   listDeliveriesByStatus(
     status: NonNullable<WebhookDelivery["status"]>,
   ): Promise<WebhookDelivery[]>;
+  getGitHubSyncState(key: string): Promise<GitHubSyncState | undefined>;
+  setGitHubSyncState(state: GitHubSyncState): Promise<void>;
   gc(options?: StoreGcOptions): Promise<StoreGcResult>;
   close?(): void | Promise<void>;
 }

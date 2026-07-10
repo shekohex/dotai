@@ -9,16 +9,19 @@ import { errorMessage } from "../utils/error-message.js";
 import { asRecord, readNumber, readString } from "../utils/unknown-data.js";
 import { getDefaultConfigPath, type WebhookConfig } from "./config.js";
 import { parseJsonValue } from "./json.js";
+import { createCheckFeedbackKey, type PullRequestFeedback } from "./github-feedback.js";
 import type { ConductorOrchestrator } from "./orchestrator.js";
-import { GITHUB_RATE_LIMIT_BACKOFF_MS, isRateLimitError } from "./rate-limit.js";
+import { isRateLimitError, rateLimitRetryAt } from "./rate-limit.js";
 import { ReconcileScopeSchema, type ReconcileScope } from "./reconcile-scope.js";
-import type { ConductorStore } from "./store/types.js";
+import type { ConductorStore, WebhookDelivery } from "./store/types.js";
 
 const MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
 const MAX_WEBHOOK_DELIVERY_ATTEMPTS = 3;
 const WEBHOOK_RETRY_BASE_DELAY_MS = 60_000;
+const WEBHOOK_COALESCE_DELAY_MS = 250;
 let pendingDeliveryProcessing: Promise<void> | undefined;
 let pendingDeliveryRerun = false;
+let pendingDeliveryTimer: ReturnType<typeof setTimeout> | undefined;
 let webhookBackoffUntil = 0;
 
 export const SUPPORTED_WEBHOOK_EVENTS = [
@@ -32,6 +35,7 @@ export const SUPPORTED_WEBHOOK_EVENTS = [
   "status",
   "workflow_run",
   "projects_v2_item",
+  "push",
 ] as const;
 const SUPPORTED_WEBHOOK_EVENT_SET: ReadonlySet<string> = new Set(SUPPORTED_WEBHOOK_EVENTS);
 
@@ -174,11 +178,22 @@ async function handleWebhookRequest(input: {
   input.response.statusCode = recorded ? 202 : 200;
   input.response.end(recorded ? "accepted" : "duplicate");
   if (recorded || existing?.status === "failed") {
-    void processPendingWebhookDeliveries({
+    schedulePendingWebhookDeliveries({
       store: input.store,
       orchestrator: input.orchestrator,
-    }).catch(() => {});
+    });
   }
+}
+
+function schedulePendingWebhookDeliveries(input: {
+  store: ConductorStore;
+  orchestrator: ConductorOrchestrator;
+}): void {
+  if (pendingDeliveryTimer !== undefined) return;
+  pendingDeliveryTimer = setTimeout(() => {
+    pendingDeliveryTimer = undefined;
+    void processPendingWebhookDeliveries(input).catch(() => {});
+  }, WEBHOOK_COALESCE_DELAY_MS);
 }
 
 export function processPendingWebhookDeliveries(input: {
@@ -224,17 +239,17 @@ async function processPendingWebhookDeliveriesOnce(input: {
         (delivery.nextAttemptAt === undefined || Date.parse(delivery.nextAttemptAt) <= Date.now()),
     ),
   ];
-  for (const delivery of deliveries) {
+  for (const deliveryGroup of groupWebhookDeliveries(deliveries)) {
     try {
-      await processRecordedDelivery(
+      await processRecordedDeliveryGroup(
         input.store,
         input.orchestrator,
-        delivery.deliveryId,
+        deliveryGroup,
         input.onError,
       );
     } catch (error) {
       if (!isRateLimitError(error)) throw error;
-      webhookBackoffUntil = Date.now() + GITHUB_RATE_LIMIT_BACKOFF_MS;
+      webhookBackoffUntil = rateLimitRetryAt(error).getTime();
       input.onError?.(
         `Conductor webhook delivery processing backed off after GitHub rate limit until ${new Date(webhookBackoffUntil).toISOString()}\n`,
       );
@@ -278,39 +293,94 @@ async function readRequestBody(request: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-async function processRecordedDelivery(
+async function processRecordedDeliveryGroup(
   store: ConductorStore,
   orchestrator: ConductorOrchestrator,
-  deliveryId: string,
+  deliveries: WebhookDelivery[],
   onError: ((message: string) => void) | undefined,
 ): Promise<void> {
+  const attempts = new Map<string, number>();
   try {
-    const delivery = await store.getDelivery(deliveryId);
-    if (delivery === undefined) throw new Error(`Webhook delivery not found: ${deliveryId}`);
-    const attempts = (delivery.attempts ?? 0) + 1;
-    await store.markDeliveryStatus(deliveryId, "processing", {
-      attempts,
-    });
-    await orchestrator.reconcile(readDeliveryScope(delivery));
-    await store.markDeliveryStatus(deliveryId, "processed", {
-      processedAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    try {
-      const delivery = await store.getDelivery(deliveryId);
-      const attempts = delivery?.attempts ?? 1;
-      await store.markDeliveryStatus(deliveryId, "failed", {
-        attempts,
-        lastError: errorMessage(error),
-        nextAttemptAt: nextAttemptAt(error, attempts),
+    for (const delivery of deliveries) {
+      const attempt = (delivery.attempts ?? 0) + 1;
+      attempts.set(delivery.deliveryId, attempt);
+      await store.markDeliveryStatus(delivery.deliveryId, "processing", { attempts: attempt });
+    }
+    await orchestrator.reconcile(mergeDeliveryScopes(deliveries));
+    for (const delivery of deliveries) {
+      await store.markDeliveryStatus(delivery.deliveryId, "processed", {
+        processedAt: new Date().toISOString(),
       });
-    } catch (innerError) {
-      onError?.(
-        `Conductor webhook delivery failure update failed for ${deliveryId}: ${errorMessage(innerError)}\n`,
-      );
+    }
+  } catch (error) {
+    for (const delivery of deliveries) {
+      try {
+        const attempt = attempts.get(delivery.deliveryId) ?? delivery.attempts ?? 1;
+        await store.markDeliveryStatus(delivery.deliveryId, "failed", {
+          attempts: attempt,
+          lastError: errorMessage(error),
+          nextAttemptAt: nextAttemptAt(error, attempt),
+        });
+      } catch (innerError) {
+        onError?.(
+          `Conductor webhook delivery failure update failed for ${delivery.deliveryId}: ${errorMessage(innerError)}\n`,
+        );
+      }
     }
     if (isRateLimitError(error)) throw error;
   }
+}
+
+function groupWebhookDeliveries(deliveries: WebhookDelivery[]): WebhookDelivery[][] {
+  const groups = new Map<string, WebhookDelivery[]>();
+  for (const delivery of deliveries) {
+    const key = deliveryCoalescingKey(delivery) ?? `delivery:${delivery.deliveryId}`;
+    const group = groups.get(key) ?? [];
+    group.push(delivery);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+function deliveryCoalescingKey(delivery: WebhookDelivery): string | undefined {
+  const scope = readDeliveryScope(delivery);
+  if (scope === undefined) return undefined;
+  const repository =
+    scope.owner === undefined || scope.repo === undefined
+      ? undefined
+      : `${scope.owner.toLowerCase()}/${scope.repo.toLowerCase()}`;
+  if (scope.prNumber !== undefined && repository !== undefined) {
+    return `pr:${repository}#${scope.prNumber}`;
+  }
+  if (scope.baseBranch !== undefined && repository !== undefined) {
+    return `base-branch:${repository}:${scope.baseBranch}`;
+  }
+  if (scope.branch !== undefined && repository !== undefined) {
+    return `branch:${repository}:${scope.branch}`;
+  }
+  if (scope.issueNumber !== undefined && repository !== undefined) {
+    return `issue:${repository}#${scope.issueNumber}`;
+  }
+  if (scope.projectItemId !== undefined) return `project-item:${scope.projectItemId}`;
+  return undefined;
+}
+
+function mergeDeliveryScopes(deliveries: WebhookDelivery[]): ReconcileScope | undefined {
+  const scopes = deliveries.flatMap((delivery) => {
+    const scope = readDeliveryScope(delivery);
+    return scope === undefined ? [] : [scope];
+  });
+  if (scopes.length === 0) return undefined;
+  const feedback = new Map<string, PullRequestFeedback>();
+  for (const scope of scopes) {
+    for (const item of scope.feedback ?? []) feedback.set(item.key, item);
+  }
+  return parseScope({
+    ...scopes[0],
+    ...scopes.at(-1),
+    ...(feedback.size === 0 ? {} : { feedback: [...feedback.values()] }),
+    reason: [...new Set(scopes.flatMap((scope) => scope.reason ?? []))].join(","),
+  });
 }
 
 function parseWebhookPayload(body: Buffer): unknown {
@@ -331,17 +401,37 @@ export function readWebhookReconcileScope(
   payload: unknown,
 ): ReconcileScope | undefined {
   const repository = readWebhookRepositoryFullName(payload);
-  const base = repositoryScope(repository, eventName);
   const record = asRecord(payload);
+  const feedback = readWebhookFeedback(eventName, record);
+  const base = {
+    ...repositoryScope(repository, eventName),
+    feedback,
+  };
   const issue = asRecord(record?.issue);
   const pullRequest = readPullRequestSummary(record?.pull_request);
   if (pullRequest !== undefined) {
+    const action = readString(record?.action)?.toLowerCase();
     return parseScope({
       ...base,
       prNumber: pullRequest.number,
       branch: pullRequest.headRefName,
       pullRequest,
+      ...(eventName === "pull_request" && shouldProbeMergeability(action)
+        ? { mergeabilityProbe: true }
+        : {}),
     });
+  }
+  const pushedBranch = readPushBranch(eventName, record);
+  if (pushedBranch !== undefined) {
+    return parseScope({
+      ...base,
+      baseBranch: pushedBranch,
+      mergeabilityProbe: true,
+      projectScan: false,
+    });
+  }
+  if (eventName === "push") {
+    return parseScope({ ...base, activeRuns: false, projectScan: false });
   }
   const checkPullRequest =
     readCheckPullRequest(record?.check_run) ??
@@ -355,14 +445,123 @@ export function readWebhookReconcileScope(
     return parseScope({ ...base, prNumber: issueNumber });
   }
   if (issueNumber !== undefined) return parseScope({ ...base, issueNumber });
-  const projectItemId = readString(asRecord(record?.projects_v2_item)?.id);
+  const projectItem = asRecord(record?.projects_v2_item);
+  const projectItemId = readString(projectItem?.node_id) ?? readString(projectItem?.id);
   if (projectItemId !== undefined) return parseScope({ ...base, projectItemId });
   return base.owner === undefined || base.repo === undefined ? undefined : parseScope(base);
+}
+
+function readWebhookFeedback(
+  eventName: string,
+  payload: Record<string, unknown> | undefined,
+): PullRequestFeedback[] {
+  if (eventName === "pull_request_review_comment") {
+    return normalizeWebhookFeedback(payload?.comment, "review_comment");
+  }
+  if (eventName === "pull_request_review") {
+    return normalizeWebhookFeedback(payload?.review, "review");
+  }
+  if (eventName === "issue_comment") {
+    const issue = asRecord(payload?.issue);
+    return normalizeWebhookFeedback(
+      payload?.comment,
+      issue?.pull_request === undefined ? "issue_comment" : "comment",
+    );
+  }
+  if (eventName === "check_run") return normalizeWebhookCheck(payload?.check_run);
+  return [];
+}
+
+function normalizeWebhookFeedback(
+  value: unknown,
+  kind: PullRequestFeedback["kind"],
+): PullRequestFeedback[] {
+  const record = asRecord(value);
+  const body = readString(record?.body);
+  let normalizedBody = body !== undefined && body.trim().length > 0 ? body : undefined;
+  if (
+    normalizedBody === undefined &&
+    kind === "review" &&
+    readString(record?.state)?.toLowerCase() === "changes_requested"
+  ) {
+    normalizedBody = "Pull request review requested changes.";
+  }
+  if (record === undefined || normalizedBody === undefined) return [];
+  if (normalizedBody.toLowerCase().includes("<!-- pi-conductor -->")) return [];
+  const reactionSubjectId = readString(record.node_id) ?? readString(record.nodeId);
+  const id =
+    reactionSubjectId ?? String(readNumber(record.id) ?? readString(record.url) ?? normalizedBody);
+  const url = readString(record.html_url) ?? readString(record.url);
+  const author =
+    readString(asRecord(record.user)?.login) ?? readString(asRecord(record.author)?.login);
+  return [
+    {
+      key: `${kind}:${id}`,
+      kind,
+      body: normalizedBody,
+      ...(reactionSubjectId === undefined ? {} : { reactionSubjectId }),
+      ...(url === undefined ? {} : { url }),
+      ...(author === undefined ? {} : { author }),
+      [kind]: {
+        id,
+        reactionSubjectId: reactionSubjectId ?? "",
+        body: normalizedBody,
+        url: url ?? "",
+        author: author ?? "",
+      },
+    },
+  ];
+}
+
+function normalizeWebhookCheck(value: unknown): PullRequestFeedback[] {
+  const check = asRecord(value);
+  const name = readString(check?.name);
+  const conclusion = readString(check?.conclusion) ?? readString(check?.status);
+  if (check === undefined || name === undefined || conclusion === undefined) return [];
+  if (
+    ["success", "skipped", "neutral", "pending", "queued", "in_progress"].includes(
+      conclusion.toLowerCase(),
+    )
+  ) {
+    return [];
+  }
+  const id = readString(check.node_id) ?? String(readNumber(check.id) ?? name);
+  const url = readString(check.details_url) ?? readString(check.html_url);
+  const completedAt = readString(check.completed_at);
+  const startedAt = readString(check.started_at);
+  return [
+    {
+      key: createCheckFeedbackKey({
+        name,
+        conclusion,
+        ...(url === undefined ? {} : { url }),
+        ...(completedAt === undefined ? {} : { completedAt }),
+        ...(startedAt === undefined ? {} : { startedAt }),
+      }),
+      kind: "check",
+      body: `Check ${name} is ${conclusion}.`,
+      ...(url === undefined ? {} : { url }),
+      check: { id, name, conclusion, url: url ?? "" },
+    },
+  ];
 }
 
 function readStatusBranch(payload: Record<string, unknown> | undefined): string | undefined {
   const branches = Array.isArray(payload?.branches) ? payload.branches : [];
   return readString(asRecord(branches[0])?.name);
+}
+
+function readPushBranch(
+  eventName: string,
+  payload: Record<string, unknown> | undefined,
+): string | undefined {
+  if (eventName !== "push") return undefined;
+  const ref = readString(payload?.ref);
+  return ref?.startsWith("refs/heads/") === true ? ref.slice("refs/heads/".length) : undefined;
+}
+
+function shouldProbeMergeability(action: string | undefined): boolean {
+  return ["edited", "opened", "ready_for_review", "reopened", "synchronize"].includes(action ?? "");
 }
 
 function readPullRequestSummary(value: unknown): ReconcileScope["pullRequest"] {
@@ -371,6 +570,9 @@ function readPullRequestSummary(value: unknown): ReconcileScope["pullRequest"] {
   const number = readNumber(pullRequest?.number);
   const url = readString(pullRequest?.html_url) ?? readString(pullRequest?.url);
   const headRefName = readString(asRecord(pullRequest?.head)?.ref);
+  const baseRefName = readString(asRecord(pullRequest?.base)?.ref);
+  const baseRefOid = readString(asRecord(pullRequest?.base)?.sha);
+  const headRefOid = readString(asRecord(pullRequest?.head)?.sha);
   const state = readString(pullRequest?.state);
   if (
     number === undefined ||
@@ -381,14 +583,24 @@ function readPullRequestSummary(value: unknown): ReconcileScope["pullRequest"] {
     return undefined;
   }
   const mergedAt = readString(pullRequest?.merged_at);
+  const mergeableValue = pullRequest?.mergeable;
+  let mergeable: string | undefined;
+  if (mergeableValue === true) mergeable = "MERGEABLE";
+  if (mergeableValue === false) mergeable = "CONFLICTING";
+  const mergeStateStatus = readString(pullRequest?.mergeable_state)?.toUpperCase();
   const linkedIssueNumbers = readWebhookLinkedIssueNumbers(pullRequest);
   return Value.Parse(ReconcileScopeSchema.properties.pullRequest, {
     number,
     url,
     headRefName,
+    ...(baseRefName === undefined ? {} : { baseRefName }),
+    ...(baseRefOid === undefined ? {} : { baseRefOid }),
+    ...(headRefOid === undefined ? {} : { headRefOid }),
     state: pullRequest.merged === true ? "MERGED" : state.toUpperCase(),
     isDraft: pullRequest.draft === true,
     ...(mergedAt === undefined ? {} : { mergedAt }),
+    ...(mergeable === undefined ? {} : { mergeable }),
+    ...(mergeStateStatus === undefined ? {} : { mergeStateStatus }),
     ...(linkedIssueNumbers.length === 0 ? {} : { linkedIssueNumbers }),
   });
 }
@@ -439,12 +651,11 @@ function readDeliveryScope(delivery: {
 }
 
 function nextAttemptAt(error: unknown, attempts: number): string {
-  const delayMs = isRateLimitError(error)
-    ? GITHUB_RATE_LIMIT_BACKOFF_MS
-    : Math.min(
-        WEBHOOK_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempts - 1),
-        GITHUB_RATE_LIMIT_BACKOFF_MS,
-      );
+  if (isRateLimitError(error)) return rateLimitRetryAt(error).toISOString();
+  const delayMs = Math.min(
+    WEBHOOK_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempts - 1),
+    15 * 60_000,
+  );
   return new Date(Date.now() + jitterDelay(delayMs)).toISOString();
 }
 

@@ -1,4 +1,4 @@
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
 import { asRecord, readNumber, readString } from "../utils/unknown-data.js";
@@ -24,31 +24,59 @@ const GhPrViewFeedbackSchema = Type.Object({
 
 const GhReviewCommentsSchema = Type.Array(Type.Unknown());
 
-export type PullRequestFeedback = {
-  key: string;
-  kind: "check" | "comment" | "review" | "review_comment" | "issue_comment" | "merge_conflict";
-  body: string;
-  reactionSubjectId?: string;
+export const PullRequestFeedbackSchema = Type.Object({
+  key: Type.String(),
+  kind: Type.Union([
+    Type.Literal("check"),
+    Type.Literal("comment"),
+    Type.Literal("review"),
+    Type.Literal("review_comment"),
+    Type.Literal("issue_comment"),
+    Type.Literal("merge_conflict"),
+  ]),
+  body: Type.String(),
+  reactionSubjectId: Type.Optional(Type.String()),
+  url: Type.Optional(Type.String()),
+  author: Type.Optional(Type.String()),
+  check: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  comment: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  review: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  review_comment: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  issue_comment: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  merge_conflict: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+});
+
+export type PullRequestFeedback = Static<typeof PullRequestFeedbackSchema>;
+
+export function createCheckFeedbackKey(input: {
+  completedAt?: string;
+  conclusion: string;
+  name: string;
+  startedAt?: string;
   url?: string;
-  author?: string;
-  check?: Record<string, unknown>;
-  comment?: Record<string, unknown>;
-  review?: Record<string, unknown>;
-  review_comment?: Record<string, unknown>;
-  issue_comment?: Record<string, unknown>;
-  merge_conflict?: Record<string, unknown>;
-};
+}): string {
+  const occurrence = input.url ?? input.completedAt ?? input.startedAt ?? "latest";
+  return `check:${input.name}:${input.conclusion.toLowerCase()}:${occurrence}`;
+}
 
 export function parseGhPrChecks(stdout: string): PullRequestFeedback[] {
   return Value.Parse(GhPrChecksSchema, parseJsonValue(stdout, "gh pr checks")).flatMap((check) => {
     const conclusion = check.conclusion ?? check.state ?? "unknown";
     if (isPendingCheck(check.bucket, conclusion)) return [];
     if (isPassingCheckConclusion(conclusion)) return [];
-    const occurrence =
-      check.link ?? check.completedAt ?? check.startedAt ?? check.bucket ?? "latest";
     return [
       {
-        key: `check:${check.name}:${conclusion}:${occurrence}`,
+        key: createCheckFeedbackKey({
+          name: check.name,
+          conclusion,
+          ...(check.link === undefined || check.link === null ? {} : { url: check.link }),
+          ...(check.completedAt === undefined || check.completedAt === null
+            ? {}
+            : { completedAt: check.completedAt }),
+          ...(check.startedAt === undefined || check.startedAt === null
+            ? {}
+            : { startedAt: check.startedAt }),
+        }),
         kind: "check" as const,
         body: `Check ${check.name} is ${conclusion}.`,
         check: {

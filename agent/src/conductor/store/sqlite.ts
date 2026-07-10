@@ -7,6 +7,8 @@ import { Value } from "typebox/value";
 import { parseJsonValue } from "../json.js";
 import {
   type ConductorStore,
+  type GitHubSyncState,
+  GitHubSyncStateSchema,
   type RunEvent,
   RunEventSchema,
   type RunRecord,
@@ -75,6 +77,11 @@ export class SqliteConductorStore implements ConductorStore {
         received_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS github_deliveries_status_idx ON github_deliveries(status, received_at);
+      CREATE TABLE IF NOT EXISTS github_sync_state (
+        key TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
     this.migrateDeliveryStatusColumn();
     this.optimize();
@@ -261,6 +268,32 @@ export class SqliteConductorStore implements ConductorStore {
     );
   }
 
+  getGitHubSyncState(key: string): Promise<GitHubSyncState | undefined> {
+    const row = this.getDatabase()
+      .prepare("SELECT payload_json FROM github_sync_state WHERE key = ?")
+      .get(key);
+    return Promise.resolve(
+      row === undefined
+        ? undefined
+        : Value.Parse(
+            GitHubSyncStateSchema,
+            parseJsonValue(Value.Parse(RunRowSchema, row).payload_json, "GitHub sync state row"),
+          ),
+    );
+  }
+
+  setGitHubSyncState(state: GitHubSyncState): Promise<void> {
+    const validated = Value.Parse(GitHubSyncStateSchema, state);
+    this.getDatabase()
+      .prepare(
+        `INSERT INTO github_sync_state (key, payload_json, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
+      )
+      .run(validated.key, JSON.stringify(validated), validated.updatedAt);
+    return Promise.resolve();
+  }
+
   gc(options: StoreGcOptions = {}): Promise<StoreGcResult> {
     const validated = Value.Parse(StoreGcOptionsSchema, options);
     const cutoff = gcCutoffIso(validated.olderThanDays ?? DEFAULT_GC_RETENTION_DAYS);
@@ -281,6 +314,7 @@ export class SqliteConductorStore implements ConductorStore {
          WHERE received_at < ? AND status IN ('processed', 'failed')`,
       )
       .run(cutoff).changes;
+    db.prepare("DELETE FROM github_sync_state WHERE updated_at < ?").run(cutoff);
     this.optimize();
     this.checkpointWal();
     const vacuumed = validated.vacuum ?? true;

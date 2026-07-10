@@ -50,6 +50,7 @@ import {
   type StartSubagentResult,
   type TokenUsage,
 } from "./types.js";
+import { toSubagentStatusDetails } from "./status.js";
 
 type LiteAgentSession = CreateAgentSessionResult["session"];
 
@@ -773,7 +774,7 @@ export class LiteRuntime {
 
   private emitCompletionStatus(state: RuntimeSubagent): void {
     const delivery = resolveCompletionDelivery(state);
-    if (!delivery.enabled) return;
+    if (!delivery.enabled || !isTerminalSubagentStatus(state.status)) return;
     const suffix =
       state.persisted === false
         ? "\n\nThis subagent was ephemeral (persisted: false) and cannot be messaged or resumed. Start a new subagent if you need to run it again."
@@ -781,6 +782,7 @@ export class LiteRuntime {
     const content = buildCompletionStatusContent(state, suffix);
     this.hooks.emitStatusMessage({
       content,
+      details: toSubagentStatusDetails(state)!,
       deliverAs: delivery.deliverAs,
       triggerTurn: delivery.triggerTurn,
     });

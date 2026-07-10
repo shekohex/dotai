@@ -12,6 +12,7 @@ import {
   readChildSessionStatusDetails,
   SUBAGENT_PARENT_INPUT_GRACE_MS,
 } from "../persistence.js";
+import { toSubagentStatusDetails } from "../status.js";
 import { formatStructuredOutputError, formatSubagentFailureFallback } from "./base.js";
 import { SubagentRuntimeMessaging } from "./messaging.js";
 
@@ -235,9 +236,11 @@ export abstract class SubagentRuntimeMonitoring extends SubagentRuntimeMessaging
         : `Subagent ${terminal.name} (${terminal.sessionId}) failed.\n\n${structuredErrorText ?? formatSubagentFailureFallback(terminal)}${ephemeralSuffix}`;
 
     const completionDelivery = resolveCompletionDelivery(terminal);
-    if (completionDelivery.enabled) {
+    const details = toSubagentStatusDetails(terminal);
+    if (completionDelivery.enabled && details) {
       this.hooks.emitStatusMessage({
         content: messageText,
+        details,
         deliverAs: completionDelivery.deliverAs,
         triggerTurn: completionDelivery.triggerTurn,
       });

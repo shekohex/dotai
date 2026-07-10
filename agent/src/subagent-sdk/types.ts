@@ -18,7 +18,9 @@ import {
   SubagentMessageEntrySchema,
   SubagentStateEntrySchema,
   SubagentStateEventSchema,
+  SubagentStatusDetailsSchema,
   SubagentStatusSchema,
+  SubagentTerminalStatusSchema,
   SubagentStructuredOutputEntrySchema,
   SubagentToolParamsSchema,
   TokenUsageSchema,
@@ -49,7 +51,9 @@ export {
   SubagentMessageEntrySchema,
   SubagentStateEntrySchema,
   SubagentStateEventSchema,
+  SubagentStatusDetailsSchema,
   SubagentStatusSchema,
+  SubagentTerminalStatusSchema,
   SubagentStructuredOutputEntrySchema,
   SubagentStructuredOutputEntryStatusSchema,
   SubagentToolParamsSchema,
@@ -61,7 +65,9 @@ export type SubagentDelivery = Static<typeof SubagentDeliverySchema>;
 export type SubagentCompletionNotification = Static<typeof SubagentCompletionNotificationSchema>;
 export type SubagentCompletion = Static<typeof SubagentCompletionSchema>;
 export type SubagentStateEvent = Static<typeof SubagentStateEventSchema>;
+export type SubagentStatusDetails = Static<typeof SubagentStatusDetailsSchema>;
 export type SubagentStatus = Static<typeof SubagentStatusSchema>;
+export type SubagentTerminalStatus = Static<typeof SubagentTerminalStatusSchema>;
 export type TSchemaBase = TSchema;
 export type OutputFormat<TSchemaValue = unknown> =
   | { type: "text" }

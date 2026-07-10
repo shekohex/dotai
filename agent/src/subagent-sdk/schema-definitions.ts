@@ -85,6 +85,22 @@ export const SubagentStatusSchema = Type.Union([
   Type.Literal("failed"),
 ]);
 
+export const SubagentTerminalStatusSchema = Type.Union([
+  Type.Literal("completed"),
+  Type.Literal("cancelled"),
+  Type.Literal("failed"),
+]);
+
+export const SubagentStatusDetailsSchema = Type.Object(
+  {
+    sessionId: Type.String(),
+    name: Type.String(),
+    status: SubagentTerminalStatusSchema,
+    summary: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
 export const OutputFormatTextSchema = Type.Object(
   {
     type: Type.Literal("text"),

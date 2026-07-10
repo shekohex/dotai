@@ -7,6 +7,7 @@ import {
   createSubagentSDK,
   SUBAGENT_STATUS_MESSAGE,
 } from "../../subagent-sdk/index.js";
+import type { SubagentStatusDetails } from "../../subagent-sdk/types.js";
 import type { CreateReviewExtensionOptions, ReviewRuntimeState } from "./deps.js";
 
 type ReviewTerminalStatus = "completed" | "failed" | "cancelled";
@@ -18,13 +19,14 @@ export function createReviewSubagentSdk(
   const defaultSubagentHooks = createDefaultSubagentRuntimeHooks(pi);
   const reviewSubagentHooks = {
     ...defaultSubagentHooks,
-    emitStatusMessage({ content }: { content: string; triggerTurn?: boolean }) {
+    emitStatusMessage({ content, details }: { content: string; details: SubagentStatusDetails }) {
       try {
         pi.sendMessage(
           {
             customType: SUBAGENT_STATUS_MESSAGE,
             content,
             display: true,
+            details,
           },
           { deliverAs: "steer", triggerTurn: false },
         );

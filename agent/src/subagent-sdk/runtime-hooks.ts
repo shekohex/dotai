@@ -18,6 +18,7 @@ import {
   type RuntimeSubagent,
   type SubagentMessageEntry,
   type SubagentStateEntry,
+  type SubagentStatusDetails,
 } from "./types.js";
 
 const SUBAGENT_DASHBOARD_SHORTCUT = Key.ctrlAlt("u");
@@ -60,6 +61,7 @@ export type SubagentRuntimeHooks = {
   persistMessage(entry: SubagentMessageEntry): Promise<void>;
   emitStatusMessage(options: {
     content: string;
+    details: SubagentStatusDetails;
     deliverAs?: "steer" | "followUp";
     triggerTurn?: boolean;
   }): void;
@@ -382,13 +384,14 @@ export function createDefaultSubagentRuntimeHooks(
       }
       return Promise.resolve();
     },
-    emitStatusMessage({ content, deliverAs, triggerTurn }) {
+    emitStatusMessage({ content, details, deliverAs, triggerTurn }) {
       try {
         pi.sendMessage(
           {
             customType: SUBAGENT_STATUS_MESSAGE,
             content,
             display: true,
+            details,
           },
           triggerTurn === true
             ? { deliverAs: deliverAs ?? "steer", triggerTurn: true }

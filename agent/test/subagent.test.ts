@@ -69,6 +69,7 @@ import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import { SubagentRuntime } from "../src/subagent-sdk/runtime.ts";
 import { SubagentRuntimeEventBus } from "../src/subagent-sdk/events.ts";
 import { formatSubagentFailureFallback } from "../src/subagent-sdk/runtime/base.ts";
+import { toSubagentStatusDetails } from "../src/subagent-sdk/status.ts";
 import {
   SUBAGENT_MESSAGE_ENTRY,
   SUBAGENT_ACTIVITY_ENTRY,
@@ -3213,6 +3214,29 @@ timedTest("cloneRuntimeSubagent deep-clones nested structured fields", () => {
   expect(original.tools).toEqual(["read"]);
 });
 
+test("subagent status details only expose terminal states", () => {
+  expect(
+    toSubagentStatusDetails({
+      sessionId: "failed-subagent",
+      name: "reviewer",
+      status: "failed",
+      summary: "Validation failed.",
+    }),
+  ).toEqual({
+    sessionId: "failed-subagent",
+    name: "reviewer",
+    status: "failed",
+    summary: "Validation failed.",
+  });
+  expect(
+    toSubagentStatusDetails({
+      sessionId: "running-subagent",
+      name: "reviewer",
+      status: "running",
+    }),
+  ).toBeUndefined();
+});
+
 timedTest("createChildSessionFile bootstraps a persisted child session header", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = await createTempDir("agent-subagent-bootstrap-dir-");
@@ -4086,6 +4110,15 @@ timedTest(
       expect(runtime.listStates().length).toBe(1);
       expect(runtime.listStates()[0]?.status).toBe("cancelled");
       expect(fakePi.sentMessages.length).toBe(1);
+      expect(fakePi.sentMessages[0]?.message).toMatchObject({
+        customType: "subagent-status",
+        display: true,
+        details: {
+          sessionId: started.state.sessionId,
+          name: "worker-one",
+          status: "cancelled",
+        },
+      });
 
       const resumed = await runtime.resume(
         {
@@ -4217,6 +4250,16 @@ timedTest(
       expect(completedStates.at(-1)?.data.status).toBe("completed");
       expect(fakePi.sentMessages.length).toBe(2);
       expect(fakePi.sentMessages[1]?.options).toEqual({ deliverAs: "steer", triggerTurn: true });
+      expect(fakePi.sentMessages[1]?.message).toMatchObject({
+        customType: "subagent-status",
+        display: true,
+        details: {
+          sessionId: restoredSessionId,
+          name: "worker-restore",
+          status: "completed",
+          summary: "Restored completion summary",
+        },
+      });
     } finally {
       runtime.dispose();
       process.env.PI_CODING_AGENT_DIR = previousAgentDir;

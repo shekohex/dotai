@@ -5,6 +5,7 @@ import type {
   MessageSubagentResult,
   RuntimeSubagent,
 } from "../types.js";
+import { toSubagentStatusDetails } from "../status.js";
 import { emitProgressUpdate, runtimeSubagentError } from "./base.js";
 import { SubagentRuntimeExecution } from "./execution.js";
 
@@ -166,9 +167,11 @@ export abstract class SubagentRuntimeMessaging extends SubagentRuntimeExecution 
     await this.hooks.persistState(cancelled);
     this.stopPollingIfIdle();
     this.refreshWidget();
-    if (cancelled.completion !== false) {
+    const details = toSubagentStatusDetails(cancelled);
+    if (cancelled.completion !== false && details) {
       this.hooks.emitStatusMessage({
         content: `Subagent ${state.name} (${state.sessionId}) was cancelled.`,
+        details,
         deliverAs: cancelled.completion?.deliverAs ?? "steer",
         triggerTurn: cancelled.completion?.triggerTurn ?? true,
       });

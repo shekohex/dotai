@@ -89,7 +89,7 @@ export function pullRequestSnapshotQuery(selector: "branch" | "number"): string 
   const pullRequestSelection =
     selector === "number"
       ? "pullRequest(number: $prNumber) { ...ConductorPullRequestSnapshot }"
-      : `pullRequests(first: 100, headRefName: $branch, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      : `pullRequests(first: 10, headRefName: $branch, orderBy: { field: UPDATED_AT, direction: DESC }) {
           nodes { ...ConductorPullRequestSnapshot }
         }`;
   const selectorVariable = selector === "number" ? "$prNumber: Int!" : "$branch: String!";

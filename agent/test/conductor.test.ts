@@ -2301,6 +2301,68 @@ describe("conductor adapters", () => {
     );
   });
 
+  test("GitHub client keeps branch snapshots below GraphQL node limit", async () => {
+    let snapshotQuery = "";
+    const client = new GhGitHubClient(async (_file, args) => {
+      snapshotQuery = args.find((arg) => arg.startsWith("query="))?.slice("query=".length) ?? "";
+      if (snapshotQuery.includes("pullRequests(first: 100")) {
+        throw new ConductorExecError({
+          file: "gh",
+          args,
+          durationMs: 1,
+          exitCode: 1,
+          stdout: JSON.stringify({
+            errors: [
+              {
+                type: "MAX_NODE_LIMIT_EXCEEDED",
+                message: "Query exceeds the maximum node limit of 500,000.",
+              },
+            ],
+          }),
+          stderr: "gh: Query exceeds the maximum node limit of 500,000.",
+          timedOut: false,
+        });
+      }
+      return {
+        stdout: JSON.stringify({
+          data: {
+            repository: {
+              pullRequests: {
+                nodes: [
+                  {
+                    number: 2,
+                    url: "https://github.com/octo/demo/pull/2",
+                    headRefName: "pi/7-fix-bug",
+                    state: "OPEN",
+                    isDraft: false,
+                    mergeable: "MERGEABLE",
+                    mergeStateStatus: "CLEAN",
+                    comments: { nodes: [] },
+                    reviews: { nodes: [] },
+                    reviewThreads: { nodes: [] },
+                    commits: { nodes: [] },
+                  },
+                ],
+              },
+              issue: { comments: { nodes: [] } },
+            },
+          },
+        }),
+        stderr: "",
+      };
+    });
+
+    await expect(
+      client.getPullRequestSnapshot({
+        owner: "octo",
+        repo: "demo",
+        issueNumber: 7,
+        branch: "pi/7-fix-bug",
+      }),
+    ).resolves.toMatchObject({ pullRequest: { number: 2 } });
+    expect(snapshotQuery).toContain("pullRequests(first: 10");
+  });
+
   test("GitHub client retries transient unknown mergeability", async () => {
     const responses = [
       { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" },

@@ -46,6 +46,7 @@ const themeColorNames = [
   "thinkingMedium",
   "thinkingHigh",
   "thinkingXhigh",
+  "thinkingMax",
   "bashMode",
 ] as const satisfies readonly PackageThemeColor[];
 
@@ -63,6 +64,7 @@ export const ThinkingLevelSchema = Type.Union([
   Type.Literal("medium"),
   Type.Literal("high"),
   Type.Literal("xhigh"),
+  Type.Literal("max"),
 ]);
 
 export const TmuxTargetSchema = Type.Union([Type.Literal("pane"), Type.Literal("window")]);

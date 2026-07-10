@@ -19,7 +19,7 @@ const PRUNE_ICON = "\u{F0A6B}";
 const TPS_ICON = "\u{F04C5}";
 
 type Theme = ExtensionContext["ui"]["theme"];
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export function bindCoreUI(
   ctx: ExtensionContext,
@@ -263,6 +263,8 @@ function colorThinkingLevel(theme: Theme, level: ThinkingLevel): string {
       return theme.fg("thinkingHigh", "high");
     case "xhigh":
       return theme.fg("thinkingXhigh", "xhigh");
+    case "max":
+      return theme.fg("thinkingMax", "max");
     default:
       return theme.fg("thinkingOff", "off");
   }

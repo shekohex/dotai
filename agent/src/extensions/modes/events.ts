@@ -46,6 +46,7 @@ const ThinkingLevelSchema = Type.Union([
   Type.Literal("medium"),
   Type.Literal("high"),
   Type.Literal("xhigh"),
+  Type.Literal("max"),
 ]);
 const ModeStateEntrySchema = Type.Object(
   {

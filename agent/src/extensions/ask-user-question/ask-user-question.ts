@@ -169,7 +169,7 @@ async function runRpcQuestionnaire(
       const optionList = question.options
         .map(
           (option) =>
-            `- ${option.label}: ${option.description}${option.preview ? `\n\n${option.preview}` : ""}`,
+            `- ${option.label}: ${option.description}${option.preview !== null && option.preview !== undefined && option.preview.length > 0 ? `\n\n${option.preview}` : ""}`,
         )
         .join("\n\n");
       const value = await ctx.ui.editor(

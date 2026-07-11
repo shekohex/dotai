@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import {
   ensureGlanceDaemon,
@@ -21,6 +21,7 @@ import {
   MAX_OPTIONS,
   MAX_QUESTIONS,
   MIN_OPTIONS,
+  type QuestionAnswer,
   type QuestionData,
   type QuestionnaireResult,
   type QuestionParams,
@@ -87,6 +88,113 @@ const withScreenshotQuestionText = (
   })),
 });
 
+const MULTI_SELECT_INSTRUCTIONS =
+  "Enter one or more option labels, separated by commas or new lines.";
+
+function questionAnswerFromRpcValue(
+  question: QuestionData,
+  questionIndex: number,
+  value: string,
+): QuestionAnswer {
+  const matchedOption = question.options.find((option) => option.label === value);
+  if (matchedOption !== undefined) {
+    return {
+      questionIndex,
+      question: question.question,
+      kind: "option",
+      answer: value,
+      ...(matchedOption.preview === undefined ? {} : { preview: matchedOption.preview }),
+    };
+  }
+  if (value === displayLabel("chat")) {
+    return { questionIndex, question: question.question, kind: "chat", answer: value };
+  }
+  return { questionIndex, question: question.question, kind: "custom", answer: value };
+}
+
+function multiSelectAnswerFromRpcValue(
+  question: QuestionData,
+  questionIndex: number,
+  value: string,
+): QuestionAnswer {
+  const authoredLabels = new Set(question.options.map((option) => option.label));
+  let submittedLabels: string[];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    submittedLabels = Array.isArray(parsed)
+      ? parsed.filter((label): label is string => typeof label === "string")
+      : [];
+  } catch {
+    submittedLabels = value.split(/[\n,]/u).map((label) => label.trim());
+  }
+  const selected = submittedLabels.filter((label) => authoredLabels.has(label));
+  const notes = submittedLabels.filter((label) => !authoredLabels.has(label)).join(", ");
+  return {
+    questionIndex,
+    question: question.question,
+    kind: "multi",
+    answer: null,
+    selected,
+    ...(notes.length > 0 ? { notes } : {}),
+  };
+}
+
+async function runRpcQuestionnaire(
+  params: QuestionParams,
+  ctx: ExtensionContext,
+): Promise<QuestionnaireResult> {
+  const answers: QuestionAnswer[] = [];
+  for (const [questionIndex, question] of params.questions.entries()) {
+    let answer: QuestionAnswer | undefined;
+    if (question.options.length === 0) {
+      const value = await ctx.ui.input(question.question);
+      if (value !== undefined) {
+        answer = questionAnswerFromRpcValue(question, questionIndex, value);
+      }
+    } else if (question.multiSelect === true) {
+      const optionList = question.options
+        .map((option) => `- ${option.label}: ${option.description}`)
+        .join("\n");
+      const value = await ctx.ui.editor(
+        `${question.question}\n\n${optionList}\n\n${MULTI_SELECT_INSTRUCTIONS} Enter "${displayLabel("chat")}" to continue in chat instead.`,
+        "",
+      );
+      if (value !== undefined) {
+        answer =
+          value.trim() === displayLabel("chat")
+            ? questionAnswerFromRpcValue(question, questionIndex, value.trim())
+            : multiSelectAnswerFromRpcValue(question, questionIndex, value);
+      }
+    } else if (question.options.some((option) => option.preview !== undefined)) {
+      const optionList = question.options
+        .map(
+          (option) =>
+            `- ${option.label}: ${option.description}${option.preview ? `\n\n${option.preview}` : ""}`,
+        )
+        .join("\n\n");
+      const value = await ctx.ui.editor(
+        `${question.question}\n\n${optionList}\n\nEnter one option label exactly, or "${displayLabel("chat")}" to continue in chat.`,
+        "",
+      );
+      if (value !== undefined) {
+        answer = questionAnswerFromRpcValue(question, questionIndex, value.trim());
+      }
+    } else {
+      const items = buildItemsForQuestion(question);
+      const value = await ctx.ui.select(question.question, [
+        ...items.map((item) => item.label),
+        displayLabel("chat"),
+      ]);
+      if (value !== undefined) {
+        answer = questionAnswerFromRpcValue(question, questionIndex, value);
+      }
+    }
+    if (answer === undefined) return { answers, cancelled: true };
+    answers.push(answer);
+  }
+  return { answers, cancelled: false };
+}
+
 export function buildItemsForQuestion(question: QuestionData): WrappingSelectItem[] {
   const items: WrappingSelectItem[] = question.options.map((o) => ({
     kind: "option",
@@ -149,6 +257,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
     promptSnippet: DEFAULT_PROMPT_SNIPPET,
     promptGuidelines: DEFAULT_PROMPT_GUIDELINES,
     parameters: QuestionParamsSchema,
+    executionMode: "sequential",
     renderShell: "self",
     renderCall(args, theme, context) {
       return renderAskUserQuestionCall(args, theme, context);
@@ -192,27 +301,30 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
         buildItemsForQuestion(q),
       );
 
-      const result = await ctx.ui.custom<QuestionnaireResult>(
-        (tui, theme, _kb, done) => {
-          const session = new QuestionnaireSession({
-            tui,
-            theme,
-            params: displayParams,
-            itemsByTab,
-            done,
-          });
-          return session.component;
-        },
-        {
-          overlay: true,
-          overlayOptions: {
-            anchor: "bottom-center",
-            width: "100%",
-            maxHeight: "100%",
-            margin: { left: 0, right: 0, bottom: 0 },
-          },
-        },
-      );
+      const result =
+        ctx.mode === "rpc"
+          ? await runRpcQuestionnaire(displayParams, ctx)
+          : await ctx.ui.custom<QuestionnaireResult>(
+              (tui, theme, _kb, done) => {
+                const session = new QuestionnaireSession({
+                  tui,
+                  theme,
+                  params: displayParams,
+                  itemsByTab,
+                  done,
+                });
+                return session.component;
+              },
+              {
+                overlay: true,
+                overlayOptions: {
+                  anchor: "bottom-center",
+                  width: "100%",
+                  maxHeight: "100%",
+                  margin: { left: 0, right: 0, bottom: 0 },
+                },
+              },
+            );
 
       if (result?.cancelled || result === null || result === undefined) {
         pi.events.emit(ASK_USER_QUESTION_CANCELLED_EVENT, {

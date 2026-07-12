@@ -22,16 +22,6 @@ data class TerminalFontArchive(val family: String, val url: String, val includes
 
 val terminalFonts = listOf(
     TerminalFontArchive(
-        "IBMPlexMono",
-        "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/IBMPlexMono.zip",
-        listOf("BlexMonoNerdFontMono-Regular.ttf", "BlexMonoNerdFontMono-Bold.ttf", "BlexMonoNerdFontMono-SemiBold.ttf", "BlexMonoNerdFontMono-Italic.ttf", "BlexMonoNerdFontMono-BoldItalic.ttf"),
-    ),
-    TerminalFontArchive(
-        "Iosevka",
-        "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/Iosevka.zip",
-        listOf("IosevkaNerdFontMono-Regular.ttf", "IosevkaNerdFontMono-Bold.ttf", "IosevkaNerdFontMono-SemiBold.ttf", "IosevkaNerdFontMono-Italic.ttf", "IosevkaNerdFontMono-BoldItalic.ttf"),
-    ),
-    TerminalFontArchive(
         "JetBrainsMono",
         "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/JetBrainsMono.zip",
         listOf("JetBrainsMonoNerdFontMono-Regular.ttf", "JetBrainsMonoNerdFontMono-Bold.ttf", "JetBrainsMonoNerdFontMono-SemiBold.ttf", "JetBrainsMonoNerdFontMono-Italic.ttf", "JetBrainsMonoNerdFontMono-BoldItalic.ttf"),
@@ -97,7 +87,8 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

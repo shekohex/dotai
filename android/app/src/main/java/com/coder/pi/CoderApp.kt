@@ -3478,11 +3478,14 @@ private fun FontsScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var fontSize by remember { mutableIntStateOf(terminalView.fontSizePoints()) }
     var selectedFontKey by remember { mutableStateOf(CoderFonts.selectedKey(context)) }
     var selectedUiFontKey by remember { mutableStateOf(CoderFonts.selectedUiKey(context)) }
     var matchFonts by remember { mutableStateOf(CoderFonts.uiMatchesTerminal(context)) }
     var importedFonts by remember { mutableStateOf(CoderFonts.importedOptions(context)) }
+    var downloadedFonts by remember { mutableStateOf(CoderFonts.downloadedOptions(context)) }
+    var downloadProgress by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     val importLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
@@ -3528,6 +3531,52 @@ private fun FontsScreen(
                 }
             }
         }
+        SettingsSection("DOWNLOADABLE FONTS", tokens) {
+            CoderFonts.downloadableOptions().forEach { option ->
+                val installed = downloadedFonts.firstOrNull { it.key == option.key }
+                if (installed == null) {
+                    val progress = downloadProgress[option.key]
+                    SettingsValueRow(
+                        R.drawable.ic_feather_upload,
+                        option.name,
+                        option.subtitle,
+                        progress?.let { "$it%" } ?: "Download",
+                        tokens,
+                    ) {
+                        if (progress != null) return@SettingsValueRow
+                        downloadProgress = downloadProgress + (option.key to 0)
+                        scope.launch {
+                            runCatching { CoderFonts.download(context, option) { percent -> launch(Dispatchers.Main) { downloadProgress = downloadProgress + (option.key to percent) } } }
+                                .onSuccess { downloaded ->
+                                    downloadedFonts = CoderFonts.downloadedOptions(context)
+                                    downloadProgress = downloadProgress - option.key
+                                    selectedFontKey = downloaded.key
+                                    onTerminalFontSelected(downloaded.key)
+                                    onFontChanged()
+                                }.onFailure { error ->
+                                    downloadProgress = downloadProgress - option.key
+                                    Toast.makeText(context, "Font download failed: ${error.message ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                                }
+                        }
+                    }
+                } else {
+                    FontOptionRow(installed, selectedFontKey, tokens) {
+                        selectedFontKey = installed.key
+                        onTerminalFontSelected(installed.key)
+                        onFontChanged()
+                    }
+                    SettingsValueRow(R.drawable.ic_feather_trash_2, "Remove ${option.name}", "Delete downloaded font", null, tokens) {
+                        CoderFonts.deleteDownload(context, option.key)
+                        downloadedFonts = CoderFonts.downloadedOptions(context)
+                        if (selectedFontKey == option.key) {
+                            selectedFontKey = CoderFonts.selectedKey(context)
+                            onTerminalFontSelected(selectedFontKey)
+                        }
+                        onFontChanged()
+                    }
+                }
+            }
+        }
         SettingsSection("UI MONOSPACE FONT", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_type, "Match Terminal Font", matchFonts, tokens) {
                 matchFonts = it
@@ -3564,7 +3613,7 @@ private fun FontsScreen(
                 SettingsValueRow(R.drawable.ic_feather_type, option.name, option.subtitle, null, tokens, pro = option.pro) {}
             }
         }
-        item { Text("Download curated fonts or import your own from Files. Imported fonts are stored locally and registered with the same renderer used by the terminal.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
+        item { Text("Download optional fonts when needed or import your own from Files. Downloaded and imported fonts stay in app-private storage and use the terminal renderer.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 8.dp)) }
     }
 }
 

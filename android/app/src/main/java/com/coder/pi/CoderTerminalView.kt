@@ -268,7 +268,8 @@ class CoderTerminalView
         }
 
         override fun onDrawFrame(gl: javax.microedition.khronos.opengles.GL10?) {
-            if (handle != 0L && rendererHandle != 0L) native.nativeRendererDrawFrame(handle, rendererHandle)
+            val activeRenderer = rendererHandle
+            if (activeRenderer != 0L) engine.withHandle { activeHandle -> native.nativeRendererDrawFrame(activeHandle, activeRenderer) }
         }
 
         override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
@@ -1522,7 +1523,7 @@ class CoderTerminalView
                 return
             }
             queueEvent {
-                native.nativeFeed(handle, bytes)
+                engine.feedOnCurrentThread(bytes)
                 post { notifyOscMetadataChanged() }
             }
         }
@@ -1532,7 +1533,7 @@ class CoderTerminalView
             val outputs = pendingRemoteOutput.toList()
             pendingRemoteOutput.clear()
             queueEvent {
-                outputs.forEach { native.nativeFeed(handle, it) }
+                outputs.forEach(engine::feedOnCurrentThread)
                 post { notifyOscMetadataChanged() }
             }
         }

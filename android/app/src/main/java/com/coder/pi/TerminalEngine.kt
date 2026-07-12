@@ -32,6 +32,12 @@ class TerminalEngine(
 
     fun feedOnCurrentThread(bytes: ByteArray) = synchronized(lock) { if (handle != 0L) native.nativeFeed(handle, bytes) }
 
+    internal fun withHandle(action: (Long) -> Unit) {
+        synchronized(lock) {
+            handle.takeIf { it != 0L }?.let(action)
+        }
+    }
+
     fun dispose() {
         synchronized(lock) {
             if (handle != 0L) native.nativeDisposeTerminal(handle)

@@ -42,7 +42,7 @@ static CoderRenderer* renderer(NativeRenderer* handle) { return &handle->rendere
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_coder_pi_CoderNative_nativeInitTerminal(JNIEnv*, jobject, jint cols, jint rows, jint cellWidth, jint cellHeight) {
     auto handle = std::make_unique<NativeTerminal>();
-    handle->terminal.start(cols, rows, cellWidth, cellHeight);
+    if (!handle->terminal.start(cols, rows, cellWidth, cellHeight)) return 0;
     return reinterpret_cast<jlong>(handle.release());
 }
 

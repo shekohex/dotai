@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -82,6 +83,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -104,6 +106,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.findViewTreeLifecycleOwner
 import coil.compose.AsyncImage
 import io.sentry.SentryLevel
 import kotlinx.coroutines.Dispatchers
@@ -135,14 +140,17 @@ fun ChatInputBar(
     submitLocked: Boolean = false,
     onClear: () -> Unit,
     onSubmit: (String) -> Boolean,
+    onSubmitFollowUp: (String) -> Boolean = onSubmit,
     onReturn: () -> Unit,
     onClose: () -> Unit,
+    promptHistoryContext: TerminalNotificationContext? = null,
     startDictationRequest: Int = 0,
     onStartDictationRequestConsumed: () -> Unit = {},
     keyboardAvoidanceOffsetPx: Int = 0,
     manualKeyboardAvoidance: Boolean = false,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalView.current.findViewTreeLifecycleOwner()
     val scope = rememberCoroutineScope()
     var speechSettings by remember(context) { mutableStateOf(SpeechSettingsStore.values(context)) }
     DisposableEffect(context) {
@@ -173,10 +181,22 @@ fun ChatInputBar(
     var realtimeTranscriptionSessionKey by remember { mutableStateOf("") }
     var expandedEditor by remember { mutableStateOf(false) }
     var selectedAttachmentIndex by remember { mutableStateOf<Int?>(null) }
+    var historyOpen by remember { mutableStateOf(false) }
+    val promptHistoryStore = remember(context) { PromptHistoryStore(context) }
     val attachmentVisible = attachments.isNotEmpty()
     val submitText = {
         val submitted = text.trimEnd().takeIf { it.isNotBlank() }
-        if (!submitLocked && submitted != null && onSubmit(submitted)) onTextChanged("")
+        if (!submitLocked && submitted != null && onSubmit(submitted)) {
+            promptHistoryStore.record(submitted, promptHistoryContext)
+            onTextChanged("")
+        }
+    }
+    val submitFollowUp = {
+        val submitted = text.trimEnd().takeIf { it.isNotBlank() }
+        if (!submitLocked && submitted != null && onSubmitFollowUp(submitted)) {
+            promptHistoryStore.record(submitted, promptHistoryContext)
+            onTextChanged("")
+        }
     }
 
     fun stopDictationCapture() {
@@ -452,6 +472,22 @@ fun ChatInputBar(
             speechAudioCapture.stopAsync()
         }
     }
+    DisposableEffect(lifecycleOwner, speechAudioCapture) {
+        if (lifecycleOwner == null) return@DisposableEffect onDispose {}
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_STOP && dictating) {
+                    speechSoundFeedback.playCancel()
+                    stopDictationCapture()
+                    realtimeTranscriptionSession?.let { session -> scope.launch { session.close() } }
+                    realtimeTranscriptionSession = null
+                    realtimeTranscriptionSessionKey = ""
+                    clearDictationSession()
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     if (dictating) {
         DictationInputSurface(
             tokens = tokens,
@@ -526,12 +562,26 @@ fun ChatInputBar(
                 hapticClick()
                 requestDictationCapture()
             },
+            onHistory = { historyOpen = true },
             sendIcon = if (text.isBlank()) R.drawable.ic_feather_corner_down_left else R.drawable.ic_feather_arrow_up,
             sendAccent = text.isNotBlank(),
             onSend = { if (text.isBlank()) onReturn() else submitText() },
+            onSendFollowUp = if (text.isBlank()) null else submitFollowUp,
         )
     }
     if (expandedEditor) FullscreenChatEditor(text, tokens, onTextChanged, { expandedEditor = false })
+    if (historyOpen) {
+        PromptHistoryDialog(
+            tokens = tokens,
+            store = promptHistoryStore,
+            currentContext = promptHistoryContext,
+            onSelect = {
+                onTextChanged(it.text)
+                historyOpen = false
+            },
+            onDismiss = { historyOpen = false },
+        )
+    }
     selectedAttachmentIndex?.let { index ->
         attachments.getOrNull(index)?.let { attachment ->
             AttachmentDetailsDialog(attachment, tokens, { selectedAttachmentIndex = null }, {
@@ -912,9 +962,11 @@ private fun ChatActionRail(
     onClear: () -> Unit,
     canClear: Boolean,
     onMic: () -> Unit,
+    onHistory: () -> Unit,
     sendIcon: Int,
     sendAccent: Boolean,
     onSend: () -> Unit,
+    onSendFollowUp: (() -> Unit)?,
 ) {
     var clearArmed by remember { mutableStateOf(false) }
     LaunchedEffect(canClear) { if (!canClear) clearArmed = false }
@@ -946,9 +998,105 @@ private fun ChatActionRail(
             }
         }
         Spacer(Modifier.weight(1f))
+        ChatRoundAction(R.drawable.ic_feather_rotate_ccw, tokens.secondary, Color.Transparent, onClick = onHistory)
+        Spacer(Modifier.width(4.dp))
         ChatRoundAction(R.drawable.ic_feather_mic, tokens.secondary, Color.Transparent, onClick = onMic)
         Spacer(Modifier.width(12.dp))
-        ChatSendAction(sendIcon, sendAccent, tokens, onSend)
+        ChatSendAction(sendIcon, sendAccent, tokens, onSend, onSendFollowUp)
+    }
+}
+
+@Composable
+private fun PromptHistoryDialog(
+    tokens: UiTokens,
+    store: PromptHistoryStore,
+    currentContext: TerminalNotificationContext?,
+    onSelect: (PromptHistoryEntry) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var scope by remember { mutableStateOf("all") }
+    var revision by remember { mutableIntStateOf(0) }
+    val entries =
+        remember(query, scope, revision, currentContext) {
+            filterPromptHistory(
+                entries = store.entries(),
+                query = query,
+                workspaceId = currentContext?.workspaceId?.takeIf { scope == "workspace" },
+                terminalId = currentContext?.terminalId?.takeIf { scope == "terminal" },
+            )
+        }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Prompt History", color = tokens.text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = tokens.text, fontSize = bodySize(), fontFamily = FontFamily.Monospace),
+                    cursorBrush = SolidColor(tokens.accent),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tokens.surface).padding(horizontal = 12.dp, vertical = 10.dp),
+                    decorationBox = { inner ->
+                        if (query.isBlank()) Text("Search sent prompts", color = tokens.secondary, fontSize = bodySize())
+                        inner()
+                    },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PromptHistoryScopeButton("All", scope == "all", tokens) { scope = "all" }
+                    if (!currentContext?.workspaceId.isNullOrBlank()) PromptHistoryScopeButton("Workspace", scope == "workspace", tokens) { scope = "workspace" }
+                    if (!currentContext?.terminalId.isNullOrBlank()) PromptHistoryScopeButton("Terminal", scope == "terminal", tokens) { scope = "terminal" }
+                }
+                Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (entries.isEmpty()) {
+                        Text("No matching sent prompts", color = tokens.secondary, fontSize = bodySize(), modifier = Modifier.padding(vertical = 24.dp))
+                    }
+                    entries.forEach { entry ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tokens.surface).clickable { onSelect(entry) }.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(entry.text.replace('\n', ' '), color = tokens.text, fontSize = bodySize(), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(entry.workspaceName.ifBlank { "Sent prompt" }, color = tokens.secondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            ChatRoundAction(R.drawable.ic_feather_trash_2, tokens.secondary, Color.Transparent) {
+                                store.delete(entry.id)
+                                revision++
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = tokens.accent) } },
+        dismissButton =
+            if (entries.isEmpty()) {
+                null
+            } else {
+                {
+                    TextButton(onClick = {
+                        store.clear()
+                        revision++
+                    }) { Text("Clear All", color = Color(0xffff5c7a)) }
+                }
+            },
+        containerColor = tokens.surfaceHigh,
+    )
+}
+
+@Composable
+private fun PromptHistoryScopeButton(
+    label: String,
+    selected: Boolean,
+    tokens: UiTokens,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier.clip(RoundedCornerShape(10.dp)).background(if (selected) tokens.accent.copy(alpha = 0.22f) else tokens.surface).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp),
+    ) {
+        Text(label, color = if (selected) tokens.accent else tokens.text, fontSize = 12.sp)
     }
 }
 
@@ -1073,7 +1221,7 @@ fun DictationInputSurface(
                 }
             }
         }
-        if (recording) DictationSwipeHints(tokens)
+        if (recording) DictationRecordingActions(paused, tokens, onAction)
         DictationSecondaryActions(visibleActions.secondary.filterNot { it == SpeechDictationAction.START_ENHANCEMENT || it == SpeechDictationAction.RETRY_ENHANCEMENT || it == SpeechDictationAction.CANCEL || it == SpeechDictationAction.PAUSE_RECORDING || it == SpeechDictationAction.RESUME_RECORDING }, tokens, onAction)
     }
 }
@@ -1248,10 +1396,41 @@ private fun Modifier.animateAlphaLoop(): Modifier =
     }
 
 @Composable
-private fun DictationSwipeHints(tokens: UiTokens) {
-    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("← cancel", color = tokens.secondary.copy(alpha = 0.72f), fontSize = 11.sp)
-        Text("↑ finish", color = tokens.secondary.copy(alpha = 0.72f), fontSize = 11.sp)
+private fun DictationRecordingActions(
+    paused: Boolean,
+    tokens: UiTokens,
+    onAction: (SpeechDictationAction) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DictationRecordingButton("Cancel", Color(0xffff5c7a), tokens, Modifier.weight(1f)) { onAction(SpeechDictationAction.CANCEL) }
+        DictationRecordingButton(if (paused) "Resume" else "Pause", tokens.text, tokens, Modifier.weight(1f)) {
+            onAction(if (paused) SpeechDictationAction.RESUME_RECORDING else SpeechDictationAction.PAUSE_RECORDING)
+        }
+        DictationRecordingButton("Finish", tokens.accent, tokens, Modifier.weight(1f)) { onAction(SpeechDictationAction.STOP_RECORDING) }
+    }
+}
+
+@Composable
+private fun DictationRecordingButton(
+    label: String,
+    color: Color,
+    tokens: UiTokens,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier
+            .height(48.dp)
+            .semantics { contentDescription = "$label dictation" }
+            .clip(RoundedCornerShape(16.dp))
+            .background(tokens.surface)
+            .clickable {
+                hapticClick()
+                onClick()
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = color, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -1460,19 +1639,34 @@ private fun ChatRoundAction(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatSendAction(
     icon: Int,
     accent: Boolean,
     tokens: UiTokens,
     onSend: () -> Unit,
+    onSendFollowUp: (() -> Unit)?,
 ) {
     val tint = if (accent) tokens.accent else tokens.text
     Box(
-        Modifier.size(44.dp).clip(CircleShape).clickable {
-            hapticClick()
-            onSend()
-        },
+        Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .semantics { contentDescription = if (onSendFollowUp == null) "Send Return" else "Send prompt; long press queues follow-up" }
+            .combinedClickable(
+                onClick = {
+                    hapticClick()
+                    onSend()
+                },
+                onLongClick =
+                    onSendFollowUp?.let { sendFollowUp ->
+                        {
+                            hapticClick()
+                            sendFollowUp()
+                        }
+                    },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Crossfade(icon, label = "chat-send-icon") { targetIcon ->

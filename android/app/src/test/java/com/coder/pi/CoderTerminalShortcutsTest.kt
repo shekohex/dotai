@@ -206,6 +206,7 @@ class CoderTerminalShortcutsTest {
         assertArrayEquals(byteArrayOf(27, 3), terminalModifiedKeyBytes(KeyEvent.KEYCODE_C, 'c'.code, KeyEvent.META_CTRL_ON or KeyEvent.META_ALT_ON))
         assertArrayEquals("A".toByteArray(), terminalModifiedKeyBytes(KeyEvent.KEYCODE_A, 'a'.code, KeyEvent.META_SHIFT_ON))
         assertArrayEquals(byteArrayOf(27, 9), terminalModifiedKeyBytes(KeyEvent.KEYCODE_TAB, 0, KeyEvent.META_ALT_ON))
+        assertArrayEquals(byteArrayOf(27, 13), terminalModifiedKeyBytes(KeyEvent.KEYCODE_ENTER, 0, KeyEvent.META_ALT_ON))
     }
 
     @Test

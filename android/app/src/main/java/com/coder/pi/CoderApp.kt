@@ -58,7 +58,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -105,7 +104,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
@@ -2308,11 +2306,10 @@ fun TerminalSurface(
     var imePanPx by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val density = LocalDensity.current
-    val reservedAccessoryHeight = if (accessoryReserved) TerminalToolbarReservedHeight else 0.dp
-    val reservedAccessoryHeightPx = with(density) { reservedAccessoryHeight.roundToPx() }
+    val measuredAccessoryHeight = with(density) { bottomOverlayHeightPx.toDp() }
+    val reservedAccessoryHeight = if (accessoryReserved) maxOf(TerminalToolbarReservedHeight, measuredAccessoryHeight) else 0.dp
     val keyboardOffsetPx = if (keyboardAvoidanceOffsetPx > 0) keyboardAvoidanceOffsetPx + keyboardGapPx else 0
-    val chatExtraOffsetPx = if (chatModeActive) (bottomOverlayHeightPx - reservedAccessoryHeightPx).coerceAtLeast(0) else 0
-    val terminalKeyboardOffsetPx = if (chatModeActive) keyboardAvoidanceOffsetPx + chatExtraOffsetPx else keyboardOffsetPx
+    val terminalKeyboardOffsetPx = if (chatModeActive) keyboardAvoidanceOffsetPx else keyboardOffsetPx
     LaunchedEffect(terminalView, terminalKeyboardOffsetPx, terminalHostHeightPx) {
         if (terminalKeyboardOffsetPx <= 0 || terminalHostHeightPx <= 0) {
             imePanPx = 0
@@ -2355,7 +2352,6 @@ fun TerminalSurface(
                         it.post { it.refreshSurface() }
                     },
                 )
-                TerminalCutoutFade(theme)
                 TerminalPinchFontOverlay(terminalView)
                 if (showMetadataOverlay && (oscMetadata.title.isNotBlank() || oscMetadata.pwd.isNotBlank())) {
                     Column(
@@ -2502,7 +2498,7 @@ fun TerminalAccessory(
 
     fun clampDPadOffset(offset: IntOffset): IntOffset {
         val horizontalLimit = (screenWidthPx / 2 - with(density) { 116.dp.roundToPx() }).coerceAtLeast(0)
-        val topLimit = -(screenHeightPx - with(density) { 220.dp.roundToPx() }).coerceAtMost(0)
+        val topLimit = -(screenHeightPx - with(density) { 220.dp.roundToPx() }).coerceAtLeast(0)
         return IntOffset(offset.x.coerceIn(-horizontalLimit, horizontalLimit), offset.y.coerceIn(topLimit, 0))
     }
 
@@ -2592,6 +2588,12 @@ fun TerminalAccessory(
                 if (terminalView.chatAutoSendEnabled()) terminalView.sendKey(KeyEvent.KEYCODE_ENTER)
                 true
             },
+            onSubmitFollowUp = {
+                terminalView.pasteText(it)
+                terminalView.playAlertFeedback(TerminalAlertFeedbackState.SUBMIT)
+                terminalView.sendKey(KeyEvent.KEYCODE_ENTER, KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON)
+                true
+            },
             onReturn = {
                 terminalView.sendKey(KeyEvent.KEYCODE_ENTER)
                 terminalView.playAlertFeedback(TerminalAlertFeedbackState.SUBMIT)
@@ -2603,6 +2605,7 @@ fun TerminalAccessory(
                     chatMode = false
                 }
             },
+            promptHistoryContext = terminalView.notificationContextSnapshot(),
             startDictationRequest = startDictationRequest,
             onStartDictationRequestConsumed = { startDictationRequest = 0 },
             keyboardAvoidanceOffsetPx = keyboardAvoidanceOffsetPx,
@@ -2611,7 +2614,7 @@ fun TerminalAccessory(
         return
     }
     if (toolbarHiddenForHardwareKeyboard) return
-    TerminalDPadOverlay(dpadExpanded, uiTokens(theme), terminalView, dpadOffset, { delta -> dpadOffset = clampDPadOffset(dpadOffset + delta) }, ::snapDPadOffset)
+    TerminalDPadOverlay(dpadExpanded, uiTokens(theme), terminalView, dpadOffset, toolbarKeyboardOffsetPx, { delta -> dpadOffset = clampDPadOffset(dpadOffset + delta) }, ::snapDPadOffset)
     val toolbarModifier =
         if (toolbarKeyboardOffsetPx > 0) {
             modifier.offset { IntOffset(0, -toolbarKeyboardOffsetPx) }
@@ -2628,7 +2631,7 @@ fun TerminalAccessory(
                 .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(Modifier.fillMaxWidth().height(38.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(
                     Modifier
                         .weight(1f)
@@ -2664,7 +2667,7 @@ fun TerminalAccessory(
                     if (!selectionActive) shortcuts.forEach { shortcut -> ToolbarTextButton(shortcut.label, text, uiTokens(theme).surface) { terminalView.executeTerminalShortcut(shortcut.sequence) } }
                 }
                 Spacer(Modifier.width(5.dp))
-                Row(Modifier.height(40.dp).clip(RoundedCornerShape(20.dp)).padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.height(48.dp).clip(RoundedCornerShape(24.dp)).padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (showChat) {
                         ToolbarIconButton(
                             R.drawable.ic_feather_message_circle,
@@ -2682,24 +2685,6 @@ fun TerminalAccessory(
             if (shortcutsPanelExpanded && selectedPanelTab != null) TerminalShortcutPanel(selectedPanelTab, shortcutPanelTabs, terminalView, text, uiTokens(theme), { selectedShortcutPanelTab = it }) { shortcutsPanelExpanded = false }
         }
     }
-}
-
-@Composable
-private fun TerminalCutoutFade(theme: CoderTheme) {
-    val cutoutTopPadding = WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
-    if (cutoutTopPadding <= 0.dp) return
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(cutoutTopPadding + 56.dp)
-            .background(
-                Brush.verticalGradient(
-                    0f to theme.background.toComposeColor().copy(alpha = 0.94f),
-                    0.42f to theme.background.toComposeColor().copy(alpha = 0.62f),
-                    1f to theme.background.toComposeColor().copy(alpha = 0f),
-                ),
-            ),
-    )
 }
 
 private enum class DPadDirection(
@@ -2749,7 +2734,7 @@ private fun RowScope.ToolbarDPadButton(
     Box(
         Modifier
             .padding(end = 4.dp)
-            .height(32.dp)
+            .height(48.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(background)
             .pointerInput(terminalView) {
@@ -2914,7 +2899,7 @@ private fun RowScope.ToolbarIconButton(
     Box(
         Modifier
             .padding(end = 4.dp)
-            .size(32.dp)
+            .size(48.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(background)
             .combinedClickable(
@@ -4732,8 +4717,11 @@ private fun ChatModeSettingsScreen(
     tokens: UiTokens,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val promptHistoryStore = remember(context) { PromptHistoryStore(context) }
     var chatMode by remember { mutableStateOf(terminalView.chatModeEnabled()) }
     var autoSend by remember { mutableStateOf(terminalView.chatAutoSendEnabled()) }
+    var historyLimit by remember { mutableIntStateOf(promptHistoryStore.retentionLimit()) }
     SettingsScaffold("Chat Mode", tokens, onBack) {
         SettingsSection("CHAT INPUT", tokens) {
             SettingsToggleRow(R.drawable.ic_feather_message_circle, "Enable Chat Mode", chatMode, tokens) {
@@ -4745,7 +4733,15 @@ private fun ChatModeSettingsScreen(
                 terminalView.setChatAutoSendEnabled(it)
             }
         }
-        item { Text("When Auto Send is enabled, submitting chat input sends the prompt plus Return/Enter to the terminal. Disable it to paste the prompt without executing it.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
+        SettingsSection("SENT HISTORY", tokens) {
+            SettingsValueRow(R.drawable.ic_feather_rotate_ccw, "Retained Prompts", "Tap to cycle: 10, 25, 50, 100, 200", historyLimit.toString(), tokens) {
+                val limits = listOf(10, 25, 50, 100, 200)
+                historyLimit = limits[(limits.indexOf(historyLimit).takeIf { it >= 0 } ?: 1).let { (it + 1) % limits.size }]
+                promptHistoryStore.setRetentionLimit(historyLimit)
+            }
+            SettingsValueRow(R.drawable.ic_feather_trash_2, "Clear Sent History", "Remove every retained prompt", null, tokens) { promptHistoryStore.clear() }
+        }
+        item { Text("Tap Send to submit with Return. Long-press Send to queue a Pi follow-up with Alt+Enter. Successful prompts are retained globally and can be filtered by workspace or terminal.", color = tokens.secondary, fontSize = captionSize(), lineHeight = 19.sp, modifier = Modifier.padding(horizontal = spacingLarge(), vertical = 18.dp)) }
     }
 }
 

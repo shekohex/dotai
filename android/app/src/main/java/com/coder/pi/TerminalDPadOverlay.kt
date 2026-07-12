@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -49,12 +50,14 @@ fun TerminalDPadOverlay(
     tokens: UiTokens,
     terminalView: CoderTerminalView,
     offset: IntOffset,
+    toolbarOffsetYPx: Int,
     onOffsetChanged: (IntOffset) -> Unit,
     onDragFinished: () -> Unit,
 ) {
     if (!expanded) return
     val visibleState = remember { MutableTransitionState(false).apply { targetState = true } }
-    Popup(alignment = Alignment.BottomCenter, offset = IntOffset(offset.x, offset.y - 116), properties = PopupProperties(focusable = false)) {
+    val toolbarClearancePx = with(LocalDensity.current) { 116.dp.roundToPx() }
+    Popup(alignment = Alignment.BottomCenter, offset = IntOffset(offset.x, offset.y - toolbarClearancePx - toolbarOffsetYPx), properties = PopupProperties(focusable = false)) {
         AnimatedVisibility(
             visibleState = visibleState,
             enter = fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 520f)) + scaleIn(initialScale = 0.82f, animationSpec = spring(dampingRatio = 0.72f, stiffness = 420f)),
@@ -119,7 +122,7 @@ private fun DPadIconButton(
     onClick: () -> Unit,
 ) {
     Box(
-        modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(background).border(BorderStroke(1.dp, color.copy(alpha = 0.18f)), RoundedCornerShape(13.dp)).clickable {
+        modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(background).border(BorderStroke(1.dp, color.copy(alpha = 0.18f)), RoundedCornerShape(15.dp)).clickable {
             hapticClick()
             onClick()
         },
@@ -149,10 +152,10 @@ private fun RepeatingDPadButton(
     }
     Box(
         Modifier
-            .size(42.dp)
-            .clip(RoundedCornerShape(13.dp))
+            .size(48.dp)
+            .clip(RoundedCornerShape(15.dp))
             .background(background)
-            .border(BorderStroke(1.dp, color.copy(alpha = 0.18f)), RoundedCornerShape(13.dp))
+            .border(BorderStroke(1.dp, color.copy(alpha = 0.18f)), RoundedCornerShape(15.dp))
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown()

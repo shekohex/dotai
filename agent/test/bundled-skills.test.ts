@@ -17,6 +17,20 @@ describe("bundled skills", () => {
     expect(skillPaths.some((path) => path.endsWith("/setup-pi-conductor/SKILL.md"))).toBe(true);
   });
 
+  it("includes Coder CLI skill and command reference", () => {
+    const skillPath = discoverSkillPaths().find((path) =>
+      path.endsWith("/using-coder-cli/SKILL.md"),
+    );
+    expect(skillPath).toBeDefined();
+
+    const skill = readFileSync(skillPath!, "utf8");
+    expect(skill).toContain("coder whoami");
+    expect(skill).toContain("coder ssh");
+    expect(skill).toContain("coder config-ssh --dry-run");
+    expect(skill).toContain("Do not display or persist raw `coder list --output json`");
+    expect(existsSync(join(dirname(skillPath!), "references", "COMMANDS.md"))).toBe(true);
+  });
+
   it("includes run skill generator and examples", () => {
     const skillPaths = discoverSkillPaths();
     const generatorPath = skillPaths.find((path) => path.endsWith("/run-skill-generator/SKILL.md"));

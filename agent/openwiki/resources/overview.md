@@ -34,6 +34,7 @@ Each is a directory with a `SKILL.md` (and optional resources), discovered by `d
 | `run-app/`             | `examples/{cli,electron,library,playwright,server,tui}.md`         |
 | `run-skill-generator/` | `template.md`                                                      |
 | `setup-pi-conductor/`  | —                                                                  |
+| `using-coder-cli/`     | `references/COMMANDS.md`                                           |
 
 ## dynamic workflows
 

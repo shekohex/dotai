@@ -51,6 +51,8 @@ function registerSubagentRuntimeEvents(
   scheduleParentSubagentToolActivation: (pi: ExtensionAPI) => void,
   isChildSession: (state: ChildBootstrapState | undefined, ctx: ExtensionContext) => boolean,
   readChildState: () => ChildBootstrapState | undefined,
+  isSubagentToolEnabled: () => boolean,
+  restoreToolState: (ctx: ExtensionContext) => void,
 ): void {
   const modesChangedEvents = pi.events;
   const handleModesChanged = (): unknown => {
@@ -77,15 +79,20 @@ function registerSubagentRuntimeEvents(
 
   scheduleParentSubagentToolActivation(pi);
   pi.on("session_start", async (_event, ctx) => {
+    const childSession = isChildSession(readChildState(), ctx);
+    if (!childSession) restoreToolState(ctx);
     await syncSubagentToolRegistration(ctx);
-    if (!isChildSession(readChildState(), ctx)) {
+    if (!childSession && isSubagentToolEnabled()) {
       ensureParentSubagentToolActive(pi);
       await sdk.restore(ctx);
     }
   });
+  pi.on("session_tree", (_event, ctx) => {
+    if (!isChildSession(readChildState(), ctx)) restoreToolState(ctx);
+  });
   pi.on("before_agent_start", async (_event, ctx) => {
     await syncSubagentToolRegistration(ctx);
-    if (!isChildSession(readChildState(), ctx)) {
+    if (!isChildSession(readChildState(), ctx) && isSubagentToolEnabled()) {
       ensureParentSubagentToolActive(pi);
     }
   });

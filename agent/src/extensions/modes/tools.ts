@@ -6,6 +6,7 @@ import { getWorkflowModeState, WORKFLOW_TOOL_NAME } from "../dynamic-workflows/w
 import { GOAL_TOOL_NAME, isGoalToolEnabled } from "../goal/state.js";
 import { normalizeToolNamesForModel, shouldUsePatch } from "../patch.js";
 import { isSessionQueryToolEnabled, SESSION_QUERY_TOOL_NAME } from "../session-query/state.js";
+import { isSubagentToolEnabled, SUBAGENT_TOOL_NAME } from "../subagent/state.js";
 import { readChildState } from "../../subagent-sdk/launch.js";
 
 const STRUCTURED_OUTPUT_TOOL_NAME = "StructuredOutput";
@@ -44,6 +45,9 @@ function getAvailableToolNames(pi: ExtensionAPI, ctx: ExtensionContext): string[
       }
       if (toolName === SESSION_QUERY_TOOL_NAME) {
         return isSessionQueryToolEnabled();
+      }
+      if (toolName === SUBAGENT_TOOL_NAME) {
+        return isSubagentToolEnabled();
       }
       if (contextPruneConfig === undefined) return true;
       if (toolName === CONTEXT_PRUNE_TOOL_NAME) {

@@ -72,6 +72,11 @@ export type SubagentRuntimeHooks = {
 export type DefaultSubagentRuntimeHooksOptions = {
   title?: string;
   terminalRetentionMs?: number;
+  toolControl?: {
+    getDefaultEnabled?(): boolean;
+    isEnabled(): boolean;
+    setEnabled(enabled: boolean, ctx: ExtensionContext): void;
+  };
 };
 
 type SubagentRuntimeUiControls = {
@@ -101,6 +106,7 @@ function hasSubagentRuntimeControlApi(
 function registerSubagentRuntimeControls(
   pi: ExtensionAPI,
   controls: SubagentRuntimeUiControls,
+  toolControl?: DefaultSubagentRuntimeHooksOptions["toolControl"],
 ): void {
   if (
     !hasSubagentRuntimeControlApi(pi) ||
@@ -112,9 +118,32 @@ function registerSubagentRuntimeControls(
   subagentDashboardCoordinator.registeredControlApi = pi;
 
   pi.registerCommand("subagents", {
-    description: "Show or toggle live subagent dashboard",
+    description: "Enable or disable subagent tool, or control live subagent dashboard",
+    getArgumentCompletions(prefix) {
+      const trimmed = prefix.trim();
+      return [
+        { value: "on", label: "on", description: "Enable subagent tool for this session" },
+        { value: "off", label: "off", description: "Disable subagent tool for this session" },
+        { value: "status", label: "status", description: "Show subagent tool status" },
+        { value: "fullscreen", label: "fullscreen", description: "Open subagent dashboard" },
+      ].filter((item) => item.value.startsWith(trimmed));
+    },
     async handler(args, ctx) {
       const action = args.trim();
+      if (action === "on" || action === "off") {
+        const enabled = action === "on";
+        toolControl?.setEnabled(enabled, ctx);
+        ctx.ui.notify(`subagent tool ${enabled ? "enabled" : "disabled"}.`, "info");
+        return;
+      }
+      if (action === "status") {
+        const configEnabled = toolControl?.getDefaultEnabled?.();
+        ctx.ui.notify(
+          `subagent: ${toolControl?.isEnabled() === false ? "disabled" : "enabled"}${configEnabled === undefined ? "" : ` (config default: ${configEnabled ? "enabled" : "disabled"})`}`,
+          "info",
+        );
+        return;
+      }
       if (action === "fullscreen" || action === "full") {
         await controls.showFullscreen(ctx);
         return;
@@ -341,15 +370,19 @@ export function createDefaultSubagentRuntimeHooks(
     }
   };
 
-  registerSubagentRuntimeControls(pi, {
-    toggle() {
-      subagentDashboardCoordinator.expanded = !subagentDashboardCoordinator.expanded;
+  registerSubagentRuntimeControls(
+    pi,
+    {
+      toggle() {
+        subagentDashboardCoordinator.expanded = !subagentDashboardCoordinator.expanded;
+      },
+      setExpanded(nextExpanded) {
+        subagentDashboardCoordinator.expanded = nextExpanded;
+      },
+      showFullscreen: showCoordinatedFullscreen,
     },
-    setExpanded(nextExpanded) {
-      subagentDashboardCoordinator.expanded = nextExpanded;
-    },
-    showFullscreen: showCoordinatedFullscreen,
-  });
+    options.toolControl,
+  );
 
   const dispose = (): void => {
     clearSlotTimers(slot);

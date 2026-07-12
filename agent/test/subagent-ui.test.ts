@@ -251,7 +251,9 @@ describe("subagent ui", () => {
       }) as never,
     );
 
-    expect(commands.get("subagents")?.description).toBe("Show or toggle live subagent dashboard");
+    expect(commands.get("subagents")?.description).toBe(
+      "Enable or disable subagent tool, or control live subagent dashboard",
+    );
     expect(shortcuts.get("ctrl+alt+u")?.description).toBe("Toggle subagent dashboard");
     expect(duplicateCommands.size).toBe(0);
   });

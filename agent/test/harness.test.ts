@@ -52,6 +52,7 @@ import promptStashExtension, {
 import agentsMdExtension from "../src/extensions/agents-md.ts";
 import skillReadExtension from "../src/extensions/skill-read.ts";
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
+import { createToolStateEntry, TOOL_STATE_ENTRY_TYPE } from "../src/utils/tool-state.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import {
   setRegisteredThemes,
@@ -838,6 +839,16 @@ function hasRegisteredCommand(testSession: TestSession, commandName: string): bo
   return extensionRunner
     .getRegisteredCommands()
     .some((registeredCommand) => registeredCommand.invocationName === commandName);
+}
+
+function createEnabledSubagentExtension(options?: Parameters<typeof createSubagentExtension>[0]) {
+  const subagentExtension = createSubagentExtension(options);
+  return (pi: ExtensionAPI): void => {
+    pi.on("session_start", () => {
+      pi.appendEntry(TOOL_STATE_ENTRY_TYPE, createToolStateEntry("subagent", true));
+    });
+    subagentExtension(pi);
+  };
 }
 
 function getCurrentSystemPrompt(testSession: TestSession): string {
@@ -1872,7 +1883,11 @@ timedTest(
     try {
       session = await createTestSession({
         cwd,
-        extensionFactories: [modesExtension, createSubagentExtension(), providers.extensionFactory],
+        extensionFactories: [
+          modesExtension,
+          createEnabledSubagentExtension(),
+          providers.extensionFactory,
+        ],
       });
       patchHarnessAgent(session);
       setSessionPersistence(session, true);
@@ -2544,7 +2559,7 @@ timedTest(
           modesExtension,
           interviewExtension,
           gsdExtension,
-          createSubagentExtension(),
+          createEnabledSubagentExtension(),
           createActiveToolsCaptureExtension(capturedToolSets),
           providers.extensionFactory,
         ],
@@ -2581,7 +2596,7 @@ timedTest(
           modesExtension,
           interviewExtension,
           gsdExtension,
-          createSubagentExtension(),
+          createEnabledSubagentExtension(),
           providers.extensionFactory,
         ],
       });
@@ -2617,7 +2632,7 @@ timedTest("/gsd debug launches replacement session without interview by default"
         modesExtension,
         interviewExtension,
         gsdExtension,
-        createSubagentExtension(),
+        createEnabledSubagentExtension(),
         createActiveToolsCaptureExtension(capturedToolSets),
         providers.extensionFactory,
       ],
@@ -3237,7 +3252,7 @@ timedTest(
 
     try {
       session = await createTestSession({
-        extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
+        extensionFactories: [createEnabledSubagentExtension({ adapterFactory: () => mux })],
       });
       patchHarnessAgent(session);
       setSessionPersistence(session, true);
@@ -3418,7 +3433,7 @@ timedTest("subagent extension launches into a tmux window when the mode requests
   try {
     session = await createTestSession({
       cwd,
-      extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
+      extensionFactories: [createEnabledSubagentExtension({ adapterFactory: () => mux })],
     });
     patchHarnessAgent(session);
     setSessionPersistence(session, true);
@@ -3471,7 +3486,7 @@ timedTest(
     try {
       session = await createTestSession({
         cwd,
-        extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
+        extensionFactories: [createEnabledSubagentExtension({ adapterFactory: () => mux })],
       });
       patchHarnessAgent(session);
       setSessionPersistence(session, true);
@@ -3509,7 +3524,7 @@ timedTest("subagent extension launches ephemeral children with --no-session", as
 
   try {
     session = await createTestSession({
-      extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
+      extensionFactories: [createEnabledSubagentExtension({ adapterFactory: () => mux })],
     });
     patchHarnessAgent(session);
     setSessionPersistence(session, true);
@@ -3542,7 +3557,7 @@ timedTest(
 
     try {
       session = await createTestSession({
-        extensionFactories: [createSubagentExtension({ adapterFactory: () => mux })],
+        extensionFactories: [createEnabledSubagentExtension({ adapterFactory: () => mux })],
       });
       patchHarnessAgent(session);
       setSessionPersistence(session, false);
@@ -3580,7 +3595,7 @@ timedTest(
       session = await createTestSession({
         extensionFactories: [
           providers.extensionFactory,
-          createSubagentExtension({ adapterFactory: () => mux }),
+          createEnabledSubagentExtension({ adapterFactory: () => mux }),
         ],
       });
       patchHarnessAgent(session);
@@ -3629,7 +3644,7 @@ timedTest("subagent extension reports standard tool errors for invalid operation
   try {
     session = await createTestSession({
       extensionFactories: [
-        createSubagentExtension({ adapterFactory: () => new HarnessMuxAdapter() }),
+        createEnabledSubagentExtension({ adapterFactory: () => new HarnessMuxAdapter() }),
       ],
     });
     patchHarnessAgent(session);
@@ -3669,7 +3684,7 @@ timedTest("subagent extension reports actionable invalid param errors", async ()
   try {
     session = await createTestSession({
       extensionFactories: [
-        createSubagentExtension({ adapterFactory: () => new HarnessMuxAdapter() }),
+        createEnabledSubagentExtension({ adapterFactory: () => new HarnessMuxAdapter() }),
       ],
     });
     patchHarnessAgent(session);

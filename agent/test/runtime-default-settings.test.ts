@@ -84,6 +84,7 @@ describe("runtime default settings", () => {
         defaultProvider: "openai-codex",
         theme: "catppuccin-mocha",
         retry: { enabled: true, maxRetries: 1024 },
+        subagents: { enabled: false },
       });
     } finally {
       await rm(tempDir, { recursive: true, force: true });

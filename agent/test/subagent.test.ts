@@ -68,6 +68,7 @@ afterEach(() => {
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
 import { SubagentRuntime } from "../src/subagent-sdk/runtime.ts";
 import { SubagentRuntimeEventBus } from "../src/subagent-sdk/events.ts";
+import { resetSubagentDashboardCoordinatorForTests } from "../src/subagent-sdk/runtime-hooks.ts";
 import { formatSubagentFailureFallback } from "../src/subagent-sdk/runtime/base.ts";
 import { toSubagentStatusDetails } from "../src/subagent-sdk/status.ts";
 import {
@@ -169,6 +170,7 @@ class FakePi implements Partial<ExtensionAPI> {
   sentUserMessages: Array<{ content: unknown; options: unknown }> = [];
   sessionNames: string[] = [];
   registeredTools = new Map<string, ToolDefinition<any, any>>();
+  registeredCommands = new Map<string, (args: string, ctx: ExtensionContext) => unknown>();
   handlers = new Map<string, Array<(...args: any[]) => any>>();
   eventHandlers = new Map<string, Array<(...args: any[]) => any>>();
   events = {
@@ -194,6 +196,15 @@ class FakePi implements Partial<ExtensionAPI> {
   registerTool(tool: ToolDefinition<any, any>): void {
     this.registeredTools.set(tool.name, tool);
   }
+
+  registerCommand(
+    name: string,
+    definition: { handler: (args: string, ctx: ExtensionContext) => unknown },
+  ): void {
+    this.registeredCommands.set(name, definition.handler);
+  }
+
+  registerShortcut(): void {}
 
   on(eventName: string, handler: (...args: any[]) => any): void {
     const handlers = this.handlers.get(eventName) ?? [];
@@ -738,6 +749,44 @@ timedTest(
     }
   },
 );
+
+timedTest("subagent tool is disabled by default", async () => {
+  resetSubagentDashboardCoordinatorForTests();
+  const fakePi = new FakePi();
+  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+    fakePi as unknown as ExtensionAPI,
+  );
+  const ctx = createFakeContext({ cwd: process.cwd() });
+
+  await emitHandlers(fakePi, "session_start", { reason: "startup" }, ctx);
+
+  expect(fakePi.activeTools).not.toContain("subagent");
+});
+
+timedTest("subagents command toggles and persists subagent tool state", async () => {
+  resetSubagentDashboardCoordinatorForTests();
+  const fakePi = new FakePi();
+  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+    fakePi as unknown as ExtensionAPI,
+  );
+  const ctx = createFakeContext({ cwd: process.cwd() });
+  const command = fakePi.registeredCommands.get("subagents");
+
+  expect(command).toBeDefined();
+  await command?.("off", ctx);
+
+  expect(fakePi.activeTools).not.toContain("subagent");
+  expect(fakePi.appendedEntries.at(-1)).toEqual({
+    customType: "tool-state",
+    data: { version: 1, key: "subagent", enabled: false },
+  });
+
+  await emitHandlers(fakePi, "before_agent_start", {}, ctx);
+  expect(fakePi.activeTools).not.toContain("subagent");
+
+  await command?.("on", ctx);
+  expect(fakePi.activeTools).toContain("subagent");
+});
 
 timedTest(
   "child bootstrap names child sessions with subagent name plus normalized prompt",

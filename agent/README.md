@@ -51,6 +51,8 @@ See [REMOTE.md](./REMOTE.md) for the full protocol, lifecycle, command surface, 
 
 `pi conductor` is a repo/project worker for agent-driven GitHub issue work. It watches configured GitHub Projects v2 items, dispatches eligible open issues without already merged conductor PRs into isolated worktrees, routes PR/check/comment feedback back to the running Herdr pane, marks routed comments with best-effort reactions, and persists state in `~/.pi/agent/conductor` by default.
 
+Conductor requires Herdr `0.7.2` or newer with protocol `16` because active-run reconciliation uses `herdr api snapshot`.
+
 Quick start:
 
 ```bash

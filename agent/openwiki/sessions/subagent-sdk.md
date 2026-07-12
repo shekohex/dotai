@@ -23,11 +23,11 @@ parent session
 
 `createDefaultMuxAdapter` (`default-mux.ts`) is a `FallbackMuxAdapter` (`fallback-mux.ts`) that tries backends in order and uses the first that's available:
 
-| Backend   | File       | When used                                                                                                    | Pane id format  |
-| --------- | ---------- | ------------------------------------------------------------------------------------------------------------ | --------------- |
-| **Herdr** | `herdr.ts` | When the herdr workspace manager is present.                                                                 | `w\d+:p\d+`     |
-| **Tmux**  | `tmux.ts`  | When `$TMUX` is set (inside a tmux session). Uses `tmux` CLI (`load-buffer`/`paste-buffer`, `capture-pane`). | `%<digits>`     |
-| **Pty**   | `pty.ts`   | Always available — in-process PTY via `zigpty` + `@xterm/headless`. Last resort.                             | `pty:<pid>:...` |
+| Backend   | File       | When used                                                                                                    | Pane id format   |
+| --------- | ---------- | ------------------------------------------------------------------------------------------------------------ | ---------------- |
+| **Herdr** | `herdr.ts` | When the Herdr workspace manager is present.                                                                 | `w…:p…` (opaque) |
+| **Tmux**  | `tmux.ts`  | When `$TMUX` is set (inside a tmux session). Uses `tmux` CLI (`load-buffer`/`paste-buffer`, `capture-pane`). | `%<digits>`      |
+| **Pty**   | `pty.ts`   | Always available — in-process PTY via `zigpty` + `@xterm/headless`. Last resort.                             | `pty:<pid>:...`  |
 
 Consumers can override the chain via `adapterFactory` in the subagent extension options.
 

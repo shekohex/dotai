@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { discoverSkillPaths } from "../src/extensions/bundled-resources.ts";
@@ -38,5 +38,16 @@ describe("bundled skills", () => {
     );
 
     expect(skillPath).toBeUndefined();
+  });
+
+  it("documents Herdr IDs as opaque stable handles", () => {
+    const skillPath = discoverSkillPaths().find((path) => path.endsWith("/herdr/SKILL.md"));
+    expect(skillPath).toBeDefined();
+
+    const skill = readFileSync(skillPath!, "utf8");
+    expect(skill).toContain("Treat every ID as an opaque string");
+    expect(skill).toContain("herdr pane split --current");
+    expect(skill).not.toMatch(/\b\d+-\d+\b/);
+    expect(skill).not.toMatch(/--workspace \d+\b/);
   });
 });

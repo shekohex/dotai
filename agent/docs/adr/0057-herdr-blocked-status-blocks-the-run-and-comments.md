@@ -1,6 +1,6 @@
 # Herdr blocked status blocks the run and comments
 
-Conductor polls Herdr's JSON CLI status for conductor-owned Pi panes during normal reconciliation. It uses `herdr agent get <pane-id>` rather than the raw socket API because the CLI already exposes stable automation output, including `agent_status`.
+Conductor reads one `herdr api snapshot` for all active runs during normal reconciliation. Protocol 16 snapshots expose stable terminal identity, current workspace/tab/pane handles, and `agent_status`, avoiding separate `pane get`, `agent get`, and list calls for every run.
 
 When Herdr reports `agent_status: "blocked"`, Conductor treats it as a Herdr attention block: the run moves to lifecycle `blocked`, the GitHub Project card moves to the configured Blocked option, and Conductor posts the `runBlocked` Conductor Comment. If the run already has an associated PR, the comment targets that PR number; otherwise it targets the original issue.
 

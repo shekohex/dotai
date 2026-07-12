@@ -58,6 +58,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -2306,6 +2307,7 @@ fun TerminalSurface(
     var imePanPx by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val density = LocalDensity.current
+    val cutoutTopPadding = WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
     val measuredAccessoryHeight = with(density) { bottomOverlayHeightPx.toDp() }
     val reservedAccessoryHeight = if (accessoryReserved) maxOf(TerminalToolbarReservedHeight, measuredAccessoryHeight) else 0.dp
     val keyboardOffsetPx = if (keyboardAvoidanceOffsetPx > 0) keyboardAvoidanceOffsetPx + keyboardGapPx else 0
@@ -2335,7 +2337,7 @@ fun TerminalSurface(
             terminalView.setTerminalForegroundActive(false)
         }
     }
-    Box(modifier.background(theme.background.toComposeColor())) {
+    Box(modifier.background(theme.background.toComposeColor()).padding(top = cutoutTopPadding)) {
         Column(Modifier.fillMaxSize()) {
             Box(
                 Modifier

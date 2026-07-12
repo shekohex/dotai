@@ -15,8 +15,8 @@ import { renderConductorComment } from "./follow-up.js";
 import { isRateLimitError, reconcileMergeConflict, type PullRequestSummary } from "./github.js";
 import {
   activeStatusForRun,
-  HERDR_BLOCKED_REASON,
   isHerdrAttentionBlocked,
+  syncHerdrAttentionStatus,
 } from "./herdr-attention.js";
 import {
   ReconcileScopeSchema,
@@ -44,7 +44,12 @@ import {
   type ConductorOrchestratorDeps,
   type RunOptions,
 } from "./run-status.js";
-import type { ConductorDeliveryMode, HerdrAgentStatus } from "./herdr.js";
+import {
+  herdrLookupForRun,
+  sameHerdrHandles,
+  type ConductorDeliveryMode,
+  type HerdrSessionInspection,
+} from "./herdr.js";
 import { selectLaunchFlags } from "./launch-rules.js";
 import { appendRunLog, noopConductorLogger, type ConductorLogger } from "./logging.js";
 import { renderInitialPrompt, writePromptArtifact } from "./prompt.js";
@@ -456,12 +461,40 @@ export class ConductorOrchestrator {
     authenticatedLogin: string,
     scope: ReconcileScope | undefined,
   ): Promise<void> {
-    for (const run of await this.deps.store.listRuns()) {
+    const runs = (await this.deps.store.listRuns()).filter(
+      (run) =>
+        !run.paused &&
+        run.status !== "done" &&
+        (run.status !== "blocked" || isHerdrAttentionBlocked(run)) &&
+        scopeMatchesRun(scope, run),
+    );
+    if (runs.length === 0) return;
+
+    let inspections: HerdrSessionInspection[];
+    try {
+      inspections = await this.deps.herdr.inspect(runs.map((run) => herdrLookupForRun(run)));
+      if (inspections.length !== runs.length) {
+        throw new Error("Herdr inspection returned an unexpected result count");
+      }
+    } catch (error) {
+      for (const run of runs) {
+        await this.record(run, "reconcile_run_failed", { error: errorMessage(error) });
+      }
+      return;
+    }
+
+    for (const [index, run] of runs.entries()) {
       try {
-        if (run.paused || run.status === "done") continue;
-        if (run.status === "blocked" && !isHerdrAttentionBlocked(run)) continue;
-        if (!scopeMatchesRun(scope, run)) continue;
-        const liveRun = await this.syncHerdrAgentStatus(await this.ensureRunSession(run));
+        const inspection = inspections[index] ?? {};
+        const liveRun = await syncHerdrAttentionStatus({
+          agentStatus: inspection.agentStatus,
+          getRepo: () => this.getResolvedRepo(run.owner, run.repo),
+          github: this.deps.github,
+          record: (record, kind, payload) => this.record(record, kind, payload),
+          run: await this.ensureRunSession(run, inspection),
+          store: this.deps.store,
+          touch: (record) => this.touch(record),
+        });
         const snapshot = await readPullRequestReconcileSnapshot({
           github: this.deps.github,
           run: liveRun,
@@ -618,16 +651,14 @@ export class ConductorOrchestrator {
     return inReview;
   }
 
-  private async ensureRunSession(run: RunRecord): Promise<RunRecord> {
-    if (await this.deps.herdr.paneExists(run.herdr)) return run;
-
-    const location = await this.deps.herdr.find({
-      owner: run.owner,
-      repo: run.repo,
-      issueNumber: run.issueNumber,
-      slug: slugify(run.issueTitle),
-    });
+  private async ensureRunSession(
+    run: RunRecord,
+    inspection?: HerdrSessionInspection,
+  ): Promise<RunRecord> {
+    const resolvedInspection = inspection ?? (await this.inspectRunSession(run));
+    const location = resolvedInspection.location;
     if (location?.paneId !== undefined) {
+      if (sameHerdrHandles(run.herdr, location)) return run;
       const rediscovered = this.touch({ ...run, herdr: location });
       await this.deps.store.updateRun(rediscovered);
       await this.record(rediscovered, "herdr_rediscovered", { herdr: location });
@@ -635,6 +666,14 @@ export class ConductorOrchestrator {
     }
 
     return this.relaunchMissingSession(run);
+  }
+
+  private async inspectRunSession(run: RunRecord): Promise<HerdrSessionInspection> {
+    const [inspection] = await this.deps.herdr.inspect([herdrLookupForRun(run)]);
+    if (inspection === undefined) {
+      throw new Error("Herdr inspection did not return a result");
+    }
+    return inspection;
   }
 
   private async relaunchMissingSession(run: RunRecord): Promise<RunRecord> {
@@ -675,57 +714,6 @@ export class ConductorOrchestrator {
     await this.deps.store.updateRun(recovered);
     await this.record(recovered, "herdr_recovered", { herdr });
     return recovered;
-  }
-  private async syncHerdrAgentStatus(run: RunRecord): Promise<RunRecord> {
-    const status = await this.deps.herdr.agentStatus(run.herdr);
-    if (status === undefined || status === "unknown") return run;
-    if (status === "blocked") return this.blockForHerdrAttention(run);
-    if (isHerdrAttentionBlocked(run)) return this.unblockFromHerdrAttention(run, status);
-    return run;
-  }
-  private async blockForHerdrAttention(run: RunRecord): Promise<RunRecord> {
-    if (isHerdrAttentionBlocked(run) || run.status === "blocked") return run;
-    const repo = await this.getResolvedRepo(run.owner, run.repo);
-    const blocked = this.touch({ ...run, status: "blocked", lastError: HERDR_BLOCKED_REASON });
-    await this.deps.store.updateRun(blocked);
-    await updateProjectStatusBestEffort(
-      this.deps.github,
-      repo.config,
-      runToWorkItem(blocked),
-      repo.config.statusOptions.blocked,
-    );
-    await commentRunBestEffort(
-      this.deps.github,
-      blocked,
-      renderConductorComment({
-        config: repo.config,
-        error: HERDR_BLOCKED_REASON,
-        event: "runBlocked",
-        run: blocked,
-        workflow: repo.workflow,
-      }),
-    );
-    await this.record(blocked, "blocked", { reason: "herdr_agent_blocked" });
-    return blocked;
-  }
-  private async unblockFromHerdrAttention(
-    run: RunRecord,
-    agentStatus: Exclude<HerdrAgentStatus, "blocked" | "unknown">,
-  ): Promise<RunRecord> {
-    const repo = await this.getResolvedRepo(run.owner, run.repo);
-    const status = run.prNumber === undefined ? "in_progress" : "in_review";
-    const unblocked = this.touch({ ...run, status, lastError: undefined });
-    await this.deps.store.updateRun(unblocked);
-    await updateProjectStatusBestEffort(
-      this.deps.github,
-      repo.config,
-      runToWorkItem(unblocked),
-      status === "in_review"
-        ? repo.config.statusOptions.in_review
-        : repo.config.statusOptions.in_progress,
-    );
-    await this.record(unblocked, "unblocked", { reason: "herdr_agent_status", agentStatus });
-    return unblocked;
   }
   private async loadRepositoryRuntime(
     repo: ManagedRepositoryConfig,

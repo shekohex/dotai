@@ -58,6 +58,8 @@ import {
   type ConductorDeliveryMode,
   type HerdrAgentStatus,
   type HerdrRunInput,
+  type HerdrSessionInspection,
+  type HerdrSessionLookup,
   type HerdrSessionManager,
 } from "../src/conductor/herdr.js";
 import { ConductorOrchestrator, type ReconcileScope } from "../src/conductor/orchestrator.js";
@@ -1747,9 +1749,13 @@ describe("conductor adapters", () => {
     ).toEqual([{ tabId: "w1:t1", label: "#7 fix" }]);
     expect(
       parseHerdrPanes(
-        JSON.stringify({ result: { panes: [{ pane_id: "w1:p1", tab_id: "w1:t1" }] } }),
+        JSON.stringify({
+          result: {
+            panes: [{ pane_id: "w1:p1", tab_id: "w1:t1", terminal_id: "term_run" }],
+          },
+        }),
       ),
-    ).toEqual([{ paneId: "w1:p1", tabId: "w1:t1" }]);
+    ).toEqual([{ paneId: "w1:p1", tabId: "w1:t1", terminalId: "term_run" }]);
     expect(
       parseHerdrAgentStatus(
         JSON.stringify({ result: { agent: { pane_id: "w1:p1", agent_status: "blocked" } } }),
@@ -1757,6 +1763,104 @@ describe("conductor adapters", () => {
     ).toBe("blocked");
     expect(deliveryModeToSubmitKey("steer")).toBe("enter");
     expect(deliveryModeToSubmitKey("followUp")).toBe("alt+enter");
+  });
+
+  test("Herdr inspection batches lookups and follows stable terminal identity", async () => {
+    const calls: string[][] = [];
+    const herdr = new CliHerdrSessionManager(async (_file, args) => {
+      calls.push(args);
+      return {
+        stdout: JSON.stringify({
+          result: {
+            type: "session_snapshot",
+            snapshot: {
+              version: "0.7.3",
+              protocol: 16,
+              workspaces: [
+                {
+                  workspace_id: "wA",
+                  label: "moved",
+                },
+              ],
+              tabs: [
+                {
+                  tab_id: "wA:tE",
+                  workspace_id: "wA",
+                  label: "relocated",
+                },
+              ],
+              panes: [
+                {
+                  pane_id: "wA:pN",
+                  terminal_id: "term_run",
+                  workspace_id: "wA",
+                  tab_id: "wA:tE",
+                  agent_status: "blocked",
+                },
+              ],
+              layouts: [],
+              agents: [],
+            },
+          },
+        }),
+        stderr: "",
+      };
+    });
+
+    const inspections = await herdr.inspect([
+      {
+        handles: { paneId: "w1:p1", terminalId: "term_run" },
+        owner: "octo",
+        repo: "demo",
+        issueNumber: 7,
+        slug: "fix-bug",
+      },
+      {
+        handles: { paneId: "w1:p2" },
+        owner: "octo",
+        repo: "demo",
+        issueNumber: 8,
+        slug: "other",
+      },
+    ]);
+
+    expect(calls).toEqual([["api", "snapshot"]]);
+    expect(inspections).toEqual([
+      {
+        agentStatus: "blocked",
+        location: {
+          workspaceId: "wA",
+          tabId: "wA:tE",
+          paneId: "wA:pN",
+          terminalId: "term_run",
+          workspaceLabel: "moved",
+          tabLabel: "relocated",
+        },
+      },
+      {},
+    ]);
+  });
+
+  test("Herdr inspection rejects servers without snapshot protocol support", async () => {
+    const herdr = new CliHerdrSessionManager(async () => ({
+      stdout: JSON.stringify({
+        result: {
+          type: "session_snapshot",
+          snapshot: {
+            version: "0.7.1",
+            protocol: 15,
+            workspaces: [],
+            tabs: [],
+            panes: [],
+          },
+        },
+      }),
+      stderr: "",
+    }));
+
+    await expect(herdr.inspect([])).rejects.toThrow(
+      "herdr 0.7.1 uses protocol 15; protocol 16 or newer is required",
+    );
   });
 
   test("Herdr launch recreates an existing tab with no pane", async () => {
@@ -1782,7 +1886,12 @@ describe("conductor adapters", () => {
       }
       if (args[0] === "tab" && args[1] === "create") {
         return {
-          stdout: JSON.stringify({ result: { tab_id: "t2", root_pane: { pane_id: "p2" } } }),
+          stdout: JSON.stringify({
+            result: {
+              tab_id: "t2",
+              root_pane: { pane_id: "p2", terminal_id: "term_run" },
+            },
+          }),
           stderr: "",
         };
       }
@@ -1800,7 +1909,7 @@ describe("conductor adapters", () => {
         launchFlags: [],
         promptRelativePath: ".pi/conductor/run/initial-prompt.md",
       }),
-    ).resolves.toMatchObject({ tabId: "t2", paneId: "p2" });
+    ).resolves.toMatchObject({ tabId: "t2", paneId: "p2", terminalId: "term_run" });
     expect(calls).toEqual(expect.arrayContaining([["tab", "close", "t1"]]));
   });
 
@@ -3166,6 +3275,76 @@ describe("herdr background placement", () => {
 });
 
 describe("conductor orchestrator", () => {
+  test("reconcile inspects all active Herdr runs in one batch", async () => {
+    const tempDir = await createTempDir("conductor-herdr-inspection-batch-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    await store.createRun(runRecord({ runId: "run-1", issueNumber: 7 }));
+    await store.createRun(runRecord({ runId: "run-2", issueNumber: 8 }));
+    const herdr = new FakeHerdr();
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github: new FakeGitHub(workItem()),
+      herdr,
+      cwd: repoPath,
+    });
+
+    await orchestrator.reconcile();
+
+    expect(herdr.inspectionBatchSizes).toEqual([2]);
+  });
+
+  test("reconcile follows a Conductor pane moved to another Herdr workspace", async () => {
+    const tempDir = await createTempDir("conductor-herdr-pane-move-");
+    const repoPath = join(tempDir, "repo");
+    await mkdir(repoPath, { recursive: true });
+    const store = new MemoryConductorStore();
+    await store.init();
+    const run = runRecord({
+      herdr: {
+        workspaceId: "w1",
+        tabId: "w1:t1",
+        paneId: "w1:p1",
+        terminalId: "term_run",
+      },
+    });
+    await store.createRun(run);
+    const herdr = new FakeHerdr();
+    herdr.inspectionResult = {
+      agentStatus: "working",
+      location: {
+        workspaceId: "wA",
+        tabId: "wA:tE",
+        paneId: "wA:pN",
+        terminalId: "term_run",
+        workspaceLabel: "moved",
+        tabLabel: "relocated",
+      },
+    };
+    const orchestrator = new ConductorOrchestrator({
+      config: configWithRepo(managedRepo({ repoPath }), tempDir),
+      store,
+      github: new FakeGitHub(workItem()),
+      herdr,
+      cwd: repoPath,
+    });
+
+    await orchestrator.reconcile();
+
+    await expect(store.getRun(run.runId)).resolves.toMatchObject({
+      herdr: {
+        workspaceId: "wA",
+        tabId: "wA:tE",
+        paneId: "wA:pN",
+        terminalId: "term_run",
+      },
+    });
+    expect(herdr.launches).toHaveLength(0);
+  });
+
   test("reconcile scans shared project once for multiple repos", async () => {
     const tempDir = await createTempDir("conductor-shared-project-");
     const store = new MemoryConductorStore();
@@ -4533,6 +4712,8 @@ class FakeGitHub implements GitHubClient {
 class FakeHerdr implements HerdrSessionManager {
   readonly launches: HerdrRunInput[] = [];
   readonly sent: Array<{ message: string; delivery: ConductorDeliveryMode }> = [];
+  readonly inspectionBatchSizes: number[] = [];
+  inspectionResult: HerdrSessionInspection | undefined;
   paneExistsResult = true;
   agentStatusResult: HerdrAgentStatus | undefined;
   stopCount = 0;
@@ -4542,8 +4723,25 @@ class FakeHerdr implements HerdrSessionManager {
     return { workspaceId: "w1", tabId: "w1:t1", paneId: "w1:p1" };
   }
 
-  async find(): Promise<HerdrHandles | undefined> {
-    return undefined;
+  async inspect(inputs: HerdrSessionLookup[]): Promise<HerdrSessionInspection[]> {
+    this.inspectionBatchSizes.push(inputs.length);
+    return inputs.map((input) => {
+      if (this.inspectionResult !== undefined) return this.inspectionResult;
+      if (!this.paneExistsResult) return {};
+      return {
+        agentStatus: this.agentStatusResult,
+        location: {
+          workspaceId: input.handles.workspaceId ?? "w1",
+          tabId: input.handles.tabId ?? "w1:t1",
+          paneId: input.handles.paneId ?? "w1:p1",
+          ...(input.handles.terminalId === undefined
+            ? {}
+            : { terminalId: input.handles.terminalId }),
+          workspaceLabel: `${input.owner}/${input.repo}`,
+          tabLabel: `#${input.issueNumber} ${input.slug}`,
+        },
+      };
+    });
   }
 
   async send(
@@ -4552,14 +4750,6 @@ class FakeHerdr implements HerdrSessionManager {
     delivery: ConductorDeliveryMode,
   ): Promise<void> {
     this.sent.push({ message, delivery });
-  }
-
-  async paneExists(): Promise<boolean> {
-    return this.paneExistsResult;
-  }
-
-  async agentStatus(): Promise<HerdrAgentStatus | undefined> {
-    return this.agentStatusResult;
   }
 
   async stop(): Promise<void> {

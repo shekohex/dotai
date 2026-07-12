@@ -6,6 +6,7 @@ import {
   installInlineExtensionNamePatch,
   setInlineExtensionName,
 } from "../src/extensions/inline-extension-names.js";
+import { getBundledExtensionDefinitions } from "../src/extensions/index.js";
 import { timedTest } from "./test-utils/timed-test.ts";
 import { createTempDir } from "./test-utils/temp-paths.ts";
 
@@ -86,6 +87,54 @@ timedTest("inline extension name patch forwards reload options", async () => {
     expect(resolveProjectTrustCalled).toBe(true);
     expect(projectTrustCalled).toBe(true);
   } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("bundled Herdr reporter suppresses managed Pi integration", async () => {
+  const cwd = await createTempDir("agent-herdr-integration-conflict-");
+  const managedIntegrationPath = join(cwd, "herdr-agent-state.ts");
+  const managedIntegrationLoadedKey = "__testManagedHerdrIntegrationLoaded";
+  Reflect.deleteProperty(globalThis, managedIntegrationLoadedKey);
+  const herdrDefinition = getBundledExtensionDefinitions().find(
+    (definition) => definition.id === "herdr-agent-state",
+  );
+  if (herdrDefinition === undefined) {
+    throw new Error("Expected bundled Herdr reporter");
+  }
+  await writeFile(
+    managedIntegrationPath,
+    [
+      `// ${"x".repeat(2048)}`,
+      "// HERDR_INTEGRATION_ID=pi",
+      `Reflect.set(globalThis, "${managedIntegrationLoadedKey}", true);`,
+      "export default function (pi) {",
+      '  pi.on("agent_start", () => {});',
+      "}",
+    ].join("\n"),
+  );
+
+  try {
+    const loader = new DefaultResourceLoader({
+      cwd,
+      agentDir: cwd,
+      additionalExtensionPaths: [managedIntegrationPath],
+      extensionFactories: [herdrDefinition.factory],
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+    });
+
+    await loader.reload();
+    await loader.reload();
+
+    expect(loader.getExtensions().extensions.map((extension) => extension.path)).toEqual([
+      "<herdr-agent-state>",
+    ]);
+    expect(Reflect.get(globalThis, managedIntegrationLoadedKey)).toBeUndefined();
+  } finally {
+    Reflect.deleteProperty(globalThis, managedIntegrationLoadedKey);
     await rm(cwd, { recursive: true, force: true });
   }
 });

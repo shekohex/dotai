@@ -15,6 +15,7 @@ export const HerdrHandlesSchema = Type.Object({
   workspaceId: Type.Optional(Type.String()),
   tabId: Type.Optional(Type.String()),
   paneId: Type.Optional(Type.String()),
+  terminalId: Type.Optional(Type.String()),
 });
 
 export type HerdrHandles = Static<typeof HerdrHandlesSchema>;

@@ -9,6 +9,7 @@ import {
   installInlineExtensionNamePatch,
   setInlineExtensionName,
 } from "./inline-extension-names.js";
+import { installHerdrIntegrationConflictPatch } from "./herdr-integration-conflicts.js";
 import { createModesExtension } from "./modes/index.js";
 import type { ModeStartupSelection } from "./modes/startup-selection.js";
 import { createSubagentExtension } from "./subagent.js";
@@ -21,6 +22,7 @@ export interface BundledExtensionDefinition {
 const subagentExtensionFactory = createSubagentExtension({ enabled: true });
 
 installInlineExtensionNamePatch();
+installHerdrIntegrationConflictPatch();
 
 export const bundledExtensionDefinitions: BundledExtensionDefinition[] = [
   ...groupedExtensionsA,

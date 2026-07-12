@@ -77,8 +77,11 @@ export class HerdrAdapter implements MuxAdapter {
     submitMode: PaneSubmitMode = "steer",
   ): Promise<void> {
     const client = this.client();
-    await client.sendText(paneId, `\u001B[200~${text}\u001B[201~`, { cwd: this.cwd });
-    await client.sendKeys(paneId, SUBMIT_KEYS[submitMode], { cwd: this.cwd });
+    if (submitMode === "steer") {
+      await client.runPane(paneId, text, { cwd: this.cwd });
+      return;
+    }
+    await client.sendInput(paneId, text, SUBMIT_KEYS[submitMode], { cwd: this.cwd });
   }
 
   paneExists(paneId: string): Promise<boolean> {

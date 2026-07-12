@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import { parseHerdrSocketResponse } from "../herdr/client.js";
 import {
   ASK_USER_QUESTION_ANSWERED_EVENT,
   ASK_USER_QUESTION_CANCELLED_EVENT,
@@ -30,6 +31,7 @@ type HerdrStateRequest = {
     | "client.window_title.set"
     | "notification.show"
     | "pane.report_agent"
+    | "pane.report_agent_session"
     | "pane.report_metadata"
     | "pane.release_agent";
   params: Record<string, unknown>;
@@ -78,29 +80,55 @@ function randomRequestId(kind: string): string {
   return `${source}:${kind}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 }
 
-function sendRequest(request: HerdrStateRequest): Promise<void> {
+function sendRequestAttempt(request: HerdrStateRequest, timeoutMs: number): Promise<boolean> {
   const socketPath = currentSocketPath();
   if (socketPath === undefined) {
-    return Promise.resolve();
+    return Promise.resolve(true);
   }
 
   return new Promise((resolve) => {
     const socket = createConnection(socketPath);
+    let buffer = "";
     let done = false;
-    const finish = () => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const finish = (delivered: boolean) => {
       if (done) return;
       done = true;
+      if (timeout !== undefined) clearTimeout(timeout);
       socket.destroy();
-      resolve();
+      resolve(delivered);
     };
 
-    socket.on("error", finish);
+    socket.on("error", () => {
+      finish(false);
+    });
     socket.on("connect", () => socket.write(`${JSON.stringify(request)}\n`));
-    socket.on("data", finish);
-    socket.on("end", finish);
-    const timeout = setTimeout(finish, 500);
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex === -1) return;
+      try {
+        const response = parseHerdrSocketResponse(
+          JSON.parse(buffer.slice(0, newlineIndex)) as unknown,
+        );
+        finish(response.id === request.id && !("error" in response));
+      } catch {
+        finish(false);
+      }
+    });
+    socket.on("end", () => {
+      finish(false);
+    });
+    timeout = setTimeout(() => {
+      finish(false);
+    }, timeoutMs);
     timeout.unref?.();
   });
+}
+
+async function sendRequest(request: HerdrStateRequest): Promise<void> {
+  if (await sendRequestAttempt(request, 500)) return;
+  await sendRequestAttempt(request, 1500);
 }
 
 function updateSessionRef(ctx: ExtensionContext): void {
@@ -127,6 +155,36 @@ function withSessionRef(params: Record<string, unknown>): Record<string, unknown
     return { ...params, agent_session_id: currentAgentSessionId };
   }
   return params;
+}
+
+function currentSessionRef(): Record<string, unknown> | undefined {
+  if (currentAgentSessionPath !== undefined) {
+    return { agent_session_path: currentAgentSessionPath };
+  }
+  if (currentAgentSessionId !== undefined) {
+    return { agent_session_id: currentAgentSessionId };
+  }
+  return undefined;
+}
+
+function reportSession(): Promise<void> {
+  const paneId = currentPaneId();
+  const sessionRef = currentSessionRef();
+  if (paneId === undefined || sessionRef === undefined) {
+    return Promise.resolve();
+  }
+
+  return sendRequest({
+    id: randomRequestId("session"),
+    method: "pane.report_agent_session",
+    params: {
+      pane_id: paneId,
+      source,
+      agent: "pi",
+      seq: nextReportSeq(),
+      ...sessionRef,
+    },
+  });
 }
 
 function sendState(state: AgentState, message?: string, seq = nextReportSeq()): Promise<void> {
@@ -302,6 +360,7 @@ class HerdrAgentStateReporter {
   private readonly retryGraceMs = parseDurationEnv("HERDR_PI_RETRY_GRACE_MS", 2500);
   private currentContext: ExtensionContext | undefined;
   private readonly activeQuestionToolCallIds = new Set<string>();
+  private rootSession = false;
   private agentActive = false;
   private retryHoldActive = false;
   private failureBlocked = false;
@@ -322,6 +381,7 @@ class HerdrAgentStateReporter {
       this.onSessionStart(ctx);
     });
     pi.on("before_agent_start", (_event, ctx) => {
+      if (!this.rootSession) return;
       this.currentContext = ctx;
       if (!this.isChildSession(ctx)) {
         void this.updateTitle(ctx);
@@ -339,14 +399,16 @@ class HerdrAgentStateReporter {
     pi.events.on(ASK_USER_QUESTION_CANCELLED_EVENT, (data) => {
       this.onAskUserQuestionResolved(data);
     });
-    pi.on("agent_start", () => {
-      this.onAgentStart();
+    pi.on("agent_start", (_event, ctx) => {
+      this.onAgentStart(ctx);
     });
     pi.on("agent_end", (event) => {
       this.onAgentEnd(event);
     });
-    pi.on("session_shutdown", async () => {
+    pi.on("session_shutdown", async (event) => {
+      if (!this.rootSession) return;
       this.clearPendingTimers();
+      if (readString(asRecord(event)?.reason) !== "quit") return;
       await Promise.all([
         sendMetadata({
           clear_title: true,
@@ -360,8 +422,12 @@ class HerdrAgentStateReporter {
   }
 
   private onSessionStart(ctx: ExtensionContext): void {
+    if (!ctx.hasUI) return;
+    this.rootSession = true;
     this.currentContext = ctx;
     updateSessionRef(ctx);
+    void reportSession();
+    this.agentActive = !ctx.isIdle();
     if (!this.isChildSession(ctx)) {
       void this.updateTitle(ctx);
     }
@@ -387,6 +453,7 @@ class HerdrAgentStateReporter {
   }
 
   private onBlockedEvent(data: unknown): void {
+    if (!this.rootSession) return;
     const event = parseBlockedEvent(data);
     if (event === undefined) {
       return;
@@ -405,6 +472,7 @@ class HerdrAgentStateReporter {
   }
 
   private onAskUserQuestionPrompt(data: unknown): void {
+    if (!this.rootSession) return;
     if (!isAskUserQuestionEventPayload(data) || data.type !== "prompt") {
       return;
     }
@@ -423,6 +491,7 @@ class HerdrAgentStateReporter {
   }
 
   private onAskUserQuestionResolved(data: unknown): void {
+    if (!this.rootSession) return;
     if (!isAskUserQuestionEventPayload(data) || data.type === "prompt") {
       return;
     }
@@ -433,7 +502,11 @@ class HerdrAgentStateReporter {
     this.clearBlocked();
   }
 
-  private onAgentStart(): void {
+  private onAgentStart(ctx: ExtensionContext): void {
+    if (!this.rootSession) return;
+    this.currentContext = ctx;
+    updateSessionRef(ctx);
+    void reportSession();
     this.clearPendingTimers();
     this.clearFailureState();
     this.agentActive = true;
@@ -441,6 +514,7 @@ class HerdrAgentStateReporter {
   }
 
   private onAgentEnd(event: unknown): void {
+    if (!this.rootSession) return;
     if (!this.agentActive) {
       return;
     }

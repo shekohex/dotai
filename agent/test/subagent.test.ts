@@ -2802,6 +2802,17 @@ timedTest("FallbackMuxAdapter routes legacy tmux pane ids without persisted back
   expect(pty.sent).toHaveLength(0);
 });
 
+timedTest("FallbackMuxAdapter routes opaque Herdr pane ids without persisted backend", async () => {
+  const tmux = new NamedFakeMuxAdapter("tmux", true);
+  const herdr = new NamedFakeMuxAdapter("herdr", true);
+  const adapter = new FallbackMuxAdapter([tmux, herdr]);
+
+  await adapter.sendText("w3:pN", "opaque", "steer");
+
+  expect(herdr.sent).toEqual([{ paneId: "w3:pN", text: "opaque", submitMode: "steer" }]);
+  expect(tmux.sent).toHaveLength(0);
+});
+
 timedTest("subagent tool metadata explains terminal inspection and result modes", () => {
   const fakePi = new FakePi();
   createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(

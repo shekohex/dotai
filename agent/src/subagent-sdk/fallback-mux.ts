@@ -114,7 +114,7 @@ export class FallbackMuxAdapter implements MuxAdapter {
     if (paneId.startsWith("pty:")) {
       return "pty";
     }
-    if (/^(?:w\d+:p\d+|\d+-\d+)$/.test(paneId)) {
+    if (/^(?:w[0-9a-z]+:p[0-9a-z]+|\d+-\d+)$/i.test(paneId)) {
       return "herdr";
     }
     if (paneId.startsWith("%")) {

@@ -5,6 +5,7 @@ import { readRuleOptions } from "../utils/options.mjs";
 
 const defaultAllowFiles = [
   "src/extensions/bundled-resources.ts",
+  "src/extensions/herdr-integration-conflicts.ts",
   "src/extensions/model-family-system-prompt.ts",
 ];
 

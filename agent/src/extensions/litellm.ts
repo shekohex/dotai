@@ -40,7 +40,7 @@ const CODEX_OPENAI_EXTENDED_CONTEXT_MODEL_IDS = new Set([
   "gpt-5.6-sol",
   "gpt-5.6-terra",
 ]);
-const CODEX_OPENAI_EXTENDED_CONTEXT_WINDOW = 372_000;
+const CODEX_OPENAI_EXTENDED_CONTEXT_WINDOW = 254_000;
 
 let litellmStatePromise: Promise<LiteLLMState> | undefined;
 

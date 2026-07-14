@@ -14,7 +14,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { setKeybindings } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import stripAnsi from "strip-ansi";
+import { stripVTControlCharacters as stripAnsi } from "node:util";
 import { createTempDir } from "./test-utils/temp-paths.ts";
 
 import {

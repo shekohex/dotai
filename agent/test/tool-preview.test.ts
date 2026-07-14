@@ -3,7 +3,7 @@ import { initTheme, InteractiveMode, type ExtensionAPI } from "@earendil-works/p
 import { setKeybindings } from "@earendil-works/pi-tui";
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
-import stripAnsi from "strip-ansi";
+import { stripVTControlCharacters as stripAnsi } from "node:util";
 import {
   createBashToolOverrideDefinition,
   createReadToolOverrideDefinition,

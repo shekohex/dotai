@@ -14,7 +14,7 @@ import {
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { setKeybindings } from "@earendil-works/pi-tui";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
-import stripAnsi from "strip-ansi";
+import { stripVTControlCharacters as stripAnsi } from "node:util";
 import { createPlaybookStreamFn } from "@support/pi-test-harness/playbook";
 import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
 import { createTempDir } from "./test-utils/temp-paths.ts";

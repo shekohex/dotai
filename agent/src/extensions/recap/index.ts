@@ -5,7 +5,7 @@ import {
   convertToLlm,
   serializeConversation,
 } from "@earendil-works/pi-coding-agent";
-import stripAnsi from "strip-ansi";
+import { stripVTControlCharacters } from "node:util";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
@@ -98,7 +98,7 @@ function getSessionMessages(ctx: ExtensionContext, contextLeafId: string | null)
 }
 
 function sanitizeRecap(value: string): string {
-  const printableText = Array.from(stripAnsi(value), (character) => {
+  const printableText = Array.from(stripVTControlCharacters(value), (character) => {
     const codePoint = character.codePointAt(0) ?? 0;
     const isControl = codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
     return isControl ? " " : character;

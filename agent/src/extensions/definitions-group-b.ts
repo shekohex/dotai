@@ -8,6 +8,7 @@ import dynamicWorkflowsExtension from "./dynamic-workflows/extension.js";
 import filesExtension from "./files.js";
 import handoffExtension from "./handoff.js";
 import referencesExtension from "./references/index.js";
+import recapExtension from "./recap/index.js";
 import reviewExtension from "./review.js";
 import sessionArchiveExtension from "./session-archive/index.js";
 import sessionBreakdownExtension from "./session-breakdown.js";
@@ -30,6 +31,7 @@ export const groupedExtensionsB: GroupedExtensionDefinition[] = [
   { id: "context", factory: contextExtension },
   { id: "session-breakdown", factory: sessionBreakdownExtension },
   { id: "session-name", factory: sessionNameExtension },
+  { id: "recap", factory: recapExtension },
   { id: "references", factory: referencesExtension },
   { id: "files", factory: filesExtension },
   { id: "skill-read", factory: skillReadExtension },

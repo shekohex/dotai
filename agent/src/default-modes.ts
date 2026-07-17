@@ -64,7 +64,7 @@ export const defaultModes = {
     build: {
       provider: "codex-openai",
       modelId: "gpt-5.6-sol",
-      thinkingLevel: "medium",
+      thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
@@ -74,7 +74,7 @@ export const defaultModes = {
     deep: {
       provider: "codex-openai",
       modelId: "gpt-5.6-sol",
-      thinkingLevel: "max",
+      thinkingLevel: "xhigh",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
@@ -84,7 +84,7 @@ export const defaultModes = {
     review: {
       provider: "codex-openai",
       modelId: "gpt-5.6-sol",
-      thinkingLevel: "max",
+      thinkingLevel: "xhigh",
       color: "muted",
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch"],

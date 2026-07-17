@@ -11,11 +11,7 @@ import { Box, Container, Image, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { errorMessage } from "../../utils/error-message.js";
-import {
-  createToolStateEntry,
-  readToolState,
-  TOOL_STATE_ENTRY_TYPE,
-} from "../../utils/tool-state.js";
+import { readToolState } from "../../utils/tool-state.js";
 import {
   createTextComponent,
   formatDurationHuman,
@@ -569,10 +565,10 @@ function createImageTool(getSettings: () => OpenAIBetterSettings) {
     name: OPENAI_IMAGE_TOOL,
     label: "imagen",
     renderShell: "self",
-    description:
+    description: [
       "Generate or edit images through OpenAI using the hosted image_generation tool. Supports local reference/edit images and saves to the project by default.",
-    promptSnippet: "Generate or edit raster images via OpenAI image_generation.",
-    promptGuidelines: OPENAI_IMAGE_PROMPT_GUIDELINES,
+      ...OPENAI_IMAGE_PROMPT_GUIDELINES,
+    ].join(" "),
     parameters: ToolParamsSchema,
     renderCall(args, theme, context) {
       const state = syncRenderState(context);
@@ -625,14 +621,11 @@ export function registerOpenAIImage(
 ): { getDebug: (ctx: ExtensionContext) => Promise<ImageGenerationDebug> } {
   let lastStatus: string | undefined;
   let lastError: string | undefined;
-  let commandEnabled = false;
+  let legacyEnabled = false;
   let toolRegistered = false;
 
-  function getEffectiveSettings(): OpenAIBetterSettings {
+  function getExecutionSettings(): OpenAIBetterSettings {
     const settings = getSettings();
-    if (!commandEnabled) {
-      return settings;
-    }
     return {
       ...settings,
       image: {
@@ -646,42 +639,34 @@ export function registerOpenAIImage(
     if (toolRegistered) {
       return;
     }
-    pi.registerTool(createImageTool(getEffectiveSettings));
+    pi.registerTool(createImageTool(getExecutionSettings));
     toolRegistered = true;
   }
 
   function activateImageTool(): void {
-    commandEnabled = true;
-    registerImageTool();
     const activeTools = new Set([...pi.getActiveTools(), OPENAI_IMAGE_TOOL]);
     pi.setActiveTools(Array.from(activeTools).toSorted((left, right) => left.localeCompare(right)));
   }
 
   function deactivateImageTool(): void {
-    commandEnabled = false;
     pi.setActiveTools(pi.getActiveTools().filter((toolName) => toolName !== OPENAI_IMAGE_TOOL));
-  }
-
-  function persistImageToolState(): void {
-    pi.appendEntry(TOOL_STATE_ENTRY_TYPE, createToolStateEntry(OPENAI_IMAGE_TOOL, commandEnabled));
   }
 
   function restoreImageToolState(ctx: ExtensionContext): void {
     const restored = readToolState(ctx.sessionManager.getBranch(), OPENAI_IMAGE_TOOL);
-    if (restored === true) {
+    legacyEnabled = restored === true;
+    if (legacyEnabled || getSettings().image.enabled) {
       activateImageTool();
       return;
     }
-    if (restored === false && !getSettings().image.enabled) {
-      deactivateImageTool();
-    }
+    deactivateImageTool();
   }
 
   async function generate(params: ToolParams, ctx: ExtensionContext, requestSignal?: AbortSignal) {
     try {
       lastStatus = "requesting";
       lastError = undefined;
-      const result = await requestLiteLLMImage(params, ctx, getEffectiveSettings(), requestSignal);
+      const result = await requestLiteLLMImage(params, ctx, getExecutionSettings(), requestSignal);
       lastStatus = `completed (${result.id})`;
       return result;
     } catch (error) {
@@ -692,7 +677,7 @@ export function registerOpenAIImage(
   }
 
   async function getDebug(ctx: ExtensionContext): Promise<ImageGenerationDebug> {
-    const settings = getEffectiveSettings();
+    const settings = getSettings();
     const credentials = await getCredentials().catch(() => {});
     return {
       authFound: credentials !== undefined,
@@ -704,7 +689,7 @@ export function registerOpenAIImage(
       defaultModel:
         ctx.model?.provider === "codex-openai" ? ctx.model.id : settings.image.defaultModel,
       defaultSave: settings.image.defaultSave,
-      enabled: settings.image.enabled,
+      enabled: settings.image.enabled || legacyEnabled,
       lastStatus,
       lastError,
     };
@@ -712,7 +697,7 @@ export function registerOpenAIImage(
 
   registerImageRenderer(pi);
   pi.on("before_agent_start", (event) =>
-    getEffectiveSettings().image.enabled
+    getSettings().image.enabled || legacyEnabled
       ? { systemPrompt: `${event.systemPrompt}\n\n${OPENAI_IMAGE_SYSTEM_PROMPT}` }
       : undefined,
   );
@@ -724,8 +709,6 @@ export function registerOpenAIImage(
         ctx.ui.notify("Usage: /imagen <prompt>", "error");
         return;
       }
-      activateImageTool();
-      persistImageToolState();
       ctx.ui.notify("Requesting OpenAI image...", "info");
       const result = await generate({ prompt }, ctx);
       pi.sendMessage({
@@ -739,9 +722,7 @@ export function registerOpenAIImage(
       });
     },
   });
-  if (getEffectiveSettings().image.enabled) {
-    registerImageTool();
-  }
+  registerImageTool();
   pi.on("session_start", (_event, ctx) => {
     restoreImageToolState(ctx);
   });

@@ -1,9 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import {
-  createToolStateEntry,
-  readToolState,
-  TOOL_STATE_ENTRY_TYPE,
-} from "../../utils/tool-state.js";
+import { readToolState } from "../../utils/tool-state.js";
 import {
   createWorkflowStorage,
   createWorkflowTool,
@@ -47,12 +43,6 @@ export default function extension(pi: ExtensionAPI) {
   pi.registerTool(workflowTool);
   const setWorkflowStatusContext = installWorkflowStatusEmitter(pi, manager);
   let workflowToolEnabled = false;
-  const persistWorkflowToolState = (): void => {
-    pi.appendEntry(
-      TOOL_STATE_ENTRY_TYPE,
-      createToolStateEntry(WORKFLOW_TOOL_NAME, workflowToolEnabled),
-    );
-  };
   const setWorkflowToolEnabled = (enabled: boolean): void => {
     workflowToolEnabled = enabled;
     if (enabled) activateWorkflowTool(pi);
@@ -64,31 +54,10 @@ export default function extension(pi: ExtensionAPI) {
   };
   pi.registerCommand("workflow", {
     description:
-      "Enable workflow tool or manage workflow runs. Usage: /workflow [on|off|list|status|watch|stop|pause|resume|rm|save]",
-    getArgumentCompletions(prefix) {
-      const trimmed = prefix.trim();
-      const toggle = [
-        { value: "on", label: "on", description: "Enable workflow tool for this session" },
-        { value: "off", label: "off", description: "Disable workflow tool for this session" },
-      ].filter((item) => item.value.startsWith(trimmed));
-      return [...toggle, ...(getWorkflowCommandCompletions(prefix, manager) ?? [])];
-    },
+      "Manage workflow runs. Usage: /workflow [list|status|watch|stop|pause|resume|rm|save]",
+    getArgumentCompletions: (prefix) => getWorkflowCommandCompletions(prefix, manager),
     async handler(args, ctx) {
       const trimmed = args.trim();
-      if (trimmed === "on" || trimmed === "") {
-        setWorkflowToolEnabled(true);
-        persistWorkflowToolState();
-        ctx.ui.notify("Workflow tool enabled.", "info");
-        return;
-      }
-      if (trimmed === "off") {
-        setWorkflowToolEnabled(false);
-        persistWorkflowToolState();
-        ctx.ui.notify("Workflow tool disabled.", "info");
-        return;
-      }
-      setWorkflowToolEnabled(true);
-      persistWorkflowToolState();
       await handleWorkflowCommand({
         pi,
         manager,
@@ -108,13 +77,17 @@ export default function extension(pi: ExtensionAPI) {
   registerAllSavedWorkflows(pi, cwd, storage, manager);
   // Deliver a background run's result into the conversation when it finishes.
   installResultDelivery(pi, manager);
-  installWorkflowInputHooks(pi, getWorkflowModeState());
+  installWorkflowInputHooks(pi, getWorkflowModeState(), {
+    activateWorkflowTool: () => {
+      setWorkflowToolEnabled(true);
+    },
+  });
 
   pi.on("session_start", (_event: unknown, ctx: ExtensionContext) => {
     setWorkflowStatusContext(ctx);
     const restored = readToolState(ctx.sessionManager.getBranch(), WORKFLOW_TOOL_NAME);
     const conversationEmpty = isConversationStart(ctx);
-    const enabled = restored === true || (restored === null && conversationEmpty);
+    const enabled = restored === true;
     setWorkflowModeAvailability(getWorkflowModeState(), {
       conversationEmpty,
       toolEnabled: enabled,
@@ -125,7 +98,6 @@ export default function extension(pi: ExtensionAPI) {
   });
   pi.on("before_agent_start", (event) => {
     if (!workflowToolEnabled) {
-      deactivateWorkflowTool(pi);
       return { systemPrompt: event.systemPrompt };
     }
     if (workflowSystemPrompt.length === 0) return { systemPrompt: event.systemPrompt };
@@ -135,7 +107,7 @@ export default function extension(pi: ExtensionAPI) {
     setWorkflowStatusContext(ctx);
     const restored = readToolState(ctx.sessionManager.getBranch(), WORKFLOW_TOOL_NAME);
     const conversationEmpty = isConversationStart(ctx);
-    const enabled = restored === true || (restored === null && conversationEmpty);
+    const enabled = restored === true;
     setWorkflowModeAvailability(getWorkflowModeState(), {
       conversationEmpty,
       toolEnabled: enabled,

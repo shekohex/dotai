@@ -2,22 +2,20 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DefaultResourceLoader, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { expect } from "vitest";
-import {
-  installInlineExtensionNamePatch,
-  setInlineExtensionName,
-} from "../src/extensions/inline-extension-names.js";
 import { getBundledExtensionDefinitions } from "../src/extensions/index.js";
 import { timedTest } from "./test-utils/timed-test.ts";
 import { createTempDir } from "./test-utils/temp-paths.ts";
 
 timedTest("inline extension factories use named synthetic paths", async () => {
-  installInlineExtensionNamePatch();
   const cwd = await createTempDir("agent-inline-extension-name-");
 
   try {
-    const namedFactory = setInlineExtensionName((pi: ExtensionAPI) => {
-      pi.on("session_start", () => {});
-    }, "git-state");
+    const namedFactory = {
+      name: "git-state",
+      factory: (pi: ExtensionAPI) => {
+        pi.on("session_start", () => {});
+      },
+    };
 
     const loader = new DefaultResourceLoader({
       cwd,
@@ -35,26 +33,28 @@ timedTest("inline extension factories use named synthetic paths", async () => {
       throw new Error("Expected named inline extension");
     }
 
-    expect(extension.path).toBe("<git-state>");
-    expect(extension.sourceInfo.path).toBe("<git-state>");
+    expect(extension.path).toBe("<inline:git-state>");
+    expect(extension.sourceInfo.path).toBe("<inline:git-state>");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 });
 
 timedTest("inline extension name patch forwards reload options", async () => {
-  installInlineExtensionNamePatch();
   const cwd = await createTempDir("agent-inline-extension-options-");
   await writeFile(`${cwd}/AGENTS.md`, "test");
 
   try {
     let projectTrustCalled = false;
-    const namedFactory = setInlineExtensionName((pi: ExtensionAPI) => {
-      pi.on("project_trust", () => {
-        projectTrustCalled = true;
-        return { trusted: "yes" };
-      });
-    }, "project-trust-test");
+    const namedFactory = {
+      name: "project-trust-test",
+      factory: (pi: ExtensionAPI) => {
+        pi.on("project_trust", () => {
+          projectTrustCalled = true;
+          return { trusted: "yes" };
+        });
+      },
+    };
 
     const loader = new DefaultResourceLoader({
       cwd,
@@ -69,7 +69,9 @@ timedTest("inline extension name patch forwards reload options", async () => {
     await loader.reload({
       resolveProjectTrust: async ({ extensionsResult }) => {
         resolveProjectTrustCalled = true;
-        const extension = extensionsResult.extensions.find((item) => item.path === "<inline:1>");
+        const extension = extensionsResult.extensions.find(
+          (item) => item.path === "<inline:project-trust-test>",
+        );
         const handler = extension?.handlers.get("project_trust")?.[0];
         await handler?.(
           { type: "project_trust", cwd },
@@ -119,7 +121,7 @@ timedTest("bundled Herdr reporter suppresses managed Pi integration", async () =
       cwd,
       agentDir: cwd,
       additionalExtensionPaths: [managedIntegrationPath],
-      extensionFactories: [herdrDefinition.factory],
+      extensionFactories: [{ name: herdrDefinition.id, factory: herdrDefinition.factory }],
       noExtensions: true,
       noSkills: true,
       noPromptTemplates: true,
@@ -130,7 +132,7 @@ timedTest("bundled Herdr reporter suppresses managed Pi integration", async () =
     await loader.reload();
 
     expect(loader.getExtensions().extensions.map((extension) => extension.path)).toEqual([
-      "<herdr-agent-state>",
+      "<inline:herdr-agent-state>",
     ]);
     expect(Reflect.get(globalThis, managedIntegrationLoadedKey)).toBeUndefined();
   } finally {

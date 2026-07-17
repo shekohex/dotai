@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { extractPiDynamicTail } from "../system-prompt-tail.js";
 
 export type ModelFamilySystemPrompt = "codex" | "gpt" | "gemini" | "kimi" | "default";
@@ -21,60 +21,6 @@ const promptTexts: Record<ModelFamilySystemPrompt, string> = {
   kimi: readFileSync(promptFiles.kimi, "utf8").trim(),
   default: readFileSync(promptFiles.default, "utf8").trim(),
 };
-const patchSymbol = Symbol.for("@shekohex/agent/model-family-system-prompt-patched");
-
-function readStringField(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function isMethod(value: unknown): value is (this: unknown, ...args: unknown[]) => unknown {
-  return typeof value === "function";
-}
-
-function readObjectProperty(target: object, key: PropertyKey): unknown {
-  return Reflect.get(target, key);
-}
-
-function writeObjectProperty(target: object, key: PropertyKey, value: unknown): void {
-  Reflect.set(target, key, value);
-}
-
-function readModelId(session: AgentSession): string | undefined {
-  const model = readObjectProperty(session, "model");
-  if (model === null || typeof model !== "object" || Array.isArray(model)) {
-    return undefined;
-  }
-
-  return readStringField(readObjectProperty(model, "id"));
-}
-
-function readBaseSystemPrompt(session: AgentSession): string | undefined {
-  return readStringField(readObjectProperty(session, "_baseSystemPrompt"));
-}
-
-function writeSystemPrompt(session: AgentSession, prompt: string): void {
-  const agent = readObjectProperty(session, "agent");
-  if (agent === null || typeof agent !== "object" || Array.isArray(agent)) {
-    return;
-  }
-
-  const state = readObjectProperty(agent, "state");
-  if (state === null || typeof state !== "object" || Array.isArray(state)) {
-    return;
-  }
-
-  writeObjectProperty(state, "systemPrompt", prompt);
-}
-
-function readMethod(target: object, key: string): ((...args: unknown[]) => unknown) | undefined {
-  const descriptor = Object.getOwnPropertyDescriptor(target, key);
-  const methodValue: unknown = descriptor?.value;
-  if (!isMethod(methodValue)) {
-    return undefined;
-  }
-
-  return methodValue;
-}
 
 export function resolveModelFamilySystemPrompt(
   modelId: string | undefined,
@@ -109,66 +55,7 @@ export function buildModelFamilySystemPrompt(
   return tail.length > 0 ? `${promptTexts[family]}\n\n${tail}` : promptTexts[family];
 }
 
-function applySystemPrompt(session: AgentSession): void {
-  const baseSystemPrompt = readBaseSystemPrompt(session);
-  if (baseSystemPrompt === undefined || baseSystemPrompt.length === 0) {
-    return;
-  }
-
-  writeSystemPrompt(session, buildModelFamilySystemPrompt(baseSystemPrompt, readModelId(session)));
-}
-
-function patchAgentSession(): void {
-  const prototype = AgentSession.prototype;
-  if (readObjectProperty(prototype, patchSymbol) === true) {
-    return;
-  }
-
-  const originalBindExtensions = readMethod(prototype, "bindExtensions");
-  if (!originalBindExtensions) {
-    throw new TypeError("AgentSession.bindExtensions is unavailable");
-  }
-  prototype.bindExtensions = async function patchedBindExtensions(this: AgentSession, bindings) {
-    await originalBindExtensions.call(this, bindings);
-    applySystemPrompt(this);
-  };
-
-  const originalSetModel = readMethod(prototype, "setModel");
-  if (!originalSetModel) {
-    throw new TypeError("AgentSession.setModel is unavailable");
-  }
-  prototype.setModel = async function patchedSetModel(this: AgentSession, model) {
-    await originalSetModel.call(this, model);
-    applySystemPrompt(this);
-  };
-
-  const originalSetActiveToolsByName = readMethod(prototype, "setActiveToolsByName");
-  if (!originalSetActiveToolsByName) {
-    throw new TypeError("AgentSession.setActiveToolsByName is unavailable");
-  }
-  prototype.setActiveToolsByName = function patchedSetActiveToolsByName(
-    this: AgentSession,
-    toolNames,
-  ) {
-    originalSetActiveToolsByName.call(this, toolNames);
-    applySystemPrompt(this);
-  };
-
-  const originalReload = readMethod(prototype, "reload");
-  if (!originalReload) {
-    throw new TypeError("AgentSession.reload is unavailable");
-  }
-  prototype.reload = async function patchedReload(this: AgentSession) {
-    await originalReload.call(this);
-    applySystemPrompt(this);
-  };
-
-  writeObjectProperty(prototype, patchSymbol, true);
-}
-
 export default function modelFamilySystemPromptExtension(pi: ExtensionAPI): void {
-  patchAgentSession();
-
   pi.on("before_agent_start", (event, ctx) => ({
     systemPrompt: buildModelFamilySystemPrompt(event.systemPrompt, ctx.model?.id),
   }));

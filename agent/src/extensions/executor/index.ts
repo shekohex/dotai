@@ -1,14 +1,6 @@
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
-import {
-  createToolStateEntry,
-  readToolState,
-  TOOL_STATE_ENTRY_TYPE,
-} from "../../utils/tool-state.js";
+import { readToolState } from "../../utils/tool-state.js";
 import { registerExecutorCommands } from "./commands.js";
 import { getExecutorSettings } from "./settings.js";
 import { clearExecutorState, connectExecutor } from "./status.js";
@@ -41,13 +33,6 @@ export default function (pi: ExtensionAPI): void {
     toolsRegistered = true;
   };
 
-  const persistToolState = (): void => {
-    pi.appendEntry(
-      TOOL_STATE_ENTRY_TYPE,
-      createToolStateEntry(EXECUTOR_TOOL_STATE_KEY, toolEnabled),
-    );
-  };
-
   const enableTool = async (ctx: ExtensionContext): Promise<void> => {
     await ensureToolsRegistered(ctx);
     toolEnabled = true;
@@ -71,6 +56,7 @@ export default function (pi: ExtensionAPI): void {
   };
 
   pi.on("session_start", async (_event, ctx) => {
+    await ensureToolsRegistered(ctx);
     await restoreToolState(ctx);
 
     const settings = getExecutorSettings();
@@ -93,7 +79,6 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("before_agent_start", async (event, ctx) => {
     if (!toolEnabled) {
-      deactivateExecutorTools(pi);
       return {};
     }
 
@@ -117,17 +102,7 @@ export default function (pi: ExtensionAPI): void {
     return {};
   });
 
-  registerExecutorCommands(pi, {
-    isEnabled: () => toolEnabled,
-    enable: async (ctx: ExtensionCommandContext) => {
-      await enableTool(ctx);
-      persistToolState();
-    },
-    disable: (ctx: ExtensionCommandContext) => {
-      disableTool(ctx);
-      persistToolState();
-    },
-  });
+  registerExecutorCommands(pi);
 
   pi.on("session_shutdown", (_event, ctx) => {
     toolsRegistered = false;

@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import { installChildBootstrap, isChildSession } from "../../subagent-sdk/bootstrap.js";
 import { createDefaultMuxAdapter } from "../../subagent-sdk/default-mux.js";
 import { buildLaunchCommand, readChildState } from "../../subagent-sdk/launch.js";
@@ -10,12 +9,10 @@ import {
   readToolState,
   TOOL_STATE_ENTRY_TYPE,
 } from "../../utils/tool-state.js";
-import { buildSubagentPromptGuidelines } from "./execution.js";
 import {
   ensureParentSubagentToolActive,
   scheduleParentSubagentToolActivation,
   type CreateSubagentExtensionOptions,
-  type SubagentRuntimeState,
 } from "./shared.js";
 import { createSubagentToolDefinition, registerSubagentRuntimeEvents } from "./tool.js";
 import { isSubagentToolEnabled, setSubagentToolEnabled, SUBAGENT_TOOL_NAME } from "./state.js";
@@ -54,35 +51,12 @@ function installEnabledSubagentExtension(
     },
   });
   const sdk = createSubagentSDK(pi, { adapter, buildLaunchCommand, hooks });
-  const runtimeState: SubagentRuntimeState = {};
   const subagentTool = createSubagentToolDefinition(sdk);
-  const syncSubagentToolRegistration = async (ctx: ExtensionContext): Promise<void> => {
-    runtimeState.ctx = ctx;
-    try {
-      const promptGuidelines = await buildSubagentPromptGuidelines(ctx);
-      const signature = promptGuidelines.join("\n\n");
-      if (runtimeState.toolPromptSignature !== signature) {
-        subagentTool.promptGuidelines = promptGuidelines;
-        runtimeState.toolPromptSignature = signature;
-        pi.registerTool(subagentTool);
-      }
-    } catch (error) {
-      if (isStaleSessionReplacementContextError(error)) {
-        if (runtimeState.ctx === ctx) {
-          runtimeState.ctx = undefined;
-        }
-        return;
-      }
-      throw error;
-    }
-  };
 
   pi.registerTool(subagentTool);
   registerSubagentRuntimeEvents(
     pi,
     sdk,
-    runtimeState,
-    syncSubagentToolRegistration,
     ensureParentSubagentToolActive,
     scheduleParentSubagentToolActivation,
     isChildSession,

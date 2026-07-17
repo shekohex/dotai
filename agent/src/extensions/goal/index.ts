@@ -1,10 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type * as Pi from "@earendil-works/pi-coding-agent";
-import {
-  createToolStateEntry,
-  readToolState,
-  TOOL_STATE_ENTRY_TYPE,
-} from "../../utils/tool-state.js";
+import { readToolState } from "../../utils/tool-state.js";
 import { emitNotifyPublish } from "../notify/index.js";
 import { NOTIFY_DEFAULT_TOPIC } from "../notify/settings.js";
 import { getContextPruneAPI } from "../context-prune/public-api.js";
@@ -77,7 +73,6 @@ const CONTINUATION_RETRY_MS = 50;
 
 class GoalRuntime {
   private goal: ThreadGoal | null = null;
-  private toolRegistered = false;
   private toolEnabled = false;
   private isCompacting = false;
   private continuationBlockedByAssistantError = false;
@@ -112,6 +107,14 @@ class GoalRuntime {
   }
 
   register(): void {
+    registerGoalTools(this.pi, {
+      getGoal: () => this.goalForDisplay(),
+      setGoal: (nextGoal, source, ctx) => {
+        this.persistGoal(nextGoal, source);
+        this.refreshUi(ctx);
+      },
+      completeGoal: (source, ctx) => this.completeGoal(source, ctx),
+    });
     registerGoalCommand(this.pi, {
       getGoal: () => this.goalForDisplay(),
       setGoal: (nextGoal, source, ctx) => {
@@ -127,11 +130,9 @@ class GoalRuntime {
       },
       enableTool: () => {
         this.enableTool();
-        this.persistToolState();
       },
       disableTool: () => {
         this.disableTool();
-        this.persistToolState();
       },
       startWorkflowGoal: (objective, ctx) => this.workflowRuntime.start(objective, ctx),
       resumeWorkflowGoal: (ctx, reason) => {
@@ -144,17 +145,6 @@ class GoalRuntime {
   }
 
   private enableTool(): void {
-    if (!this.toolRegistered) {
-      registerGoalTools(this.pi, {
-        getGoal: () => this.goalForDisplay(),
-        setGoal: (nextGoal, source, ctx) => {
-          this.persistGoal(nextGoal, source);
-          this.refreshUi(ctx);
-        },
-        completeGoal: (source, ctx) => this.completeGoal(source, ctx),
-      });
-      this.toolRegistered = true;
-    }
     this.toolEnabled = true;
     setGoalToolEnabled(true);
     const activeTools = new Set([...this.pi.getActiveTools(), GOAL_TOOL_NAME]);
@@ -168,13 +158,6 @@ class GoalRuntime {
     setGoalToolEnabled(false);
     this.pi.setActiveTools(
       this.pi.getActiveTools().filter((toolName) => toolName !== GOAL_TOOL_NAME),
-    );
-  }
-
-  private persistToolState(): void {
-    this.pi.appendEntry(
-      TOOL_STATE_ENTRY_TYPE,
-      createToolStateEntry(GOAL_TOOL_NAME, this.toolEnabled),
     );
   }
 
@@ -356,12 +339,20 @@ class GoalRuntime {
       this.clearContinuationState();
     }
 
+    if (nextGoal.status === "complete") {
+      this.toolEnabled = false;
+      setGoalToolEnabled(false);
+    } else {
+      this.enableTool();
+    }
+
     this.pi.appendEntry(GOAL_EXTENSION_ENTRY_TYPE, setEntry(nextGoal, source));
   }
 
   private persistClear(source: GoalEntrySource): void {
     const clearedGoalId = this.goal?.goalId ?? null;
     this.goal = null;
+    this.disableTool();
     this.clearStoppedRuntimeState();
     this.stopStatusRefresh();
     this.pi.appendEntry(GOAL_EXTENSION_ENTRY_TYPE, clearEntry(clearedGoalId, source));
@@ -615,6 +606,9 @@ class GoalRuntime {
     ctx: ExtensionContext,
   ): Promise<void> {
     this.reloadFromSession(ctx);
+    if (this.goal !== null && this.goal.status !== "complete") {
+      this.enableTool();
+    }
     this.beginAccounting();
     if (event.reason === "resume" && this.goal?.status === "paused" && ctx.hasUI) {
       const shouldResume = await ctx.ui.confirm(
@@ -804,8 +798,8 @@ class GoalRuntime {
       this.handleSessionTree(event, ctx);
     });
     this.pi.on("before_agent_start", (event, ctx) => {
-      if (!this.toolEnabled) {
-        this.disableTool();
+      if (this.goal !== null && this.goal.status !== "complete") {
+        this.enableTool();
       }
       return this.handleBeforeAgentStart(event, ctx);
     });

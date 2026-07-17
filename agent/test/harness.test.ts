@@ -1794,7 +1794,7 @@ timedTest("executor command autocompletes subcommands with fuzzy search", async 
     });
 
     const rootCompletions = await getCommandArgumentCompletions(session, "executor", "");
-    expect(rootCompletions?.map((item) => item.label)).toEqual(["on", "off", "status", "web"]);
+    expect(rootCompletions?.map((item) => item.label)).toEqual(["status", "web"]);
 
     const fuzzyCompletions = await getCommandArgumentCompletions(session, "executor", "w");
     expect(fuzzyCompletions?.[0]?.label).toBe("web");
@@ -1872,7 +1872,7 @@ timedTest("executor command without arguments shows status", async () => {
 });
 
 timedTest(
-  "subagent tool prompt includes available modes and refreshes after mode changes",
+  "deferred subagent tool does not inject mode catalogs into the system prompt",
   async () => {
     const cwd = await createTempDir("agent-handoff-modes-prompt-");
     let session: TestSession | undefined;
@@ -1893,15 +1893,13 @@ timedTest(
       setSessionPersistence(session, true);
 
       const initialPrompt = getCurrentSystemPrompt(session);
-      expect(initialPrompt).toMatch(/- docs: Fast technical writing/);
-      expect(initialPrompt).toMatch(/- smart/);
+      expect(initialPrompt).not.toMatch(/- docs: Fast technical writing/);
+      expect(initialPrompt).not.toMatch(/- smart/);
 
       await session.session.prompt("/mode store deep");
       await session.session.agent.waitForIdle();
 
-      await waitForAssertion(() => {
-        expect(getCurrentSystemPrompt(session)).toMatch(/- deep:/);
-      });
+      expect(getCurrentSystemPrompt(session)).not.toMatch(/- deep:/);
     } finally {
       session?.dispose();
       providers.dispose();
@@ -2582,40 +2580,38 @@ timedTest(
   },
 );
 
-timedTest(
-  "gsd debug manager mode exposes subagent but keeps interview out of system prompt",
-  async () => {
-    const cwd = await createTempDir("agent-gsd-debug-mode-prompt-tools-");
-    let session: TestSession | undefined;
-    const providers = createHandoffTestProviders("ok");
+timedTest("gsd debug manager activates subagent without active-only prompt metadata", async () => {
+  const cwd = await createTempDir("agent-gsd-debug-mode-prompt-tools-");
+  let session: TestSession | undefined;
+  const providers = createHandoffTestProviders("ok");
 
-    try {
-      session = await createTestSession({
-        cwd,
-        extensionFactories: [
-          modesExtension,
-          interviewExtension,
-          gsdExtension,
-          createEnabledSubagentExtension(),
-          providers.extensionFactory,
-        ],
-      });
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [
+        modesExtension,
+        interviewExtension,
+        gsdExtension,
+        createEnabledSubagentExtension(),
+        providers.extensionFactory,
+      ],
+    });
 
-      await session.session.prompt("/mode gsd-debug-session-manager");
-      await session.session.agent.waitForIdle();
-      await session.session.prompt("hello");
-      await session.session.agent.waitForIdle();
+    await session.session.prompt("/mode gsd-debug-session-manager");
+    await session.session.agent.waitForIdle();
+    await session.session.prompt("hello");
+    await session.session.agent.waitForIdle();
 
-      const systemPrompt = getCurrentSystemPrompt(session);
-      expect(systemPrompt).not.toContain("- interview:");
-      expect(systemPrompt).toContain("- subagent:");
-    } finally {
-      session?.dispose();
-      providers.dispose();
-      await rm(cwd, { recursive: true, force: true });
-    }
-  },
-);
+    const systemPrompt = getCurrentSystemPrompt(session);
+    expect(systemPrompt).not.toContain("- interview:");
+    expect(systemPrompt).not.toContain("- subagent:");
+    expect(session.session.getActiveToolNames()).toContain("subagent");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 timedTest("/gsd debug launches replacement session without interview by default", async () => {
   const cwd = await createTempDir("agent-gsd-debug-launch-tools-");
@@ -2759,8 +2755,9 @@ timedTest("benchmarks bundled system prompt token budget", async () => {
       projectInstructionBreakdown.some((entry) => entry.name === loadedProjectAgentsPath),
     ).toBe(true);
     expect(systemPrompt).toContain(
-      "- workflow: Run a deterministic JavaScript workflow. Before use, read dynamic-workflows skill.",
+      "- search_tools: Search for additional tools when active tools cannot perform the task.",
     );
+    expect(systemPrompt).not.toContain("- workflow:");
     expect(systemPrompt).not.toContain("For workflow, route subagents with opts.mode.");
     expect(systemPrompt).not.toContain("For workflow, parallel() takes functions");
   } finally {

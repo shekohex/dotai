@@ -383,11 +383,11 @@ export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
     name: "goal",
     label: "Goal",
     renderShell: "self",
-    description:
+    description: [
       "Inspect, create, block, resume, or update the current goal and usage for this pi session.",
-    promptSnippet:
-      "Use action get to inspect goal, action create to start one active goal, action block only for true external blockers with reason, action resume when blocker is resolved with reason, and action update only to mark completed goal complete.",
-    promptGuidelines: [...GOAL_TOOL_PROMPT_GUIDELINES],
+      "Use action get to inspect, create to start one active goal, block only for true external blockers with a concrete reason, resume after the blocker resolves, and update only when all required work is complete.",
+      ...GOAL_TOOL_PROMPT_GUIDELINES,
+    ].join(" "),
     parameters: GoalToolParams,
     renderCall(args, theme, context) {
       const rail = formatToolRail(theme, context);

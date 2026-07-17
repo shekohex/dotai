@@ -279,7 +279,11 @@ function sessionEntryRole(entry: unknown): unknown {
   return message.role;
 }
 
-export function installWorkflowInputHooks(pi: ExtensionAPI, state: WorkflowModeState): void {
+export function installWorkflowInputHooks(
+  pi: ExtensionAPI,
+  state: WorkflowModeState,
+  options?: { activateWorkflowTool(): void },
+): void {
   // Active tools saved while a turn is restricted to `workflow`; restored on turn_end.
   let savedTools: string[] | undefined;
 
@@ -298,7 +302,15 @@ export function installWorkflowInputHooks(pi: ExtensionAPI, state: WorkflowModeS
       state.active = false;
       return { action: "continue" } as const;
     }
-    const activeTools = pi.getActiveTools?.();
+    let activeTools = pi.getActiveTools?.();
+    if (
+      Array.isArray(activeTools) &&
+      !activeTools.includes(WORKFLOW_TOOL_NAME) &&
+      options !== undefined
+    ) {
+      options.activateWorkflowTool();
+      activeTools = pi.getActiveTools?.();
+    }
     if (!Array.isArray(activeTools) || !activeTools.includes(WORKFLOW_TOOL_NAME)) {
       state.active = false;
       return { action: "continue" } as const;

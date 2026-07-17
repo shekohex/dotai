@@ -1,4 +1,5 @@
-import { AuthStorage, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveStoredApiKey } from "../../utils/stored-credential.js";
 import { NOTIFY_AUTH_PROVIDER } from "./types.js";
 
 export interface NotifyAuthHeadersResult {
@@ -48,12 +49,7 @@ export function createNotifyAuthHeaders(
 }
 
 export function resolveNotifyCredential(
-  ctx?: Pick<ExtensionContext, "modelRegistry">,
+  _ctx?: Pick<ExtensionContext, "modelRegistry">,
 ): Promise<string | undefined> {
-  if (ctx !== undefined) {
-    return ctx.modelRegistry.authStorage.getApiKey(NOTIFY_AUTH_PROVIDER, {
-      includeFallback: false,
-    });
-  }
-  return AuthStorage.create().getApiKey(NOTIFY_AUTH_PROVIDER, { includeFallback: false });
+  return Promise.resolve(resolveStoredApiKey(NOTIFY_AUTH_PROVIDER));
 }

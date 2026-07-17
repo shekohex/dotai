@@ -1,5 +1,6 @@
 import FirecrawlApi, { type Document, type ScrapeOptions } from "@mendable/firecrawl-js";
-import { AuthStorage, type AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
+import type { AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
+import { resolveStoredApiKey } from "../../utils/stored-credential.js";
 import { buildDetails, isTimeoutError } from "./execution-details.js";
 import { formatResult } from "./render.js";
 import {
@@ -104,11 +105,11 @@ async function createFirecrawlClient(timeoutMs: number): Promise<FirecrawlApi> {
   });
 }
 
-async function resolveFirecrawlApiKey(): Promise<string> {
-  return (
-    (await AuthStorage.create().getApiKey(FIRECRAWL_AUTH_PROVIDER, { includeFallback: false })) ??
-    process.env[FIRECRAWL_API_KEY_ENV] ??
-    DEFAULT_FIRECRAWL_API_KEY
+function resolveFirecrawlApiKey(): Promise<string> {
+  return Promise.resolve(
+    resolveStoredApiKey(FIRECRAWL_AUTH_PROVIDER) ??
+      process.env[FIRECRAWL_API_KEY_ENV] ??
+      DEFAULT_FIRECRAWL_API_KEY,
   );
 }
 

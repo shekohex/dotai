@@ -3,7 +3,6 @@ import type {
   AgentToolUpdateCallback,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { buildAvailableModesPromptGuideline } from "../available-modes.js";
 import type { SubagentSDK } from "../../subagent-sdk/sdk.js";
 import type {
   RuntimeSubagent,
@@ -35,16 +34,6 @@ const SUBAGENT_BASE_PROMPT_GUIDELINES = [
   "If a delegated child is still running, do not invent its findings; wait for completion or steer it with `message`.",
   "Avoid duplicating the same work locally after delegating unless you are explicitly verifying, comparing, or steering.",
 ] as const;
-
-const SUBAGENT_AVAILABLE_MODES_HEADING =
-  "Available subagent modes. When the user asks for a mode, use one of these exact names:";
-
-async function buildSubagentPromptGuidelines(_ctx: ExtensionContext): Promise<string[]> {
-  return [
-    ...SUBAGENT_BASE_PROMPT_GUIDELINES,
-    await buildAvailableModesPromptGuideline(SUBAGENT_AVAILABLE_MODES_HEADING),
-  ];
-}
 
 function executeSubagentToolAction(
   sdk: SubagentSDK,
@@ -220,9 +209,4 @@ function executeSubagentListAction(
   };
 }
 
-export {
-  buildSubagentPromptGuidelines,
-  executeSubagentToolAction,
-  SUBAGENT_AVAILABLE_MODES_HEADING,
-  SUBAGENT_BASE_PROMPT_GUIDELINES,
-};
+export { executeSubagentToolAction, SUBAGENT_BASE_PROMPT_GUIDELINES };

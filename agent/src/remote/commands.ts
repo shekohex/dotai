@@ -57,7 +57,9 @@ export function createCommandHandler(ctx: CommandHandlerContext): CommandHandler
       case "cycle_model":
         return ok(id, "cycle_model", null);
       case "get_available_models":
-        return ok(id, "get_available_models", { models: session.modelRegistry.getAvailable() });
+        return ok(id, "get_available_models", {
+          models: session.modelRuntime.getAvailableSnapshot(),
+        });
       case "set_thinking_level":
         session.setThinkingLevel(command.level);
         return ok(id, "set_thinking_level");

@@ -1,7 +1,7 @@
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../utils/error-message.js";
+import { resolveStoredApiKey } from "../utils/stored-credential.js";
 
 type LiteLLMCandidate = {
   label: string;
@@ -123,7 +123,7 @@ export function createLiteLLMProviderRegistrations(
 }
 
 export function resolveLiteLLMApiKey(): Promise<string | undefined> {
-  return AuthStorage.create().getApiKey(LITELLM_AUTH_PROVIDER, { includeFallback: false });
+  return Promise.resolve(resolveStoredApiKey(LITELLM_AUTH_PROVIDER));
 }
 
 export function resolveLiteLLMState(): Promise<LiteLLMState> {

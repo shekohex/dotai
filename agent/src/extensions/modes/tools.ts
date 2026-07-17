@@ -4,8 +4,10 @@ import { getContextPruneAPI } from "../context-prune/public-api.js";
 import { CONTEXT_PRUNE_TOOL_NAME, CONTEXT_TREE_QUERY_TOOL_NAME } from "../context-prune/types.js";
 import { getWorkflowModeState, WORKFLOW_TOOL_NAME } from "../dynamic-workflows/workflow-editor.js";
 import { GOAL_TOOL_NAME, isGoalToolEnabled } from "../goal/state.js";
+import { getOpenAIBetterSettings } from "../openai-better/settings.js";
 import { normalizeToolNamesForModel, shouldUsePatch } from "../patch.js";
 import { isSessionQueryToolEnabled, SESSION_QUERY_TOOL_NAME } from "../session-query/state.js";
+import { DEFERRED_TOOL_NAMES } from "../search-tools.js";
 import { isSubagentToolEnabled, SUBAGENT_TOOL_NAME } from "../subagent/state.js";
 import { readChildState } from "../../subagent-sdk/launch.js";
 
@@ -37,18 +39,6 @@ function getAvailableToolNames(pi: ExtensionAPI, ctx: ExtensionContext): string[
     .map((tool) => tool.name)
     .filter((toolName) => {
       if (toolName === "ls") return false;
-      if (toolName === WORKFLOW_TOOL_NAME) {
-        return getWorkflowModeState().toolEnabled;
-      }
-      if (toolName === GOAL_TOOL_NAME) {
-        return isGoalToolEnabled();
-      }
-      if (toolName === SESSION_QUERY_TOOL_NAME) {
-        return isSessionQueryToolEnabled();
-      }
-      if (toolName === SUBAGENT_TOOL_NAME) {
-        return isSubagentToolEnabled();
-      }
       if (contextPruneConfig === undefined) return true;
       if (toolName === CONTEXT_PRUNE_TOOL_NAME) {
         return (
@@ -70,8 +60,16 @@ function getDefaultToolNames(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   availableToolNames: string[],
+  preserveActiveDeferredTools: boolean,
 ): string[] {
   const tools = new Set(availableToolNames);
+  const activeToolNames = preserveActiveDeferredTools ? new Set(pi.getActiveTools()) : new Set();
+
+  for (const toolName of DEFERRED_TOOL_NAMES) {
+    if (!activeToolNames.has(toolName) && !isDeferredToolDefaultEnabled(toolName)) {
+      tools.delete(toolName);
+    }
+  }
 
   if (shouldUsePatch(ctx.model?.id)) {
     tools.delete("edit");
@@ -84,6 +82,15 @@ function getDefaultToolNames(
   }
 
   return Array.from(tools).toSorted(compareToolNames);
+}
+
+function isDeferredToolDefaultEnabled(toolName: string): boolean {
+  if (toolName === WORKFLOW_TOOL_NAME) return getWorkflowModeState().toolEnabled;
+  if (toolName === GOAL_TOOL_NAME) return isGoalToolEnabled();
+  if (toolName === SESSION_QUERY_TOOL_NAME) return isSessionQueryToolEnabled();
+  if (toolName === SUBAGENT_TOOL_NAME) return isSubagentToolEnabled();
+  if (toolName === "generate_image") return getOpenAIBetterSettings().image.enabled;
+  return false;
 }
 
 function resolveModeToolNames(
@@ -123,9 +130,15 @@ export function syncModeTools(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   spec: ModeSpec | undefined,
+  options: { preserveActiveDeferredTools?: boolean } = {},
 ): void {
   const availableToolNames = getAvailableToolNames(pi, ctx);
-  const defaultToolNames = getDefaultToolNames(pi, ctx, availableToolNames);
+  const defaultToolNames = getDefaultToolNames(
+    pi,
+    ctx,
+    availableToolNames,
+    options.preserveActiveDeferredTools ?? true,
+  );
   const nextTools = normalizeToolNamesForModel(
     resolveModeToolNames(spec?.tools, defaultToolNames, availableToolNames),
     ctx.model?.id,

@@ -3,6 +3,7 @@ import {
   SessionManager,
   SettingsManager,
   type ExtensionFactory,
+  type InlineExtension,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { installBundledResourcePaths } from "../extensions/bundled-resources.js";
@@ -49,10 +50,10 @@ export async function createLiteSessionResources(input: {
   };
 }
 
-function createLiteExtensionFactories(mode: ResolvedSubagentMode): ExtensionFactory[] {
+function createLiteExtensionFactories(mode: ResolvedSubagentMode): InlineExtension[] {
   return [
     ...getLiteBundledExtensionFactories({ excludeIds: ["context-prune", "modes"] }),
-    createLiteModePromptExtension(mode),
+    { name: "lite-mode-prompt", factory: createLiteModePromptExtension(mode) },
   ];
 }
 

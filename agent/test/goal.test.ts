@@ -16,6 +16,7 @@ import { syncModeTools } from "../src/extensions/modes/tools.js";
 import { formatFooterStatus } from "../src/extensions/goal/format.js";
 import {
   blockGoal,
+  createGoal,
   parseGoalCustomEntry,
   reconstructGoal,
   replaceWorkflowGoal,
@@ -521,27 +522,21 @@ describe("goal extension", () => {
     expect(groupedExtensionsC.some((definition) => definition.id === "goal")).toBe(true);
   });
 
-  test("goal tool is hidden until goal command enables it", async () => {
+  test("goal tool registers upfront but stays deferred without an active goal", async () => {
     const harness = createGoalHarness({ contextUsagePercent: 10, contextUsageTokens: 100 });
 
-    expect(harness.tools.has("goal")).toBe(false);
+    expect(harness.tools.has("goal")).toBe(true);
     expect(harness.activeTools.includes("goal")).toBe(false);
+    expect(harness.registeredTools.get("goal")?.promptSnippet).toBeUndefined();
+    expect(harness.registeredTools.get("goal")?.promptGuidelines).toBeUndefined();
 
     await harness.runCommand("on");
 
-    expect(harness.tools.has("goal")).toBe(true);
-    expect(harness.activeTools.includes("goal")).toBe(true);
-
-    await harness.runCommand("off");
-
-    expect(harness.tools.has("goal")).toBe(true);
     expect(harness.activeTools.includes("goal")).toBe(false);
   });
 
-  test("mode sync does not re-add disabled goal tool", async () => {
+  test("mode sync does not add deferred goal tool through wildcard defaults", () => {
     const harness = createGoalHarness();
-    await harness.runCommand("on");
-    await harness.runCommand("off");
     const fakePi = {
       getActiveTools: () => harness.activeTools,
       getAllTools: () => [{ name: "read" }, { name: "goal" }],
@@ -555,35 +550,45 @@ describe("goal extension", () => {
     expect(harness.activeTools.includes("goal")).toBe(false);
   });
 
-  test("goal command first use enables goal tool", async () => {
+  test("goal command status does not activate model tool", async () => {
     const harness = createGoalHarness();
 
     await harness.runCommand("");
 
     expect(harness.tools.has("goal")).toBe(true);
-    expect(harness.activeTools.includes("goal")).toBe(true);
+    expect(harness.activeTools.includes("goal")).toBe(false);
   });
 
-  test("goal tool enabled state restores from session entries", async () => {
-    const firstHarness = createGoalHarness();
-    await firstHarness.runCommand("on");
+  test("before-agent hook does not remove a search-loaded goal tool", async () => {
+    const harness = createGoalHarness();
+    harness.activeTools.push("goal");
 
-    const restoredHarness = createGoalHarness({ initialEntries: firstHarness.entries });
+    await harness.emit("before_agent_start", {
+      type: "before_agent_start",
+      prompt: "continue",
+      systemPrompt: "base",
+      systemPromptOptions: {},
+    });
+
+    expect(harness.activeTools).toContain("goal");
+  });
+
+  test("active goal restores goal tool without a toggle entry", async () => {
+    const created = createGoal(null, "ship it");
+    if (!created.ok || created.goal === null) throw new Error(created.message);
+    const restoredHarness = createGoalHarness({
+      initialEntries: [
+        {
+          type: "custom",
+          customType: GOAL_EXTENSION_ENTRY_TYPE,
+          data: setEntry(created.goal, "command"),
+        },
+      ] as never,
+    });
     await restoredHarness.emit("session_start", { type: "session_start", reason: "resume" });
 
     expect(restoredHarness.tools.has("goal")).toBe(true);
     expect(restoredHarness.activeTools.includes("goal")).toBe(true);
-  });
-
-  test("goal tool disabled state restores from session entries", async () => {
-    const firstHarness = createGoalHarness();
-    await firstHarness.runCommand("on");
-    await firstHarness.runCommand("off");
-
-    const restoredHarness = createGoalHarness({ initialEntries: firstHarness.entries });
-    await restoredHarness.emit("session_start", { type: "session_start", reason: "resume" });
-
-    expect(restoredHarness.activeTools.includes("goal")).toBe(false);
   });
 
   test("goal tool supports get create and update actions", async () => {

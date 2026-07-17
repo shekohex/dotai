@@ -1,4 +1,5 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { hasStoredCredential } from "../../utils/stored-credential.js";
 import { listCliproxyAccounts, resolveCliproxyState } from "./cliproxy.js";
 import { formatSnapshotSummary } from "./status.js";
 import type {
@@ -20,10 +21,10 @@ async function handleDebug(
   const lines = [
     `Model: ${ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none"}`,
     `Active provider: ${providerId ?? "none"}`,
-    `Host auth codex: ${ctx.modelRegistry.authStorage.hasAuth("openai-codex")}`,
-    `Host auth zai: ${ctx.modelRegistry.authStorage.hasAuth("zai")}`,
-    `Host auth zai-coding-plan: ${ctx.modelRegistry.authStorage.hasAuth("zai-coding-plan")}`,
-    `Host auth cliproxyapi: ${ctx.modelRegistry.authStorage.hasAuth("cliproxyapi")}`,
+    `Host auth codex: ${ctx.modelRegistry.getProviderAuthStatus("openai-codex").configured}`,
+    `Host auth zai: ${ctx.modelRegistry.getProviderAuthStatus("zai").configured}`,
+    `Host auth zai-coding-plan: ${ctx.modelRegistry.getProviderAuthStatus("zai-coding-plan").configured}`,
+    `Host auth cliproxyapi: ${hasStoredCredential("cliproxyapi")}`,
     `Cliproxy: ${cliproxyState.label}${cliproxyState.baseUrl !== undefined && cliproxyState.baseUrl.length > 0 ? ` ${cliproxyState.baseUrl}` : ""}${cliproxyState.error !== undefined && cliproxyState.error.length > 0 ? ` (${cliproxyState.error})` : ""}`,
     `Reset time format: ${state.persisted.resetTimeFormat}`,
     `Selected codex account: ${state.persisted.selectedAccounts.codex ?? "host"}`,

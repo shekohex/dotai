@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { readStoredOAuthCredential } from "../../../utils/stored-credential.js";
 import { downloadCliproxyAuthFile, resolveCliproxySelectedAccount } from "../cliproxy.js";
 import type { OpenUsageRuntimeState, UsageProvider, UsageSnapshot } from "../types.js";
 import {
@@ -150,17 +151,15 @@ async function resolveCodexCredential(
 async function resolveHostCodexCredential(
   ctx: ExtensionContext,
 ): Promise<CodexCredential | undefined> {
-  const cred = ctx.modelRegistry.authStorage.get("openai-codex");
-  const apiKey = await ctx.modelRegistry.authStorage.getApiKey("openai-codex", {
-    includeFallback: true,
-  });
+  const credential = readStoredOAuthCredential("openai-codex");
+  const apiKey = await ctx.modelRegistry.getApiKeyForProvider("openai-codex");
 
   if (apiKey === undefined || apiKey.length === 0) {
     return undefined;
   }
 
   const oauthAccountId =
-    cred && cred.type === "oauth" ? readString(asRecord(cred)?.accountId) : undefined;
+    credential === undefined ? undefined : readString(asRecord(credential)?.accountId);
   const accountId = oauthAccountId ?? extractAccountId(apiKey);
   if (accountId === undefined || accountId.length === 0) {
     throw new Error("Failed to resolve Codex account id from host auth.");

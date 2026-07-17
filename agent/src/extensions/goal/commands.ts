@@ -20,19 +20,9 @@ import {
 } from "./types.js";
 const GOAL_COMMAND_AUTOCOMPLETE_ITEMS: AutocompleteItem[] = [
   {
-    value: "on",
-    label: "on",
-    description: "Enable goal tool",
-  },
-  {
     value: "workflow",
     label: "workflow",
     description: "Run current goal via bundled workflow orchestration",
-  },
-  {
-    value: "off",
-    label: "off",
-    description: "Disable goal tool",
   },
   {
     value: "pause",
@@ -376,16 +366,11 @@ export async function handleGoalCommand(
   ctx: ExtensionCommandContext,
 ): Promise<void> {
   const trimmed = args.trim();
-  if (trimmed === "off") {
-    host.disableTool(ctx);
-    ctx.ui.notify("Goal tool disabled.");
-    return;
-  }
-
-  host.enableTool(ctx);
-
-  if (trimmed === "on") {
-    ctx.ui.notify("Goal tool enabled.");
+  if (trimmed === "on" || trimmed === "off") {
+    ctx.ui.notify(
+      "Goal tool toggles were removed; use search_tools when model access is needed.",
+      "warning",
+    );
     return;
   }
 
@@ -393,6 +378,8 @@ export async function handleGoalCommand(
     ctx.ui.notify(formatGoalSummary(host.getGoal()));
     return;
   }
+
+  host.enableTool(ctx);
 
   const workflowArgs = workflowObjectiveArgs(trimmed);
   if (workflowArgs !== null) {

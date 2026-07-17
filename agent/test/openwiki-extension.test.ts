@@ -213,9 +213,12 @@ describe("openwiki extension", () => {
     const session = await createTestSession({
       extensionFactories: [modeResponder, openWikiExtension],
     });
-    (
-      session.session as { _modelRegistry: { hasConfiguredAuth: () => boolean } }
-    )._modelRegistry.hasConfiguredAuth = () => true;
+    if (session.session.model !== undefined) {
+      await session.session.modelRuntime.setRuntimeApiKey(
+        session.session.model.provider,
+        "test-key",
+      );
+    }
     let capturedSystemPrompt = "";
     const playbook = createPlaybookStreamFn([
       when(internals.formatOpenWikiPrompt("init"), [says("ok")]),

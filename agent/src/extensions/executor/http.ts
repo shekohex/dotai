@@ -1,5 +1,5 @@
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
+import { resolveStoredApiKey } from "../../utils/stored-credential.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -102,16 +102,14 @@ export const fetchJson = async <T>(
   }
 };
 
-export async function resolveExecutorAuthorizationHeaders(): Promise<Record<string, string>> {
-  const apiKey = await AuthStorage.create().getApiKey(EXECUTOR_AUTH_PROVIDER, {
-    includeFallback: false,
-  });
+export function resolveExecutorAuthorizationHeaders(): Promise<Record<string, string>> {
+  const apiKey = resolveStoredApiKey(EXECUTOR_AUTH_PROVIDER);
 
   if (apiKey === undefined || apiKey.length === 0) {
-    return {};
+    return Promise.resolve({});
   }
 
-  return { Authorization: `Bearer ${apiKey}` };
+  return Promise.resolve({ Authorization: `Bearer ${apiKey}` });
 }
 
 async function requestJson(

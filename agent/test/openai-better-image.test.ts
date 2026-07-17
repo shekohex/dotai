@@ -8,12 +8,23 @@ import { defaultOpenAIBetterSettings } from "../src/extensions/openai-better/set
 import { createToolStateEntry, TOOL_STATE_ENTRY_TYPE } from "../src/utils/tool-state.js";
 
 describe("openai better image parsing", () => {
-  it("does not register generate_image by default", () => {
+  it("registers generate_image upfront without active-only prompt metadata", () => {
     const registeredTools: string[] = [];
-    registerOpenAIImage(createFakePi(registeredTools), () => defaultOpenAIBetterSettings);
+    const toolDefinitions: Array<{ promptSnippet?: string; promptGuidelines?: string[] }> = [];
+    registerOpenAIImage(
+      createFakePi(registeredTools, {
+        registerTool: (tool) => {
+          registeredTools.push(tool.name);
+          toolDefinitions.push(tool);
+        },
+      }),
+      () => defaultOpenAIBetterSettings,
+    );
 
     expect(defaultOpenAIBetterSettings.image.enabled).toBe(false);
-    expect(registeredTools).not.toContain("generate_image");
+    expect(registeredTools).toContain("generate_image");
+    expect(toolDefinitions[0]?.promptSnippet).toBeUndefined();
+    expect(toolDefinitions[0]?.promptGuidelines).toBeUndefined();
   });
 
   it("registers generate_image when image setting is enabled", () => {
@@ -29,7 +40,7 @@ describe("openai better image parsing", () => {
     expect(registeredTools).toContain("generate_image");
   });
 
-  it("registers imagen command with prompt usage and enables tool before generation", async () => {
+  it("registers imagen command with prompt usage without persisting tool activation", async () => {
     const registeredTools: string[] = [];
     let activeTools: string[] = [];
     const entries: Array<{ customType: string; data: unknown; type: "custom" }> = [];
@@ -66,12 +77,8 @@ describe("openai better image parsing", () => {
       } as unknown as ExtensionCommandContext),
     ).rejects.toThrow();
     expect(registeredTools).toContain("generate_image");
-    expect(activeTools).toContain("generate_image");
-    expect(entries).toContainEqual({
-      type: "custom",
-      customType: TOOL_STATE_ENTRY_TYPE,
-      data: createToolStateEntry("generate_image", true),
-    });
+    expect(activeTools).not.toContain("generate_image");
+    expect(entries).toEqual([]);
   });
 
   it("restores generate_image active state from session entries", () => {

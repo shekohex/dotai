@@ -176,14 +176,8 @@ export function createWorkflowTool(
     description: [
       "Execute a deterministic JavaScript workflow that orchestrates multiple subagents with agent(), parallel(), and pipeline().",
       "Provide exactly one of script or scriptFile. script is raw JavaScript; scriptFile is an absolute path to a JS script file. It must start with export const meta = { name, description, phases? } and must call agent() at least once.",
+      "Use only when the user explicitly asks for workflow, fan-out, or multi-agent orchestration. Before use, read the dynamic-workflows skill. Give each agent() a concrete return contract and use opts.schema when the script needs structured data.",
     ].join(" "),
-    promptSnippet:
-      "Run a deterministic JavaScript workflow. Before use, read dynamic-workflows skill.",
-    promptGuidelines: [
-      "Use workflow only when the user explicitly asks for workflow, fan-out, or multi-agent orchestration.",
-      "Before calling workflow, read the dynamic-workflows skill for script format, API, and constraints.",
-      "Give each agent() a concrete return contract. Text results are returned verbatim; use opts.schema when the script needs structured data.",
-    ],
     parameters: workflowToolSchema,
     prepareArguments(args) {
       return normalizeWorkflowToolArgs(args);

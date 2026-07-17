@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import {
   DefaultResourceLoader,
-  type ExtensionFactory,
+  type InlineExtension,
   type PackageManager,
   type ResolvedPaths,
 } from "@earendil-works/pi-coding-agent";
@@ -11,13 +11,8 @@ const loaderPatchInstalledSymbol = Symbol.for("@shekohex/agent/herdr-integration
 const packageManagerPatchInstalledSymbol = Symbol.for(
   "@shekohex/agent/herdr-integration-package-manager-patch",
 );
-const inlineExtensionNameSymbol = Symbol.for("@shekohex/agent/inline-extension-name");
 const BUNDLED_HERDR_REPORTER_NAME = "herdr-agent-state";
 const MANAGED_PI_INTEGRATION_MARKER = "HERDR_INTEGRATION_ID=pi";
-
-type NamedExtensionFactory = ExtensionFactory & {
-  [inlineExtensionNameSymbol]?: string;
-};
 
 type PatchedPackageManager = PackageManager & {
   [packageManagerPatchInstalledSymbol]?: true;
@@ -33,11 +28,19 @@ function readObjectProperty(target: object, key: PropertyKey): unknown {
   return Reflect.get(target, key);
 }
 
-function readExtensionFactories(loader: DefaultResourceLoader): ExtensionFactory[] {
+function isInlineExtension(value: unknown): value is InlineExtension {
+  return (
+    typeof value === "function" ||
+    (typeof value === "object" &&
+      value !== null &&
+      typeof readObjectProperty(value, "name") === "string" &&
+      typeof readObjectProperty(value, "factory") === "function")
+  );
+}
+
+function readExtensionFactories(loader: DefaultResourceLoader): InlineExtension[] {
   const value = readObjectProperty(loader, "extensionFactories");
-  return Array.isArray(value)
-    ? value.filter((factory): factory is ExtensionFactory => typeof factory === "function")
-    : [];
+  return Array.isArray(value) ? value.filter((entry) => isInlineExtension(entry)) : [];
 }
 
 function isPackageManager(value: unknown): value is PackageManager {
@@ -73,8 +76,8 @@ function filterManagedHerdrPiIntegration(paths: ResolvedPaths): ResolvedPaths {
 
 function hasBundledHerdrReporter(loader: DefaultResourceLoader): boolean {
   return readExtensionFactories(loader).some(
-    (factory) =>
-      (factory as NamedExtensionFactory)[inlineExtensionNameSymbol] === BUNDLED_HERDR_REPORTER_NAME,
+    (extension) =>
+      typeof extension !== "function" && extension.name === BUNDLED_HERDR_REPORTER_NAME,
   );
 }
 

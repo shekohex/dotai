@@ -13,6 +13,7 @@ import { sessionQueryTool } from "../src/extensions/session-query.js";
 import { createSubagentExtension } from "../src/extensions/subagent.js";
 import type { RuntimeSubagent } from "../src/subagent-sdk/types.js";
 import { webSearchTool } from "../src/extensions/websearch.js";
+import { createSearchToolsToolDefinition } from "../src/extensions/search-tools.js";
 import { createExecuteToolDefinition } from "../src/extensions/executor/tools.js";
 import {
   createBashToolOverrideDefinition,
@@ -84,6 +85,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
     {} as never,
     "Execute TypeScript in a sandboxed runtime with access to configured API tools.",
   );
+  const searchToolsDefinition = createSearchToolsToolDefinition(previewPi);
   const sessionPath = joinPath(
     cwd,
     ".pi/agent/sessions/example/2026-04-10T15-42-47-701Z_0e990a27-4131-4b96-9440-9c813db0e009.jsonl",
@@ -646,6 +648,51 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       },
       errorResult: {
         content: [{ type: "text", text: "Request timed out after 10s" }],
+      },
+    },
+    {
+      id: "search_tools:ranked",
+      title: "search_tools ranked candidates",
+      toolName: searchToolsDefinition.name,
+      toolDefinition: searchToolsDefinition,
+      cwd,
+      args: {
+        query: "previous Pi sessions conversation history",
+        limit: 3,
+      },
+      successResult: {
+        content: [{ type: "text", text: "Loaded tools: session_query" }],
+        details: {
+          query: "previous Pi sessions conversation history",
+          matches: ["session_query"],
+          added: ["session_query"],
+          alreadyActive: [],
+          candidates: [
+            {
+              name: "session_query",
+              confidence: 0.94,
+              kind: "exact_alias",
+              matchedText: "conversation history",
+            },
+            {
+              name: "subagent",
+              confidence: 0.805,
+              kind: "fuzzy_name",
+              matchedText: "subagent",
+            },
+            {
+              name: "execute",
+              confidence: 0.48,
+              kind: "description",
+            },
+          ],
+          decision: "matched",
+          minimumConfidence: 0.7,
+          minimumWinnerMargin: 0.06,
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "Tool catalog unavailable" }],
       },
     },
     {

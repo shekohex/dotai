@@ -9,7 +9,6 @@ import {
   SessionManager,
   SettingsManager,
   type AgentSession,
-  type ExtensionFactory,
   type ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
 
@@ -39,7 +38,7 @@ export async function createRemoteSession(
     cwd: options.cwd,
     agentDir: options.agentDir,
     settingsManager,
-    extensionFactories: bundledExtensionFactories satisfies ExtensionFactory[],
+    extensionFactories: bundledExtensionFactories,
   });
   await resourceLoader.reload();
   const sessionManager = SessionManager.create(options.cwd);

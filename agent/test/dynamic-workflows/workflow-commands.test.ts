@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "vitest";
-import { registerWorkflowCommands } from "../../src/extensions/dynamic-workflows/workflow-commands.js";
+import {
+  getWorkflowCommandCompletions,
+  registerWorkflowCommands,
+} from "../../src/extensions/dynamic-workflows/workflow-commands.js";
 
 type Handler = (args: string, ctx: any) => Promise<void>;
 
@@ -66,6 +69,14 @@ test("/workflows (no args) defaults to list", async () => {
   await h.run("");
   assert.match(h.printed[0], /Workflow runs:/);
   assert.match(h.printed[0], /run-1/);
+});
+
+test("workflow command completions omit removed tool toggles", () => {
+  const completions = getWorkflowCommandCompletions("", { listRuns: () => [] } as never) ?? [];
+  assert.equal(
+    completions.some((item) => item.value === "on" || item.value === "off"),
+    false,
+  );
 });
 
 test("/workflows stop <id> calls manager.stop", async () => {

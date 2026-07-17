@@ -32,7 +32,7 @@ function createHarness(
   let activeTools = ["read"];
   const entries = Array.isArray(options.entries) ? [...options.entries] : [];
   const handlers = new Map<string, Handler[]>();
-  let commandHandler: ((args: string, ctx: ExtensionCommandContext) => unknown) | undefined;
+  const registeredCommands: string[] = [];
   const notifications: string[] = [];
 
   const ctx = {
@@ -56,8 +56,8 @@ function createHarness(
     on(eventName: string, handler: Handler) {
       handlers.set(eventName, [...(handlers.get(eventName) ?? []), handler]);
     },
-    registerCommand(name: string, definition: { handler: typeof commandHandler }) {
-      if (name === "session-query") commandHandler = definition.handler;
+    registerCommand(name: string) {
+      registeredCommands.push(name);
     },
     registerTool: vi.fn(),
     setActiveTools(toolNames: string[]) {
@@ -71,15 +71,12 @@ function createHarness(
     ctx,
     entries,
     notifications,
+    registeredCommands,
     get activeTools() {
       return activeTools;
     },
     async emit(eventName: string) {
       for (const handler of handlers.get(eventName) ?? []) await handler({}, ctx);
-    },
-    async runCommand(args: string) {
-      if (commandHandler === undefined) throw new Error("session-query command not registered");
-      await commandHandler(args, ctx);
     },
     syncModeTools() {
       syncModeTools(pi, ctx, undefined);
@@ -102,22 +99,36 @@ describe("session-query extension", () => {
     expect(harness.activeTools).toEqual(["read"]);
   });
 
-  test("command toggles tool and persists session state", async () => {
+  test("before-agent hook does not remove a search-loaded tool", async () => {
+    const harness = createHarness();
+    await harness.emit("session_start");
+    harness.activeTools.push("session_query");
+
+    await harness.emit("before_agent_start");
+
+    expect(harness.activeTools).toEqual(["read", "session_query"]);
+  });
+
+  test("does not register a tool toggle command", () => {
     const harness = createHarness();
 
-    await harness.runCommand("on");
-    expect(harness.activeTools).toEqual(["read", "session_query"]);
-    expect(harness.entries.at(-1)).toMatchObject({
-      customType: "tool-state",
-      data: { key: "session_query", enabled: true },
+    expect(harness.registeredCommands).not.toContain("session-query");
+  });
+
+  test("legacy enabled session state still opts the tool in", async () => {
+    const harness = createHarness({
+      entries: [
+        {
+          type: "custom",
+          customType: "tool-state",
+          data: { version: 1, key: "session_query", enabled: true },
+        },
+      ] as never,
     });
 
-    await harness.runCommand("off");
-    expect(harness.activeTools).toEqual(["read"]);
-    expect(harness.entries.at(-1)).toMatchObject({
-      customType: "tool-state",
-      data: { key: "session_query", enabled: false },
-    });
+    await harness.emit("session_start");
+
+    expect(harness.activeTools).toEqual(["read", "session_query"]);
   });
 
   test("config default enables tool when session has no override", async () => {

@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveStoredApiKey } from "../../utils/stored-credential.js";
 import {
   CLIPROXY_AUTH_PROVIDER,
   type CliproxyAccount,
@@ -29,9 +30,7 @@ export async function resolveCliproxyConfig(
   ctx: ExtensionContext,
 ): Promise<CliproxyConfig | undefined> {
   const apiKey = (
-    (await ctx.modelRegistry.authStorage.getApiKey(CLIPROXY_AUTH_PROVIDER, {
-      includeFallback: true,
-    })) ?? firstEnv(API_KEY_ENV_KEYS)
+    resolveStoredApiKey(CLIPROXY_AUTH_PROVIDER) ?? firstEnv(API_KEY_ENV_KEYS)
   )?.trim();
 
   if (!hasText(apiKey)) {
@@ -52,11 +51,7 @@ export async function resolveCliproxyState(
 ): Promise<CliproxyState> {
   const apiKey =
     apiKeyOverride ??
-    (
-      (await ctx.modelRegistry.authStorage.getApiKey(CLIPROXY_AUTH_PROVIDER, {
-        includeFallback: true,
-      })) ?? firstEnv(API_KEY_ENV_KEYS)
-    )?.trim();
+    (resolveStoredApiKey(CLIPROXY_AUTH_PROVIDER) ?? firstEnv(API_KEY_ENV_KEYS))?.trim();
 
   if (!hasText(apiKey)) {
     return {

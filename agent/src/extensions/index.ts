@@ -1,14 +1,10 @@
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { ExtensionFactory, InlineExtension } from "@earendil-works/pi-coding-agent";
 import {
   groupedExtensionsA,
   groupedExtensionsB,
   groupedExtensionsC,
   type GroupedExtensionDefinition,
 } from "./definitions.js";
-import {
-  installInlineExtensionNamePatch,
-  setInlineExtensionName,
-} from "./inline-extension-names.js";
 import { installHerdrIntegrationConflictPatch } from "./herdr-integration-conflicts.js";
 import { createModesExtension } from "./modes/index.js";
 import type { ModeStartupSelection } from "./modes/startup-selection.js";
@@ -21,7 +17,6 @@ export interface BundledExtensionDefinition {
 
 const subagentExtensionFactory = createSubagentExtension({ enabled: true });
 
-installInlineExtensionNamePatch();
 installHerdrIntegrationConflictPatch();
 
 export const bundledExtensionDefinitions: BundledExtensionDefinition[] = [
@@ -29,10 +24,7 @@ export const bundledExtensionDefinitions: BundledExtensionDefinition[] = [
   ...groupedExtensionsB,
   ...groupedExtensionsC,
   { id: "subagent", factory: subagentExtensionFactory },
-].map((definition) => ({
-  ...definition,
-  factory: setInlineExtensionName(definition.factory, definition.id),
-})) satisfies GroupedExtensionDefinition[];
+] satisfies GroupedExtensionDefinition[];
 
 const bundledExtensionDefinitionByFactory = new Map<ExtensionFactory, BundledExtensionDefinition>(
   bundledExtensionDefinitions.map((definition) => [definition.factory, definition]),
@@ -48,23 +40,21 @@ export function findBundledExtensionDefinitionByFactory(
   return bundledExtensionDefinitionByFactory.get(factory);
 }
 
-export const bundledExtensionFactories: ExtensionFactory[] = bundledExtensionDefinitions.map(
-  (definition) => definition.factory,
+export const bundledExtensionFactories: InlineExtension[] = bundledExtensionDefinitions.map(
+  ({ id, factory }) => ({ name: id, factory }),
 );
 
 export function createBundledExtensionFactories(options: {
   modeStartupSelection?: ModeStartupSelection;
-}): ExtensionFactory[] {
+}): InlineExtension[] {
   const modeStartupSelection = options.modeStartupSelection;
   if (modeStartupSelection?.hasExplicitModel !== true) {
     return bundledExtensionFactories;
   }
 
   return bundledExtensionDefinitions.map((definition) => {
-    if (definition.id !== "modes") {
-      return definition.factory;
-    }
-
-    return setInlineExtensionName(createModesExtension(modeStartupSelection), definition.id);
+    const factory =
+      definition.id === "modes" ? createModesExtension(modeStartupSelection) : definition.factory;
+    return { name: definition.id, factory };
   });
 }

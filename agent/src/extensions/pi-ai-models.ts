@@ -1,4 +1,4 @@
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { azureOpenAIResponsesApi } from "@earendil-works/pi-ai/api/azure-openai-responses.lazy";
 import { bedrockConverseStreamApi } from "@earendil-works/pi-ai/api/bedrock-converse-stream.lazy";
@@ -8,58 +8,25 @@ import { mistralConversationsApi } from "@earendil-works/pi-ai/api/mistral-conve
 import { openAICodexResponsesApi } from "@earendil-works/pi-ai/api/openai-codex-responses.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
+import { piMessagesApi } from "@earendil-works/pi-ai/api/pi-messages.lazy";
 import {
   createProvider,
+  createModels,
+  InMemoryCredentialStore,
+  lazyStream,
   type Api,
-  type ApiStreamOptions,
   type AssistantMessage,
   type AssistantMessageEventStream,
   type Context,
-  type Credential,
-  type CredentialStore,
   type Model,
+  type ModelsApiStreamOptions,
+  type ModelsSimpleStreamOptions,
   type Provider,
   type ProviderStreams,
-  type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
-type AuthStorageCredential = ReturnType<AuthStorage["get"]>;
-
-class AuthStorageCredentialStore implements CredentialStore {
-  constructor(private readonly authStorage: AuthStorage) {}
-
-  read(providerId: string): Promise<Credential | undefined> {
-    return Promise.resolve(toPiCredential(this.authStorage.get(providerId)));
-  }
-
-  async modify(
-    providerId: string,
-    fn: (current: Credential | undefined) => Promise<Credential | undefined>,
-  ): Promise<Credential | undefined> {
-    const nextCredential = await fn(await this.read(providerId));
-    if (nextCredential !== undefined) {
-      const storableCredential = toAuthStorageCredential(nextCredential);
-      if (storableCredential !== undefined) {
-        this.authStorage.set(providerId, storableCredential);
-      }
-      return nextCredential;
-    }
-    return this.read(providerId);
-  }
-
-  delete(providerId: string): Promise<void> {
-    this.authStorage.remove(providerId);
-    return Promise.resolve();
-  }
-}
-
-const defaultCredentialStore = new AuthStorageCredentialStore(AuthStorage.create());
+const defaultModelRuntimePromise = ModelRuntime.create({ allowModelNetwork: false });
 const requestProviders = new Map<string, Provider>();
-
-export function credentialStoreFromAuthStorage(authStorage: AuthStorage): CredentialStore {
-  return new AuthStorageCredentialStore(authStorage);
-}
 
 export function registerPiAiProvider(provider: Provider): () => void {
   requestProviders.set(provider.id, provider);
@@ -73,35 +40,46 @@ export function registerPiAiProvider(provider: Provider): () => void {
 export function streamModel<TApi extends Api>(
   model: Model<TApi>,
   context: Context,
-  options?: ApiStreamOptions<TApi>,
+  options?: ModelsApiStreamOptions<TApi>,
 ): AssistantMessageEventStream {
-  return modelsForRequest(model).stream(model, context, options);
+  return lazyStream(model, async () =>
+    (await modelsForRequest(model)).stream(model, context, options),
+  );
 }
 
 export function completeModel<TApi extends Api>(
   model: Model<TApi>,
   context: Context,
-  options?: ApiStreamOptions<TApi>,
+  options?: ModelsApiStreamOptions<TApi>,
 ): Promise<AssistantMessage> {
-  return modelsForRequest(model).complete(model, context, options);
+  return streamModel(model, context, options).result();
 }
 
 export function completeSimpleModel<TApi extends Api>(
   model: Model<TApi>,
   context: Context,
-  options?: SimpleStreamOptions,
+  options?: ModelsSimpleStreamOptions,
 ): Promise<AssistantMessage> {
-  return modelsForRequest(model).completeSimple(model, context, options);
+  return lazyStream(model, async () =>
+    (await modelsForRequest(model)).streamSimple(model, context, options),
+  ).result();
 }
 
-function modelsForRequest(model: Model<Api>) {
-  const models = builtinModels({ credentials: defaultCredentialStore });
+async function modelsForRequest(model: Model<Api>) {
   const registeredProvider = requestProviders.get(model.provider);
   if (registeredProvider !== undefined) {
+    const models = createModels({ credentials: new InMemoryCredentialStore() });
     models.setProvider(registeredProvider);
-  } else if (models.getProvider(model.provider) === undefined) {
-    models.setProvider(createRequestProvider(model));
+    return models;
   }
+
+  const modelRuntime = await defaultModelRuntimePromise;
+  if (modelRuntime.getProvider(model.provider) !== undefined) {
+    return modelRuntime;
+  }
+
+  const models = createModels({ credentials: new InMemoryCredentialStore() });
+  models.setProvider(createRequestProvider(model));
   return models;
 }
 
@@ -116,12 +94,12 @@ function createRequestProvider(model: Model<Api>): Provider {
     auth: {
       apiKey: {
         name: `${model.provider} API key`,
-        resolve: ({ model: requestModel, credential }) =>
+        resolve: ({ credential }) =>
           Promise.resolve({
             auth: {
               apiKey: credential?.key,
-              baseUrl: requestModel.baseUrl,
-              headers: requestModel.headers,
+              baseUrl: model.baseUrl,
+              headers: model.headers,
             },
             env: credential?.env,
             source: credential?.key === undefined ? undefined : "auth.json",
@@ -151,21 +129,9 @@ function providerStreamsForApi(api: Api): ProviderStreams {
       return openAICompletionsApi();
     case "openai-responses":
       return openAIResponsesApi();
+    case "pi-messages":
+      return piMessagesApi();
     default:
       throw new Error(`Unsupported model API: ${api}`);
   }
-}
-
-function toPiCredential(credential: AuthStorageCredential): Credential | undefined {
-  if (credential === undefined) return undefined;
-  if (credential.type === "api_key") return credential;
-  return credential;
-}
-
-function toAuthStorageCredential(credential: Credential): AuthStorageCredential {
-  if (credential.type === "api_key") {
-    if (credential.key === undefined) return undefined;
-    return { type: "api_key", key: credential.key, env: credential.env };
-  }
-  return credential;
 }

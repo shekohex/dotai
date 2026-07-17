@@ -170,6 +170,7 @@ class FakePi implements Partial<ExtensionAPI> {
   sentUserMessages: Array<{ content: unknown; options: unknown }> = [];
   sessionNames: string[] = [];
   registeredTools = new Map<string, ToolDefinition<any, any>>();
+  registeredToolCalls: string[] = [];
   registeredCommands = new Map<string, (args: string, ctx: ExtensionContext) => unknown>();
   handlers = new Map<string, Array<(...args: any[]) => any>>();
   eventHandlers = new Map<string, Array<(...args: any[]) => any>>();
@@ -195,6 +196,7 @@ class FakePi implements Partial<ExtensionAPI> {
 
   registerTool(tool: ToolDefinition<any, any>): void {
     this.registeredTools.set(tool.name, tool);
+    this.registeredToolCalls.push(tool.name);
   }
 
   registerCommand(
@@ -2824,19 +2826,9 @@ timedTest("subagent tool metadata explains terminal inspection and result modes"
   expect(tool.description).toMatch(/no read action/i);
   expect(tool.description).toMatch(/json_schema blocks and returns validated JSON directly/i);
   expect(tool.description).toMatch(/completion:false to suppress status/i);
-  expect(tool.promptSnippet ?? "").toMatch(/no read action/i);
-  expect(tool.promptSnippet ?? "").toMatch(/json_schema=blocking validated JSON/i);
-  expect(tool.promptSnippet ?? "").toMatch(/completion:false suppresses status/i);
-  expect(
-    tool.promptGuidelines?.some((guideline) =>
-      /default\/text starts background and auto-sends completion status/i.test(guideline),
-    ),
-  ).toBe(true);
-  expect(
-    tool.promptGuidelines?.some((guideline) =>
-      /don't poll with `list` for final output/i.test(guideline),
-    ),
-  ).toBe(true);
+  expect(tool.description).toMatch(/don't poll with `list` for final output/i);
+  expect(tool.promptSnippet).toBeUndefined();
+  expect(tool.promptGuidelines).toBeUndefined();
 
   const parameterDescriptions =
     (tool.parameters as { properties?: Record<string, { description?: string }> }).properties ?? {};
@@ -2853,87 +2845,71 @@ timedTest("subagent tool metadata explains terminal inspection and result modes"
   );
 });
 
-timedTest(
-  "subagent tool prompt guidelines include available modes xml and refresh on modes change",
-  async () => {
-    const cwd = await createTempDir("agent-subagent-modes-prompt-");
-    const fakePi = new FakePi();
-    createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
-      fakePi as unknown as ExtensionAPI,
+timedTest("subagent tool definition remains stable when modes change", async () => {
+  const cwd = await createTempDir("agent-subagent-modes-prompt-");
+  const fakePi = new FakePi();
+  createSubagentExtension({ adapterFactory: () => new FakeMuxAdapter() })(
+    fakePi as unknown as ExtensionAPI,
+  );
+
+  try {
+    registerBuiltInModes(
+      "test-subagent-prompt-guidelines",
+      defineModesFile({
+        version: 1,
+        modes: {
+          review: {
+            provider: "mode-provider",
+            modelId: "review-model",
+            thinkingLevel: "high",
+            description: "Review & verify",
+          },
+        },
+      }),
     );
 
-    try {
-      registerBuiltInModes(
-        "test-subagent-prompt-guidelines",
-        defineModesFile({
-          version: 1,
-          modes: {
-            review: {
-              provider: "mode-provider",
-              modelId: "review-model",
-              thinkingLevel: "high",
-              description: "Review & verify",
-            },
+    const ctx = createFakeContext({
+      cwd,
+      sessionId: "parent-session-id",
+      sessionFile: path.join(cwd, "parent.jsonl"),
+    });
+
+    await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
+
+    const initialTool = fakePi.registeredTools.get("subagent");
+    expect(initialTool).toBeTruthy();
+    expect(fakePi.registeredToolCalls.filter((name) => name === "subagent")).toHaveLength(1);
+
+    registerBuiltInModes(
+      "test-subagent-prompt-guidelines",
+      defineModesFile({
+        version: 1,
+        modes: {
+          review: {
+            provider: "mode-provider",
+            modelId: "review-model",
+            thinkingLevel: "high",
+            description: "Review & verify",
           },
-        }),
-      );
-
-      const ctx = createFakeContext({
-        cwd,
-        sessionId: "parent-session-id",
-        sessionFile: path.join(cwd, "parent.jsonl"),
-      });
-
-      await emitHandlers(fakePi, "session_start", { reason: "new" }, ctx);
-
-      const initialTool = fakePi.registeredTools.get("subagent");
-      expect(initialTool).toBeTruthy();
-      expect(
-        initialTool.promptGuidelines?.some((guideline) =>
-          /Available subagent modes/i.test(guideline),
-        ),
-      ).toBe(true);
-      expect(
-        initialTool.promptGuidelines?.some((guideline) =>
-          /- review: Review & verify/i.test(guideline),
-        ),
-      ).toBe(true);
-
-      registerBuiltInModes(
-        "test-subagent-prompt-guidelines",
-        defineModesFile({
-          version: 1,
-          modes: {
-            review: {
-              provider: "mode-provider",
-              modelId: "review-model",
-              thinkingLevel: "high",
-              description: "Review & verify",
-            },
-            docs: {
-              provider: "mode-provider",
-              modelId: "docs-model",
-              thinkingLevel: "low",
-              description: "Fast <writing>",
-            },
+          docs: {
+            provider: "mode-provider",
+            modelId: "docs-model",
+            thinkingLevel: "low",
+            description: "Fast <writing>",
           },
-        }),
-      );
+        },
+      }),
+    );
 
-      await emitEventBus(fakePi, "modes:changed");
+    await emitEventBus(fakePi, "modes:changed");
 
-      const updatedTool = fakePi.registeredTools.get("subagent");
-      expect(updatedTool).toBeTruthy();
-      expect(
-        updatedTool.promptGuidelines?.some((guideline) =>
-          /- docs: Fast <writing>/i.test(guideline),
-        ),
-      ).toBe(true);
-    } finally {
-      await fs.rm(cwd, { recursive: true, force: true });
-    }
-  },
-);
+    const updatedTool = fakePi.registeredTools.get("subagent");
+    expect(updatedTool).toBe(initialTool);
+    expect(fakePi.registeredToolCalls.filter((name) => name === "subagent")).toHaveLength(1);
+  } finally {
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
 
 timedTest("formatAvailableModesXml sorts unsorted modes deterministically", () => {
   const xml = formatAvailableModesXml([

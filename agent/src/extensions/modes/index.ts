@@ -72,6 +72,7 @@ type ModeRuntime = {
   error?: string;
   lastReportedError?: string;
   lastStatusText?: string;
+  toolsInitialized: boolean;
 };
 
 export type ModeChangedEvent = {
@@ -88,6 +89,7 @@ const runtime: ModeRuntime = {
   activeMode: undefined,
   applying: false,
   needsResyncAfterApply: false,
+  toolsInitialized: false,
   sessionModelOverrides: new Map(),
   internalModelChangeDepth: 0,
   error: undefined,
@@ -353,6 +355,17 @@ function notifyConfigError(ctx: ExtensionContext): void {
   notifyConfigErrorState(runtime, ctx, hasText);
 }
 
+function syncRuntimeModeTools(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  spec: ModeSpec | undefined,
+): void {
+  syncModeTools(pi, ctx, spec, {
+    preserveActiveDeferredTools: runtime.toolsInitialized,
+  });
+  runtime.toolsInitialized = true;
+}
+
 const modeApplyActions = createModeApplyActions({
   runtime,
   ensureRuntime,
@@ -364,7 +377,7 @@ const modeApplyActions = createModeApplyActions({
   selectionSatisfiesMode,
   hasText,
   hasModelSelection,
-  syncModeTools,
+  syncModeTools: syncRuntimeModeTools,
   setStatus,
   emitModeChanged,
   appendModeState,
@@ -402,7 +415,7 @@ function registerModesExtension(pi: ExtensionAPI, startupSelection: ModeStartupS
     getModeSpec,
     applyMode,
     syncFromSelection,
-    syncModeTools,
+    syncModeTools: syncRuntimeModeTools,
     setStatus,
     appendModeState,
     emitModeChanged,
@@ -451,6 +464,7 @@ function registerModesExtension(pi: ExtensionAPI, startupSelection: ModeStartupS
   registerModeLifecycleHandlers(pi, {
     resetRuntimeState: () => {
       runtime.activeMode = undefined;
+      runtime.toolsInitialized = false;
       runtime.sessionModelOverrides.clear();
       runtime.lastContext = undefined;
     },

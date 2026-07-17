@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { MuxAdapter } from "../../subagent-sdk/mux.js";
 import type { RuntimeSubagent, SubagentToolParams, TSchemaBase } from "../../subagent-sdk/types.js";
 import { isSubagentToolEnabled, SUBAGENT_TOOL_NAME } from "./state.js";
@@ -6,11 +6,6 @@ import { isSubagentToolEnabled, SUBAGENT_TOOL_NAME } from "./state.js";
 type CreateSubagentExtensionOptions = {
   adapterFactory?: (pi: ExtensionAPI) => MuxAdapter;
   enabled?: boolean;
-};
-
-type SubagentRuntimeState = {
-  ctx?: ExtensionContext;
-  toolPromptSignature?: string;
 };
 
 type SubagentRenderState = {
@@ -255,10 +250,5 @@ export {
   SUBAGENT_STREAM_PREVIEW_LINE_LIMIT,
   SUBAGENT_STREAM_PREVIEW_WIDTH,
 };
-export type {
-  CreateSubagentExtensionOptions,
-  SubagentRenderState,
-  SubagentRuntimeState,
-  SubagentStartValue,
-};
+export type { CreateSubagentExtensionOptions, SubagentRenderState, SubagentStartValue };
 import { errorMessage } from "../../utils/error-message.js";

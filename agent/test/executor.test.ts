@@ -5,7 +5,7 @@ import type {
   ExtensionContext,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import * as codingAgent from "@earendil-works/pi-coding-agent";
 import createExecutorExtension from "../src/extensions/executor/index.ts";
 import { getExecutorState } from "../src/extensions/executor/status.ts";
 import {
@@ -13,7 +13,15 @@ import {
   setExecutorSettingsForTests,
 } from "../src/extensions/executor/settings.ts";
 import { resolveExecutorEndpoint } from "../src/extensions/executor/connection.ts";
-import { clearExecutorInspectionCache } from "../src/extensions/executor/tools.ts";
+import {
+  activateResumeToolForPausedExecution,
+  clearExecutorInspectionCache,
+} from "../src/extensions/executor/tools.ts";
+
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
+  return { ...actual, readStoredCredential: vi.fn(actual.readStoredCredential) };
+});
 
 const TEST_TIMEOUT_MS = 15_000;
 
@@ -28,6 +36,7 @@ afterEach(() => {
 
 class FakePi implements Partial<ExtensionAPI> {
   readonly registeredTools = new Map<string, ToolDefinition<any, any>>();
+  readonly registeredCommands = new Map<string, any>();
   readonly registerToolCalls: string[] = [];
   readonly handlers = new Map<string, Array<(...args: any[]) => any>>();
   readonly activeTools: string[] = [];
@@ -40,12 +49,18 @@ class FakePi implements Partial<ExtensionAPI> {
     this.registerToolCalls.push(tool.name);
   }
 
-  registerCommand(): void {}
+  registerCommand(name: string, definition: any): void {
+    this.registeredCommands.set(name, definition);
+  }
 
   appendEntry(): void {}
 
   getActiveTools(): string[] {
     return this.activeTools;
+  }
+
+  getAllTools(): ToolDefinition<any, any>[] {
+    return [...this.registeredTools.values()];
   }
 
   setActiveTools(toolNames: string[]): void {
@@ -70,7 +85,15 @@ async function emitHandlers(
   }
 }
 
-function createFakeContext(): ExtensionContext {
+function createFakeContext(
+  entries: unknown[] = [
+    {
+      type: "custom",
+      customType: "tool-state",
+      data: { version: 1, key: "executor", enabled: true },
+    },
+  ],
+): ExtensionContext {
   return {
     cwd: "/tmp/executor-session-restart",
     hasUI: false,
@@ -78,13 +101,7 @@ function createFakeContext(): ExtensionContext {
       notify: () => {},
     },
     sessionManager: {
-      getBranch: () => [
-        {
-          type: "custom",
-          customType: "tool-state",
-          data: { version: 1, key: "executor", enabled: true },
-        },
-      ],
+      getBranch: () => entries,
     },
   } as unknown as ExtensionContext;
 }
@@ -186,9 +203,10 @@ timedTest("resolveExecutorEndpoint probes v1.5 integrations API", async () => {
 });
 
 timedTest("resolveExecutorEndpoint sends auth storage token as bearer header", async () => {
-  vi.spyOn(AuthStorage, "create").mockReturnValue({
-    getApiKey: async () => "executor-secret",
-  } as unknown as AuthStorage);
+  vi.mocked(codingAgent.readStoredCredential).mockReturnValue({
+    type: "api_key",
+    key: "executor-secret",
+  });
 
   const seenAuthorizationHeaders: string[] = [];
   const server = createServer((request, response) => {
@@ -253,4 +271,66 @@ timedTest("executor tools re-register after session restart with same cwd", asyn
   expect(fakePi.registerToolCalls).toEqual(["execute", "resume", "execute", "resume"]);
   expect(fakePi.registeredTools.has("execute")).toBeTruthy();
   expect(fakePi.registeredTools.has("resume")).toBeTruthy();
+});
+
+timedTest("executor tools register upfront but stay inactive without legacy state", async () => {
+  setExecutorSettingsForTests({
+    autoStart: false,
+    probeTimeoutMs: 10,
+    candidates: [{ label: "offline", mcpUrl: "http://127.0.0.1:1/mcp" }],
+  });
+  const fakePi = new FakePi();
+
+  createExecutorExtension(fakePi as ExtensionAPI);
+  await emitHandlers(fakePi, "session_start", { reason: "startup" }, createFakeContext([]));
+
+  expect(fakePi.registeredTools.has("execute")).toBe(true);
+  expect(fakePi.registeredTools.has("resume")).toBe(true);
+  expect(fakePi.activeTools).toEqual([]);
+  expect(fakePi.registeredTools.get("execute")?.promptSnippet).toBeUndefined();
+  expect(fakePi.registeredTools.get("execute")?.promptGuidelines).toBeUndefined();
+  expect(fakePi.registeredTools.get("resume")?.promptSnippet).toBeUndefined();
+  expect(fakePi.registeredTools.get("resume")?.promptGuidelines).toBeUndefined();
+});
+
+timedTest("executor hook does not remove execute after search_tools loads it", async () => {
+  const fakePi = new FakePi();
+  const ctx = createFakeContext([]);
+  createExecutorExtension(fakePi as ExtensionAPI);
+  await emitHandlers(fakePi, "session_start", { reason: "startup" }, ctx);
+  fakePi.activeTools.push("execute");
+
+  await emitHandlers(fakePi, "before_agent_start", { systemPrompt: "base" }, ctx);
+
+  expect(fakePi.activeTools).toEqual(["execute"]);
+});
+
+timedTest("executor command keeps status and web but removes tool toggles", async () => {
+  const fakePi = new FakePi();
+  createExecutorExtension(fakePi as ExtensionAPI);
+  const command = fakePi.registeredCommands.get("executor");
+  const completions = command.getArgumentCompletions("");
+
+  expect(completions.map((item: { value: string }) => item.value)).toEqual(["status", "web"]);
+  await expect(command.handler("on", createFakeContext([]))).rejects.toThrow(
+    "Usage: /executor [status|web]",
+  );
+});
+
+timedTest("paused execute result activates resume additively", () => {
+  const fakePi = new FakePi();
+  fakePi.activeTools.push("read", "execute");
+  fakePi.registerTool({ name: "resume" } as ToolDefinition<any, any>);
+
+  activateResumeToolForPausedExecution(fakePi as ExtensionAPI, {
+    content: [{ type: "text", text: "waiting" }],
+    details: {
+      baseUrl: "http://executor.test/mcp",
+      structuredContent: {},
+      isError: false,
+      executionId: "execution-1",
+    },
+  });
+
+  expect(fakePi.activeTools).toEqual(["read", "execute", "resume"]);
 });

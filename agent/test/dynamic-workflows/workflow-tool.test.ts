@@ -11,6 +11,14 @@ import {
 } from "../../src/extensions/dynamic-workflows/workflow-tool.js";
 import type { WorkflowManager } from "../../src/extensions/dynamic-workflows/workflow-manager.js";
 
+test("deferred workflow tool keeps guidance in its definition", () => {
+  const tool = createWorkflowTool();
+
+  assert.equal(tool.promptSnippet, undefined);
+  assert.equal(tool.promptGuidelines, undefined);
+  assert.match(tool.description, /dynamic-workflows skill/);
+});
+
 test("backgroundStartedText tells the user it auto-continues and they can wait", () => {
   const text = backgroundStartedText("audit", "abc-123");
   assert.match(text, /audit/);

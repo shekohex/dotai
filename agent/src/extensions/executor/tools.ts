@@ -51,25 +51,34 @@ const runExecuteTool = async (
     },
     (client) => client.execute(params.code),
   );
-  return toToolResult(outcome, {
+  const result = toToolResult(outcome, {
     baseUrl: endpoint.mcpUrl,
     durationMs: Date.now() - startedAt,
   });
+  activateResumeToolForPausedExecution(pi, result);
+  return result;
 };
+
+export function activateResumeToolForPausedExecution(
+  pi: ExtensionAPI,
+  result: ExecuteToolResult,
+): void {
+  if (result.details.executionId === undefined) return;
+  if (!pi.getAllTools().some((tool) => tool.name === "resume")) return;
+  const activeTools = pi.getActiveTools();
+  if (activeTools.includes("resume")) return;
+  pi.setActiveTools([...activeTools, "resume"]);
+}
 
 export const createExecuteToolDefinition = (pi: ExtensionAPI, description: string) =>
   defineTool<typeof executeToolParams, ExecuteToolDetails, ExecuteRenderState>({
     name: "execute",
     label: "Execute",
     renderShell: "self",
-    description,
-    promptSnippet: "Execute TypeScript in Executor's sandboxed runtime with configured API tools.",
-    promptGuidelines: [
-      "Load the `executor` skill before using this tool.",
-      "Inside execute, discover tools with `tools.search({ query, limit })`, then inspect unfamiliar tools with `tools.describe.tool({ path })`.",
-      "Call discovered tools with exact bracket access, `tools[path](args)`, instead of guessing dotted proxy paths.",
-      "Use execute instead of top-level helper tools for Executor discovery and configured integration calls.",
-    ],
+    description: [
+      description,
+      "Load the executor skill before use. Inside execute, discover tools with tools.search({ query, limit }), inspect unfamiliar tools with tools.describe.tool({ path }), then call exact paths with tools[path](args).",
+    ].join(" "),
     parameters: executeToolParams,
     renderCall: renderExecuteToolCall,
     renderResult: renderExecuteToolResult,
@@ -81,10 +90,7 @@ const buildResumeTool = (pi: ExtensionAPI, description: string) =>
   defineTool({
     name: "resume",
     label: "Resume",
-    description,
-    promptSnippet:
-      "Resume a paused Executor execution after the user has completed the required interaction.",
-    promptGuidelines: ["Use the exact executionId returned by execute."],
+    description: `${description} Use the exact executionId returned by execute.`,
     parameters: Type.Object({
       executionId: Type.String({ description: "The execution ID from the paused result" }),
       action: Type.Union([Type.Literal("accept"), Type.Literal("decline"), Type.Literal("cancel")]),

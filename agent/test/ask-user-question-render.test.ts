@@ -77,7 +77,12 @@ test("ask user question errors render as failed, not cancelled", () => {
 
 test("ask user question uses RPC UI primitives", async () => {
   let registeredTool:
-    | { executionMode?: string; execute: (...args: never[]) => Promise<unknown> }
+    | {
+        executionMode?: string;
+        promptSnippet?: string;
+        promptGuidelines?: string[];
+        execute: (...args: never[]) => Promise<unknown>;
+      }
     | undefined;
   const selectCalls: Array<{ title: string; options: string[] }> = [];
   const editorCalls: Array<{ title: string; prefill?: string }> = [];
@@ -90,6 +95,8 @@ test("ask user question uses RPC UI primitives", async () => {
   } as never);
 
   expect(registeredTool?.executionMode).toBe("sequential");
+  expect(registeredTool?.promptSnippet).toBeUndefined();
+  expect(registeredTool?.promptGuidelines).toBeUndefined();
 
   const result = await registeredTool!.execute(
     "question-call",

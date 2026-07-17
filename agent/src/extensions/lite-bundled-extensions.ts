@@ -1,4 +1,4 @@
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 
 import {
   groupedExtensionsA,
@@ -6,13 +6,6 @@ import {
   groupedExtensionsC,
   type GroupedExtensionDefinition,
 } from "./definitions.js";
-import {
-  installInlineExtensionNamePatch,
-  setInlineExtensionName,
-} from "./inline-extension-names.js";
-
-installInlineExtensionNamePatch();
-
 function normalizeDefinitions(
   definitions: GroupedExtensionDefinition[] | undefined,
 ): GroupedExtensionDefinition[] {
@@ -21,7 +14,7 @@ function normalizeDefinitions(
 
 export function getLiteBundledExtensionFactories(options?: {
   excludeIds?: readonly string[];
-}): ExtensionFactory[] {
+}): InlineExtension[] {
   const excludedIds = new Set(options?.excludeIds ?? []);
   return [
     ...normalizeDefinitions(groupedExtensionsA),
@@ -30,5 +23,5 @@ export function getLiteBundledExtensionFactories(options?: {
   ]
     .filter((definition) => !excludedIds.has(definition.id))
     .filter((definition) => typeof definition.factory === "function")
-    .map((definition) => setInlineExtensionName(definition.factory, definition.id));
+    .map(({ id, factory }) => ({ name: id, factory }));
 }

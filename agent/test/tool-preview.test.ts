@@ -163,6 +163,37 @@ timedTest("session_query preview appends collapsed result inline", () => {
   expect(expandedText).toMatch(/test\/tool-preview.test.ts/);
 });
 
+timedTest("search_tools preview stays compact and expands ranked diagnostics", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "search_tools:ranked");
+  expect(scenario).toBeTruthy();
+
+  const collapsed = getToolPreviewPanels(scenario).find(
+    (panel) => panel.id === "success-collapsed",
+  );
+  const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
+  const error = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-expanded");
+  expect(collapsed).toBeTruthy();
+  expect(expanded).toBeTruthy();
+  expect(error).toBeTruthy();
+
+  const collapsedLines = renderPreviewLines(scenario, collapsed, 120).filter(
+    (line) => stripAnsi(line).trim().length > 0,
+  );
+  const collapsedText = stripAnsi(collapsedLines.join("\n"));
+  const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
+  const errorText = stripAnsi(renderPreviewText(scenario, error, 120));
+
+  expect(collapsedLines).toHaveLength(1);
+  expect(collapsedText).toMatch(/loaded session_query/);
+  expect(collapsedText).toMatch(/previous Pi sessions conversation history/);
+  expect(collapsedText).toMatch(/94%/);
+  expect(collapsedText).not.toMatch(/exact alias/);
+  expect(expandedText).toMatch(/94% session_query exact alias: conversation history/);
+  expect(expandedText).toMatch(/81% subagent fuzzy name: subagent/);
+  expect(expandedText).toMatch(/matched · threshold 70% · margin 6%/);
+  expect(errorText).toMatch(/Tool catalog unavailable/);
+});
+
 timedTest("subagent previews render representative action summaries and expanded metadata", () => {
   const startScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:start");
   const messageScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:message");

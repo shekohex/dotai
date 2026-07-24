@@ -77,6 +77,15 @@ function userContentToResponseItems(content: UserMessage["content"]): ResponseCo
   return content.map((part) => contentPartToResponseItem(part));
 }
 
+function customContentToResponseItems(
+  content: Extract<AgentMessage, { role: "custom" }>["content"],
+): ResponseContentItem[] {
+  if (typeof content === "string") {
+    return content.length > 0 ? [{ type: "input_text", text: content }] : [];
+  }
+  return content.map((part) => contentPartToResponseItem(part));
+}
+
 function contentPartToResponseItem(
   part: TextContent | ImageContent,
 ): Extract<ResponseContentItem, { type: "input_text" | "input_image" }> {
@@ -136,6 +145,10 @@ function assistantMessageToResponseItems(message: AssistantMessage): ResponseIte
 export function messageToResponseItems(message: AgentMessage): ResponseItem[] {
   if (message.role === "user") {
     const content = userContentToResponseItems(message.content);
+    return content.length === 0 ? [] : [{ type: "message", role: "user", content }];
+  }
+  if (message.role === "custom") {
+    const content = customContentToResponseItems(message.content);
     return content.length === 0 ? [] : [{ type: "message", role: "user", content }];
   }
   if (message.role === "assistant") return assistantMessageToResponseItems(message);

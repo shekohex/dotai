@@ -190,6 +190,18 @@ export function reconstructRemoteCompactionState(
   const trailingMessages: ResponseItem[] = [];
   let pendingTurnItems: ResponseItem[] = [];
   for (const entry of branchEntries.slice(latestCompactionIndex + 1)) {
+    if (entry.type === "custom_message") {
+      const items = messageToResponseItems({
+        role: "custom",
+        customType: entry.customType,
+        content: entry.content,
+        display: entry.display,
+        details: entry.details,
+        timestamp: Date.parse(entry.timestamp),
+      });
+      pendingTurnItems.push(...items);
+      continue;
+    }
     if (entry.type !== "message") continue;
     const items = messageToResponseItems(entry.message);
     if (items.length === 0) continue;

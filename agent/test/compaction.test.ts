@@ -221,6 +221,24 @@ describe("compaction extension", () => {
     ]);
   });
 
+  test("converts extension custom messages to Responses user messages", () => {
+    expect(
+      messageToResponseItems({
+        role: "custom",
+        customType: "live-delegation",
+        content: "Inspect the reconciliation page.",
+        display: true,
+        timestamp: 1,
+      }),
+    ).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "Inspect the reconciliation page." }],
+      },
+    ]);
+  });
+
   test("normalizes replay history and unsupported images", () => {
     const normalized = normalizeResponseItemsForPrompt(
       [
@@ -486,6 +504,75 @@ describe("compaction extension", () => {
         state?.explicitHistory ?? [],
       ),
     ).toEqual({ model: codexOpenAIModel.id, input: state?.explicitHistory });
+  });
+
+  test("reconstructs custom extension turns after remote compaction", () => {
+    const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
+    const branchEntries = [
+      {
+        type: "compaction",
+        id: "compact-1",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        summary: "summary",
+        firstKeptEntryId: "custom-1",
+        tokensBefore: 100,
+        details: {
+          remoteCompaction: {
+            version: 2,
+            provider: "openai-responses-compaction",
+            modelKey,
+            replacementHistory: [{ type: "compaction", encrypted_content: "opaque" }],
+          },
+        },
+      },
+      {
+        type: "custom_message",
+        id: "custom-1",
+        parentId: "compact-1",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        customType: "subagent-status",
+        content: "Subagent completed the delegated task.",
+        display: true,
+      },
+      {
+        type: "message",
+        id: "assistant-1",
+        parentId: "custom-1",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        message: {
+          role: "assistant",
+          api: "openai-responses",
+          provider: "codex-openai",
+          model: codexOpenAIModel.id,
+          content: [{ type: "text", text: "Acknowledged" }],
+          usage: {
+            input: 1,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 2,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "stop",
+          timestamp: 3,
+        },
+      },
+    ] as SessionEntry[];
+
+    expect(reconstructRemoteCompactionState(branchEntries)?.explicitHistory).toEqual([
+      { type: "compaction", encrypted_content: "opaque" },
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "Subagent completed the delegated task." }],
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Acknowledged" }],
+      },
+    ]);
   });
 
   test("drops post-compaction turns completed by another model", () => {

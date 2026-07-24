@@ -43,4 +43,6 @@ Current native behavior also includes a Liquid Glass call surface above the Dock
 
 The connected surface collapses into a compact bottom-center glass strip with a continuously animated orb and layered Siri-style waveform. Assistant settings include custom conversational instructions; pairing persists them to `live.instructions`, while changes during a call apply to the next call. `src/resources/live/live-instructions.md` is the single canonical prompt. It forbids transcript-by-transcript delegation, requires synthesized English AgentSession requests, and keeps spoken replies in the user's source language.
 
+Final voice transcripts now use Pi `CustomEntry` persistence (`appendEntry` plus `registerEntryRenderer`), so `[live · you]` and `[live · Pi]` cards render in chat without entering model context or triggering turns. The synthesized `delegation.created` request is a separate hidden `CustomMessageEntry` that does trigger the Pi turn. OpenAI commentary-phase text is forwarded over the sideband commentary channel, final-answer text is kept separate, the main window is borderless with no traffic lights, and intentional WebRTC closure is not reported as a failure.
+
 Preserve the architecture: Swift owns local media/UI/WebRTC; TypeScript owns ChatGPT auth/signaling/sideband/delegation/Pi session. Do not move audio into SSH, Coder, Herdr, or terminal transport.

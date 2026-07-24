@@ -19,12 +19,21 @@ import type { LiveMediaConnection, LivePairingServer } from "./pairing/server.js
 import { CodexLiveControl } from "./transport.js";
 import type { LivePhase } from "./visualizer.js";
 import { isUnknownRecord } from "../../utils/unknown-value.js";
+import { readAssistantTextPhase } from "../../utils/pi-ai-text.js";
 import type { ResolvedLiveIdentity } from "./settings.js";
 import { setLiveInstructions, setLiveVoice } from "./settings.js";
 
 const DEFAULT_VOICE = "sol";
 const OUTPUT_ACTIVE_LEVEL = 0.015;
 const LIVE_DELEGATION_MESSAGE_TYPE = "live-delegation";
+export const LIVE_TRANSCRIPT_ENTRY_TYPE = "live-transcript";
+
+export interface LiveTranscriptEntryData {
+  role: LiveTranscript["role"];
+  text: string;
+  turn: number;
+  timestamp: number;
+}
 
 export interface LiveTranscript {
   role: "user" | "assistant";
@@ -60,14 +69,45 @@ function clampLevel(level: number): number {
   return Math.min(1, level);
 }
 
-function textFromAssistant(message: AssistantMessage): string {
+function commentaryFromAssistant(message: AssistantMessage): string {
+  const commentary = message.content
+    .filter(
+      (content): content is Extract<(typeof message.content)[number], { type: "text" }> =>
+        content.type === "text" && readAssistantTextPhase(content) === "commentary",
+    )
+    .map((content) => content.text)
+    .join("\n")
+    .trim();
+  if (commentary.length > 0) return commentary;
+  if (message.stopReason !== "toolUse") return "";
   return message.content
     .filter(
       (content): content is Extract<(typeof message.content)[number], { type: "text" }> =>
-        content.type === "text",
+        content.type === "text" && readAssistantTextPhase(content) !== "final_answer",
     )
     .map((content) => content.text)
-    .join("\n");
+    .join("\n")
+    .trim();
+}
+
+function finalTextFromAssistant(message: AssistantMessage): string {
+  const finalAnswer = message.content
+    .filter(
+      (content): content is Extract<(typeof message.content)[number], { type: "text" }> =>
+        content.type === "text" && readAssistantTextPhase(content) === "final_answer",
+    )
+    .map((content) => content.text)
+    .join("\n")
+    .trim();
+  if (finalAnswer.length > 0) return finalAnswer;
+  return message.content
+    .filter(
+      (content): content is Extract<(typeof message.content)[number], { type: "text" }> =>
+        content.type === "text" && readAssistantTextPhase(content) !== "commentary",
+    )
+    .map((content) => content.text)
+    .join("\n")
+    .trim();
 }
 
 function assistantFromMessages(messages: readonly AgentMessage[]): AssistantMessage | undefined {
@@ -127,6 +167,7 @@ export class LiveSessionController {
   #userTranscriptTurn = 0;
   #assistantTranscriptTurn = 0;
   #lastTranscript: LiveTranscript | undefined;
+  #sentCommentary = new Set<string>();
 
   constructor(options: LiveSessionControllerOptions) {
     this.#pi = options.pi;
@@ -252,10 +293,19 @@ export class LiveSessionController {
 
   handleMessageEnd(event: MessageEndEvent): void {
     if (this.#activeDelegationId === undefined || event.message.role !== "assistant") return;
-    if (event.message.stopReason !== "toolUse") return;
-    const progress = textFromAssistant(event.message).trim();
-    if (progress.length === 0) return;
-    for (const chunk of chunkLiveContext(progress)) {
+    const progress = commentaryFromAssistant(event.message);
+    if (progress.length === 0 || this.#sentCommentary.has(progress)) return;
+    this.#sentCommentary.add(progress);
+    const chunks = chunkLiveContext(progress);
+    appendLiveDiagnostic(
+      this.#context.sessionManager.getSessionId(),
+      "agent.commentary-forwarded",
+      {
+        characters: progress.length,
+        chunks: chunks.length,
+      },
+    );
+    for (const chunk of chunks) {
       this.#queueSend(buildDelegationContextAppend(this.#activeDelegationId, chunk, "commentary"));
     }
   }
@@ -267,7 +317,7 @@ export class LiveSessionController {
   handleAgentSettled(): void {
     const delegationId = this.#activeDelegationId;
     if (delegationId === undefined) return;
-    const text = this.#lastAgentResponse ? textFromAssistant(this.#lastAgentResponse).trim() : "";
+    const text = this.#lastAgentResponse ? finalTextFromAssistant(this.#lastAgentResponse) : "";
     if (text.length > 0) {
       for (const chunk of chunkLiveContext(`${AGENT_FINAL_MESSAGE_PREFIX}${text}`)) {
         this.#queueSend(buildDelegationContextAppend(delegationId, chunk));
@@ -275,6 +325,7 @@ export class LiveSessionController {
     }
     this.#activeDelegationId = undefined;
     this.#lastAgentResponse = undefined;
+    this.#sentCommentary.clear();
     this.#refreshAudioPhase();
   }
 
@@ -308,8 +359,12 @@ export class LiveSessionController {
     this.#connection?.close();
     this.#connection = undefined;
     await this.#pairing.close();
-    if (cleanupError) this.#emitPhaseSafely("error");
-    this.#emitTerminal(this.#failure ?? cleanupError);
+    if (cleanupError !== undefined) {
+      appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "session.cleanup-warning", {
+        message: cleanupError.message,
+      });
+    }
+    this.#emitTerminal(this.#failure);
   }
 
   #waitForMediaOpen(): Promise<void> {
@@ -405,13 +460,18 @@ export class LiveSessionController {
     }
     request = request.trim();
     if (request.length === 0) return;
+    appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.received", {
+      delegationId: event.item.id,
+      characters: request.length,
+    });
     this.#activeDelegationId = event.item.id;
+    this.#sentCommentary.clear();
     this.#emitPhase("working");
     this.#pi.sendMessage(
       {
         customType: LIVE_DELEGATION_MESSAGE_TYPE,
         content: request,
-        display: true,
+        display: false,
         details: { delegationId: event.item.id },
       },
       { triggerTurn: true, deliverAs: "steer" },
@@ -451,7 +511,22 @@ export class LiveSessionController {
     }
     const next =
       !wasFinal && current.startsWith(text) && current.length > text.length ? current : text;
-    this.#storeTranscript(role, next, true);
+    if (this.#storeTranscript(role, next, true)) {
+      const turn = role === "user" ? this.#userTranscriptTurn : this.#assistantTranscriptTurn;
+      appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "transcript.persisted", {
+        role,
+        turn,
+        characters: next.trim().length,
+        llmContext: false,
+        triggersTurn: false,
+      });
+      this.#pi.appendEntry<LiveTranscriptEntryData>(LIVE_TRANSCRIPT_ENTRY_TYPE, {
+        role,
+        text: next.trim(),
+        turn,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   #startTranscriptTurn(role: LiveTranscript["role"]): void {
@@ -459,9 +534,9 @@ export class LiveSessionController {
     else this.#assistantTranscriptTurn += 1;
   }
 
-  #storeTranscript(role: LiveTranscript["role"], text: string, final: boolean): void {
+  #storeTranscript(role: LiveTranscript["role"], text: string, final: boolean): boolean {
     const normalized = text.trim();
-    if (normalized.length === 0) return;
+    if (normalized.length === 0) return false;
     const turn = role === "user" ? this.#userTranscriptTurn : this.#assistantTranscriptTurn;
     if (role === "user") {
       this.#userTranscript = normalized;
@@ -476,13 +551,14 @@ export class LiveSessionController {
       this.#lastTranscript.text === normalized &&
       this.#lastTranscript.final === final
     ) {
-      return;
+      return false;
     }
     const transcript = { role, turn, text: normalized, final } satisfies LiveTranscript;
     this.#emitTranscript(transcript);
     try {
       this.#connection?.notify("transcript.updated", transcript);
     } catch {}
+    return true;
   }
 
   #queueSend(message: LiveClientMessage): void {

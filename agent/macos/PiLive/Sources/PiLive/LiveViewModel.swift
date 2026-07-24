@@ -95,6 +95,7 @@ final class LiveViewModel: ObservableObject {
     }
 
     func disconnect() {
+        errorMessage = ""
         Task { await client.endSession() }
     }
 
@@ -129,6 +130,7 @@ final class LiveViewModel: ObservableObject {
         inputLevel = 0
         outputLevel = 0
         speechActive = false
+        errorMessage = ""
     }
 
     private func importPairingURLFromPasteboard() {

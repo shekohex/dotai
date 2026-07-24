@@ -17,6 +17,8 @@ final class LiveWebRTCPeer: NSObject {
     private var inputLevel = 0.0
     private var outputLevel = 0.0
     private var muted = false
+    private var closing = false
+    private var speechHangoverFrames = 0
 
     override init() {
         RTCInitializeSSL()
@@ -26,6 +28,7 @@ final class LiveWebRTCPeer: NSObject {
 
     func createOffer() async throws -> String {
         close()
+        closing = false
         let configuration = RTCConfiguration()
         configuration.sdpSemantics = .unifiedPlan
         configuration.continualGatheringPolicy = .gatherContinually
@@ -124,18 +127,23 @@ final class LiveWebRTCPeer: NSObject {
     }
 
     func close() {
+        closing = true
         levelTask?.cancel()
         levelTask = nil
         statsPending = false
         gatheringContinuation?.resume(throwing: CancellationError())
         gatheringContinuation = nil
-        dataChannel?.close()
+        let channel = dataChannel
         dataChannel = nil
-        peerConnection?.close()
+        let peer = peerConnection
         peerConnection = nil
+        channel?.delegate = nil
+        channel?.close()
+        peer?.close()
         audioTrack = nil
         inputLevel = 0
         outputLevel = 0
+        speechHangoverFrames = 0
     }
 
     private func startLevelMonitoring() {
@@ -183,16 +191,23 @@ final class LiveWebRTCPeer: NSObject {
     }
 
     private func consumeAudioLevels(input rawInput: Double, output rawOutput: Double) {
-        inputLevel = smoothLevel(current: inputLevel, sample: muted ? 0 : rawInput)
-        outputLevel = smoothLevel(current: outputLevel, sample: rawOutput)
+        let inputSample = muted ? 0 : max(0, rawInput - 0.004)
+        let outputSample = max(0, rawOutput - 0.002)
+        inputLevel = smoothLevel(current: inputLevel, sample: inputSample)
+        outputLevel = smoothLevel(current: outputLevel, sample: outputSample)
         // This is presentation-only audio activity. WebRTC M150 owns media VAD/APM,
         // and Codex Live owns conversational end-of-turn detection.
-        let inputActive = !muted && inputLevel >= 0.018
+        if !muted && inputLevel >= 0.022 {
+            speechHangoverFrames = 6
+        } else if speechHangoverFrames > 0 {
+            speechHangoverFrames -= 1
+        }
+        let inputActive = !muted && speechHangoverFrames > 0
         onLevels?(inputLevel, outputLevel, inputActive)
     }
 
     private func smoothLevel(current: Double, sample: Double) -> Double {
-        let coefficient = sample > current ? 0.58 : 0.18
+        let coefficient = sample > current ? 0.26 : 0.075
         let smoothed = current + (sample - current) * coefficient
         return smoothed < 0.001 ? 0 : smoothed
     }
@@ -208,7 +223,11 @@ extension LiveWebRTCPeer: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         if newState == .failed || newState == .closed {
             Task { @MainActor [weak self] in
-                self?.onFailure?(PiLiveError.protocolError("WebRTC connection failed"))
+                guard let self,
+                      self.peerConnection === peerConnection,
+                      !self.closing
+                else { return }
+                self.onFailure?(PiLiveError.protocolError("WebRTC connection failed"))
             }
         }
     }

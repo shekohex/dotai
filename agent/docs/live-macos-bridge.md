@@ -113,7 +113,9 @@ It extracts `chatgpt-account-id`, performs the authenticated SDP request, and op
 
 ## Delegation
 
-Realtime transcripts are UI-only. They never enter the Pi AgentSession directly. The live model first decides whether workspace execution is actually required. Greetings, social conversation, confirmations, clarifying conversation, and questions answerable from the current voice context stay entirely inside the realtime conversation.
+Final realtime transcripts are persisted with Pi's `appendEntry()` API and rendered as `[live · you]` and `[live · Pi]` cards in the chat. These are durable `CustomEntry` records: they never enter LLM context, are never converted into provider user messages, and cannot trigger an AgentSession turn. Streaming transcript fragments remain only in the terminal visualizer and native call strip.
+
+The live model first decides whether workspace execution is actually required. Greetings, social conversation, confirmations, clarifying conversation, and questions answerable from the current voice context stay entirely inside the realtime conversation.
 
 Only a server-generated `delegation.created` becomes:
 
@@ -122,14 +124,16 @@ pi.sendMessage(
   {
     customType: "live-delegation",
     content: request,
-    display: true,
+    display: false,
     details: { delegationId },
   },
   { triggerTurn: true, deliverAs: "steer" },
 );
 ```
 
-Assistant tool-use messages are appended to the live delegation as silent commentary. The final assistant response is sent after `agent_settled` as speakable context.
+The hidden delegation is a Pi custom message rather than a typed user message, but it intentionally participates in LLM context and triggers the coding turn. It is the synthesized English execution task—not the transcript.
+
+Assistant text explicitly marked with OpenAI's `commentary` phase is appended to the active live delegation through the sideband commentary channel. Providers without phase metadata retain the OMP-compatible tool-use-text fallback. This gives the voice model current progress for accurate progress questions without reading raw tool chatter aloud. The final-answer phase is separated from commentary and sent after `agent_settled` as speakable context.
 
 New voice requests can create a fresh delegation while work is active. Each one steers the same Pi AgentSession, preserving a single continuous assistant instead of spawning an independent backend.
 
@@ -149,7 +153,9 @@ The app targets macOS 26 and Swift 6.2. It uses native SwiftUI Liquid Glass, a s
 
 WebRTC owns microphone capture, Opus encoding, RTP transport, remote Opus decoding, echo cancellation, automatic gain control, noise suppression, high-pass filtering, media VAD, and speaker playback. Codex Live owns conversational end-of-turn detection. Pi Live deliberately does not run a second microphone capture pipeline or gate audio with a handwritten local VAD, because either can clip speech and undermine WebRTC acoustic echo cancellation. WebRTC statistics are used only for the audio-reactive interface and level telemetry.
 
-The End button, window dismissal, remote `/live` stop, and app Quit path use a graceful close handshake. The Mac first sends `session.stop`; TypeScript closes the OpenAI session and replies with `session.stop`; both sides then close WebRTC and pairing normally. A normal WebSocket close is not surfaced as `Pi Live app disconnected`.
+The main call surface is an AppKit borderless floating window, so native traffic-light controls never appear; Settings remains a normal macOS window.
+
+The End button, window dismissal, remote `/live` stop, and app Quit path use a graceful close handshake. The Mac first sends `session.stop`; TypeScript closes the OpenAI session and replies with `session.stop`; both sides then close WebRTC and pairing normally. Intentional ICE `.closed` callbacks are ignored after the peer has been detached, duplicate stop completion is suppressed, and cleanup-only sideband errors are diagnostic warnings rather than user-facing call failures.
 
 ## First macOS validation
 
@@ -168,7 +174,7 @@ If OpenAI rejects split-host signaling, the fallback is a short-lived access-tok
 
 ## Provenance
 
-The live wire protocol, prompt structure, transcript coalescing, delegation behavior, and terminal visualizer are derived from `can1357/oh-my-pi`. Pi Live keeps the same critical boundary as OMP: only `delegation.created`, never ordinary transcripts, triggers an AgentSession turn.
+The live wire protocol, prompt structure, transcript coalescing, delegation behavior, and terminal visualizer are derived from `can1357/oh-my-pi`. Pi Live keeps the same critical boundary as OMP: only `delegation.created`, never ordinary transcripts, triggers an AgentSession turn. The transcript persistence boundary was verified directly against `earendil-works/pi-mono` v0.82.0: `sendMessage()` participates in LLM context, while `appendEntry()` plus `registerEntryRenderer()` is durable TUI-only state.
 
 The canonical live-model prompt is `src/resources/live/live-instructions.md`; TypeScript only loads it, substitutes identity fields, and appends protected user preferences. There is no second prompt copy embedded in TypeScript.
 

@@ -11,18 +11,12 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { asRecord } from "../../utils/unknown-data.js";
+import { readAssistantTextPhase } from "../../utils/pi-ai-text.js";
 import type { AssistantPhase, ResponseContentItem, ResponseItem } from "./openai-remote-types.js";
 
 const IMAGE_CONTENT_OMITTED_PLACEHOLDER =
   "image content omitted because you do not support image input";
 const RETAINED_MESSAGE_TOKEN_BUDGET = 20_000;
-
-const TextSignatureSchema = Type.Object(
-  {
-    phase: Type.Optional(Type.Union([Type.Literal("commentary"), Type.Literal("final_answer")])),
-  },
-  { additionalProperties: true },
-);
 
 const ReasoningSignatureSchema = Type.Object(
   {
@@ -51,13 +45,6 @@ function parseJson(value: string): unknown {
   } catch {
     return undefined;
   }
-}
-
-function parseTextSignaturePhase(value: string | undefined): AssistantPhase | undefined {
-  if (value === undefined || value.trim().length === 0) return undefined;
-  const parsed = parseJson(value);
-  if (!Value.Check(TextSignatureSchema, parsed)) return undefined;
-  return Value.Parse(TextSignatureSchema, parsed).phase;
 }
 
 function parseThinkingSignature(value: string | undefined): ResponseItem | undefined {
@@ -122,7 +109,7 @@ function assistantMessageToResponseItems(message: AssistantMessage): ResponseIte
 
   for (const block of message.content) {
     if (block.type === "text") {
-      phase ??= parseTextSignaturePhase(block.textSignature);
+      phase ??= readAssistantTextPhase(block);
       textBlocks.push(block.text);
       continue;
     }

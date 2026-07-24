@@ -19,6 +19,7 @@ final class LivePairingClient {
     private var endingTask: Task<Void, Never>?
     private var stopWaiters: [CheckedContinuation<Void, Never>] = []
     private var ending = false
+    private var stopFinished = true
     private var preferredVoice: LiveVoice = .sol
     private var muted = false
 
@@ -50,6 +51,7 @@ final class LivePairingClient {
     ) async throws {
         close()
         ending = false
+        stopFinished = false
         preferredVoice = voice
         guard await requestMicrophonePermission() else { throw PiLiveError.microphoneDenied }
         let envelope = try PairingEnvelope(uri: pairingURL.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -129,6 +131,7 @@ final class LivePairingClient {
     }
 
     func endSession() async {
+        guard !stopFinished else { return }
         await withCheckedContinuation { continuation in
             stopWaiters.append(continuation)
             guard !ending else { return }
@@ -324,12 +327,15 @@ final class LivePairingClient {
     }
 
     private func fail(_ error: Error) {
+        guard !ending, !stopFinished else { return }
         onPhase?(.error)
         onError?(error)
         Task { try? await notify("client.error", params: ["message": error.localizedDescription]) }
     }
 
     private func finishStop() {
+        guard !stopFinished else { return }
+        stopFinished = true
         endingTask?.cancel()
         endingTask = nil
         close()

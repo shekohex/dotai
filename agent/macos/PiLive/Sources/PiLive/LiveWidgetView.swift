@@ -320,25 +320,31 @@ private struct VoiceOrb: View {
     let speechActive: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var displayedEnergy = 0.07
 
-    private var energy: Double {
+    private var targetEnergy: Double {
         if phase == .muted || phase == .ending { return 0.01 }
-        if phase == .working { return 0.17 }
-        return min(1, max(inputLevel, outputLevel) * 5.2 + (speechActive ? 0.16 : 0.055))
+        if phase == .working { return 0.14 }
+        let media = phase == .speaking ? outputLevel : max(inputLevel, outputLevel)
+        let compressed = 1 - exp(-max(0, media) * 12)
+        return min(0.95, max(0.06, compressed + (speechActive ? 0.035 : 0)))
     }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
             let time = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
-            let breath = reduceMotion ? 0 : sin(time * 2.25) * (0.012 + energy * 0.016)
+            let breath = reduceMotion ? 0 : sin(time * 1.9) * (0.009 + displayedEnergy * 0.012)
+            let voicePulse = reduceMotion
+                ? 0
+                : sin(time * (3.2 + displayedEnergy * 2.2)) * displayedEnergy * 0.026
 
             ZStack {
                 Circle()
-                    .stroke(voice.accent.opacity(0.16 + energy * 0.22), lineWidth: 1)
-                    .scaleEffect(1.1 + energy * 0.08 + breath)
+                    .stroke(voice.accent.opacity(0.16 + displayedEnergy * 0.26), lineWidth: 1)
+                    .scaleEffect(1.1 + displayedEnergy * 0.07 + breath + voicePulse)
                 Circle()
-                    .stroke(voice.colors[0].opacity(0.08 + energy * 0.16), lineWidth: 0.8)
-                    .scaleEffect(1.22 + energy * 0.11 - breath * 0.7)
+                    .stroke(voice.colors[0].opacity(0.08 + displayedEnergy * 0.19), lineWidth: 0.8)
+                    .scaleEffect(1.22 + displayedEnergy * 0.09 - breath * 0.7 - voicePulse * 0.45)
 
                 ZStack {
                     Circle()
@@ -352,7 +358,7 @@ private struct VoiceOrb: View {
 
                     Circle()
                         .fill(voice.colors[0].opacity(0.85))
-                        .scaleEffect(0.72 + energy * 0.18)
+                        .scaleEffect(0.72 + displayedEnergy * 0.16)
                         .offset(
                             x: sin(time * 1.3) * 17,
                             y: cos(time * 1.1) * 15
@@ -362,7 +368,7 @@ private struct VoiceOrb: View {
 
                     Circle()
                         .fill(voice.colors[2].opacity(0.78))
-                        .scaleEffect(0.64 + energy * 0.2)
+                        .scaleEffect(0.64 + displayedEnergy * 0.18)
                         .offset(
                             x: cos(time * 0.9) * 18,
                             y: sin(time * 1.4) * 16
@@ -387,8 +393,11 @@ private struct VoiceOrb: View {
                 .clipShape(Circle())
                 .overlay(Circle().stroke(.white.opacity(0.3), lineWidth: 0.7))
                 .rotationEffect(.degrees(reduceMotion ? 0 : sin(time * 0.35) * 10))
-                .shadow(color: voice.accent.opacity(0.36 + energy * 0.35), radius: 16 + energy * 18)
-                .scaleEffect(1 + energy * 0.075 + breath)
+                .shadow(
+                    color: voice.accent.opacity(0.34 + displayedEnergy * 0.38),
+                    radius: 16 + displayedEnergy * 18
+                )
+                .scaleEffect(1 + displayedEnergy * 0.065 + breath + voicePulse * 0.7)
                 .saturation(phase == .muted || phase == .ending ? 0.15 : 1.2)
 
                 Ellipse()
@@ -398,7 +407,12 @@ private struct VoiceOrb: View {
                     .blur(radius: 4)
                     .blendMode(.screen)
             }
-            .animation(.smooth(duration: 0.18), value: energy)
+        }
+        .onChange(of: targetEnergy, initial: true) { oldValue, newValue in
+            let duration = newValue > oldValue ? 0.15 : 0.4
+            withAnimation(.smooth(duration: duration)) {
+                displayedEnergy = newValue
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Pi Live voice activity")

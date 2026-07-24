@@ -3,20 +3,14 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private weak var mainWindowReference: NSWindow?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            NSApp.windows.forEach { window in
-                window.level = .floating
-                window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-                window.isMovableByWindowBackground = true
-                window.titleVisibility = .hidden
-                window.titlebarAppearsTransparent = true
-                window.isOpaque = false
-                window.backgroundColor = .clear
-                window.hasShadow = true
-                window.makeKeyAndOrderFront(nil)
-            }
+            guard let window = self.mainWindow else { return }
+            self.configureMainWindow(window)
+            window.makeKeyAndOrderFront(nil)
             self.positionMainWindowAboveDock()
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -24,13 +18,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showMainWindow() {
         guard let window = mainWindow else { return }
+        configureMainWindow(window)
         positionMainWindowAboveDock()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     private var mainWindow: NSWindow? {
-        NSApp.windows.first(where: { $0.title == "Pi Live" }) ?? NSApp.windows.first
+        mainWindowReference ?? NSApp.windows.first(where: { $0.title == "Pi Live" })
+    }
+
+    private func configureMainWindow(_ window: NSWindow) {
+        mainWindowReference = window
+        window.styleMask = [.borderless]
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.isMovable = true
+        window.isMovableByWindowBackground = true
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
     }
 
     private func positionMainWindowAboveDock() {

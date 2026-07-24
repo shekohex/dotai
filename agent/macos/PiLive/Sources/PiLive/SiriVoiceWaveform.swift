@@ -11,18 +11,20 @@ struct SiriVoiceWaveform: View {
     let speechActive: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var displayedEnergy = 0.08
 
-    private var energy: Double {
+    private var targetEnergy: Double {
         if phase == .muted || phase == .ending { return 0.015 }
-        if phase == .working { return 0.18 }
+        if phase == .working { return 0.14 }
         let media = phase == .speaking ? outputLevel : max(inputLevel, outputLevel)
-        return min(1, media * 7.5 + (speechActive ? 0.2 : 0.075))
+        let compressed = 1 - exp(-max(0, media) * 13)
+        return min(0.92, max(0.065, compressed + (speechActive ? 0.035 : 0)))
     }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
             let time = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
-            let motion = CGFloat(time * (1.6 + energy * 2.8))
+            let motion = CGFloat(time * 2.05)
 
             ZStack {
                 Capsule()
@@ -31,38 +33,46 @@ struct SiriVoiceWaveform: View {
 
                 ForEach(Array(colors.enumerated()), id: \.offset) { index, color in
                     let progress = CGFloat(index) / CGFloat(max(1, colors.count - 1))
-                    let amplitude = CGFloat(0.16 + energy * (0.72 - Double(progress) * 0.12))
-                    let offset = CGFloat(index) * 1.7
+                    let amplitude = CGFloat(0.08 + displayedEnergy * (0.72 - Double(progress) * 0.1))
+                    let offset = CGFloat(index) * 1.45
 
                     SiriWaveShape(
                         amplitude: amplitude,
-                        phase: motion * (1 + progress * 0.12) + offset,
-                        frequency: 1.35 + progress * 0.65,
-                        harmonic: 2.2 + progress * 0.8
+                        phase: motion * (1 + progress * 0.06) + offset,
+                        frequency: 1.4 + progress * 0.34,
+                        harmonic: 2.55 + progress * 0.28
                     )
                     .stroke(
-                        color.opacity(0.72 + energy * 0.25),
+                        color.opacity(0.68 + displayedEnergy * 0.28),
                         style: StrokeStyle(
-                            lineWidth: 2.0 - progress * 0.45,
+                            lineWidth: 1.85 - progress * 0.35,
                             lineCap: .round,
                             lineJoin: .round
                         )
                     )
-                    .shadow(color: color.opacity(0.35 + energy * 0.35), radius: 3 + energy * 5)
+                    .shadow(
+                        color: color.opacity(0.28 + displayedEnergy * 0.32),
+                        radius: 2.5 + displayedEnergy * 3.5
+                    )
                 }
 
                 SiriWaveShape(
-                    amplitude: CGFloat(0.1 + energy * 0.48),
-                    phase: -motion * 0.8,
-                    frequency: 2.4,
-                    harmonic: 3.7
+                    amplitude: CGFloat(0.055 + displayedEnergy * 0.38),
+                    phase: -motion * 0.72,
+                    frequency: 1.85,
+                    harmonic: 3.1
                 )
-                .stroke(.white.opacity(0.35 + energy * 0.35), lineWidth: 0.9)
+                .stroke(.white.opacity(0.25 + displayedEnergy * 0.32), lineWidth: 0.8)
                 .blendMode(.plusLighter)
             }
             .drawingGroup()
             .saturation(phase == .muted || phase == .ending ? 0.1 : 1.2)
-            .animation(.smooth(duration: 0.16), value: energy)
+        }
+        .onChange(of: targetEnergy, initial: true) { oldValue, newValue in
+            let duration = newValue > oldValue ? 0.16 : 0.42
+            withAnimation(.smooth(duration: duration)) {
+                displayedEnergy = newValue
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Live voice waveform")
@@ -94,11 +104,10 @@ private struct SiriWaveShape: Shape {
 
         for x in stride(from: CGFloat.zero, through: rect.width, by: step) {
             let progress = x / rect.width
-            let envelope = pow(max(0, sin(.pi * progress)), 1.45)
+            let envelope = pow(max(0, sin(.pi * progress)), 1.8)
             let carrier = sin(progress * 2 * .pi * frequency + phase)
-            let detail = sin(progress * 2 * .pi * harmonic - phase * 0.72) * 0.28
-            let shimmer = sin(progress * 2 * .pi * (harmonic + 1.3) + phase * 1.2) * 0.08
-            let y = midY + (carrier + detail + shimmer) * maxAmplitude * amplitude * envelope
+            let detail = sin(progress * 2 * .pi * harmonic - phase * 0.58) * 0.16
+            let y = midY + (carrier + detail) * maxAmplitude * amplitude * envelope
             let point = CGPoint(x: x, y: y)
             if x == 0 { path.move(to: point) }
             else { path.addLine(to: point) }

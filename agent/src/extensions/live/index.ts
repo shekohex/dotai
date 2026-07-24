@@ -5,7 +5,11 @@ import {
   type MessageEndEvent,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, type Component } from "@earendil-works/pi-tui";
-import { LiveSessionController } from "./controller.js";
+import {
+  LIVE_TRANSCRIPT_ENTRY_TYPE,
+  LiveSessionController,
+  type LiveTranscriptEntryData,
+} from "./controller.js";
 import { LIVE_DIAGNOSTIC_LOG_PATH } from "./diagnostics.js";
 import { LivePairingServer, type LivePairingMode } from "./pairing/server.js";
 import { LiveVisualizer } from "./visualizer.js";
@@ -18,7 +22,6 @@ import {
 } from "./settings.js";
 
 const ANIMATION_INTERVAL_MS = 80;
-const LIVE_DELEGATION_MESSAGE_TYPE = "live-delegation";
 
 interface LiveCommandOptions {
   mode: LivePairingMode;
@@ -101,19 +104,25 @@ function livePanel(
   };
 }
 
-function registerDelegationRenderer(pi: ExtensionAPI): void {
-  pi.registerMessageRenderer<{ delegationId?: string }>(
-    LIVE_DELEGATION_MESSAGE_TYPE,
-    (message, _options, theme) => {
+function registerTranscriptRenderer(pi: ExtensionAPI): void {
+  pi.registerEntryRenderer<LiveTranscriptEntryData>(
+    LIVE_TRANSCRIPT_ENTRY_TYPE,
+    (entry, { expanded }, theme) => {
+      const transcript = entry.data ?? {
+        role: "assistant",
+        text: "Voice transcript unavailable",
+        turn: 0,
+        timestamp: new Date(entry.timestamp).getTime(),
+      };
       const box = new Box(1, 1, (line) => theme.bg("customMessageBg", line));
-      const content = typeof message.content === "string" ? message.content : "Voice delegation";
-      box.addChild(
-        new Text(
-          `${theme.fg("accent", theme.bold("[live]"))} ${theme.fg("customMessageText", content)}`,
-          0,
-          0,
-        ),
-      );
+      const speaker = transcript.role === "user" ? "you" : "Pi";
+      const label = theme.fg("accent", theme.bold(`[live · ${speaker}]`));
+      box.addChild(new Text(`${label} ${theme.fg("customMessageText", transcript.text)}`, 0, 0));
+      if (expanded) {
+        box.addChild(
+          new Text(theme.fg("dim", new Date(transcript.timestamp).toLocaleString()), 0, 0),
+        );
+      }
       return box;
     },
   );
@@ -122,7 +131,7 @@ function registerDelegationRenderer(pi: ExtensionAPI): void {
 // eslint-disable-next-line max-lines-per-function -- command UI and lifecycle share one active session.
 export default function liveExtension(pi: ExtensionAPI): void {
   let active: ActiveLiveSession | undefined;
-  registerDelegationRenderer(pi);
+  registerTranscriptRenderer(pi);
 
   pi.registerCommand("live", {
     description: "Start a local-microphone Codex Live session via the Pi Live macOS app",

@@ -25,6 +25,7 @@ import {
   setLiveVoice,
 } from "../src/extensions/live/settings.js";
 import { LIVE_VOICES } from "../src/extensions/live/voices.js";
+import { readAssistantTextPhase } from "../src/utils/pi-ai-text.js";
 
 const servers: LivePairingServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -106,6 +107,20 @@ describe("Pi Live pairing", () => {
 });
 
 describe("Pi Live Codex protocol", () => {
+  it("reads pi-ai commentary and final-answer text phases", () => {
+    expect(
+      readAssistantTextPhase({
+        textSignature: JSON.stringify({ v: 1, id: "msg_commentary", phase: "commentary" }),
+      }),
+    ).toBe("commentary");
+    expect(
+      readAssistantTextPhase({
+        textSignature: JSON.stringify({ v: 1, id: "msg_final", phase: "final_answer" }),
+      }),
+    ).toBe("final_answer");
+    expect(readAssistantTextPhase({ textSignature: "legacy-message-id" })).toBeUndefined();
+  });
+
   it("builds the OMP Codex DeviceCheck attestation envelope", () => {
     expect(
       buildCodexAttestation({

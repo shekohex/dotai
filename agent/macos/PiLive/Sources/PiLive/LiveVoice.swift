@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum LiveVoice: String, CaseIterable, Identifiable, Codable {
+enum LiveVoice: String, CaseIterable, Identifiable, Codable, Sendable {
     case juniper
     case maple
     case spruce

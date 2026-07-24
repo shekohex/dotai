@@ -1,18 +1,25 @@
 import AVFoundation
 import Foundation
 
+enum LiveClientEvent: Sendable {
+    case phase(LivePhase)
+    case transcript(String)
+    case failure(String)
+    case stopped
+    case levels(input: Double, output: Double, speechActive: Bool)
+    case voiceSetting(voice: LiveVoice, appliesTo: String)
+    case instructionsSetting(appliesTo: String)
+}
+
 @MainActor
 final class LivePairingClient {
-    var onPhase: ((LivePhase) -> Void)?
-    var onTranscript: ((String) -> Void)?
-    var onError: ((Error) -> Void)?
-    var onStopped: (() -> Void)?
-    var onLevels: ((Double, Double, Bool) -> Void)?
-    var onVoiceSetting: ((LiveVoice, String) -> Void)?
-    var onInstructionsSetting: ((String) -> Void)?
+    let events: AsyncStream<LiveClientEvent>
 
+    private let eventContinuation: AsyncStream<LiveClientEvent>.Continuation
     private let peer = LiveWebRTCPeer()
     private let tunnel = SSHTunnel()
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
     private var socket: URLSessionWebSocketTask?
     private var session: URLSession?
     private var receiveTask: Task<Void, Never>?
@@ -24,19 +31,22 @@ final class LivePairingClient {
     private var muted = false
 
     init() {
+        let pair = AsyncStream.makeStream(of: LiveClientEvent.self)
+        events = pair.stream
+        eventContinuation = pair.continuation
+
         peer.onOpened = { [weak self] in
-            Task { try? await self?.notify("webrtc.opened", params: [:]) }
+            Task { try? await self?.notify("webrtc.opened", params: EmptyParams()) }
         }
         peer.onFailure = { [weak self] error in self?.fail(error) }
         peer.onLevels = { [weak self] input, output, speechActive in
             guard let self else { return }
-            self.onLevels?(input, output, speechActive)
+            self.emit(.levels(input: input, output: output, speechActive: speechActive))
             Task {
-                try? await self.notify("audio.levels", params: [
-                    "input": input,
-                    "output": output,
-                    "speechActive": speechActive,
-                ])
+                try? await self.notify(
+                    "audio.levels",
+                    params: AudioLevelsParams(input: input, output: output, speechActive: speechActive)
+                )
             }
         }
     }
@@ -72,61 +82,61 @@ final class LivePairingClient {
         self.session = session
         self.socket = socket
         socket.resume()
-        onPhase?(.pairing)
-        try await send([
-            "jsonrpc": "2.0",
-            "id": "pair",
-            "method": "pair",
-            "params": [
-                "protocolVersion": livePairingProtocolVersion,
-                "secret": envelope.secret,
-                "client": [
-                    "name": Host.current().localizedName ?? "Mac",
-                    "platform": "macOS",
-                    "appVersion": "0.1.0",
-                ],
-                "capabilities": [
-                    "webrtc": true,
-                    "inputLevel": true,
-                    "outputLevel": true,
-                    "deviceSelection": false,
-                ],
-                "preferences": [
-                    "voice": voice.rawValue,
-                    "instructions": customInstructions,
-                ],
-            ],
-        ])
-        let pairResponse = try await receiveObject()
-        if let error = pairResponse["error"] as? [String: Any] {
-            throw PiLiveError.pairingRejected(error["message"] as? String ?? "unknown error")
+        emit(.phase(.pairing))
+
+        try await send(RPCRequest(
+            id: .string("pair"),
+            method: "pair",
+            params: PairRequestParams(
+                protocolVersion: livePairingProtocolVersion,
+                secret: envelope.secret,
+                client: .init(
+                    name: Host.current().localizedName ?? "Mac",
+                    platform: "macOS",
+                    appVersion: "0.1.0"
+                ),
+                capabilities: .init(
+                    webrtc: true,
+                    inputLevel: true,
+                    outputLevel: true,
+                    deviceSelection: false
+                ),
+                preferences: .init(voice: voice.rawValue, instructions: customInstructions)
+            )
+        ))
+        let pairResponse = try await receiveFrame()
+        if let error = pairResponse.error {
+            throw PiLiveError.pairingRejected(error.message)
         }
-        guard pairResponse["result"] != nil else {
+        guard pairResponse.result != nil else {
             throw PiLiveError.protocolError("Pair response is missing result")
         }
-        onPhase?(.connecting)
+        emit(.phase(.connecting))
         receiveTask = Task { [weak self] in await self?.receiveLoop() }
     }
 
     func toggleMute() async {
         muted.toggle()
         peer.setMuted(muted)
-        try? await notify("audio.muted", params: ["muted": muted])
-        onPhase?(muted ? .muted : .listening)
+        try? await notify("audio.muted", params: MutedParams(muted: muted))
+        emit(.phase(muted ? .muted : .listening))
     }
 
     func setPreferredVoice(_ voice: LiveVoice) {
         preferredVoice = voice
         guard socket != nil else { return }
         Task {
-            try? await notify("settings.setVoice", params: ["voice": voice.rawValue])
+            try? await notify("settings.setVoice", params: VoicePreferenceParams(voice: voice.rawValue))
         }
     }
 
     func setCustomInstructions(_ instructions: String) {
         guard socket != nil else { return }
         Task {
-            try? await notify("settings.setInstructions", params: ["instructions": instructions])
+            try? await notify(
+                "settings.setInstructions",
+                params: InstructionsPreferenceParams(instructions: instructions)
+            )
         }
     }
 
@@ -136,7 +146,7 @@ final class LivePairingClient {
             stopWaiters.append(continuation)
             guard !ending else { return }
             ending = true
-            onPhase?(.ending)
+            emit(.phase(.ending))
             guard socket != nil else {
                 finishStop()
                 return
@@ -144,7 +154,7 @@ final class LivePairingClient {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 do {
-                    try await self.notify("session.stop", params: ["reason": "user"])
+                    try await self.notify("session.stop", params: StopParams(reason: "user"))
                     self.endingTask?.cancel()
                     self.endingTask = Task { @MainActor [weak self] in
                         try? await Task.sleep(for: .milliseconds(1_500))
@@ -176,8 +186,7 @@ final class LivePairingClient {
     private func receiveLoop() async {
         do {
             while !Task.isCancelled {
-                let object = try await receiveObject()
-                try await handle(object)
+                try await handle(receiveFrame())
             }
         } catch is CancellationError {
         } catch {
@@ -186,91 +195,90 @@ final class LivePairingClient {
         }
     }
 
-    private func handle(_ object: [String: Any]) async throws {
-        guard let method = object["method"] as? String else { return }
-        let params = object["params"] as? [String: Any] ?? [:]
-        if let id = object["id"] {
+    private func handle(_ frame: RPCIncomingFrame) async throws {
+        guard let method = frame.method else { return }
+        if let id = frame.id {
             do {
-                let result = try await handleRequest(method, params: params)
-                try await send(["jsonrpc": "2.0", "id": id, "result": result])
+                try await handleRequest(method, id: id, params: frame.params)
             } catch {
-                try await send([
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "error": ["code": -32000, "message": error.localizedDescription],
-                ])
+                try await send(RPCFailure(
+                    id: id,
+                    error: RPCErrorPayload(code: -32000, message: error.localizedDescription)
+                ))
             }
             return
         }
+
         switch method {
         case "session.phase":
-            if let value = params["phase"] as? String { onPhase?(LivePhase(rawValue: value) ?? .connecting) }
+            let params = try frame.params.decode(PhaseParams.self)
+            emit(.phase(LivePhase(rawValue: params.phase) ?? .connecting))
         case "transcript.updated":
-            if let text = params["text"] as? String { onTranscript?(text) }
+            emit(.transcript(try frame.params.decode(TranscriptParams.self).text))
         case "audio.setMuted":
-            muted = params["muted"] as? Bool ?? false
+            let params = try frame.params.decode(MutedParams.self)
+            muted = params.muted
             peer.setMuted(muted)
         case "session.stop":
             ending = true
             finishStop()
         case "settings.voice":
-            let saved = params["saved"] as? Bool ?? false
-            if saved,
-               let rawVoice = params["voice"] as? String,
+            let params = try frame.params.decode(VoiceSettingParams.self)
+            if params.saved == true,
+               let rawVoice = params.voice,
                let voice = LiveVoice(rawValue: rawVoice)
             {
                 preferredVoice = voice
-                let appliesTo = params["appliesTo"] as? String ?? "next-session"
-                onVoiceSetting?(voice, appliesTo)
-            } else if let message = params["message"] as? String {
-                onError?(PiLiveError.protocolError(message))
+                emit(.voiceSetting(voice: voice, appliesTo: params.appliesTo ?? "next-session"))
+            } else if let message = params.message {
+                emit(.failure(PiLiveError.protocolError(message).localizedDescription))
             }
         case "settings.instructions":
-            let saved = params["saved"] as? Bool ?? false
-            if saved {
-                let appliesTo = params["appliesTo"] as? String ?? "next-session"
-                onInstructionsSetting?(appliesTo)
-            } else if let message = params["message"] as? String {
-                onError?(PiLiveError.protocolError(message))
+            let params = try frame.params.decode(InstructionsSettingParams.self)
+            if params.saved == true {
+                emit(.instructionsSetting(appliesTo: params.appliesTo ?? "next-session"))
+            } else if let message = params.message {
+                emit(.failure(PiLiveError.protocolError(message).localizedDescription))
             }
         case "ping":
-            try await notify("pong", params: ["timestamp": Date().timeIntervalSince1970 * 1_000])
+            try await notify(
+                "pong",
+                params: PongParams(timestamp: Date().timeIntervalSince1970 * 1_000)
+            )
         default:
             break
         }
     }
 
-    private func handleRequest(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+    private func handleRequest(_ method: String, id: RPCID, params: JSONValue?) async throws {
         switch method {
         case "codex.createAttestation":
-            return await CodexDeviceCheck.generate()
+            try await send(RPCSuccess(id: id, result: await CodexDeviceCheck.generate()))
         case "webrtc.createOffer":
-            return ["sdp": try await peer.createOffer()]
+            try await send(RPCSuccess(id: id, result: OfferResult(sdp: try await peer.createOffer())))
         case "webrtc.acceptAnswer":
-            guard let sdp = params["sdp"] as? String else {
-                throw PiLiveError.protocolError("acceptAnswer is missing SDP")
-            }
-            try await peer.acceptAnswer(sdp)
-            return ["accepted": true]
+            let answer = try params.decode(AcceptAnswerParams.self)
+            try await peer.acceptAnswer(answer.sdp)
+            try await send(RPCSuccess(id: id, result: AcceptAnswerResult(accepted: true)))
         default:
             throw PiLiveError.protocolError("Unsupported request: \(method)")
         }
     }
 
-    private func notify(_ method: String, params: [String: Any]) async throws {
-        try await send(["jsonrpc": "2.0", "method": method, "params": params])
+    private func notify<Params: Encodable>(_ method: String, params: Params) async throws {
+        try await send(RPCNotification(method: method, params: params))
     }
 
-    private func send(_ object: [String: Any]) async throws {
+    private func send<Message: Encodable>(_ message: Message) async throws {
         guard let socket else { throw PiLiveError.protocolError("Pairing socket is closed") }
-        let data = try JSONSerialization.data(withJSONObject: object)
+        let data = try encoder.encode(message)
         guard let string = String(data: data, encoding: .utf8) else {
             throw PiLiveError.protocolError("Unable to encode JSON-RPC message")
         }
         try await socket.send(.string(string))
     }
 
-    private func receiveObject() async throws -> [String: Any] {
+    private func receiveFrame() async throws -> RPCIncomingFrame {
         guard let socket else { throw PiLiveError.protocolError("Pairing socket is closed") }
         let message = try await socket.receive()
         let data: Data
@@ -279,10 +287,7 @@ final class LivePairingClient {
         case let .data(value): data = value
         @unknown default: throw PiLiveError.protocolError("Unsupported WebSocket frame")
         }
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw PiLiveError.protocolError("Invalid JSON-RPC frame")
-        }
-        return object
+        return try decoder.decode(RPCIncomingFrame.self, from: data)
     }
 
     private func resolveEndpoint(
@@ -302,7 +307,14 @@ final class LivePairingClient {
                 case let (.ssh, .ssh(remoteHost, remotePort, targetHint)):
                     let target = sshTarget.isEmpty ? (targetHint ?? "") : sshTarget
                     guard !target.isEmpty else { continue }
-                    return (try await tunnel.open(target: target, remoteHost: remoteHost, remotePort: remotePort), false)
+                    return (
+                        try await tunnel.open(
+                            target: target,
+                            remoteHost: remoteHost,
+                            remotePort: remotePort
+                        ),
+                        false
+                    )
                 case let (.local, .local(url)):
                     return (url, false)
                 case let (.direct, .direct(url)):
@@ -328,9 +340,11 @@ final class LivePairingClient {
 
     private func fail(_ error: Error) {
         guard !ending, !stopFinished else { return }
-        onPhase?(.error)
-        onError?(error)
-        Task { try? await notify("client.error", params: ["message": error.localizedDescription]) }
+        emit(.phase(.error))
+        emit(.failure(error.localizedDescription))
+        Task {
+            try? await notify("client.error", params: ErrorMessageParams(message: error.localizedDescription))
+        }
     }
 
     private func finishStop() {
@@ -339,9 +353,13 @@ final class LivePairingClient {
         endingTask?.cancel()
         endingTask = nil
         close()
-        onStopped?()
+        emit(.stopped)
         let waiters = stopWaiters
         stopWaiters.removeAll()
         for waiter in waiters { waiter.resume() }
+    }
+
+    private func emit(_ event: LiveClientEvent) {
+        eventContinuation.yield(event)
     }
 }

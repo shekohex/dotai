@@ -5,19 +5,23 @@ import Foundation
 enum CodexDeviceCheck {
     private static let appSessionId = UUID().uuidString
 
-    static func generate() async -> [String: Any] {
+    static func generate() async -> CodexDeviceCheckResult {
         let device = DCDevice.current
         let startedAt = Date()
-        var result: [String: Any] = [
-            "supported": device.isSupported,
-            "locale": String(Locale.current.identifier.prefix(64)),
-            "timezone": String(TimeZone.current.identifier.prefix(64)),
-            "appSessionId": String(appSessionId.prefix(128)),
-        ]
+        let locale = String(Locale.current.identifier.prefix(64))
+        let timezone = String(TimeZone.current.identifier.prefix(64))
+        let sessionID = String(appSessionId.prefix(128))
         guard device.isSupported else {
-            result["latencyMs"] = Date().timeIntervalSince(startedAt) * 1_000
-            return result
+            return CodexDeviceCheckResult(
+                supported: false,
+                locale: locale,
+                timezone: timezone,
+                appSessionId: sessionID,
+                tokenBase64: nil,
+                latencyMs: Date().timeIntervalSince(startedAt) * 1_000
+            )
         }
+        var tokenBase64: String?
         do {
             let token = try await withCheckedThrowingContinuation {
                 (continuation: CheckedContinuation<Data, Error>) in
@@ -33,9 +37,24 @@ enum CodexDeviceCheck {
                     }
                 }
             }
-            result["tokenBase64"] = token.base64EncodedString()
+            tokenBase64 = token.base64EncodedString()
         } catch {}
-        result["latencyMs"] = Date().timeIntervalSince(startedAt) * 1_000
-        return result
+        return CodexDeviceCheckResult(
+            supported: true,
+            locale: locale,
+            timezone: timezone,
+            appSessionId: sessionID,
+            tokenBase64: tokenBase64,
+            latencyMs: Date().timeIntervalSince(startedAt) * 1_000
+        )
     }
+}
+
+struct CodexDeviceCheckResult: Codable, Sendable {
+    let supported: Bool
+    let locale: String
+    let timezone: String
+    let appSessionId: String
+    let tokenBase64: String?
+    let latencyMs: Double
 }

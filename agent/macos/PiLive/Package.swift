@@ -20,6 +20,7 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("DeviceCheck"),
+                .linkedFramework("Network"),
                 .linkedFramework("Security"),
             ]
         ),

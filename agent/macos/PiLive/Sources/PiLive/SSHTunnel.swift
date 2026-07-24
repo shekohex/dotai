@@ -1,13 +1,15 @@
-import Darwin
 import Foundation
+@preconcurrency import Network
 
 @MainActor
 final class SSHTunnel {
+    private let networkQueue = DispatchQueue(label: "dev.herdr.pilive.ssh-port")
     private var process: Process?
 
     func open(target: String, remoteHost: String, remotePort: Int) async throws -> URL {
-        let localPort = try reserveLocalPort()
+        let localPort = try await allocateLocalPort()
         let process = Process()
+        let errorPipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         process.arguments = [
             "-o", "BatchMode=yes",
@@ -18,16 +20,26 @@ final class SSHTunnel {
             target,
         ]
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = Pipe()
+        process.standardError = errorPipe
         try process.run()
         self.process = process
-        try await Task.sleep(for: .milliseconds(500))
-        guard process.isRunning else {
-            let pipe = process.standardError as? Pipe
-            let detail = pipe.flatMap { String(data: $0.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) }
-            throw PiLiveError.protocolError("SSH tunnel failed\(detail.map { ": \($0)" } ?? "")")
+
+        let url = URL(string: "ws://127.0.0.1:\(localPort)/live")!
+        do {
+            try await waitUntilReady(url: url, process: process)
+            return url
+        } catch {
+            if process.isRunning { process.terminate() }
+            self.process = nil
+            let detail = String(
+                data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            )?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let detail, !detail.isEmpty {
+                throw PiLiveError.protocolError("SSH tunnel failed: \(detail)")
+            }
+            throw error
         }
-        return URL(string: "ws://127.0.0.1:\(localPort)/live")!
     }
 
     func close() {
@@ -40,29 +52,47 @@ final class SSHTunnel {
         if process?.isRunning == true { process?.terminate() }
     }
 
-    private func reserveLocalPort() throws -> Int {
-        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-        guard descriptor >= 0 else { throw PiLiveError.protocolError("Unable to create local socket") }
-        defer { Darwin.close(descriptor) }
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = 0
-        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        let result = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+    private func allocateLocalPort() async throws -> Int {
+        let listener = try NWListener(using: .tcp, on: .any)
+        listener.start(queue: networkQueue)
+        defer { listener.cancel() }
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while clock.now < deadline {
+            if let port = listener.port { return Int(port.rawValue) }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        throw PiLiveError.protocolError("Unable to allocate a local SSH port")
+    }
+
+    private func waitUntilReady(url: URL, process: Process) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(8))
+        while clock.now < deadline {
+            guard process.isRunning else {
+                throw PiLiveError.protocolError("SSH exited before the tunnel became ready")
+            }
+            if await probeWebSocket(url) { return }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw PiLiveError.protocolError("SSH tunnel did not become ready in time")
+    }
+
+    private func probeWebSocket(_ url: URL) async -> Bool {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 0.5
+        let session = URLSession(configuration: configuration)
+        let socket = session.webSocketTask(with: url)
+        socket.resume()
+        defer {
+            socket.cancel(with: .normalClosure, reason: nil)
+            session.invalidateAndCancel()
+        }
+        return await withCheckedContinuation { continuation in
+            socket.sendPing { error in
+                continuation.resume(returning: error == nil)
             }
         }
-        guard result == 0 else { throw PiLiveError.protocolError("Unable to reserve local port") }
-        var bound = sockaddr_in()
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let status = withUnsafeMutablePointer(to: &bound) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(descriptor, $0, &length)
-            }
-        }
-        guard status == 0 else { throw PiLiveError.protocolError("Unable to read local port") }
-        return Int(UInt16(bigEndian: bound.sin_port))
     }
 }

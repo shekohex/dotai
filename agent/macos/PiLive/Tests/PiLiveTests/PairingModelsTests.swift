@@ -26,4 +26,25 @@ final class PairingModelsTests: XCTestCase {
         XCTAssertEqual(envelope.payload.sessionId, "session")
         XCTAssertEqual(envelope.secret, "abc")
     }
+
+    func testDecodesTypedRPCNotificationParameters() throws {
+        let data = Data(#"{"jsonrpc":"2.0","method":"audio.setMuted","params":{"muted":true}}"#.utf8)
+        let frame = try JSONDecoder().decode(RPCIncomingFrame.self, from: data)
+        XCTAssertEqual(frame.method, "audio.setMuted")
+        XCTAssertTrue(try frame.params.decode(MutedParams.self).muted)
+    }
+
+    func testEncodesTypedRPCRequest() throws {
+        let request = RPCRequest(
+            id: RPCID.string("offer"),
+            method: "webrtc.createOffer",
+            params: EmptyParams()
+        )
+        let data = try JSONEncoder().encode(request)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["jsonrpc"] as? String, "2.0")
+        XCTAssertEqual(object["id"] as? String, "offer")
+        XCTAssertEqual(object["method"] as? String, "webrtc.createOffer")
+        XCTAssertNotNil(object["params"] as? [String: Any])
+    }
 }

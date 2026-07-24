@@ -2,7 +2,7 @@ import SwiftUI
 import KeyboardShortcuts
 
 struct LiveSettingsView: View {
-    @ObservedObject var model: LiveViewModel
+    @Bindable var model: LiveViewModel
 
     var body: some View {
         TabView {
@@ -35,6 +35,7 @@ struct LiveSettingsView: View {
             Section("Call window") {
                 LabeledContent("While connected", value: "Compact floating strip")
                 LabeledContent("After hangup", value: "Hide automatically")
+                LabeledContent("Mute shortcut", value: "Space while focused")
                 Text("Pi Live remains available in the menu bar after the call window closes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -65,6 +66,7 @@ struct LiveSettingsView: View {
                         RoundedRectangle(cornerRadius: 10)
                             .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 1)
                     )
+                    .accessibilityLabel("Custom assistant instructions")
 
                 HStack {
                     Text("Use this for tone, brevity, terminology, and conversational preferences. Core routing and language rules remain enforced.")
@@ -123,7 +125,7 @@ struct LiveSettingsView: View {
                             voice: voice,
                             selected: model.selectedVoice == voice
                         ) {
-                            model.selectedVoice = voice
+                            model.selectVoice(voice)
                         }
                     }
                 }
@@ -181,12 +183,12 @@ struct LiveSettingsView: View {
                 AudioFeatureRow(title: "Echo cancellation", detail: "WebRTC acoustic echo cancellation")
                 AudioFeatureRow(title: "Noise suppression", detail: "WebRTC adaptive noise suppression")
                 AudioFeatureRow(title: "Automatic gain", detail: "Keeps speech at a consistent level")
-                AudioFeatureRow(title: "Voice activity", detail: "Adaptive local VAD plus server turn detection")
+                AudioFeatureRow(title: "Voice activity", detail: "WebRTC VAD plus server turn detection")
                 AudioFeatureRow(title: "High-pass filter", detail: "Reduces low-frequency rumble")
             }
 
             Section {
-                Text("Pi Live uses WebRTC's real-time audio processing on the Mac. The local detector drives the interface and telemetry without clipping or gating microphone audio; conversational turn detection remains with the live model.")
+                Text("Pi Live uses WebRTC's real-time audio processing on the Mac. Presentation-level metering drives the interface without clipping or gating microphone audio; conversational turn detection remains with the live model.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

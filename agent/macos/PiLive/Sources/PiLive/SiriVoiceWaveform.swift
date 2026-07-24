@@ -22,7 +22,7 @@ struct SiriVoiceWaveform: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+        TimelineView(.animation) { timeline in
             let time = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
             let motion = CGFloat(time * 2.05)
 
@@ -65,7 +65,6 @@ struct SiriVoiceWaveform: View {
                 .stroke(.white.opacity(0.25 + displayedEnergy * 0.32), lineWidth: 0.8)
                 .blendMode(.plusLighter)
             }
-            .drawingGroup()
             .saturation(phase == .muted || phase == .ending ? 0.1 : 1.2)
         }
         .onChange(of: targetEnergy, initial: true) { oldValue, newValue in

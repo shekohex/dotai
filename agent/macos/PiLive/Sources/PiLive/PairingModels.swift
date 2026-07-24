@@ -96,7 +96,7 @@ enum PairingEndpoint: Codable, Equatable {
     }
 }
 
-enum PreferredTransport: String, CaseIterable, Identifiable {
+enum PreferredTransport: String, CaseIterable, Identifiable, Codable, Sendable {
     case automatic
     case coder
     case ssh
@@ -106,7 +106,7 @@ enum PreferredTransport: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum LivePhase: String {
+enum LivePhase: String, Codable, Sendable {
     case idle
     case pairing
     case connecting
@@ -119,7 +119,7 @@ enum LivePhase: String {
     case error
 }
 
-enum PiLiveError: LocalizedError {
+enum PiLiveError: LocalizedError, Sendable {
     case invalidPairingURL
     case expiredPairingURL
     case unsupportedTransport

@@ -1,67 +1,57 @@
 import AppKit
 import Foundation
 import KeyboardShortcuts
+import Observation
 
 @MainActor
-final class LiveViewModel: ObservableObject {
-    @Published var pairingURL = ""
-    @Published var coderToken = ""
-    @Published var sshTarget = UserDefaults.standard.string(forKey: "sshTarget") ?? "" {
-        didSet { UserDefaults.standard.set(sshTarget, forKey: "sshTarget") }
-    }
-    @Published var preferredTransport = PreferredTransport(
-        rawValue: UserDefaults.standard.string(forKey: "preferredTransport") ?? "automatic"
-    ) ?? .automatic {
-        didSet { UserDefaults.standard.set(preferredTransport.rawValue, forKey: "preferredTransport") }
-    }
-    @Published var selectedVoice = LiveVoice(
-        rawValue: UserDefaults.standard.string(forKey: "liveVoice") ?? "sol"
-    ) ?? .sol {
-        didSet {
-            UserDefaults.standard.set(selectedVoice.rawValue, forKey: "liveVoice")
-            client.setPreferredVoice(selectedVoice)
-        }
-    }
-    @Published var phase: LivePhase = .idle
-    @Published var transcript = ""
-    @Published var errorMessage = ""
-    @Published var connected = false
-    @Published var muted = false
-    @Published var inputLevel = 0.0
-    @Published var outputLevel = 0.0
-    @Published var speechActive = false
-    @Published var settingsMessage = ""
-    @Published var customInstructions = UserDefaults.standard.string(forKey: "liveInstructions") ?? ""
+@Observable
+final class LiveViewModel {
+    var pairingURL = ""
+    var coderToken: String
+    var sshTarget: String
+    var preferredTransport: PreferredTransport
+    var selectedVoice: LiveVoice
+    var phase: LivePhase = .idle
+    var transcript = ""
+    var errorMessage = ""
+    var muted = false
+    var inputLevel = 0.0
+    var outputLevel = 0.0
+    var speechActive = false
+    var settingsMessage = ""
+    var customInstructions: String
 
-    private let credentials = CredentialStore()
-    private let client = LivePairingClient()
+    var connected: Bool {
+        ![.idle, .pairing, .connecting, .error].contains(phase)
+    }
 
-    init() {
+    @ObservationIgnored var showWindow: () -> Void = {}
+    @ObservationIgnored var hideWindow: () -> Void = {}
+
+    @ObservationIgnored private let credentials: CredentialStore
+    @ObservationIgnored private let preferences: LivePreferences
+    @ObservationIgnored private let client: LivePairingClient
+    @ObservationIgnored private var eventTask: Task<Void, Never>?
+
+    init(
+        credentials: CredentialStore = CredentialStore(),
+        preferences: LivePreferences = LivePreferences(),
+        client: LivePairingClient = LivePairingClient()
+    ) {
+        self.credentials = credentials
+        self.preferences = preferences
+        self.client = client
         coderToken = credentials.readCoderToken()
-        client.onPhase = { [weak self] phase in
-            self?.phase = phase
-            self?.connected = ![.idle, .pairing, .connecting, .error].contains(phase)
-            self?.muted = phase == .muted
-        }
-        client.onTranscript = { [weak self] text in self?.transcript = text }
-        client.onError = { [weak self] error in self?.errorMessage = error.localizedDescription }
-        client.onStopped = { [weak self] in self?.reset() }
-        client.onLevels = { [weak self] input, output, speechActive in
-            self?.inputLevel = input
-            self?.outputLevel = output
-            self?.speechActive = speechActive
-        }
-        client.onVoiceSetting = { [weak self] voice, appliesTo in
-            guard let self else { return }
-            if self.selectedVoice != voice { self.selectedVoice = voice }
-            self.settingsMessage = appliesTo == "current"
-                ? "Using \(voice.displayName) for this call"
-                : "\(voice.displayName) saved for the next call"
-        }
-        client.onInstructionsSetting = { [weak self] appliesTo in
-            self?.settingsMessage = appliesTo == "current"
-                ? "Assistant preferences are active for this call"
-                : "Assistant preferences saved for the next call"
+        sshTarget = preferences.sshTarget
+        preferredTransport = preferences.transport
+        selectedVoice = preferences.voice
+        customInstructions = preferences.instructions
+
+        eventTask = Task { [weak self, events = client.events] in
+            for await event in events {
+                guard let self else { return }
+                self.consume(event)
+            }
         }
         importPairingURLFromPasteboard()
         KeyboardShortcuts.onKeyUp(for: .showPiLive) { [weak self] in
@@ -75,11 +65,12 @@ final class LiveViewModel: ObservableObject {
 
     func activateFromGlobalShortcut() {
         importPairingURLFromPasteboard()
-        NotificationCenter.default.post(name: .piLiveShowRequested, object: nil)
+        showWindow()
     }
 
     func connect() {
         errorMessage = ""
+        persistSettings()
         do { try credentials.saveCoderToken(coderToken) }
         catch { errorMessage = error.localizedDescription; return }
         Task {
@@ -100,6 +91,7 @@ final class LiveViewModel: ObservableObject {
     }
 
     func toggleMute() {
+        guard connected, phase != .ending else { return }
         Task { await client.toggleMute() }
     }
 
@@ -108,9 +100,16 @@ final class LiveViewModel: ObservableObject {
         Task { await client.endSession() }
     }
 
+    func selectVoice(_ voice: LiveVoice) {
+        guard selectedVoice != voice else { return }
+        selectedVoice = voice
+        preferences.saveVoice(voice)
+        client.setPreferredVoice(voice)
+    }
+
     func saveSettings() {
         customInstructions = normalizedInstructions
-        UserDefaults.standard.set(customInstructions, forKey: "liveInstructions")
+        persistSettings()
         client.setCustomInstructions(customInstructions)
         do {
             try credentials.saveCoderToken(coderToken)
@@ -131,8 +130,35 @@ final class LiveViewModel: ObservableObject {
         }
     }
 
+    private func consume(_ event: LiveClientEvent) {
+        switch event {
+        case let .phase(newPhase):
+            phase = newPhase
+            muted = newPhase == .muted
+        case let .transcript(text):
+            transcript = text
+        case let .failure(message):
+            errorMessage = message
+        case .stopped:
+            reset()
+        case let .levels(input, output, active):
+            inputLevel = input
+            outputLevel = output
+            speechActive = active
+        case let .voiceSetting(voice, appliesTo):
+            selectedVoice = voice
+            preferences.saveVoice(voice)
+            settingsMessage = appliesTo == "current"
+                ? "Using \(voice.displayName) for this call"
+                : "\(voice.displayName) saved for the next call"
+        case let .instructionsSetting(appliesTo):
+            settingsMessage = appliesTo == "current"
+                ? "Assistant preferences are active for this call"
+                : "Assistant preferences saved for the next call"
+        }
+    }
+
     private func reset() {
-        connected = false
         muted = false
         phase = .idle
         transcript = ""
@@ -140,7 +166,16 @@ final class LiveViewModel: ObservableObject {
         outputLevel = 0
         speechActive = false
         errorMessage = ""
-        NotificationCenter.default.post(name: .piLiveSessionEnded, object: nil)
+        hideWindow()
+    }
+
+    private func persistSettings() {
+        preferences.save(
+            sshTarget: sshTarget,
+            transport: preferredTransport,
+            voice: selectedVoice,
+            instructions: normalizedInstructions
+        )
     }
 
     private func importPairingURLFromPasteboard() {

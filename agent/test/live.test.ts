@@ -42,10 +42,7 @@ import {
   LIVE_DELEGATION_NORMALIZER_MODELS,
   sanitizeNormalizedDelegation,
 } from "../src/extensions/live/delegation-normalizer.js";
-import {
-  omitEmptyLiveDelegationAssistantTurns,
-  promoteLiveDelegationsInOpenAIResponsesPayload,
-} from "../src/extensions/live/provider-context.js";
+import { omitEmptyLiveDelegationAssistantTurns } from "../src/extensions/live/provider-context.js";
 
 const servers: LivePairingServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -176,29 +173,6 @@ describe("Pi Live Codex protocol", () => {
         stopReason: "stop",
       } as AssistantMessage),
     ).toBe("The workspace is clean.");
-  });
-
-  it("promotes live delegation requests to OpenAI developer messages", () => {
-    const request = "Inspect the latest workspace changes.";
-    const result = promoteLiveDelegationsInOpenAIResponsesPayload(
-      {
-        model: "gpt-5.6-sol",
-        input: [
-          { role: "developer", content: "system" },
-          { role: "user", content: [{ type: "input_text", text: request }] },
-          { role: "user", content: [{ type: "input_text", text: "ordinary user message" }] },
-        ],
-      },
-      new Set([request]),
-    );
-    expect(result.promoted).toBe(1);
-    expect(result.payload).toMatchObject({
-      input: [
-        { role: "developer" },
-        { role: "developer", content: [{ type: "input_text", text: request }] },
-        { role: "user" },
-      ],
-    });
   });
 
   it("omits thinking-only live completion tails from retry context", () => {

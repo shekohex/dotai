@@ -40,7 +40,6 @@ import type { ResolvedLiveIdentity } from "./settings.js";
 import { setLiveDiagnosticsEnabled, setLiveInstructions, setLiveVoice } from "./settings.js";
 import { assessDelegationLanguage, delegationTranscriptRelation } from "./delegation-language.js";
 import { normalizeLiveDelegation } from "./delegation-normalizer.js";
-import { LiveProviderContext } from "./provider-context.js";
 
 const DEFAULT_VOICE = "sol";
 const OUTPUT_ACTIVE_LEVEL = 0.015;
@@ -56,6 +55,7 @@ export interface LiveDelegationMessageDetails {
   languageAssessment: "english" | "short-ambiguous";
   originalRequest?: string;
   normalizedBy?: string;
+  normalizationReason?: "translation" | "verbatim-synthesis";
   retryAttempt?: number;
 }
 
@@ -158,7 +158,6 @@ export class LiveSessionController {
   #activeDelegationId: string | undefined;
   readonly #pendingDelegationIds = new Set<string>();
   readonly #delegationExecutions = new Map<string, LiveDelegationExecution>();
-  readonly providerContext: LiveProviderContext;
   #lastAgentResponse: AssistantMessage | undefined;
   #mediaOpened = false;
   #outputLevel = 0;
@@ -183,7 +182,6 @@ export class LiveSessionController {
     const voice = options.voice?.trim();
     this.#voice = voice !== undefined && voice.length > 0 ? voice : DEFAULT_VOICE;
     this.#customInstructions = options.customInstructions?.trim() ?? "";
-    this.providerContext = new LiveProviderContext(options.context.sessionManager.getSessionId());
   }
 
   get phase(): LivePhase {
@@ -548,20 +546,15 @@ export class LiveSessionController {
     });
     let agentRequest = request;
     let normalizedBy: string | undefined;
-    if (language.accepted) {
-      appendLiveDiagnostic(
-        this.#context.sessionManager.getSessionId(),
-        "delegation.normalization-bypassed",
-        {
-          delegationId: event.item.id,
-          reason: language.reason,
-        },
-      );
-    } else {
+    const needsVerbatimSynthesis =
+      transcriptRelation === "verbatim" && language.reason === "english";
+    const needsNormalization = !language.accepted || needsVerbatimSynthesis;
+    if (needsNormalization) {
       appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.normalizing", {
         delegationId: event.item.id,
         detectedLanguage: language.detectedLanguage,
         characters: request.length,
+        reason: needsVerbatimSynthesis ? "verbatim-synthesis" : "translation",
       });
       try {
         const normalized = await normalizeLiveDelegation(
@@ -616,31 +609,55 @@ export class LiveSessionController {
         this.#refreshAudioPhase();
         return;
       }
+    } else {
+      appendLiveDiagnostic(
+        this.#context.sessionManager.getSessionId(),
+        "delegation.normalization-bypassed",
+        {
+          delegationId: event.item.id,
+          reason: language.reason,
+        },
+      );
     }
-    const agentWasIdle = this.#context.isIdle();
     const details = {
       delegationId: event.item.id,
       sourceTurn: this.#userTranscriptTurn,
       transcriptRelation,
       languageAssessment: language.accepted ? language.reason : "english",
-      ...(normalizedBy === undefined ? {} : { originalRequest: request, normalizedBy }),
+      ...(normalizedBy === undefined
+        ? {}
+        : {
+            originalRequest: request,
+            normalizedBy,
+            normalizationReason: needsVerbatimSynthesis
+              ? ("verbatim-synthesis" as const)
+              : ("translation" as const),
+          }),
     } satisfies LiveDelegationMessageDetails;
-    this.#delegationExecutions.set(event.item.id, { request: agentRequest, details, retries: 0 });
-    this.providerContext.rememberDelegation(agentRequest);
-    this.#pendingDelegationIds.add(event.item.id);
+    this.#dispatchDelegation(event.item.id, agentRequest, details);
+  }
+
+  #dispatchDelegation(
+    delegationId: string,
+    request: string,
+    details: LiveDelegationMessageDetails,
+  ): void {
+    const agentWasIdle = this.#context.isIdle();
+    this.#delegationExecutions.set(delegationId, { request, details, retries: 0 });
+    this.#pendingDelegationIds.add(delegationId);
     this.#emitPhase("working");
     appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.dispatched", {
-      delegationId: event.item.id,
-      delivery: agentWasIdle ? "new-turn" : "follow-up",
+      delegationId,
+      delivery: agentWasIdle ? "new-turn" : "steer",
     });
     this.#pi.sendMessage(
       {
         customType: LIVE_DELEGATION_MESSAGE_TYPE,
-        content: agentRequest,
+        content: request,
         display: true,
         details,
       },
-      agentWasIdle ? { triggerTurn: true } : { triggerTurn: true, deliverAs: "followUp" },
+      { triggerTurn: true, deliverAs: "steer" },
     );
   }
 
@@ -651,7 +668,6 @@ export class LiveSessionController {
   ): void {
     execution.retries += 1;
     const retryRequest = `${execution.request}\n\n<system-injection>\nYou stopped without completing the delegated task. Continue and provide a substantive final answer.\nAttempt #${execution.retries}/${EMPTY_STOP_MAX_RETRIES}\n</system-injection>`;
-    this.providerContext.rememberDelegation(retryRequest);
     this.#activeDelegationId = undefined;
     this.#lastAgentResponse = undefined;
     this.#sentCommentary.clear();
@@ -665,9 +681,6 @@ export class LiveSessionController {
       outputTokens: response.usage?.output,
       contentTypes: response.content.map((content) => content.type),
     });
-    const options = this.#context.isIdle()
-      ? { triggerTurn: true as const }
-      : { triggerTurn: true as const, deliverAs: "followUp" as const };
     this.#pi.sendMessage(
       {
         customType: LIVE_DELEGATION_MESSAGE_TYPE,
@@ -678,7 +691,7 @@ export class LiveSessionController {
           retryAttempt: execution.retries,
         },
       },
-      options,
+      { triggerTurn: true, deliverAs: "steer" },
     );
   }
 

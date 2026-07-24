@@ -148,13 +148,14 @@ The delegation is a Pi custom message rather than a typed user message. It inten
 participates in LLM context and triggers the coding turn, but it now has a dedicated message
 renderer instead of looking like a user prompt. The chat shows an accent-colored
 `Pi Live → workspace` execution card and labels it as either a synthesized workspace task or a
-verbatim voice request. If helper normalization was required, the English execution task is primary
+direct voice request. If helper normalization was required, the English execution task is primary
 and the original live-model delegation is shown underneath in muted color. Expanded mode includes
 the source turn, helper model, and delegation ID.
 
 The TypeScript boundary no longer trusts prompt compliance alone. It uses lightweight language
-detection plus non-Latin prose analysis before `sendMessage()`. English delegations bypass helper
-normalization and are delivered immediately. A non-English delegation is sent to an isolated fast
+detection plus non-Latin prose analysis before `sendMessage()`. Concise English tasks are delivered
+immediately, while English prose copied directly from the transcript is synthesized into a clean,
+standalone task. A non-English delegation is sent to an isolated fast
 normalizer model—not the active AgentSession—which translates and synthesizes one concise English
 execution task. The preferred fallback order is `codex-openai/gpt-5.4-mini`,
 `opencode-go/deepseek-v4-flash`, then `deepseek/deepseek-v4-flash`, followed by the remaining shared
@@ -199,16 +200,16 @@ The native pairing protocol uses Codable JSON-RPC envelopes and typed parameter/
 
 File diagnostics are opt-in and disabled by default. Settings → General → Diagnostics synchronizes the `live.diagnosticsEnabled` value to the Pi workspace during pairing and can change it during an active call. When enabled, redacted events are appended to `~/.pi/agent/logs/live.jsonl`; disabling logging stops future writes but intentionally does not delete an existing file. Error messages mention the diagnostics path only while logging is enabled.
 
-Delegations respect an already-running AgentSession turn. If Pi is idle, the custom delegation starts a new turn immediately. If Pi is streaming or still settling an existing turn, the delegation is queued as a follow-up rather than steered into the turn that is ending. The controller does not mark a delegation active until Pi emits `message_start` for that exact `live-delegation` message, preventing unrelated commentary or `agent_settled` events from consuming it. If the provider returns an error, abort, or empty assistant response, Pi Live reports that failure to both the TUI and voice model instead of silently clearing the delegation as successful.
+Delegations use Pi's `steer` delivery with `triggerTurn: true`. If Pi is idle, the custom delegation starts a new turn immediately. If Pi is already streaming or settling, the delegation is steered into the active AgentSession rather than queued behind it. The controller does not mark a delegation active until Pi emits `message_start` for that exact `live-delegation` message, preventing unrelated commentary or `agent_settled` events from consuming it. If the provider returns an error, abort, or empty assistant response, Pi Live reports that failure to both the TUI and voice model instead of silently clearing the delegation as successful.
 
-OMP's agent-attributed custom messages are serialized to the provider as `developer` messages. Pi
-0.82 serializes extension custom messages as `user` messages, so Pi Live corrects only its known
-delegation items in the already-built OpenAI Responses payload through `before_provider_request`.
-This preserves the visible custom-message renderer while matching OMP's provider semantics without
-patching Pi. Successful but thinking-only/empty `stop` responses are removed from provider context
-and retried up to three times with a hidden continuation reminder before being reported as a real
-delegation failure. Terminal commentary-only responses are accepted as final text rather than
-misclassified as empty.
+Pi 0.82 intentionally converts extension custom messages into provider `user` messages. Pi Live
+keeps that turn-driving role: the dedicated custom renderer changes only the TUI presentation, not
+provider semantics. Successful but thinking-only or empty `stop` responses are removed from provider
+context and retried up to three times with a hidden continuation reminder before being reported as a
+real delegation failure. Terminal commentary-only responses are accepted as final text rather than
+misclassified as empty. English delegations that merely repeat prose from the transcript are passed
+through the fast normalizer to produce a clean, standalone task; concise command-like requests still
+bypass normalization.
 
 VoiceInk 2.0 was inspected locally at revision `69ed170c1d7f582e76f3f63a2ac2c30ddb3a2d75`. Its Settings UI reinforced the use of a category sidebar, grouped native forms, menu pickers, `LabeledContent`, concise explanatory footers, and hidden scroll backgrounds; Pi Live implements those patterns independently without copying GPL source. VoiceInk's VAD is a bundled Silero v5.1.2 model invoked through whisper.cpp against PCM during local transcription. That design is appropriate for offline speech segmentation, but it cannot be dropped into Pi Live's media path without obtaining PCM through a second/custom capture pipeline. WebRTC M150 exposes no public Objective-C PCM tap on `RTCAudioTrack`, `RTCAudioSource`, or `RTCRtpReceiver`, so Pi Live keeps WebRTC's built-in media VAD and Codex turn detection and uses level telemetry only for orb presentation.
 

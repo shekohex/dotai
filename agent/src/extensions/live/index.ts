@@ -26,6 +26,7 @@ import {
   type LiveSettings,
 } from "./settings.js";
 import { isUnknownRecord } from "../../utils/unknown-value.js";
+import { omitEmptyLiveDelegationAssistantTurns } from "./provider-context.js";
 
 const ANIMATION_INTERVAL_MS = 80;
 
@@ -146,11 +147,12 @@ function messageContentText(content: unknown): string {
 }
 
 function delegationRelationLabel(details: LiveDelegationMessageDetails): string {
-  if (details.normalizedBy !== undefined) return "translated workspace task";
+  if (details.normalizationReason === "translation") return "translated workspace task";
+  if (details.normalizedBy !== undefined) return "synthesized workspace task";
   const relation = details.transcriptRelation;
   switch (relation) {
     case "verbatim":
-      return "verbatim voice request";
+      return "direct voice request";
     case "synthesized":
       return "synthesized workspace task";
     case "unknown":
@@ -158,11 +160,6 @@ function delegationRelationLabel(details: LiveDelegationMessageDetails): string 
     default:
       return "workspace task";
   }
-}
-
-function delegationRelationTone(details: LiveDelegationMessageDetails): "success" | "warning" {
-  if (details.normalizedBy !== undefined) return "success";
-  return details.transcriptRelation === "verbatim" ? "warning" : "success";
 }
 
 function delegationLanguageLabel(details: LiveDelegationMessageDetails): string {
@@ -183,10 +180,8 @@ function registerDelegationRenderers(pi: ExtensionAPI): void {
       };
       const box = new Box(1, 1, (line) => theme.bg("customMessageBg", line));
       const title = theme.fg("accent", theme.bold("◆ Pi Live → workspace"));
-      const relationTone = delegationRelationTone(details);
-      const relation = theme.fg(relationTone, delegationRelationLabel(details));
       const request = theme.fg("customMessageText", messageContentText(message.content));
-      const lines = [`${title}  ${relation}`, "", request];
+      const lines = [title, "", request];
       if (details.originalRequest !== undefined) {
         lines.push(
           "",
@@ -199,7 +194,7 @@ function registerDelegationRenderers(pi: ExtensionAPI): void {
           "",
           theme.fg(
             "dim",
-            `Triggers AgentSession · voice turn ${details.sourceTurn} · ${delegationLanguageLabel(details)} · ${details.delegationId}`,
+            `${delegationRelationLabel(details)} · Triggers AgentSession · voice turn ${details.sourceTurn} · ${delegationLanguageLabel(details)} · ${details.delegationId}`,
           ),
         );
       }
@@ -241,12 +236,10 @@ export default function liveExtension(pi: ExtensionAPI): void {
   registerDelegationRenderers(pi);
 
   pi.on("context", (event) => {
-    const messages = active?.controller.providerContext.prepareAgentContext(event.messages);
+    const messages =
+      active === undefined ? undefined : omitEmptyLiveDelegationAssistantTurns(event.messages);
     return messages === undefined ? undefined : { messages };
   });
-  pi.on("before_provider_request", (event, ctx) =>
-    active?.controller.providerContext.prepareProviderPayload(event.payload, ctx.model),
-  );
 
   pi.registerCommand("live", {
     description: "Start a local-microphone Codex Live session via the Pi Live macOS app",

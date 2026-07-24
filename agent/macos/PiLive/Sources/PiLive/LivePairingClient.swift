@@ -7,12 +7,19 @@ final class LivePairingClient {
     var onTranscript: ((String) -> Void)?
     var onError: ((Error) -> Void)?
     var onStopped: (() -> Void)?
+    var onLevels: ((Double, Double, Bool) -> Void)?
+    var onVoiceSetting: ((LiveVoice, String) -> Void)?
+    var onInstructionsSetting: ((String) -> Void)?
 
     private let peer = LiveWebRTCPeer()
     private let tunnel = SSHTunnel()
     private var socket: URLSessionWebSocketTask?
     private var session: URLSession?
     private var receiveTask: Task<Void, Never>?
+    private var endingTask: Task<Void, Never>?
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
+    private var ending = false
+    private var preferredVoice: LiveVoice = .sol
     private var muted = false
 
     init() {
@@ -20,15 +27,30 @@ final class LivePairingClient {
             Task { try? await self?.notify("webrtc.opened", params: [:]) }
         }
         peer.onFailure = { [weak self] error in self?.fail(error) }
+        peer.onLevels = { [weak self] input, output, speechActive in
+            guard let self else { return }
+            self.onLevels?(input, output, speechActive)
+            Task {
+                try? await self.notify("audio.levels", params: [
+                    "input": input,
+                    "output": output,
+                    "speechActive": speechActive,
+                ])
+            }
+        }
     }
 
     func connect(
         pairingURL: String,
         preferredTransport: PreferredTransport,
         coderToken: String,
-        sshTarget: String
+        sshTarget: String,
+        voice: LiveVoice,
+        customInstructions: String
     ) async throws {
         close()
+        ending = false
+        preferredVoice = voice
         guard await requestMicrophonePermission() else { throw PiLiveError.microphoneDenied }
         let envelope = try PairingEnvelope(uri: pairingURL.trimmingCharacters(in: .whitespacesAndNewlines))
         let resolved = try await resolveEndpoint(
@@ -63,9 +85,13 @@ final class LivePairingClient {
                 ],
                 "capabilities": [
                     "webrtc": true,
-                    "inputLevel": false,
-                    "outputLevel": false,
+                    "inputLevel": true,
+                    "outputLevel": true,
                     "deviceSelection": false,
+                ],
+                "preferences": [
+                    "voice": voice.rawValue,
+                    "instructions": customInstructions,
                 ],
             ],
         ])
@@ -87,7 +113,51 @@ final class LivePairingClient {
         onPhase?(muted ? .muted : .listening)
     }
 
+    func setPreferredVoice(_ voice: LiveVoice) {
+        preferredVoice = voice
+        guard socket != nil else { return }
+        Task {
+            try? await notify("settings.setVoice", params: ["voice": voice.rawValue])
+        }
+    }
+
+    func setCustomInstructions(_ instructions: String) {
+        guard socket != nil else { return }
+        Task {
+            try? await notify("settings.setInstructions", params: ["instructions": instructions])
+        }
+    }
+
+    func endSession() async {
+        await withCheckedContinuation { continuation in
+            stopWaiters.append(continuation)
+            guard !ending else { return }
+            ending = true
+            onPhase?(.ending)
+            guard socket != nil else {
+                finishStop()
+                return
+            }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.notify("session.stop", params: ["reason": "user"])
+                    self.endingTask?.cancel()
+                    self.endingTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .milliseconds(1_500))
+                        guard !Task.isCancelled else { return }
+                        self?.finishStop()
+                    }
+                } catch {
+                    self.finishStop()
+                }
+            }
+        }
+    }
+
     func close() {
+        endingTask?.cancel()
+        endingTask = nil
         receiveTask?.cancel()
         receiveTask = nil
         if let socket {
@@ -108,7 +178,8 @@ final class LivePairingClient {
             }
         } catch is CancellationError {
         } catch {
-            fail(error)
+            if ending { finishStop() }
+            else { fail(error) }
         }
     }
 
@@ -137,8 +208,28 @@ final class LivePairingClient {
             muted = params["muted"] as? Bool ?? false
             peer.setMuted(muted)
         case "session.stop":
-            close()
-            onStopped?()
+            ending = true
+            finishStop()
+        case "settings.voice":
+            let saved = params["saved"] as? Bool ?? false
+            if saved,
+               let rawVoice = params["voice"] as? String,
+               let voice = LiveVoice(rawValue: rawVoice)
+            {
+                preferredVoice = voice
+                let appliesTo = params["appliesTo"] as? String ?? "next-session"
+                onVoiceSetting?(voice, appliesTo)
+            } else if let message = params["message"] as? String {
+                onError?(PiLiveError.protocolError(message))
+            }
+        case "settings.instructions":
+            let saved = params["saved"] as? Bool ?? false
+            if saved {
+                let appliesTo = params["appliesTo"] as? String ?? "next-session"
+                onInstructionsSetting?(appliesTo)
+            } else if let message = params["message"] as? String {
+                onError?(PiLiveError.protocolError(message))
+            }
         case "ping":
             try await notify("pong", params: ["timestamp": Date().timeIntervalSince1970 * 1_000])
         default:
@@ -236,5 +327,15 @@ final class LivePairingClient {
         onPhase?(.error)
         onError?(error)
         Task { try? await notify("client.error", params: ["message": error.localizedDescription]) }
+    }
+
+    private func finishStop() {
+        endingTask?.cancel()
+        endingTask = nil
+        close()
+        onStopped?()
+        let waiters = stopWaiters
+        stopWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 }

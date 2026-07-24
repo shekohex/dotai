@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { buildCodexAttestation } from "../src/extensions/live/attestation.js";
 import { _test as liveExtensionTest } from "../src/extensions/live/index.js";
 import { LivePairingServer } from "../src/extensions/live/pairing/server.js";
+import { buildLiveInstructions } from "../src/extensions/live/prompts.js";
 import {
   decodePairingUri,
   LIVE_PAIRING_PROTOCOL_VERSION,
@@ -17,12 +21,18 @@ import {
   defaultLiveSettings,
   normalizeLiveVoice,
   resolveLiveIdentity,
+  setLiveInstructions,
+  setLiveVoice,
 } from "../src/extensions/live/settings.js";
+import { LIVE_VOICES } from "../src/extensions/live/voices.js";
 
 const servers: LivePairingServer[] = [];
+const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
+  for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true });
+  vi.unstubAllEnvs();
 });
 
 describe("Pi Live pairing", () => {
@@ -71,6 +81,7 @@ describe("Pi Live pairing", () => {
             outputLevel: false,
             deviceSelection: false,
           },
+          preferences: { voice: "maple", instructions: "Keep replies especially concise." },
         },
       }),
     );
@@ -80,8 +91,17 @@ describe("Pi Live pairing", () => {
       );
     });
     expect(response.result).toEqual(expect.objectContaining({ sessionId: "session-2" }));
-    await expect(accepted).resolves.toMatchObject({ open: true });
-    socket.close();
+    const connection = await accepted;
+    expect(connection).toMatchObject({
+      open: true,
+      preferredVoice: "maple",
+      customInstructions: "Keep replies especially concise.",
+    });
+    const closed = new Promise<boolean>((resolve) => {
+      connection.onClose((_error, clean) => resolve(clean === true));
+    });
+    socket.close(1000, "done");
+    await expect(closed).resolves.toBe(true);
   });
 });
 
@@ -163,6 +183,70 @@ describe("Pi Live Codex protocol", () => {
       voice: "sol",
     });
     expect(normalizeLiveVoice("spruce")).toBe("spruce");
+    expect(LIVE_VOICES).toEqual([
+      "juniper",
+      "maple",
+      "spruce",
+      "ember",
+      "vale",
+      "breeze",
+      "arbor",
+      "sol",
+      "cove",
+    ]);
+    expect(() => normalizeLiveVoice("unsupported")).toThrow("Unsupported Pi Live voice");
+  });
+
+  it("persists a lowercase client voice without replacing other settings", () => {
+    const runtime = mkdtempSync(join(tmpdir(), "pi-live-settings-"));
+    temporaryDirectories.push(runtime);
+    vi.stubEnv("PI_CODING_AGENT_DIR", runtime);
+    writeFileSync(
+      join(runtime, "settings.json"),
+      JSON.stringify({ recap: { enabled: false }, live: { transport: "ssh", voice: "sol" } }),
+    );
+
+    expect(setLiveVoice("Juniper")).toBe("juniper");
+    expect(JSON.parse(readFileSync(join(runtime, "settings.json"), "utf8"))).toEqual({
+      recap: { enabled: false },
+      live: { transport: "ssh", voice: "juniper" },
+    });
+  });
+
+  it("persists client instructions without replacing other live settings", () => {
+    const runtime = mkdtempSync(join(tmpdir(), "pi-live-instructions-"));
+    temporaryDirectories.push(runtime);
+    vi.stubEnv("PI_CODING_AGENT_DIR", runtime);
+    writeFileSync(
+      join(runtime, "settings.json"),
+      JSON.stringify({ recap: { enabled: false }, live: { transport: "coder", voice: "sol" } }),
+    );
+
+    expect(setLiveInstructions("  Keep responses concise.  ")).toBe("Keep responses concise.");
+    expect(JSON.parse(readFileSync(join(runtime, "settings.json"), "utf8"))).toEqual({
+      recap: { enabled: false },
+      live: {
+        transport: "coder",
+        voice: "sol",
+        instructions: "Keep responses concise.",
+      },
+    });
+  });
+
+  it("keeps conversation local and synthesizes English delegations", () => {
+    const instructions = buildLiveInstructions(
+      {
+        firstName: "Shady",
+        lastName: "Khalifa",
+        username: "shekohex",
+        displayName: "Shady Khalifa",
+      },
+      "Use a warm tone.",
+    );
+    expect(instructions).toContain("MUST NOT delegate ordinary conversation");
+    expect(instructions).toContain("Every client delegation MUST be written in English");
+    expect(instructions).toContain("spoken reply MUST use the language of the user's latest turn");
+    expect(instructions).toContain("Use a warm tone.");
   });
 
   it("resolves configurable live identity fields", () => {

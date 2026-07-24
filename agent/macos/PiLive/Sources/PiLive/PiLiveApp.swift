@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -11,11 +12,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 window.isMovableByWindowBackground = true
                 window.titleVisibility = .hidden
                 window.titlebarAppearsTransparent = true
-                window.center()
+                window.isOpaque = false
+                window.backgroundColor = .clear
+                window.hasShadow = true
                 window.makeKeyAndOrderFront(nil)
             }
+            self.positionMainWindowAboveDock()
             NSApp.activate(ignoringOtherApps: true)
         }
+    }
+
+    func showMainWindow() {
+        guard let window = mainWindow else { return }
+        positionMainWindowAboveDock()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private var mainWindow: NSWindow? {
+        NSApp.windows.first(where: { $0.title == "Pi Live" }) ?? NSApp.windows.first
+    }
+
+    private func positionMainWindowAboveDock() {
+        guard let window = mainWindow,
+              let screen = window.screen ?? NSScreen.main ?? NSScreen.screens.first
+        else { return }
+        let visibleFrame = screen.visibleFrame
+        let origin = NSPoint(
+            x: visibleFrame.midX - window.frame.width / 2,
+            y: visibleFrame.minY + 18
+        )
+        window.setFrameOrigin(origin)
     }
 }
 
@@ -29,14 +56,27 @@ struct PiLiveApp: App {
             LiveWidgetView(model: model)
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 430, height: 380)
+        .windowResizability(.contentSize)
+        .defaultSize(width: 460, height: 500)
+
+        Settings {
+            LiveSettingsView(model: model)
+        }
 
         MenuBarExtra("Pi Live", systemImage: "waveform.circle.fill") {
             Button("Show Pi Live") {
-                NSApp.windows.first?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
+                appDelegate.showMainWindow()
             }
-            Button("Quit") { NSApp.terminate(nil) }
+            SettingsLink {
+                Text("Settings…")
+            }
+            Divider()
+            Button("Quit") {
+                Task {
+                    await model.prepareForTermination()
+                    NSApp.terminate(nil)
+                }
+            }
         }
     }
 }

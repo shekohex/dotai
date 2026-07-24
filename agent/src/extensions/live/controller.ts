@@ -20,8 +20,10 @@ import { CodexLiveControl } from "./transport.js";
 import type { LivePhase } from "./visualizer.js";
 import { isUnknownRecord } from "../../utils/unknown-value.js";
 import type { ResolvedLiveIdentity } from "./settings.js";
+import { setLiveInstructions, setLiveVoice } from "./settings.js";
 
 const DEFAULT_VOICE = "sol";
+const OUTPUT_ACTIVE_LEVEL = 0.015;
 const LIVE_DELEGATION_MESSAGE_TYPE = "live-delegation";
 
 export interface LiveTranscript {
@@ -46,6 +48,7 @@ export interface LiveSessionControllerOptions {
   identity: ResolvedLiveIdentity;
   appOpenTimeoutMs: number;
   voice?: string;
+  customInstructions?: string;
 }
 
 function errorFrom(cause: unknown): Error {
@@ -101,6 +104,7 @@ export class LiveSessionController {
   readonly #identity: ResolvedLiveIdentity;
   readonly #appOpenTimeoutMs: number;
   readonly #voice: string;
+  readonly #customInstructions: string;
   #control: CodexLiveControl | undefined;
   #connection: LiveMediaConnection | undefined;
   #sendChain: Promise<void> = Promise.resolve();
@@ -114,6 +118,7 @@ export class LiveSessionController {
   #activeDelegationId: string | undefined;
   #lastAgentResponse: AssistantMessage | undefined;
   #mediaOpened = false;
+  #outputLevel = 0;
   #mediaOpenResolve: (() => void) | undefined;
   #userTranscript = "";
   #assistantTranscript = "";
@@ -132,6 +137,7 @@ export class LiveSessionController {
     this.#appOpenTimeoutMs = options.appOpenTimeoutMs;
     const voice = options.voice?.trim();
     this.#voice = voice !== undefined && voice.length > 0 ? voice : DEFAULT_VOICE;
+    this.#customInstructions = options.customInstructions?.trim() ?? "";
   }
 
   get phase(): LivePhase {
@@ -157,8 +163,24 @@ export class LiveSessionController {
           this.#handleAppEvent(method, params);
         });
       });
-      connection.onClose((error) => {
-        if (!this.#stopped) this.#reportFailure(error ?? new Error("Pi Live app disconnected"));
+      connection.onClose((error, clean) => {
+        if (this.#stopped) return;
+        if (clean === true) void this.stop();
+        else this.#reportFailure(error ?? new Error("Pi Live app disconnected"));
+      });
+      const voice =
+        typeof connection.preferredVoice === "string"
+          ? setLiveVoice(connection.preferredVoice)
+          : this.#voice;
+      const customInstructions =
+        typeof connection.customInstructions === "string"
+          ? setLiveInstructions(connection.customInstructions)
+          : this.#customInstructions;
+      connection.notify("settings.voice", { voice, saved: true, appliesTo: "current" });
+      connection.notify("settings.instructions", {
+        saved: true,
+        instructions: customInstructions,
+        appliesTo: "current",
       });
       this.#emitPhase("pairing");
       connection.notify("session.phase", { phase: "pairing" });
@@ -185,8 +207,8 @@ export class LiveSessionController {
         attestation,
         context: this.#context,
         sessionId: this.#context.sessionManager.getSessionId(),
-        instructions: buildLiveInstructions(this.#identity),
-        voice: this.#voice,
+        instructions: buildLiveInstructions(this.#identity, customInstructions),
+        voice,
         onEvent: (event) => {
           this.#guardEvent(() => {
             this.#handleLiveEvent(event);
@@ -263,6 +285,7 @@ export class LiveSessionController {
 
   async #stop(): Promise<void> {
     this.#stopped = true;
+    this.#emitPhaseSafely("ending");
     let cleanupError: Error | undefined;
     await this.#sendChain;
     const control = this.#control;
@@ -312,7 +335,11 @@ export class LiveSessionController {
         break;
       case "audio.levels": {
         const levels = readLevels(params);
-        if (levels) this.#callbacks.onLevels(levels.input, levels.output);
+        if (levels) {
+          this.#outputLevel = levels.output;
+          this.#callbacks.onLevels(levels.input, levels.output);
+          this.#refreshAudioPhase();
+        }
         break;
       }
       case "audio.muted":
@@ -323,6 +350,12 @@ export class LiveSessionController {
         break;
       case "session.stop":
         void this.stop();
+        break;
+      case "settings.setVoice":
+        this.#handleVoiceSetting(params);
+        break;
+      case "settings.setInstructions":
+        this.#handleInstructionsSetting(params);
         break;
       case "client.error":
         this.#reportFailure(
@@ -372,16 +405,6 @@ export class LiveSessionController {
     }
     request = request.trim();
     if (request.length === 0) return;
-    if (this.#activeDelegationId !== undefined) {
-      this.#queueSend(
-        buildDelegationContextAppend(
-          event.item.id,
-          "Coding work is already active. Keep conversing while the current result completes.",
-          "commentary",
-        ),
-      );
-      return;
-    }
     this.#activeDelegationId = event.item.id;
     this.#emitPhase("working");
     this.#pi.sendMessage(
@@ -478,8 +501,47 @@ export class LiveSessionController {
     if (this.#stopped) return;
     if (this.#muted) this.#emitPhase("muted");
     else if (this.#activeDelegationId !== undefined) this.#emitPhase("working");
+    else if (this.#outputLevel > OUTPUT_ACTIVE_LEVEL) this.#emitPhase("speaking");
     else if (this.#mediaOpened) this.#emitPhase("listening");
     else this.#emitPhase("connecting");
+  }
+
+  #handleVoiceSetting(params: unknown): void {
+    try {
+      if (!isUnknownRecord(params) || typeof params.voice !== "string") {
+        throw new Error("Voice setting is missing a voice");
+      }
+      const voice = setLiveVoice(params.voice);
+      this.#connection?.notify("settings.voice", {
+        voice,
+        saved: true,
+        appliesTo: "next-session",
+      });
+    } catch (cause) {
+      this.#connection?.notify("settings.voice", {
+        saved: false,
+        message: errorFrom(cause).message,
+      });
+    }
+  }
+
+  #handleInstructionsSetting(params: unknown): void {
+    try {
+      if (!isUnknownRecord(params) || typeof params.instructions !== "string") {
+        throw new Error("Instruction setting is missing instructions");
+      }
+      const instructions = setLiveInstructions(params.instructions);
+      this.#connection?.notify("settings.instructions", {
+        saved: true,
+        instructions,
+        appliesTo: "next-session",
+      });
+    } catch (cause) {
+      this.#connection?.notify("settings.instructions", {
+        saved: false,
+        message: errorFrom(cause).message,
+      });
+    }
   }
 
   #guardEvent(handler: () => void): void {

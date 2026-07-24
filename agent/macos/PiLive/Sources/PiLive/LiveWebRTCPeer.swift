@@ -5,12 +5,17 @@ import Foundation
 final class LiveWebRTCPeer: NSObject {
     var onOpened: (() -> Void)?
     var onFailure: ((Error) -> Void)?
+    var onLevels: ((Double, Double, Bool) -> Void)?
 
     private let factory: RTCPeerConnectionFactory
     private var peerConnection: RTCPeerConnection?
     private var audioTrack: RTCAudioTrack?
     private var dataChannel: RTCDataChannel?
     private var gatheringContinuation: CheckedContinuation<String, Error>?
+    private var levelTask: Task<Void, Never>?
+    private var statsPending = false
+    private var inputLevel = 0.0
+    private var outputLevel = 0.0
     private var muted = false
 
     override init() {
@@ -64,6 +69,7 @@ final class LiveWebRTCPeer: NSObject {
                 mandatoryConstraints: [
                     "OfferToReceiveAudio": "true",
                     "OfferToReceiveVideo": "false",
+                    "VoiceActivityDetection": "true",
                 ],
                 optionalConstraints: nil
             )) { description, error in
@@ -105,14 +111,22 @@ final class LiveWebRTCPeer: NSObject {
                 else { continuation.resume() }
             }
         }
+        startLevelMonitoring()
     }
 
     func setMuted(_ muted: Bool) {
         self.muted = muted
         audioTrack?.isEnabled = !muted
+        if muted {
+            inputLevel = 0
+            onLevels?(0, outputLevel, false)
+        }
     }
 
     func close() {
+        levelTask?.cancel()
+        levelTask = nil
+        statsPending = false
         gatheringContinuation?.resume(throwing: CancellationError())
         gatheringContinuation = nil
         dataChannel?.close()
@@ -120,6 +134,67 @@ final class LiveWebRTCPeer: NSObject {
         peerConnection?.close()
         peerConnection = nil
         audioTrack = nil
+        inputLevel = 0
+        outputLevel = 0
+    }
+
+    private func startLevelMonitoring() {
+        levelTask?.cancel()
+        levelTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                self?.pollAudioLevels()
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    private func pollAudioLevels() {
+        guard !statsPending, let peerConnection else { return }
+        statsPending = true
+        peerConnection.statistics { [weak self] report in
+            let levels = Self.extractAudioLevels(from: report)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.statsPending = false
+                self.consumeAudioLevels(input: levels.input, output: levels.output)
+            }
+        }
+    }
+
+    nonisolated private static func extractAudioLevels(
+        from report: RTCStatisticsReport
+    ) -> (input: Double, output: Double) {
+        var input = 0.0
+        var output = 0.0
+        for statistic in report.statistics.values {
+            let kind = (statistic.values["kind"] as? NSString) as String?
+                ?? (statistic.values["mediaType"] as? NSString) as String?
+            guard kind == "audio", let value = statistic.values["audioLevel"] as? NSNumber else {
+                continue
+            }
+            let level = min(1, max(0, value.doubleValue))
+            if statistic.type == "media-source" || statistic.type == "outbound-rtp" {
+                input = max(input, level)
+            } else if statistic.type == "inbound-rtp" {
+                output = max(output, level)
+            }
+        }
+        return (input, output)
+    }
+
+    private func consumeAudioLevels(input rawInput: Double, output rawOutput: Double) {
+        inputLevel = smoothLevel(current: inputLevel, sample: muted ? 0 : rawInput)
+        outputLevel = smoothLevel(current: outputLevel, sample: rawOutput)
+        // This is presentation-only audio activity. WebRTC M150 owns media VAD/APM,
+        // and Codex Live owns conversational end-of-turn detection.
+        let inputActive = !muted && inputLevel >= 0.018
+        onLevels?(inputLevel, outputLevel, inputActive)
+    }
+
+    private func smoothLevel(current: Double, sample: Double) -> Double {
+        let coefficient = sample > current ? 0.58 : 0.18
+        let smoothed = current + (sample - current) * coefficient
+        return smoothed < 0.001 ? 0 : smoothed
     }
 
     deinit { RTCCleanupSSL() }

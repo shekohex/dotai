@@ -14,7 +14,9 @@ import {
   type LivePairingEndpoint,
   type PairingDescriptor,
   type PairingPayload,
+  type PairRequestParams,
 } from "./schemas.js";
+import type { LiveVoice } from "../voices.js";
 
 const DEFAULT_PAIRING_TTL_MS = 120_000;
 const DEFAULT_HEARTBEAT_MS = 10_000;
@@ -33,7 +35,7 @@ export interface LivePairingServerOptions {
 }
 
 type NotificationHandler = (method: string, params: unknown) => void;
-type CloseHandler = (error?: Error) => void;
+type CloseHandler = (error?: Error, clean?: boolean) => void;
 
 function errorFrom(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(String(cause));
@@ -129,6 +131,8 @@ function resolveEndpoints(options: {
 }
 
 export class LiveMediaConnection {
+  readonly preferredVoice: LiveVoice | undefined;
+  readonly customInstructions: string | undefined;
   readonly #socket: WebSocket;
   readonly #pending = new Map<
     string,
@@ -139,8 +143,10 @@ export class LiveMediaConnection {
   #nextRequestId = 1;
   #closed = false;
 
-  constructor(socket: WebSocket) {
+  constructor(socket: WebSocket, preferences?: PairRequestParams["preferences"]) {
     this.#socket = socket;
+    this.preferredVoice = preferences?.voice;
+    this.customInstructions = preferences?.instructions;
     socket.on("message", (data, isBinary) => {
       if (isBinary) return;
       this.#handleMessage(rawDataText(data));
@@ -148,8 +154,8 @@ export class LiveMediaConnection {
     socket.on("error", (cause) => {
       this.#emitClose(errorFrom(cause));
     });
-    socket.on("close", () => {
-      this.#emitClose();
+    socket.on("close", (code) => {
+      this.#emitClose(undefined, code === 1000);
     });
   }
 
@@ -232,11 +238,11 @@ export class LiveMediaConnection {
     }
   }
 
-  #emitClose(error?: Error): void {
+  #emitClose(error?: Error, clean = false): void {
     if (this.#closed) return;
     this.#closed = true;
     this.#rejectPending(error ?? new Error("Pi Live app disconnected"));
-    for (const handler of this.#closeHandlers) handler(error);
+    for (const handler of this.#closeHandlers) handler(error, clean);
   }
 
   #rejectPending(error: Error): void {
@@ -398,7 +404,7 @@ export class LivePairingServer {
         return;
       }
       if (params.capabilities.webrtc && this.#secretMatches(params.secret)) {
-        this.#completePairing(socket, message.value.id);
+        this.#completePairing(socket, message.value.id, params);
         return;
       }
       socket.send(jsonRpcError(message.value.id, -32001, "Pairing rejected"));
@@ -407,7 +413,7 @@ export class LivePairingServer {
     socket.once("message", onFirstMessage);
   }
 
-  #completePairing(socket: WebSocket, requestId: JsonRpcId): void {
+  #completePairing(socket: WebSocket, requestId: JsonRpcId, params: PairRequestParams): void {
     if (
       this.#descriptor === undefined ||
       Date.now() >= this.#descriptor.expiresAt ||
@@ -429,7 +435,7 @@ export class LivePairingServer {
         },
       }),
     );
-    const connection = new LiveMediaConnection(socket);
+    const connection = new LiveMediaConnection(socket, params.preferences);
     this.#connection = connection;
     this.#acceptResolve?.(connection);
     this.#startHeartbeat(connection);

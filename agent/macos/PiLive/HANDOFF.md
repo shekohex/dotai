@@ -11,7 +11,7 @@ The Linux implementation is complete enough for integration testing:
 - Session-scoped one-time pairing server with local, Coder, SSH, and direct descriptors.
 - Coder wildcard WSS uses `Coder-Session-Token`, stored by the Swift app in Keychain.
 - ChatGPT OAuth remains in the workspace. CLIProxyAPI Codex auth fallback matches `openusage`.
-- The Swift app is under `macos/PiLive` and owns WebRTC plus microphone/speaker media.
+- The Swift 6.2/macOS 26 app is under `macos/PiLive` and owns WebRTC plus microphone/speaker media.
 - No Rust runtime or audio-over-SSH implementation exists.
 - Global identity, voice, adapter, and timeout defaults are under `settings.json#live` via `src/extensions/live/settings.ts`.
 
@@ -38,5 +38,9 @@ Then do this on the Mac:
 8. Prove or disprove split-host signaling: Mac creates the SDP offer, Linux authenticates the Codex signaling request, Mac accepts the answer, and Mac exchanges media directly with OpenAI.
 9. If split-host signaling is rejected by OpenAI, implement the documented fallback using only an in-memory short-lived access token. Never transfer the refresh token.
 10. Add macOS tests where practical, run the full TypeScript test/build suite again, and commit the final fixes.
+
+Current native behavior also includes a Liquid Glass call surface above the Dock, a standard Settings scene with colored voice selection, lowercase voice synchronization to workspace `settings.json`, WebRTC M150 audio processing/level telemetry, and graceful bidirectional hangup.
+
+The connected surface collapses into a compact bottom-center glass strip with a continuously animated orb and layered Siri-style waveform. Assistant settings include custom conversational instructions; pairing persists them to `live.instructions`, while changes during a call apply to the next call. `src/resources/live/live-instructions.md` is the single canonical prompt. It forbids transcript-by-transcript delegation, requires synthesized English AgentSession requests, and keeps spoken replies in the user's source language.
 
 Preserve the architecture: Swift owns local media/UI/WebRTC; TypeScript owns ChatGPT auth/signaling/sideband/delegation/Pi session. Do not move audio into SSH, Coder, Herdr, or terminal transport.

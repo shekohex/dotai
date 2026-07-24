@@ -114,6 +114,7 @@ enum LivePhase: String {
     case speaking
     case working
     case muted
+    case ending
     case reconnecting
     case error
 }

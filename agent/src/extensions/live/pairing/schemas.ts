@@ -1,5 +1,6 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { LiveVoiceSchema } from "../voices.js";
 
 export const LIVE_PAIRING_PROTOCOL_VERSION = 1;
 
@@ -63,6 +64,15 @@ export const PairRequestParamsSchema = Type.Object(
         deviceSelection: Type.Boolean(),
       },
       { additionalProperties: false },
+    ),
+    preferences: Type.Optional(
+      Type.Object(
+        {
+          voice: Type.Optional(LiveVoiceSchema),
+          instructions: Type.Optional(Type.String({ maxLength: 8_000 })),
+        },
+        { additionalProperties: false },
+      ),
     ),
   },
   { additionalProperties: false },

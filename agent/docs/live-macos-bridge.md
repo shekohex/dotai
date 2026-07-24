@@ -43,6 +43,8 @@ Optional voice:
 /live auto voice=sol
 ```
 
+Supported voices are `juniper`, `maple`, `spruce`, `ember`, `vale`, `breeze`, `arbor`, `sol`, and `cove`. Wire and settings values are always lowercase; the macOS app presents display names.
+
 ## Settings
 
 Global defaults live under `settings.json#live` and are seeded from `src/default-settings.ts`:
@@ -57,6 +59,7 @@ Global defaults live under `settings.json#live` and are seeded from `src/default
       "username": "shekohex"
     },
     "voice": "sol",
+    "instructions": "",
     "transport": "coder",
     "sshTarget": "",
     "directHost": "",
@@ -67,9 +70,11 @@ Global defaults live under `settings.json#live` and are seeded from `src/default
 }
 ```
 
-Identity fields can be cleared to fall back to the workspace OS account. Command arguments override transport, SSH target, direct host, and voice for one call.
+Identity fields can be cleared to fall back to the workspace OS account. Command arguments override transport, SSH target, direct host, and voice for one call. The native app's Voice settings writes the selected lowercase value back to the paired workspace. A selection made before pairing applies to the current call; a change made during a call applies to the next call.
 
-`/live` starts an ephemeral server, prints a `pi-live://pair#...` URL, and replaces the editor with the OMP-derived visualizer. Press Enter to copy the pairing URL with OSC 52, Space to mute, or Escape to end.
+The native Assistant settings panel owns optional custom conversational instructions. They are sent in the authenticated pairing request, persisted to `live.instructions`, and included in the current call when supplied before pairing. Changes during a call apply to the next call. Custom instructions may tune tone, brevity, and terminology, but cannot override the core delegation, language, safety, or honesty rules.
+
+`/live` starts an ephemeral server, copies the single-line `pi-live://pair#...` URL through Pi's SSH-aware clipboard support, and replaces the editor with the OMP-derived visualizer. Press Enter to copy again, Space to mute, or Escape to end.
 
 ## Adapters
 
@@ -108,7 +113,9 @@ It extracts `chatgpt-account-id`, performs the authenticated SDP request, and op
 
 ## Delegation
 
-`delegation.created` becomes:
+Realtime transcripts are UI-only. They never enter the Pi AgentSession directly. The live model first decides whether workspace execution is actually required. Greetings, social conversation, confirmations, clarifying conversation, and questions answerable from the current voice context stay entirely inside the realtime conversation.
+
+Only a server-generated `delegation.created` becomes:
 
 ```ts
 pi.sendMessage(
@@ -124,7 +131,9 @@ pi.sendMessage(
 
 Assistant tool-use messages are appended to the live delegation as silent commentary. The final assistant response is sent after `agent_settled` as speakable context.
 
-The PoC permits one active coding delegation. The live model is instructed not to open a second independent delegation while work is active.
+New voice requests can create a fresh delegation while work is active. Each one steers the same Pi AgentSession, preserving a single continuous assistant instead of spawning an independent backend.
+
+Every delegation is synthesized in English rather than copied from the transcript. If the user speaks Arabic, Spanish, or another language, Pi Live continues speaking in that language while sending only a concise English execution request to the Pi AgentSession. Literal strings, filenames, identifiers, and quoted data retain their exact spelling when required.
 
 ## macOS app
 
@@ -136,7 +145,11 @@ cd macos/PiLive
 open '.build/Pi Live.app'
 ```
 
-The app uses SwiftUI, macOS Keychain, `/usr/bin/ssh`, and the WebRTC XCFramework from `stasel/WebRTC`. WebRTC owns microphone capture, Opus encoding, RTP transport, remote Opus decoding, echo cancellation, and speaker playback.
+The app targets macOS 26 and Swift 6.2. It uses native SwiftUI Liquid Glass, a standard macOS Settings scene, macOS Keychain, `/usr/bin/ssh`, and the WebRTC M150 XCFramework from `stasel/WebRTC`. The floating call surface appears centered immediately above the Dock. Once connected, it collapses into a compact translucent call strip with an always-moving aurora orb, an audio-reactive layered Siri waveform, transcript context, mute, settings, and End controls.
+
+WebRTC owns microphone capture, Opus encoding, RTP transport, remote Opus decoding, echo cancellation, automatic gain control, noise suppression, high-pass filtering, media VAD, and speaker playback. Codex Live owns conversational end-of-turn detection. Pi Live deliberately does not run a second microphone capture pipeline or gate audio with a handwritten local VAD, because either can clip speech and undermine WebRTC acoustic echo cancellation. WebRTC statistics are used only for the audio-reactive interface and level telemetry.
+
+The End button, window dismissal, remote `/live` stop, and app Quit path use a graceful close handshake. The Mac first sends `session.stop`; TypeScript closes the OpenAI session and replies with `session.stop`; both sides then close WebRTC and pairing normally. A normal WebSocket close is not surfaced as `Pi Live app disconnected`.
 
 ## First macOS validation
 
@@ -155,4 +168,8 @@ If OpenAI rejects split-host signaling, the fallback is a short-lived access-tok
 
 ## Provenance
 
-The live wire protocol, prompt structure, transcript coalescing, delegation behavior, and terminal visualizer are derived from `can1357/oh-my-pi` at revision `69307261c332a78dc41d5a3e14f5af8edc8a3f51`.
+The live wire protocol, prompt structure, transcript coalescing, delegation behavior, and terminal visualizer are derived from `can1357/oh-my-pi`. Pi Live keeps the same critical boundary as OMP: only `delegation.created`, never ordinary transcripts, triggers an AgentSession turn.
+
+The canonical live-model prompt is `src/resources/live/live-instructions.md`; TypeScript only loads it, substitutes identity fields, and appends protected user preferences. There is no second prompt copy embedded in TypeScript.
+
+The native aurora orb adapts visual composition techniques from the MIT-licensed `cursorvoice/cursor-voice` project. The Siri-style waveform adapts mathematical and layering techniques from the MIT-licensed `noahchalifour/swiftui-siri-waveform-view` and `mvolpato/SpeechWaveAnimation` projects. See `macos/PiLive/THIRD_PARTY_NOTICES.md`.

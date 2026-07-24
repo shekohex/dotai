@@ -2,6 +2,13 @@ import XCTest
 @testable import PiLive
 
 final class PairingModelsTests: XCTestCase {
+    func testLiveVoicesUseLowercaseWireValues() {
+        XCTAssertEqual(
+            LiveVoice.allCases.map(\.rawValue),
+            ["juniper", "maple", "spruce", "ember", "vale", "breeze", "arbor", "sol", "cove"]
+        )
+    }
+
     func testDecodesFragmentOnlyPairingURL() throws {
         let payload = PairingPayload(
             protocolVersion: 1,

@@ -1,9 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { getAgentRuntime } from "../interview/settings.js";
+import { isUnknownRecord } from "../../utils/unknown-value.js";
+import { normalizeLiveVoiceName, type LiveVoice } from "./voices.js";
 
 const LiveIdentitySettingsSchema = Type.Object(
   {
@@ -19,6 +21,7 @@ export const LiveSettingsSchema = Type.Object(
     enabled: Type.Optional(Type.Boolean()),
     identity: Type.Optional(LiveIdentitySettingsSchema),
     voice: Type.Optional(Type.String()),
+    instructions: Type.Optional(Type.String({ maxLength: 8_000 })),
     transport: Type.Optional(
       Type.Union([
         Type.Literal("auto"),
@@ -42,8 +45,11 @@ const AgentSettingsSchema = Type.Object(
   { additionalProperties: true },
 );
 
-export type LiveSettings = Required<Omit<Static<typeof LiveSettingsSchema>, "identity">> & {
+export type LiveSettings = Required<
+  Omit<Static<typeof LiveSettingsSchema>, "identity" | "voice">
+> & {
   identity: Required<Static<typeof LiveIdentitySettingsSchema>>;
+  voice: LiveVoice;
 };
 
 export interface ResolvedLiveIdentity {
@@ -61,6 +67,7 @@ export const defaultLiveSettings = {
     username: "shekohex",
   },
   voice: "sol",
+  instructions: "",
   transport: "coder",
   sshTarget: "",
   directHost: "",
@@ -76,8 +83,7 @@ export const defaultLiveSettings = {
  * @returns {string} Voice sent to Codex Live.
  */
 export function normalizeLiveVoice(voice: string): string {
-  const normalized = voice.trim();
-  return normalized === "onyx" ? defaultLiveSettings.voice : normalized;
+  return normalizeLiveVoiceName(voice);
 }
 
 /** @returns {LiveSettings} Merged global Pi Live settings. */
@@ -88,12 +94,65 @@ export function getLiveSettings(): LiveSettings {
   if (!Value.Check(AgentSettingsSchema, parsed)) return defaultLiveSettings;
   const settings = Value.Parse(AgentSettingsSchema, parsed).live;
   if (settings === undefined) return defaultLiveSettings;
+  let voice: LiveVoice = defaultLiveSettings.voice;
+  try {
+    voice = normalizeLiveVoiceName(settings.voice ?? defaultLiveSettings.voice);
+  } catch {}
   return {
     ...defaultLiveSettings,
     ...settings,
-    voice: normalizeLiveVoice(settings.voice ?? defaultLiveSettings.voice),
+    voice,
     identity: { ...defaultLiveSettings.identity, ...settings.identity },
   };
+}
+
+/**
+ * Atomically persists the voice selected by the paired macOS client.
+ *
+ * @param {string} voice Voice selected in the macOS app.
+ * @returns {LiveVoice} Persisted lowercase voice identifier.
+ */
+export function setLiveVoice(voice: string): LiveVoice {
+  const normalized = normalizeLiveVoiceName(voice);
+  updateLiveSettings((live) => {
+    live.voice = normalized;
+  });
+  return normalized;
+}
+
+/**
+ * Atomically persists custom live-model behavior preferences from the macOS app.
+ *
+ * @param {string} instructions User-authored live assistant preferences.
+ * @returns {string} Persisted trimmed instructions.
+ */
+export function setLiveInstructions(instructions: string): string {
+  const normalized = instructions.trim();
+  if (normalized.length > 8_000) throw new Error("Pi Live instructions exceed 8,000 characters");
+  updateLiveSettings((live) => {
+    live.instructions = normalized;
+  });
+  return normalized;
+}
+
+function updateLiveSettings(update: (live: Record<string, unknown>) => void): void {
+  const settingsPath = join(getAgentRuntime(), "settings.json");
+  let root: Record<string, unknown> = {};
+  if (existsSync(settingsPath)) {
+    const parsed: unknown = JSON.parse(readFileSync(settingsPath, "utf8"));
+    if (!isUnknownRecord(parsed)) {
+      throw new Error("Pi settings.json must contain an object");
+    }
+    root = { ...parsed };
+  }
+  const currentLive = root.live;
+  const live = isUnknownRecord(currentLive) ? { ...currentLive } : {};
+  update(live);
+  root.live = live;
+  mkdirSync(dirname(settingsPath), { recursive: true });
+  const temporaryPath = `${settingsPath}.${process.pid}.tmp`;
+  writeFileSync(temporaryPath, `${JSON.stringify(root, null, 2)}\n`, { mode: 0o600 });
+  renameSync(temporaryPath, settingsPath);
 }
 
 /**

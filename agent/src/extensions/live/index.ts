@@ -212,6 +212,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
             identity: resolveLiveIdentity(settings.identity),
             appOpenTimeoutMs: settings.appOpenTimeoutMs,
             voice: options.voice,
+            customInstructions: settings.instructions,
             callbacks: {
               onPhase(phase) {
                 visualizer.setPhase(phase);

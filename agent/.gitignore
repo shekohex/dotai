@@ -6,3 +6,6 @@ vendor/plannotator-ui/apps/review/dist/
 vendor/plannotator-ui/apps/hook/dist/
 src/resources/plannotator/*.html
 macos/PiLive/.build/
+macos/PiLive/.swiftpm/
+macos/PiLive/*.dSYM/
+macos/PiLive/*.xcarchive/

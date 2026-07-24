@@ -10,6 +10,7 @@ export type LivePhase =
   | "working"
   | "speaking"
   | "muted"
+  | "ending"
   | "reconnecting"
   | "error";
 
@@ -171,6 +172,7 @@ export class LiveVisualizer implements Component {
       working: "○",
       speaking: "»",
       muted: "×",
+      ending: "×",
       reconnecting: "○",
       error: "!",
     };
@@ -185,6 +187,7 @@ export class LiveVisualizer implements Component {
       working: "warning",
       speaking: "accent",
       muted: "dim",
+      ending: "dim",
       reconnecting: "warning",
       error: "error",
     };

@@ -117,21 +117,39 @@ Final realtime transcripts are persisted with Pi's `appendEntry()` API and rende
 
 The live model first decides whether workspace execution is actually required. Greetings, social conversation, confirmations, clarifying conversation, and questions answerable from the current voice context stay entirely inside the realtime conversation.
 
-Only a server-generated `delegation.created` becomes:
+Only a server-generated `delegation.created` becomes a coding turn. The live model authors the
+`item.content` in that event; TypeScript does not derive it from `turn.done` or automatically copy
+the latest transcript. The live model is therefore capable of synthesizing a standalone task, but
+it can still choose to copy the transcript if it fails to follow its instructions. Pi Live records
+whether each delegation was verbatim or synthesized so that behavior is visible and diagnosable.
+
+An accepted delegation becomes:
 
 ```ts
 pi.sendMessage(
   {
     customType: "live-delegation",
     content: request,
-    display: false,
-    details: { delegationId },
+    display: true,
+    details: { delegationId, sourceTurn, transcriptRelation, languageAssessment },
   },
   { triggerTurn: true, deliverAs: "steer" },
 );
 ```
 
-The hidden delegation is a Pi custom message rather than a typed user message, but it intentionally participates in LLM context and triggers the coding turn. It is the synthesized English execution task—not the transcript.
+The delegation is a Pi custom message rather than a typed user message. It intentionally
+participates in LLM context and triggers the coding turn, but it now has a dedicated message
+renderer instead of looking like a user prompt. The chat shows an accent-colored
+`Pi Live → workspace` execution card and labels it as either a synthesized workspace task or a
+verbatim voice request. Expanded mode includes the source turn, language-gate assessment, and
+delegation ID.
+
+The TypeScript boundary no longer trusts prompt compliance alone. It uses lightweight language
+detection plus non-Latin prose analysis before `sendMessage()`. A non-English delegation is
+persisted as a UI-only blocked-delegation entry, never sent to AgentSession, and returned to the live
+model with an instruction to immediately retry as concise English. This is especially important for
+Arabic, Spanish, and multilingual calls. Short ASCII command-like tasks are accepted because
+trigram language detection is unreliable for strings such as `Run git status`.
 
 Assistant text explicitly marked with OpenAI's `commentary` phase is appended to the active live delegation through the sideband commentary channel. Providers without phase metadata retain the OMP-compatible tool-use-text fallback. This gives the voice model current progress for accurate progress questions without reading raw tool chatter aloud. The final-answer phase is separated from commentary and sent after `agent_settled` as speakable context.
 
@@ -153,7 +171,12 @@ The app targets macOS 26 and Swift 6.2. It uses native SwiftUI Liquid Glass, a s
 
 WebRTC owns microphone capture, Opus encoding, RTP transport, remote Opus decoding, echo cancellation, automatic gain control, noise suppression, high-pass filtering, media VAD, and speaker playback. Codex Live owns conversational end-of-turn detection. Pi Live deliberately does not run a second microphone capture pipeline or gate audio with a handwritten local VAD, because either can clip speech and undermine WebRTC acoustic echo cancellation. WebRTC statistics are used only for the audio-reactive interface and level telemetry.
 
-The main call surface is an AppKit borderless floating window, so native traffic-light controls never appear; Settings remains a normal macOS window.
+The main call surface is an AppKit borderless floating window, so native traffic-light controls never appear; Settings remains a normal macOS window. The native rectangular window shadow is disabled because it produces a dark box around the rounded compact glass strip. SwiftUI still owns the intentional orb and glass glow.
+
+After a clean local or remote hangup, the call window orders itself out instead of returning to the
+pairing screen. Pi Live remains available as a menu-bar app. Settings includes a user-configurable
+global shortcut powered by `sindresorhus/KeyboardShortcuts`; invoking it from any application imports
+a valid `pi-live://pair#...` URL from the clipboard and shows Pi Live above the Dock.
 
 The End button, window dismissal, remote `/live` stop, and app Quit path use a graceful close handshake. The Mac first sends `session.stop`; TypeScript closes the OpenAI session and replies with `session.stop`; both sides then close WebRTC and pairing normally. Intentional ICE `.closed` callbacks are ignored after the peer has been detached, duplicate stop completion is suppressed, and cleanup-only sideband errors are diagnostic warnings rather than user-facing call failures.
 
@@ -174,7 +197,7 @@ If OpenAI rejects split-host signaling, the fallback is a short-lived access-tok
 
 ## Provenance
 
-The live wire protocol, prompt structure, transcript coalescing, delegation behavior, and terminal visualizer are derived from `can1357/oh-my-pi`. Pi Live keeps the same critical boundary as OMP: only `delegation.created`, never ordinary transcripts, triggers an AgentSession turn. The transcript persistence boundary was verified directly against `earendil-works/pi-mono` v0.82.0: `sendMessage()` participates in LLM context, while `appendEntry()` plus `registerEntryRenderer()` is durable TUI-only state.
+The live wire protocol, prompt structure, transcript coalescing, delegation behavior, and terminal visualizer are derived from `can1357/oh-my-pi`. Pi Live keeps the same critical boundary as OMP: only `delegation.created`, never ordinary transcripts, triggers an AgentSession turn. OMP `v17.1.2` was refreshed and inspected at commit `a38cd95d7d8c457a22f1b81c059b5491d78f79a3`: its live controller passes `delegation.created.item.content` directly to a visible, agent-attributed `live-delegation` custom message, and its core custom-message component gives live delegations a special accent border. Pi Live follows that newly visible delegation design through its extension renderer while retaining the stronger English-only boundary. The transcript persistence boundary was verified directly against `earendil-works/pi-mono` v0.82.0: `sendMessage()` participates in LLM context, while `appendEntry()` plus `registerEntryRenderer()` is durable TUI-only state.
 
 The canonical live-model prompt is `src/resources/live/live-instructions.md`; TypeScript only loads it, substitutes identity fields, and appends protected user preferences. There is no second prompt copy embedded in TypeScript.
 

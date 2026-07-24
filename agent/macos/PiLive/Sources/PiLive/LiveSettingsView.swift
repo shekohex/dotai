@@ -1,10 +1,13 @@
 import SwiftUI
+import KeyboardShortcuts
 
 struct LiveSettingsView: View {
     @ObservedObject var model: LiveViewModel
 
     var body: some View {
         TabView {
+            generalSettings
+                .tabItem { Label("General", systemImage: "gearshape") }
             voiceSettings
                 .tabItem { Label("Voice", systemImage: "waveform") }
             assistantSettings
@@ -17,6 +20,27 @@ struct LiveSettingsView: View {
         .padding(20)
         .frame(width: 600, height: 500)
         .onDisappear { model.saveSettings() }
+    }
+
+    private var generalSettings: some View {
+        Form {
+            Section("Global shortcut") {
+                KeyboardShortcuts.Recorder("Show Pi Live", name: .showPiLive)
+                Text("The shortcut works from any app. It imports a valid pi-live pairing link from the clipboard, then opens Pi Live above the Dock.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Call window") {
+                LabeledContent("While connected", value: "Compact floating strip")
+                LabeledContent("After hangup", value: "Hide automatically")
+                Text("Pi Live remains available in the menu bar after the call window closes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 
     private var assistantSettings: some View {

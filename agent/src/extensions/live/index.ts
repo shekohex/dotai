@@ -6,8 +6,12 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, type Component } from "@earendil-works/pi-tui";
 import {
+  LIVE_DELEGATION_MESSAGE_TYPE,
+  LIVE_REJECTED_DELEGATION_ENTRY_TYPE,
   LIVE_TRANSCRIPT_ENTRY_TYPE,
   LiveSessionController,
+  type LiveDelegationMessageDetails,
+  type LiveRejectedDelegationEntryData,
   type LiveTranscriptEntryData,
 } from "./controller.js";
 import { LIVE_DIAGNOSTIC_LOG_PATH } from "./diagnostics.js";
@@ -20,6 +24,7 @@ import {
   resolveLiveIdentity,
   type LiveSettings,
 } from "./settings.js";
+import { isUnknownRecord } from "../../utils/unknown-value.js";
 
 const ANIMATION_INTERVAL_MS = 80;
 
@@ -128,10 +133,93 @@ function registerTranscriptRenderer(pi: ExtensionAPI): void {
   );
 }
 
+function messageContentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "Live delegation unavailable";
+  const text: string[] = [];
+  for (const item of content as unknown[]) {
+    if (!isUnknownRecord(item) || item.type !== "text" || typeof item.text !== "string") continue;
+    text.push(item.text);
+  }
+  return text.join("\n");
+}
+
+function delegationRelationLabel(
+  relation: LiveDelegationMessageDetails["transcriptRelation"],
+): string {
+  switch (relation) {
+    case "verbatim":
+      return "verbatim voice request";
+    case "synthesized":
+      return "synthesized workspace task";
+    case "unknown":
+      return "workspace task";
+    default:
+      return "workspace task";
+  }
+}
+
+function registerDelegationRenderers(pi: ExtensionAPI): void {
+  pi.registerMessageRenderer<LiveDelegationMessageDetails>(
+    LIVE_DELEGATION_MESSAGE_TYPE,
+    (message, { expanded }, theme) => {
+      const details = message.details ?? {
+        delegationId: "unknown",
+        sourceTurn: 0,
+        transcriptRelation: "unknown",
+        languageAssessment: "short-ambiguous",
+      };
+      const box = new Box(1, 1, (line) => theme.bg("customMessageBg", line));
+      const title = theme.fg("accent", theme.bold("◆ Pi Live → workspace"));
+      const relationTone = details.transcriptRelation === "verbatim" ? "warning" : "success";
+      const relation = theme.fg(relationTone, delegationRelationLabel(details.transcriptRelation));
+      const request = theme.fg("customMessageText", messageContentText(message.content));
+      const lines = [`${title}  ${relation}`, "", request];
+      if (expanded) {
+        lines.push(
+          "",
+          theme.fg(
+            "dim",
+            `Triggers AgentSession · voice turn ${details.sourceTurn} · ${details.languageAssessment === "english" ? "English task" : "short command"} · ${details.delegationId}`,
+          ),
+        );
+      }
+      box.addChild(new Text(lines.join("\n"), 0, 0));
+      return box;
+    },
+  );
+
+  pi.registerEntryRenderer<LiveRejectedDelegationEntryData>(
+    LIVE_REJECTED_DELEGATION_ENTRY_TYPE,
+    (entry, { expanded }, theme) => {
+      const details = entry.data;
+      const box = new Box(1, 1, (line) => theme.bg("customMessageBg", line));
+      const title = theme.fg("warning", theme.bold("◇ Pi Live delegation blocked"));
+      const body = theme.fg(
+        "customMessageText",
+        details?.request ?? "Non-English delegation unavailable",
+      );
+      const lines = [`${title}  ${theme.fg("dim", "retrying in English")}`, "", body];
+      if (expanded && details !== undefined) {
+        lines.push(
+          "",
+          theme.fg(
+            "dim",
+            `Not sent to AgentSession · ${details.detectedLanguage} · ${details.transcriptRelation} · ${details.delegationId}`,
+          ),
+        );
+      }
+      box.addChild(new Text(lines.join("\n"), 0, 0));
+      return box;
+    },
+  );
+}
+
 // eslint-disable-next-line max-lines-per-function -- command UI and lifecycle share one active session.
 export default function liveExtension(pi: ExtensionAPI): void {
   let active: ActiveLiveSession | undefined;
   registerTranscriptRenderer(pi);
+  registerDelegationRenderers(pi);
 
   pi.registerCommand("live", {
     description: "Start a local-microphone Codex Live session via the Pi Live macOS app",

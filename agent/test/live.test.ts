@@ -26,6 +26,10 @@ import {
 } from "../src/extensions/live/settings.js";
 import { LIVE_VOICES } from "../src/extensions/live/voices.js";
 import { readAssistantTextPhase } from "../src/utils/pi-ai-text.js";
+import {
+  assessDelegationLanguage,
+  delegationTranscriptRelation,
+} from "../src/extensions/live/delegation-language.js";
 
 const servers: LivePairingServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -262,6 +266,36 @@ describe("Pi Live Codex protocol", () => {
     expect(instructions).toContain("Every client delegation MUST be written in English");
     expect(instructions).toContain("spoken reply MUST use the language of the user's latest turn");
     expect(instructions).toContain("Use a warm tone.");
+  });
+
+  it("blocks non-English live delegations before AgentSession delivery", () => {
+    expect(
+      assessDelegationLanguage(
+        "Inspect the latest commits in this repository and summarize the recent work.",
+      ),
+    ).toMatchObject({ accepted: true });
+    expect(
+      assessDelegationLanguage(
+        "تمام، قولي كده سريعاً عن المشروع ده إيه الأخبار، يعني آخر كوميتس حصلت فيه؟",
+      ),
+    ).toMatchObject({ accepted: false, detectedLanguage: "arb" });
+    expect(
+      assessDelegationLanguage(
+        "Revisa los últimos commits del proyecto y resume los cambios recientes.",
+      ),
+    ).toMatchObject({ accepted: false, detectedLanguage: "spa" });
+  });
+
+  it("distinguishes copied transcripts from synthesized delegations", () => {
+    const transcript = "Check the latest commits in this repository";
+    expect(delegationTranscriptRelation(transcript, transcript)).toBe("verbatim");
+    expect(
+      delegationTranscriptRelation(
+        "Inspect recent repository commits and summarize the changes.",
+        transcript,
+      ),
+    ).toBe("synthesized");
+    expect(delegationTranscriptRelation(transcript, "")).toBe("unknown");
   });
 
   it("resolves configurable live identity fields", () => {

@@ -22,11 +22,30 @@ import { isUnknownRecord } from "../../utils/unknown-value.js";
 import { readAssistantTextPhase } from "../../utils/pi-ai-text.js";
 import type { ResolvedLiveIdentity } from "./settings.js";
 import { setLiveInstructions, setLiveVoice } from "./settings.js";
+import { assessDelegationLanguage, delegationTranscriptRelation } from "./delegation-language.js";
 
 const DEFAULT_VOICE = "sol";
 const OUTPUT_ACTIVE_LEVEL = 0.015;
-const LIVE_DELEGATION_MESSAGE_TYPE = "live-delegation";
+export const LIVE_DELEGATION_MESSAGE_TYPE = "live-delegation";
 export const LIVE_TRANSCRIPT_ENTRY_TYPE = "live-transcript";
+export const LIVE_REJECTED_DELEGATION_ENTRY_TYPE = "live-rejected-delegation";
+
+export interface LiveDelegationMessageDetails {
+  delegationId: string;
+  sourceTurn: number;
+  transcriptRelation: "verbatim" | "synthesized" | "unknown";
+  languageAssessment: "english" | "short-ambiguous";
+}
+
+export interface LiveRejectedDelegationEntryData {
+  delegationId: string;
+  request: string;
+  sourceTurn: number;
+  transcriptRelation: "verbatim" | "synthesized" | "unknown";
+  detectedLanguage: string;
+  reason: "non-latin-prose" | "non-english";
+  timestamp: number;
+}
 
 export interface LiveTranscriptEntryData {
   role: LiveTranscript["role"];
@@ -460,10 +479,46 @@ export class LiveSessionController {
     }
     request = request.trim();
     if (request.length === 0) return;
+    const transcriptRelation = delegationTranscriptRelation(request, this.#userTranscript);
+    const language = assessDelegationLanguage(request);
     appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.received", {
       delegationId: event.item.id,
       characters: request.length,
+      sourceTurn: this.#userTranscriptTurn,
+      transcriptRelation,
+      detectedLanguage: language.detectedLanguage,
+      englishScore: language.englishScore,
+      accepted: language.accepted,
     });
+    if (!language.accepted) {
+      this.#pi.appendEntry<LiveRejectedDelegationEntryData>(LIVE_REJECTED_DELEGATION_ENTRY_TYPE, {
+        delegationId: event.item.id,
+        request,
+        sourceTurn: this.#userTranscriptTurn,
+        transcriptRelation,
+        detectedLanguage: language.detectedLanguage,
+        reason: language.reason,
+        timestamp: Date.now(),
+      });
+      appendLiveDiagnostic(
+        this.#context.sessionManager.getSessionId(),
+        "delegation.rejected-non-english",
+        {
+          delegationId: event.item.id,
+          detectedLanguage: language.detectedLanguage,
+          reason: language.reason,
+        },
+      );
+      this.#queueSend(
+        buildDelegationContextAppend(
+          event.item.id,
+          "The client rejected this delegation before execution because its prose was not English. Do not report a failure to the user. Immediately create a new client delegation that synthesizes the same intent as one concise, self-contained English workspace task. Preserve non-English text only when it is exact literal data such as a filename, identifier, or quoted string.",
+          "commentary",
+        ),
+      );
+      this.#refreshAudioPhase();
+      return;
+    }
     this.#activeDelegationId = event.item.id;
     this.#sentCommentary.clear();
     this.#emitPhase("working");
@@ -471,8 +526,13 @@ export class LiveSessionController {
       {
         customType: LIVE_DELEGATION_MESSAGE_TYPE,
         content: request,
-        display: false,
-        details: { delegationId: event.item.id },
+        display: true,
+        details: {
+          delegationId: event.item.id,
+          sourceTurn: this.#userTranscriptTurn,
+          transcriptRelation,
+          languageAssessment: language.reason,
+        } satisfies LiveDelegationMessageDetails,
       },
       { triggerTurn: true, deliverAs: "steer" },
     );

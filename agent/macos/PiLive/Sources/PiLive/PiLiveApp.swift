@@ -4,9 +4,28 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private weak var mainWindowReference: NSWindow?
+    private var observers: [NSObjectProtocol] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: .piLiveShowRequested,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.showMainWindow() }
+            }
+        )
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: .piLiveSessionEnded,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.hideMainWindow() }
+            }
+        )
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             guard let window = self.mainWindow else { return }
             self.configureMainWindow(window)
@@ -16,12 +35,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        observers.removeAll()
+    }
+
     func showMainWindow() {
         guard let window = mainWindow else { return }
         configureMainWindow(window)
         positionMainWindowAboveDock()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func hideMainWindow() {
+        mainWindow?.orderOut(nil)
     }
 
     private var mainWindow: NSWindow? {
@@ -39,7 +69,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titlebarAppearsTransparent = true
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.hasShadow = true
+        // AppKit shadows the rectangular transparent NSWindow rather than the rounded
+        // Liquid Glass surface, which produces a dark box around the compact strip.
+        window.hasShadow = false
         window.standardWindowButton(.closeButton)?.isHidden = true
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true
         window.standardWindowButton(.zoomButton)?.isHidden = true

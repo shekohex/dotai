@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import KeyboardShortcuts
 
 @MainActor
 final class LiveViewModel: ObservableObject {
@@ -63,10 +64,18 @@ final class LiveViewModel: ObservableObject {
                 : "Assistant preferences saved for the next call"
         }
         importPairingURLFromPasteboard()
+        KeyboardShortcuts.onKeyUp(for: .showPiLive) { [weak self] in
+            self?.activateFromGlobalShortcut()
+        }
     }
 
     func pastePairingURL() {
         pairingURL = NSPasteboard.general.string(forType: .string) ?? pairingURL
+    }
+
+    func activateFromGlobalShortcut() {
+        importPairingURLFromPasteboard()
+        NotificationCenter.default.post(name: .piLiveShowRequested, object: nil)
     }
 
     func connect() {
@@ -131,6 +140,7 @@ final class LiveViewModel: ObservableObject {
         outputLevel = 0
         speechActive = false
         errorMessage = ""
+        NotificationCenter.default.post(name: .piLiveSessionEnded, object: nil)
     }
 
     private func importPairingURLFromPasteboard() {

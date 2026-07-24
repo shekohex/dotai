@@ -10,7 +10,7 @@ import { completeSimpleModel } from "../pi-ai-models.js";
 import { assessDelegationLanguage } from "./delegation-language.js";
 
 const NORMALIZATION_TIMEOUT_MS = 12_000;
-const NORMALIZATION_MAX_TOKENS = 384;
+const NORMALIZATION_MAX_TOKENS = 1_536;
 
 const PREFERRED_NORMALIZER_MODELS: readonly ModelFallbackCandidate[] = [
   { provider: "codex-openai", model: "gpt-5.4-mini" },

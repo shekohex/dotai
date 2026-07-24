@@ -7,6 +7,12 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { buildCodexAttestation, parseCodexDeviceCheckResult } from "./attestation.js";
 import {
+  assistantFromMessages,
+  commentaryFromAssistant,
+  emptyAgentResponseReason,
+  finalTextFromAssistant,
+} from "./agent-response.js";
+import {
   applyLiveDiagnosticsSetting,
   applyLiveInstructionsSetting,
   applyLiveVoiceSetting,
@@ -29,7 +35,6 @@ import type { LiveMediaConnection, LivePairingServer } from "./pairing/server.js
 import { CodexLiveControl } from "./transport.js";
 import type { LivePhase } from "./visualizer.js";
 import { isUnknownRecord } from "../../utils/unknown-value.js";
-import { readAssistantTextPhase } from "../../utils/pi-ai-text.js";
 import type { ResolvedLiveIdentity } from "./settings.js";
 import { setLiveDiagnosticsEnabled, setLiveInstructions, setLiveVoice } from "./settings.js";
 import { assessDelegationLanguage, delegationTranscriptRelation } from "./delegation-language.js";
@@ -79,6 +84,7 @@ export interface LiveSessionCallbacks {
   onPhase(phase: LivePhase): void;
   onLevels(input: number, output: number): void;
   onTranscript(transcript: LiveTranscript | undefined): void;
+  onAgentFailure(message: string): void;
   onTerminal(error?: Error): void;
 }
 
@@ -100,55 +106,6 @@ function errorFrom(cause: unknown): Error {
 function clampLevel(level: number): number {
   if (!Number.isFinite(level) || level <= 0) return 0;
   return Math.min(1, level);
-}
-
-function commentaryFromAssistant(message: AssistantMessage): string {
-  const commentary = message.content
-    .filter(
-      (content): content is Extract<(typeof message.content)[number], { type: "text" }> =>
-        content.type === "text" && readAssistantTextPhase(content) === "commentary",
-    )
-    .map((content) => content.text)
-    .join("\n")
-    .trim();
-  if (commentary.length > 0) return commentary;
-  if (message.stopReason !== "toolUse") return "";
-  return message.content
-    .filter(
-      (content): content is Extract<(typeof message.content)[number], { type: "text" }> =>
-        content.type === "text" && readAssistantTextPhase(content) !== "final_answer",
-    )
-    .map((content) => content.text)
-    .join("\n")
-    .trim();
-}
-
-function finalTextFromAssistant(message: AssistantMessage): string {
-  const finalAnswer = message.content
-    .filter(
-      (content): content is Extract<(typeof message.content)[number], { type: "text" }> =>
-        content.type === "text" && readAssistantTextPhase(content) === "final_answer",
-    )
-    .map((content) => content.text)
-    .join("\n")
-    .trim();
-  if (finalAnswer.length > 0) return finalAnswer;
-  return message.content
-    .filter(
-      (content): content is Extract<(typeof message.content)[number], { type: "text" }> =>
-        content.type === "text" && readAssistantTextPhase(content) !== "commentary",
-    )
-    .map((content) => content.text)
-    .join("\n")
-    .trim();
-}
-
-function assistantFromMessages(messages: readonly AgentMessage[]): AssistantMessage | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role === "assistant") return message;
-  }
-  return undefined;
 }
 
 function readSdp(value: unknown): string {
@@ -189,6 +146,7 @@ export class LiveSessionController {
   #muted = false;
   #phase: LivePhase = "waiting-for-app";
   #activeDelegationId: string | undefined;
+  readonly #pendingDelegationIds = new Set<string>();
   #lastAgentResponse: AssistantMessage | undefined;
   #mediaOpened = false;
   #outputLevel = 0;
@@ -354,7 +312,22 @@ export class LiveSessionController {
     }
   }
 
+  handleMessageStart(message: unknown): void {
+    if (!isUnknownRecord(message) || message.role !== "custom") return;
+    if (message.customType !== LIVE_DELEGATION_MESSAGE_TYPE || !isUnknownRecord(message.details)) {
+      return;
+    }
+    const delegationId = message.details.delegationId;
+    if (typeof delegationId !== "string" || delegationId.length === 0) return;
+    this.#pendingDelegationIds.delete(delegationId);
+    this.#activeDelegationId = delegationId;
+    this.#lastAgentResponse = undefined;
+    this.#sentCommentary.clear();
+    this.#emitPhase("working");
+  }
+
   handleAgentEnd(messages: readonly AgentMessage[]): void {
+    if (this.#activeDelegationId === undefined) return;
     this.#lastAgentResponse = assistantFromMessages(messages);
   }
 
@@ -366,6 +339,25 @@ export class LiveSessionController {
       for (const chunk of chunkLiveContext(`${AGENT_FINAL_MESSAGE_PREFIX}${text}`)) {
         this.#queueSend(buildDelegationContextAppend(delegationId, chunk));
       }
+    } else {
+      const response = this.#lastAgentResponse;
+      const reason = emptyAgentResponseReason(response);
+      const message = `Workspace agent stopped without a final response (${reason}).`;
+      appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.agent-empty", {
+        delegationId,
+        stopReason: response?.stopReason,
+        errorMessage: response?.errorMessage,
+      });
+      try {
+        this.#callbacks.onAgentFailure(message);
+      } catch {}
+      this.#queueSend(
+        buildDelegationContextAppend(
+          delegationId,
+          `${message} Tell the user the workspace request did not complete and do not claim a result.`,
+          "commentary",
+        ),
+      );
     }
     this.#activeDelegationId = undefined;
     this.#lastAgentResponse = undefined;
@@ -601,9 +593,13 @@ export class LiveSessionController {
         return;
       }
     }
-    this.#activeDelegationId = event.item.id;
-    this.#sentCommentary.clear();
+    const agentWasIdle = this.#context.isIdle();
+    this.#pendingDelegationIds.add(event.item.id);
     this.#emitPhase("working");
+    appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.dispatched", {
+      delegationId: event.item.id,
+      delivery: agentWasIdle ? "new-turn" : "follow-up",
+    });
     this.#pi.sendMessage(
       {
         customType: LIVE_DELEGATION_MESSAGE_TYPE,
@@ -617,7 +613,7 @@ export class LiveSessionController {
           ...(normalizedBy === undefined ? {} : { originalRequest: request, normalizedBy }),
         } satisfies LiveDelegationMessageDetails,
       },
-      { triggerTurn: true, deliverAs: "steer" },
+      agentWasIdle ? { triggerTurn: true } : { triggerTurn: true, deliverAs: "followUp" },
     );
   }
 
@@ -719,7 +715,8 @@ export class LiveSessionController {
   #refreshAudioPhase(): void {
     if (this.#stopped) return;
     if (this.#muted) this.#emitPhase("muted");
-    else if (this.#activeDelegationId !== undefined) this.#emitPhase("working");
+    else if (this.#activeDelegationId !== undefined || this.#pendingDelegationIds.size > 0)
+      this.#emitPhase("working");
     else if (this.#outputLevel > OUTPUT_ACTIVE_LEVEL) this.#emitPhase("speaking");
     else if (this.#mediaOpened) this.#emitPhase("listening");
     else this.#emitPhase("connecting");

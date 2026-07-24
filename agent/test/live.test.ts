@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { buildCodexAttestation } from "../src/extensions/live/attestation.js";
+import { emptyAgentResponseReason } from "../src/extensions/live/agent-response.js";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { _test as liveExtensionTest } from "../src/extensions/live/index.js";
 import { LivePairingServer } from "../src/extensions/live/pairing/server.js";
 import { buildLiveInstructions } from "../src/extensions/live/prompts.js";
@@ -134,6 +136,16 @@ describe("Pi Live Codex protocol", () => {
       }),
     ).toBe("final_answer");
     expect(readAssistantTextPhase({ textSignature: "legacy-message-id" })).toBeUndefined();
+  });
+
+  it("surfaces empty AgentSession completions instead of treating them as success", () => {
+    expect(emptyAgentResponseReason(undefined)).toBe("empty response");
+    expect(
+      emptyAgentResponseReason({
+        stopReason: "error",
+        errorMessage: "You have reached your usage limit.",
+      } as AssistantMessage),
+    ).toBe("You have reached your usage limit.");
   });
 
   it("builds the OMP Codex DeviceCheck attestation envelope", () => {

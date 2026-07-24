@@ -3,6 +3,7 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   type MessageEndEvent,
+  type MessageStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, type Component } from "@earendil-works/pi-tui";
 import {
@@ -345,6 +346,9 @@ export default function liveExtension(pi: ExtensionAPI): void {
                 else visualizer.setTranscript(transcript.text);
                 tui.requestRender();
               },
+              onAgentFailure(message) {
+                ctx.ui.notify(`Pi Live: ${message}`, "error");
+              },
               onTerminal: finish,
             },
           });
@@ -378,6 +382,9 @@ export default function liveExtension(pi: ExtensionAPI): void {
 
   pi.on("message_end", (event: MessageEndEvent) => {
     active?.controller.handleMessageEnd(event);
+  });
+  pi.on("message_start", (event: MessageStartEvent) => {
+    active?.controller.handleMessageStart(event.message);
   });
   pi.on("agent_end", (event) => {
     active?.controller.handleAgentEnd(event.messages);

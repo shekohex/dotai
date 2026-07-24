@@ -6,6 +6,7 @@ import type {
   MessageEndEvent,
 } from "@earendil-works/pi-coding-agent";
 import { buildCodexAttestation, parseCodexDeviceCheckResult } from "./attestation.js";
+import { appendLiveDiagnostic, LIVE_DIAGNOSTIC_LOG_PATH } from "./diagnostics.js";
 import {
   buildDelegationContextAppend,
   buildSessionClose,
@@ -167,7 +168,18 @@ export class LiveSessionController {
       });
       const offer = readSdp(offerResult);
       const attestationResult = await connection.request("codex.createAttestation");
-      const attestation = buildCodexAttestation(parseCodexDeviceCheckResult(attestationResult));
+      const deviceCheck = parseCodexDeviceCheckResult(attestationResult);
+      const attestation = buildCodexAttestation(deviceCheck);
+      appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "attestation.created", {
+        supported: deviceCheck.supported,
+        tokenPresent: deviceCheck.tokenBase64 !== undefined && deviceCheck.tokenBase64.length > 0,
+        tokenBytes:
+          deviceCheck.tokenBase64 === undefined
+            ? 0
+            : Buffer.byteLength(deviceCheck.tokenBase64, "base64"),
+        latencyMs: deviceCheck.latencyMs,
+        envelopeBytes: Buffer.byteLength(attestation),
+      });
       this.#emitPhase("connecting");
       const control = new CodexLiveControl({
         attestation,
@@ -189,9 +201,19 @@ export class LiveSessionController {
       this.#refreshAudioPhase();
     } catch (cause) {
       const error = errorFrom(cause);
-      this.#reportFailure(error);
+      appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "session.failed", {
+        phase: this.#phase,
+        message: error.message,
+      });
+      const diagnosedError = new Error(
+        `${error.message}\nDiagnostics: ${LIVE_DIAGNOSTIC_LOG_PATH}`,
+        {
+          cause: error,
+        },
+      );
+      this.#reportFailure(diagnosedError);
       await this.stop();
-      throw error;
+      throw diagnosedError;
     }
   }
 

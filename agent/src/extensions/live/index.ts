@@ -6,11 +6,13 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, type Component } from "@earendil-works/pi-tui";
 import { LiveSessionController } from "./controller.js";
+import { LIVE_DIAGNOSTIC_LOG_PATH } from "./diagnostics.js";
 import { LivePairingServer, type LivePairingMode } from "./pairing/server.js";
 import { LiveVisualizer } from "./visualizer.js";
 import {
   defaultLiveSettings,
   getLiveSettings,
+  normalizeLiveVoice,
   resolveLiveIdentity,
   type LiveSettings,
 } from "./settings.js";
@@ -61,7 +63,7 @@ function parseLiveCommand(
     const value = separator >= 0 ? token.slice(separator + 1) : "";
     if (key === "target" && value) options.sshTargetHint = value;
     else if (key === "host" && value) options.directHost = value;
-    else if (key === "voice" && value) options.voice = value;
+    else if (key === "voice" && value) options.voice = normalizeLiveVoice(value);
     else throw new Error(`Unknown /live option: ${token}`);
   }
   return options;
@@ -176,6 +178,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
       try {
         const descriptor = await pairing.start();
         await copyPairingUri(descriptor.uri, ctx);
+        ctx.ui.notify(`Pi Live diagnostics: ${LIVE_DIAGNOSTIC_LOG_PATH}`, "info");
         await ctx.ui.custom<void>((tui, theme, _keybindings, done) => {
           let finished = false;
           let controller: LiveSessionController;

@@ -13,7 +13,11 @@ import {
   buildLiveSidebandUrl,
   parseLiveCallId,
 } from "../src/extensions/live/transport.js";
-import { defaultLiveSettings, resolveLiveIdentity } from "../src/extensions/live/settings.js";
+import {
+  defaultLiveSettings,
+  normalizeLiveVoice,
+  resolveLiveIdentity,
+} from "../src/extensions/live/settings.js";
 
 const servers: LivePairingServer[] = [];
 
@@ -154,6 +158,11 @@ describe("Pi Live Codex protocol", () => {
       mode: "direct",
       directHost: "10.0.0.2",
     });
+    expect(liveExtensionTest.parseLiveCommand("local voice=onyx")).toMatchObject({
+      mode: "local",
+      voice: "sol",
+    });
+    expect(normalizeLiveVoice("spruce")).toBe("spruce");
   });
 
   it("resolves configurable live identity fields", () => {

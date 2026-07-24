@@ -88,7 +88,7 @@ describe("runtime default settings", () => {
         live: {
           enabled: true,
           identity: { firstName: "Shady", lastName: "Khalifa", username: "shekohex" },
-          voice: "spruce",
+          voice: "sol",
           transport: "coder",
         },
       });

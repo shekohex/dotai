@@ -60,7 +60,7 @@ export const defaultLiveSettings = {
     lastName: "Khalifa",
     username: "shekohex",
   },
-  voice: "spruce",
+  voice: "sol",
   transport: "coder",
   sshTarget: "",
   directHost: "",
@@ -68,6 +68,17 @@ export const defaultLiveSettings = {
   heartbeatMs: 10_000,
   appOpenTimeoutMs: 25_000,
 } as const satisfies LiveSettings;
+
+/**
+ * Maps legacy Pi Live voice defaults to a Codex Live voice accepted by signaling.
+ *
+ * @param {string} voice Configured or command-level voice.
+ * @returns {string} Voice sent to Codex Live.
+ */
+export function normalizeLiveVoice(voice: string): string {
+  const normalized = voice.trim();
+  return normalized === "onyx" ? defaultLiveSettings.voice : normalized;
+}
 
 /** @returns {LiveSettings} Merged global Pi Live settings. */
 export function getLiveSettings(): LiveSettings {
@@ -80,6 +91,7 @@ export function getLiveSettings(): LiveSettings {
   return {
     ...defaultLiveSettings,
     ...settings,
+    voice: normalizeLiveVoice(settings.voice ?? defaultLiveSettings.voice),
     identity: { ...defaultLiveSettings.identity, ...settings.identity },
   };
 }

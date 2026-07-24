@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { WebSocket, type RawData } from "ws";
 import { isUnknownRecord, parseUnknownJson, readUnknownString } from "../../utils/unknown-value.js";
 import { downloadCliproxyAuthFile, listCliproxyAccounts } from "../openusage/cliproxy.js";
 import { restorePersistedState } from "../openusage/state.js";
 import type { CliproxyAccountsByProvider } from "../openusage/types.js";
+import { appendLiveDiagnostic } from "./diagnostics.js";
 import {
   buildLiveSessionPayload,
   parseLiveServerEvent,
@@ -27,6 +29,16 @@ interface CodexAccess {
   accessToken: string;
   accountId?: string;
   providerHeaders: Record<string, string>;
+  source: string;
+}
+
+interface CodexTokenDiagnostics {
+  tokenKind: "jwt" | "opaque";
+  expiresAt?: string;
+  expired?: boolean;
+  issuedAt?: string;
+  plan?: string;
+  accountFingerprint?: string;
 }
 
 interface LiveSignalingResult {
@@ -73,6 +85,61 @@ function extractCodexAccountId(token: string): string | undefined {
     return typeof accountId === "string" ? accountId : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function accountFingerprint(accountId: string | undefined): string | undefined {
+  if (accountId === undefined || accountId.length === 0) return undefined;
+  return createHash("sha256").update(accountId).digest("hex").slice(0, 12);
+}
+
+function readHeader(headers: Record<string, string>, name: string): string | undefined {
+  const normalizedName = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === normalizedName) return value;
+  }
+  return undefined;
+}
+
+function readCodexTokenDiagnostics(
+  token: string,
+  accountId: string | undefined,
+): CodexTokenDiagnostics {
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts[1] === undefined || parts[1].length === 0) {
+    return { tokenKind: "opaque", accountFingerprint: accountFingerprint(accountId) };
+  }
+  try {
+    const payload = parseUnknownJson(Buffer.from(parts[1], "base64url").toString("utf8"));
+    if (!isUnknownRecord(payload)) {
+      return { tokenKind: "jwt", accountFingerprint: accountFingerprint(accountId) };
+    }
+    const auth = isUnknownRecord(payload["https://api.openai.com/auth"])
+      ? payload["https://api.openai.com/auth"]
+      : undefined;
+    const expiresAtSeconds = typeof payload.exp === "number" ? payload.exp : undefined;
+    const issuedAtSeconds = typeof payload.iat === "number" ? payload.iat : undefined;
+    const resolvedAccountId =
+      accountId ??
+      (typeof auth?.chatgpt_account_id === "string" ? auth.chatgpt_account_id : undefined);
+    return {
+      tokenKind: "jwt",
+      ...(expiresAtSeconds === undefined
+        ? {}
+        : {
+            expiresAt: new Date(expiresAtSeconds * 1_000).toISOString(),
+            expired: expiresAtSeconds * 1_000 <= Date.now(),
+          }),
+      ...(issuedAtSeconds === undefined
+        ? {}
+        : { issuedAt: new Date(issuedAtSeconds * 1_000).toISOString() }),
+      ...(typeof auth?.chatgpt_plan_type === "string" ? { plan: auth.chatgpt_plan_type } : {}),
+      ...(resolvedAccountId === undefined
+        ? {}
+        : { accountFingerprint: accountFingerprint(resolvedAccountId) }),
+    };
+  } catch {
+    return { tokenKind: "jwt", accountFingerprint: accountFingerprint(accountId) };
   }
 }
 
@@ -148,6 +215,7 @@ async function resolveCodexAccess(context: ExtensionContext): Promise<CodexAcces
           (entry): entry is [string, string] => typeof entry[1] === "string",
         ),
       ),
+      source: `pi-provider:${result?.source ?? "unknown"}`,
     };
   }
 
@@ -173,6 +241,7 @@ async function resolveCodexAccess(context: ExtensionContext): Promise<CodexAcces
     accessToken: credential.accessToken,
     accountId: credential.accountId ?? extractCodexAccountId(credential.accessToken),
     providerHeaders: {},
+    source: selectedAccount === undefined ? "cliproxy:first" : "cliproxy:selected",
   };
 }
 
@@ -241,6 +310,22 @@ export class CodexLiveControl {
 
   async #signal(offer: string): Promise<LiveSignalingResult> {
     const access = await resolveCodexAccess(this.#options.context);
+    const accountId = access.accountId ?? readHeader(access.providerHeaders, "chatgpt-account-id");
+    const token = readCodexTokenDiagnostics(access.accessToken, accountId);
+    appendLiveDiagnostic(this.#options.sessionId, "signaling.request", {
+      authSource: access.source,
+      providerHeaderNames: Object.keys(access.providerHeaders).toSorted(),
+      accountIdPresent: accountId !== undefined && accountId.length > 0,
+      ...token,
+      runtimePlatform: process.platform,
+      runtimeArch: process.arch,
+      coderWorkspace:
+        process.env.CODER === "true" || process.env.CODER_WORKSPACE_NAME !== undefined,
+      sshSession: process.env.SSH_CONNECTION !== undefined,
+      voice: this.#options.voice,
+      attestationBytes: Buffer.byteLength(this.#options.attestation),
+      offerBytes: Buffer.byteLength(offer),
+    });
     const headers = new Headers({
       ...liveSessionHeaders(
         access,
@@ -251,6 +336,7 @@ export class CodexLiveControl {
       Accept: "*/*",
       "Content-Type": "application/json",
     });
+    const startedAt = Date.now();
     const response = await fetch(SIGNALING_URL, {
       method: "POST",
       headers,
@@ -261,6 +347,16 @@ export class CodexLiveControl {
       signal: this.#options.signal,
     });
     const responseBody = await response.text();
+    const callId = parseLiveCallId(response.headers.get("location"));
+    appendLiveDiagnostic(this.#options.sessionId, "signaling.response", {
+      status: response.status,
+      statusText: response.statusText,
+      durationMs: Date.now() - startedAt,
+      callIdPresent: callId !== undefined,
+      requestId:
+        response.headers.get("x-request-id") ?? response.headers.get("request-id") ?? undefined,
+      cfRay: response.headers.get("cf-ray") ?? undefined,
+    });
     if (!response.ok) {
       const detail = boundedErrorBody(responseBody, response.statusText);
       throw new Error(`Codex live signaling failed (${response.status}): ${detail}`);
@@ -268,7 +364,6 @@ export class CodexLiveControl {
     if (responseBody.trim().length === 0) {
       throw new Error("Codex live signaling returned an empty SDP answer");
     }
-    const callId = parseLiveCallId(response.headers.get("location"));
     if (callId === undefined) throw new Error("Codex live signaling returned no valid call ID");
     return { answer: responseBody, callId, access };
   }
@@ -289,6 +384,9 @@ export class CodexLiveControl {
   }
 
   async #openSideband(callId: string, access: CodexAccess): Promise<void> {
+    appendLiveDiagnostic(this.#options.sessionId, "sideband.connecting", {
+      callIdFingerprint: createHash("sha256").update(callId).digest("hex").slice(0, 12),
+    });
     const socket = new WebSocket(buildLiveSidebandUrl(callId), {
       headers: liveSessionHeaders(
         access,
@@ -322,6 +420,7 @@ export class CodexLiveControl {
       clearTimeout(timeout);
       this.#options.signal?.removeEventListener("abort", onAbort);
       this.#sideband = socket;
+      appendLiveDiagnostic(this.#options.sessionId, "sideband.opened", {});
       resolve();
     });
     socket.on("message", (data, isBinary) => {
@@ -338,6 +437,10 @@ export class CodexLiveControl {
       }
     });
     socket.on("close", (code, reason) => {
+      appendLiveDiagnostic(this.#options.sessionId, "sideband.closed", {
+        code,
+        reason: reason.toString("utf8").slice(0, 256),
+      });
       if (opened || settled) {
         if (this.#sideband !== socket) return;
         this.#sideband = undefined;

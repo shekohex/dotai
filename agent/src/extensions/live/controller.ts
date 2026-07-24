@@ -31,11 +31,7 @@ import type { LivePhase } from "./visualizer.js";
 import { isUnknownRecord } from "../../utils/unknown-value.js";
 import { readAssistantTextPhase } from "../../utils/pi-ai-text.js";
 import type { ResolvedLiveIdentity } from "./settings.js";
-import {
-  setLiveDiagnosticsEnabled,
-  setLiveInstructions,
-  setLiveVoice,
-} from "./settings.js";
+import { setLiveDiagnosticsEnabled, setLiveInstructions, setLiveVoice } from "./settings.js";
 import { assessDelegationLanguage, delegationTranscriptRelation } from "./delegation-language.js";
 import { normalizeLiveDelegation } from "./delegation-normalizer.js";
 

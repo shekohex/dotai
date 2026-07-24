@@ -1,10 +1,6 @@
 import { isUnknownRecord } from "../../utils/unknown-value.js";
 import { configureLiveDiagnostics } from "./diagnostics.js";
-import {
-  setLiveDiagnosticsEnabled,
-  setLiveInstructions,
-  setLiveVoice,
-} from "./settings.js";
+import { setLiveDiagnosticsEnabled, setLiveInstructions, setLiveVoice } from "./settings.js";
 
 function errorFrom(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(String(cause));

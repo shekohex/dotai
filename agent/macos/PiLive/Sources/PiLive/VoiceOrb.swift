@@ -45,10 +45,20 @@ struct VoiceOrb: View {
         let motion = reduceMotion ? 0 : time * (0.72 + displayedEnergy * 0.5)
         let waveGain = 1 + displayedEnergy * 0.7
         let saturation = phase == .ending ? 0.12 : (muted && outputLevel < 0.012 ? 0.72 : 1.08)
+        let localSpeaking = !muted && (speechActive || inputLevel >= 0.012)
+        let remoteSpeaking = outputLevel >= 0.012
+        let active = localSpeaking || remoteSpeaking
+        let wobble = reduceMotion || !active
+            ? 0
+            : sin(time * (7.5 + displayedEnergy * 3.5)) * (0.012 + displayedEnergy * 0.035)
+        let tilt = reduceMotion || !active
+            ? 0
+            : sin(time * 5.2 + 0.8) * (0.35 + displayedEnergy * 1.1)
+        let activityColor: Color = localSpeaking ? .green : voice.accent
 
         ZStack {
             Circle()
-                .stroke(voice.accent.opacity(0.13 + displayedEnergy * 0.23), lineWidth: 0.8)
+                .stroke(activityColor.opacity(0.13 + displayedEnergy * 0.28), lineWidth: localSpeaking ? 1.2 : 0.8)
                 .scaleEffect(1.11 + displayedEnergy * 0.06 + breath + speechPulse)
             Circle()
                 .stroke(Color.cyan.opacity(0.07 + displayedEnergy * 0.16), lineWidth: 0.7)
@@ -186,6 +196,8 @@ struct VoiceOrb: View {
             .scaleEffect(1 + displayedEnergy * 0.055 + breath + speechPulse * 0.75)
             .saturation(saturation)
         }
+        .scaleEffect(x: 1 + wobble, y: 1 - wobble * 0.72)
+        .rotationEffect(.degrees(tilt))
     }
 
     private var accessibilityValue: String {

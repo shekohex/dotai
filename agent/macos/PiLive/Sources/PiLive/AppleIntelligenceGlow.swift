@@ -55,7 +55,7 @@ struct AppleIntelligenceGlow: View {
     }
 
     private func glowStroke(angle: Angle, width: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 24, style: .continuous)
+        Circle()
             .strokeBorder(
                 AngularGradient(
                     colors: glowColors,

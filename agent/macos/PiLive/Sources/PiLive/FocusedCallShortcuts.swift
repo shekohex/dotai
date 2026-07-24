@@ -1,14 +1,15 @@
 @preconcurrency import AppKit
 import SwiftUI
 
-/// Handles Space only while the Pi Live call window is key. A local monitor is
-/// used instead of global event capture so typing in other apps is never affected.
-struct FocusedSpacebarShortcut: NSViewRepresentable {
+/// Handles call-scoped keyboard controls only while the Pi Live window is key.
+/// Other applications and text editors never see intercepted Space/Escape keys.
+struct FocusedCallShortcuts: NSViewRepresentable {
     let enabled: Bool
-    let action: () -> Void
+    let onSpace: () -> Void
+    let onEscape: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(enabled: enabled, action: action)
+        Coordinator(enabled: enabled, onSpace: onSpace, onEscape: onEscape)
     }
 
     func makeNSView(context: Context) -> WindowProbeView {
@@ -22,7 +23,8 @@ struct FocusedSpacebarShortcut: NSViewRepresentable {
 
     func updateNSView(_ nsView: WindowProbeView, context: Context) {
         context.coordinator.enabled = enabled
-        context.coordinator.action = action
+        context.coordinator.onSpace = onSpace
+        context.coordinator.onEscape = onEscape
         context.coordinator.window = nsView.window
     }
 
@@ -34,12 +36,14 @@ struct FocusedSpacebarShortcut: NSViewRepresentable {
     final class Coordinator {
         weak var window: NSWindow?
         var enabled: Bool
-        var action: () -> Void
+        var onSpace: () -> Void
+        var onEscape: () -> Void
         private var monitor: Any?
 
-        init(enabled: Bool, action: @escaping () -> Void) {
+        init(enabled: Bool, onSpace: @escaping () -> Void, onEscape: @escaping () -> Void) {
             self.enabled = enabled
-            self.action = action
+            self.onSpace = onSpace
+            self.onEscape = onEscape
         }
 
         func installMonitor() {
@@ -48,7 +52,6 @@ struct FocusedSpacebarShortcut: NSViewRepresentable {
                 guard let self,
                       self.enabled,
                       !event.isARepeat,
-                      event.keyCode == 49,
                       NSApp.isActive,
                       event.window === self.window,
                       self.window?.isKeyWindow == true,
@@ -57,8 +60,16 @@ struct FocusedSpacebarShortcut: NSViewRepresentable {
                 let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
                     .subtracting([.capsLock, .function, .numericPad])
                 guard modifiers.isEmpty else { return event }
-                self.action()
-                return nil
+                switch event.keyCode {
+                case 49:
+                    self.onSpace()
+                    return nil
+                case 53:
+                    self.onEscape()
+                    return nil
+                default:
+                    return event
+                }
             }
         }
 
@@ -66,7 +77,6 @@ struct FocusedSpacebarShortcut: NSViewRepresentable {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
         }
-
     }
 }
 

@@ -23,26 +23,6 @@ struct VoiceMark: View {
     }
 }
 
-struct CompactControlButton: View {
-    let systemImage: String
-    let tint: Color
-    let label: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 28, height: 28)
-                .accessibilityHidden(true)
-        }
-        .buttonStyle(.glass(.regular.tint(tint.opacity(0.22))))
-        .buttonBorderShape(.circle)
-        .help(label)
-        .accessibilityLabel(label)
-    }
-}
-
 struct LiveBackdrop: View {
     let voice: LiveVoice
 

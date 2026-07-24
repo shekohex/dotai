@@ -21,6 +21,9 @@ struct PiLiveApp: App {
         self.windowCoordinator = windowCoordinator
         model.showWindow = { [weak windowCoordinator] in windowCoordinator?.show() }
         model.hideWindow = { [weak windowCoordinator] in windowCoordinator?.hide() }
+        model.contentSizeDidChange = { [weak windowCoordinator] in
+            windowCoordinator?.repositionAboveDock()
+        }
     }
 
     var body: some Scene {

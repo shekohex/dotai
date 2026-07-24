@@ -27,6 +27,7 @@ final class LiveViewModel {
 
     @ObservationIgnored var showWindow: () -> Void = {}
     @ObservationIgnored var hideWindow: () -> Void = {}
+    @ObservationIgnored var contentSizeDidChange: () -> Void = {}
 
     @ObservationIgnored private let credentials: CredentialStore
     @ObservationIgnored private let preferences: LivePreferences

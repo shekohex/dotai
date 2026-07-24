@@ -26,6 +26,11 @@ final class LiveWindowCoordinator {
         window?.orderOut(nil)
     }
 
+    func repositionAboveDock() {
+        guard let window else { return }
+        positionAboveDock(window)
+    }
+
     private func configure(_ window: NSWindow) {
         window.styleMask = [.borderless]
         window.level = .floating

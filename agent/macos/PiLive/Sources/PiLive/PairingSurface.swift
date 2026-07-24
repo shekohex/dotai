@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PairingSurface: View {
     @Bindable var model: LiveViewModel
+    let orbNamespace: Namespace.ID
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -54,6 +55,7 @@ struct PairingSurface: View {
                 outputLevel: 0,
                 speechActive: false
             )
+            .matchedGeometryEffect(id: "live-orb", in: orbNamespace)
             .frame(width: 132, height: 132)
 
             VStack(spacing: 6) {

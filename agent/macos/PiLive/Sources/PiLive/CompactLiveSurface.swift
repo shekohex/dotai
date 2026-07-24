@@ -2,55 +2,35 @@ import SwiftUI
 
 struct CompactLiveSurface: View {
     @Bindable var model: LiveViewModel
+    let orbNamespace: Namespace.ID
+    let escapeArmed: Bool
     @Environment(\.openSettings) private var openSettings
-    @State private var hovering = false
-
-    private var agentSpeaking: Bool {
-        model.outputLevel >= 0.012
-    }
 
     var body: some View {
-        GlassEffectContainer(spacing: 10) {
+        VStack(spacing: 7) {
+            if escapeArmed {
+                Label("Press Esc again to end", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .liveGlass(
+                        tint: Color.red.opacity(0.17),
+                        in: Capsule(style: .continuous)
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             ZStack {
-                VStack(spacing: 3) {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(statusColor)
-                            .frame(width: 6, height: 6)
-                            .shadow(color: statusColor.opacity(0.7), radius: 4)
-                        Text(statusPrompt)
-                            .font(.headline.weight(.medium))
-                    }
-
-                    ZStack {
-                        SiriVoiceWaveform(
-                            colors: model.selectedVoice.colors,
-                            phase: model.phase,
-                            inputLevel: model.inputLevel,
-                            outputLevel: model.outputLevel,
-                            speechActive: model.speechActive
-                        )
-                        .opacity(model.muted ? 0 : 1)
-                        .accessibilityHidden(model.muted)
-
-                        if model.muted {
-                            Text(agentSpeaking ? "Pi is speaking" : "Microphone muted")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .transition(.opacity)
-                        }
-                    }
-                    .frame(width: 272, height: 47)
-                    .animation(.smooth(duration: 0.2), value: model.muted)
-
-                    Text(model.transcript.isEmpty ? supportingStatus : model.transcript)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .contentTransition(.opacity)
-                        .frame(maxWidth: 300)
-                }
+                AppleIntelligenceGlow(
+                    voice: model.selectedVoice,
+                    phase: model.phase,
+                    muted: model.muted,
+                    inputLevel: model.inputLevel,
+                    outputLevel: model.outputLevel
+                )
+                .frame(width: 94, height: 94)
+                .opacity(escapeArmed ? 0.45 : 1)
 
                 VoiceOrb(
                     voice: model.selectedVoice,
@@ -60,93 +40,77 @@ struct CompactLiveSurface: View {
                     outputLevel: model.outputLevel,
                     speechActive: model.speechActive
                 )
-                .frame(width: 48, height: 48)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .matchedGeometryEffect(id: "live-orb", in: orbNamespace, isSource: false)
+                .frame(width: 82, height: 82)
 
-                HStack(spacing: 6) {
-                    CompactControlButton(
-                        systemImage: "gearshape.fill",
-                        tint: model.selectedVoice.accent,
-                        label: "Settings",
-                        action: { openSettings() }
-                    )
-
-                    CompactControlButton(
-                        systemImage: model.muted ? "mic.slash.fill" : "mic.fill",
-                        tint: model.muted ? .orange : model.selectedVoice.accent,
-                        label: model.muted ? "Unmute" : "Mute",
-                        action: model.toggleMute
-                    )
-                    .disabled(model.phase == .ending)
-
-                    CompactControlButton(
-                        systemImage: "phone.down.fill",
-                        tint: .red,
-                        label: "End call",
-                        action: model.disconnect
-                    )
-                    .disabled(model.phase == .ending)
+                if escapeArmed {
+                    Circle()
+                        .stroke(Color.red.opacity(0.8), lineWidth: 2)
+                        .frame(width: 88, height: 88)
+                        .transition(.opacity)
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .opacity(hovering || model.muted ? 1 : 0.58)
-                .animation(.smooth(duration: 0.18), value: hovering)
-            }
-            .padding(.horizontal, 15)
-            .padding(.vertical, 12)
-            .background(.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .liveGlass(
-                tint: model.selectedVoice.accent.opacity(0.1),
-                in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-            )
-            .overlay {
-                AppleIntelligenceGlow(
-                    voice: model.selectedVoice,
-                    phase: model.phase,
-                    muted: model.muted,
-                    inputLevel: model.inputLevel,
-                    outputLevel: model.outputLevel
+
+                if model.muted {
+                    Image(systemName: "mic.slash.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(.orange.gradient, in: Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.38), lineWidth: 0.7))
+                        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                        .offset(x: 31, y: 31)
+                        .transition(.scale.combined(with: .opacity))
+                }
+
+                OrbClickSurface(
+                    onSingleClick: model.toggleMute,
+                    onDoubleClick: model.disconnect
                 )
+                .clipShape(Circle())
+                .frame(width: 92, height: 92)
+                .accessibilityHidden(true)
+            }
+            .frame(width: 102, height: 102)
+            .contentShape(Circle())
+            .contextMenu {
+                Button(model.muted ? "Unmute" : "Mute") {
+                    model.toggleMute()
+                }
+                Button("Settings…") {
+                    openSettings()
+                }
+                Divider()
+                Button("End Call", role: .destructive) {
+                    model.disconnect()
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityHint("Click once to mute or unmute. Double-click to end the call.")
+            .accessibilityAction(named: model.muted ? "Unmute" : "Mute") {
+                model.toggleMute()
+            }
+            .accessibilityAction(named: "End call") {
+                model.disconnect()
             }
         }
         .padding(8)
-        .frame(width: 420, height: 138)
-        .onHover { hovering = $0 }
-        .accessibilityHint("Press Space to mute or unmute while this window is focused.")
+        .frame(
+            width: escapeArmed ? 210 : 118,
+            height: escapeArmed ? 154 : 118,
+            alignment: .bottom
+        )
+        .animation(.snappy(duration: 0.26), value: escapeArmed)
+        .animation(.smooth(duration: 0.2), value: model.muted)
     }
 
-    private var statusColor: Color {
-        if model.muted && agentSpeaking { return model.selectedVoice.colors[0] }
-        return switch model.phase {
-        case .working: .orange
-        case .speaking: model.selectedVoice.colors[0]
-        case .muted: .orange
-        case .error: .red
-        case .ending: .secondary
-        default: model.speechActive ? .green : model.selectedVoice.accent
+    private var accessibilityLabel: String {
+        if escapeArmed { return "Pi Live. Press Escape again to end the call." }
+        if model.muted && model.outputLevel >= 0.012 {
+            return "Pi is speaking. Microphone muted."
         }
-    }
-
-    private var statusPrompt: String {
-        if model.muted && agentSpeaking { return "Speaking · Muted" }
-        return switch model.phase {
-        case .working: "Working on it"
-        case .muted: "Muted"
-        case .speaking: "Speaking"
-        case .ending: "Ending call…"
-        case .reconnecting: "Reconnecting…"
-        case .error: "Needs attention"
-        default: model.speechActive ? "Listening" : "Ask Pi"
-        }
-    }
-
-    private var supportingStatus: String {
-        if model.muted && agentSpeaking { return "Pi is speaking; your microphone remains off." }
-        return switch model.phase {
-        case .working: "Pi is handling the workspace request."
-        case .muted: "Microphone is off. Press Space to unmute."
-        case .speaking: "Interrupt at any time."
-        case .ending: "Closing cleanly…"
-        default: "Listening for your voice."
-        }
+        if model.muted { return "Pi Live. Microphone muted." }
+        if model.speechActive { return "Pi Live is hearing you." }
+        return "Pi Live. \(model.phase.rawValue)."
     }
 }

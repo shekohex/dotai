@@ -3,23 +3,51 @@ import KeyboardShortcuts
 
 struct LiveSettingsView: View {
     @Bindable var model: LiveViewModel
+    @State private var selectedSection: LiveSettingsSection = .general
 
     var body: some View {
-        TabView {
-            generalSettings
-                .tabItem { Label("General", systemImage: "gearshape") }
-            voiceSettings
-                .tabItem { Label("Voice", systemImage: "waveform") }
-            assistantSettings
-                .tabItem { Label("Assistant", systemImage: "sparkles") }
-            connectionSettings
-                .tabItem { Label("Connection", systemImage: "network") }
-            audioSettings
-                .tabItem { Label("Audio", systemImage: "waveform.badge.mic") }
+        NavigationSplitView {
+            List(LiveSettingsSection.allCases, selection: $selectedSection) { section in
+                Label(section.title, systemImage: section.systemImage)
+                    .tag(section)
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 155, ideal: 175, max: 195)
+        } detail: {
+            VStack(spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(selectedSection.title)
+                            .font(.title2.weight(.semibold))
+                        Text(selectedSection.detail)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .padding(.bottom, 14)
+
+                Divider()
+
+                selectedSettings
+            }
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
         }
-        .padding(20)
-        .frame(width: 600, height: 500)
+        .frame(width: 760, height: 540)
         .onDisappear { model.saveSettings() }
+    }
+
+    @ViewBuilder
+    private var selectedSettings: some View {
+        switch selectedSection {
+        case .general: generalSettings
+        case .voice: voiceSettings
+        case .assistant: assistantSettings
+        case .connection: connectionSettings
+        case .audio: audioSettings
+        }
     }
 
     private var generalSettings: some View {
@@ -33,15 +61,18 @@ struct LiveSettingsView: View {
             }
 
             Section("Call window") {
-                LabeledContent("While connected", value: "Compact floating strip")
+                LabeledContent("While connected", value: "Floating Siri orb")
                 LabeledContent("After hangup", value: "Hide automatically")
                 LabeledContent("Mute shortcut", value: "Space while focused")
-                Text("Pi Live remains available in the menu bar after the call window closes.")
+                LabeledContent("Mouse", value: "Click to mute · Double-click to end")
+                LabeledContent("Escape", value: "Press twice to end")
+                Text("Pi Live remains available in the menu bar after the call window closes. Right-click the orb for explicit call controls.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 
     private var assistantSettings: some View {
@@ -98,6 +129,7 @@ struct LiveSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 
     private var voiceSettings: some View {
@@ -140,6 +172,7 @@ struct LiveSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 
     private var connectionSettings: some View {
@@ -175,6 +208,7 @@ struct LiveSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 
     private var audioSettings: some View {
@@ -183,8 +217,17 @@ struct LiveSettingsView: View {
                 AudioFeatureRow(title: "Echo cancellation", detail: "WebRTC acoustic echo cancellation")
                 AudioFeatureRow(title: "Noise suppression", detail: "WebRTC adaptive noise suppression")
                 AudioFeatureRow(title: "Automatic gain", detail: "Keeps speech at a consistent level")
-                AudioFeatureRow(title: "Voice activity", detail: "WebRTC VAD plus server turn detection")
+                AudioFeatureRow(title: "Media VAD", detail: "WebRTC voice activity detection")
                 AudioFeatureRow(title: "High-pass filter", detail: "Reduces low-frequency rumble")
+            }
+
+            Section("Conversation activity") {
+                LabeledContent("Turn detection", value: "Codex Live")
+                LabeledContent("Orb animation", value: "WebRTC audio telemetry")
+                Text("The orb uses smoothed media levels only for visual feedback. It does not gate or trim microphone audio.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
@@ -195,6 +238,47 @@ struct LiveSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+    }
+}
+
+private enum LiveSettingsSection: String, CaseIterable, Identifiable {
+    case general
+    case voice
+    case assistant
+    case connection
+    case audio
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .voice: "Voice"
+        case .assistant: "Assistant"
+        case .connection: "Connection"
+        case .audio: "Audio"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general: "gearshape"
+        case .voice: "waveform"
+        case .assistant: "sparkles"
+        case .connection: "network"
+        case .audio: "waveform.badge.mic"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .general: "Shortcuts and call-window behavior"
+        case .voice: "Choose the sound and color of Pi"
+        case .assistant: "Conversation and workspace preferences"
+        case .connection: "Transport, SSH, and Coder credentials"
+        case .audio: "Microphone processing and speech activity"
+        }
     }
 }
 

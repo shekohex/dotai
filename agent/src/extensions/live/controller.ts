@@ -5,6 +5,7 @@ import type {
   ExtensionContext,
   MessageEndEvent,
 } from "@earendil-works/pi-coding-agent";
+import { buildCodexAttestation, parseCodexDeviceCheckResult } from "./attestation.js";
 import {
   buildDelegationContextAppend,
   buildSessionClose,
@@ -165,8 +166,11 @@ export class LiveSessionController {
         dataChannel: "oai-events",
       });
       const offer = readSdp(offerResult);
+      const attestationResult = await connection.request("codex.createAttestation");
+      const attestation = buildCodexAttestation(parseCodexDeviceCheckResult(attestationResult));
       this.#emitPhase("connecting");
       const control = new CodexLiveControl({
+        attestation,
         context: this.#context,
         sessionId: this.#context.sessionManager.getSessionId(),
         instructions: buildLiveInstructions(this.#identity),

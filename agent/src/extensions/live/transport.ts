@@ -36,6 +36,7 @@ interface LiveSignalingResult {
 }
 
 export interface CodexLiveControlOptions {
+  attestation: string;
   context: ExtensionContext;
   sessionId: string;
   instructions: string;
@@ -115,6 +116,7 @@ function liveSessionHeaders(
   access: CodexAccess,
   sessionId: string,
   realtimeSessionId: string,
+  attestation: string,
 ): Record<string, string> {
   return {
     ...access.providerHeaders,
@@ -126,6 +128,7 @@ function liveSessionHeaders(
     version: CODEX_CLIENT_VERSION,
     "session-id": sessionId,
     "thread-id": sessionId,
+    "x-oai-attestation": attestation,
     ...(access.accountId !== undefined && access.accountId.length > 0
       ? { "chatgpt-account-id": access.accountId }
       : {}),
@@ -239,7 +242,12 @@ export class CodexLiveControl {
   async #signal(offer: string): Promise<LiveSignalingResult> {
     const access = await resolveCodexAccess(this.#options.context);
     const headers = new Headers({
-      ...liveSessionHeaders(access, this.#options.sessionId, this.#realtimeSessionId),
+      ...liveSessionHeaders(
+        access,
+        this.#options.sessionId,
+        this.#realtimeSessionId,
+        this.#options.attestation,
+      ),
       Accept: "*/*",
       "Content-Type": "application/json",
     });
@@ -282,7 +290,12 @@ export class CodexLiveControl {
 
   async #openSideband(callId: string, access: CodexAccess): Promise<void> {
     const socket = new WebSocket(buildLiveSidebandUrl(callId), {
-      headers: liveSessionHeaders(access, this.#options.sessionId, this.#realtimeSessionId),
+      headers: liveSessionHeaders(
+        access,
+        this.#options.sessionId,
+        this.#realtimeSessionId,
+        this.#options.attestation,
+      ),
     });
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     let opened = false;
@@ -396,3 +409,5 @@ export class CodexLiveControl {
     this.#state = "closed";
   }
 }
+
+export const _test = { liveSessionHeaders };

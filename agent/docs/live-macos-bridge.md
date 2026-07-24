@@ -56,7 +56,7 @@ Global defaults live under `settings.json#live` and are seeded from `src/default
       "lastName": "Khalifa",
       "username": "shekohex"
     },
-    "voice": "onyx",
+    "voice": "spruce",
     "transport": "coder",
     "sshTarget": "",
     "directHost": "",

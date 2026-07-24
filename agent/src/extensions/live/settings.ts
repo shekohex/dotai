@@ -60,7 +60,7 @@ export const defaultLiveSettings = {
     lastName: "Khalifa",
     username: "shekohex",
   },
-  voice: "onyx",
+  voice: "spruce",
   transport: "coder",
   sshTarget: "",
   directHost: "",

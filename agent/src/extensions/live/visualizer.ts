@@ -15,12 +15,11 @@ export type LivePhase =
 
 export interface LiveVisualizerOptions {
   theme: Theme;
-  pairingUri: string;
   endpointSummary: string;
   requestRender(): void;
   onStop(): void;
   onToggleMute(): void;
-  onCopied?(): void;
+  onCopy(): void;
 }
 
 function normalizeTranscript(text: string): string {
@@ -39,11 +38,6 @@ function truncateFromStart(text: string, width: number): string {
   if (width === 1) return "…";
   const characters = Array.from(text);
   return `…${characters.slice(Math.max(0, characters.length - width + 1)).join("")}`;
-}
-
-function copyWithOsc52(value: string): void {
-  const encoded = Buffer.from(value, "utf8").toString("base64");
-  process.stdout.write(`\u001B]52;c;${encoded}\u0007`);
 }
 
 function liveContent(phase: LivePhase, transcript: string, endpointSummary: string): string {
@@ -120,9 +114,8 @@ export class LiveVisualizer implements Component {
     } else if (matchesKey(data, "space")) {
       this.#options.onToggleMute();
     } else if (matchesKey(data, "enter")) {
-      copyWithOsc52(this.#options.pairingUri);
+      this.#options.onCopy();
       this.#copiedUntil = Date.now() + 2_000;
-      this.#options.onCopied?.();
       this.invalidate();
       this.#options.requestRender();
     }

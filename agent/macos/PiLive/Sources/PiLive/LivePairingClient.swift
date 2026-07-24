@@ -148,6 +148,8 @@ final class LivePairingClient {
 
     private func handleRequest(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         switch method {
+        case "codex.createAttestation":
+            return await CodexDeviceCheck.generate()
         case "webrtc.createOffer":
             return ["sdp": try await peer.createOffer()]
         case "webrtc.acceptAnswer":

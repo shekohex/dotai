@@ -1,5 +1,5 @@
 import Foundation
-import WebRTC
+@preconcurrency import WebRTC
 
 @MainActor
 final class LiveWebRTCPeer: NSObject {

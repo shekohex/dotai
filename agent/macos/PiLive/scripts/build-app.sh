@@ -14,9 +14,7 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Frameworks"
 cp "$ROOT/Info.plist" "$APP_DIR/Contents/Info.plist"
 cp "$BUILD_DIR/PiLive" "$APP_DIR/Contents/MacOS/PiLive"
 
-while IFS= read -r framework; do
-  cp -R "$framework" "$APP_DIR/Contents/Frameworks/"
-done < <(find "$ROOT/.build" -type d -name 'WebRTC.framework' -prune)
+cp -R "$BUILD_DIR/WebRTC.framework" "$APP_DIR/Contents/Frameworks/"
 
 install_name_tool -add_rpath '@executable_path/../Frameworks' "$APP_DIR/Contents/MacOS/PiLive" 2>/dev/null || true
 codesign --force --deep --sign - "$APP_DIR"

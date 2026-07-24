@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
+import { buildCodexAttestation } from "../src/extensions/live/attestation.js";
 import { _test as liveExtensionTest } from "../src/extensions/live/index.js";
 import { LivePairingServer } from "../src/extensions/live/pairing/server.js";
 import {
@@ -7,7 +8,11 @@ import {
   LIVE_PAIRING_PROTOCOL_VERSION,
 } from "../src/extensions/live/pairing/schemas.js";
 import { chunkLiveContext, parseLiveServerEvent } from "../src/extensions/live/protocol.js";
-import { buildLiveSidebandUrl, parseLiveCallId } from "../src/extensions/live/transport.js";
+import {
+  _test as liveTransportTest,
+  buildLiveSidebandUrl,
+  parseLiveCallId,
+} from "../src/extensions/live/transport.js";
 import { defaultLiveSettings, resolveLiveIdentity } from "../src/extensions/live/settings.js";
 
 const servers: LivePairingServer[] = [];
@@ -77,6 +82,35 @@ describe("Pi Live pairing", () => {
 });
 
 describe("Pi Live Codex protocol", () => {
+  it("builds the OMP Codex DeviceCheck attestation envelope", () => {
+    expect(
+      buildCodexAttestation({
+        supported: true,
+        tokenBase64: "dGVzdA==",
+        latencyMs: 12.5,
+        locale: "en-US",
+        timezone: "UTC",
+        appSessionId: "session-1",
+      }),
+    ).toBe(
+      '{"v":1,"s":0,"t":"v1.pGV0b2tlbmhkR1Z6ZEE9PWlidW5kbGVfaWRwY29tLm9wZW5haS5jb2RleGFmWCanAAEBgWVlbi1VUwJlZW4tVVMDY1VUQwQABQEGaXNlc3Npb24tMWF0-0ApAAAAAAAA"}',
+    );
+  });
+
+  it("sends Codex attestation with signaling and sideband headers", () => {
+    expect(
+      liveTransportTest.liveSessionHeaders(
+        { accessToken: "access", providerHeaders: {} },
+        "session-1",
+        "realtime-1",
+        "attestation-1",
+      ),
+    ).toMatchObject({
+      Authorization: "Bearer access",
+      "x-oai-attestation": "attestation-1",
+    });
+  });
+
   it("parses call IDs and sideband URLs", () => {
     expect(parseLiveCallId("https://api.openai.com/v1/live/rtc_abc-123?foo=bar")).toBe(
       "rtc_abc-123",

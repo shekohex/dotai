@@ -15,6 +15,7 @@ let package = Package(
             path: "Sources/PiLive",
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
+                .linkedFramework("DeviceCheck"),
                 .linkedFramework("Security"),
             ]
         ),

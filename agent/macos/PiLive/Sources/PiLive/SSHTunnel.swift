@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 
+@MainActor
 final class SSHTunnel {
     private var process: Process?
 
@@ -35,7 +36,9 @@ final class SSHTunnel {
         self.process = nil
     }
 
-    deinit { close() }
+    deinit {
+        if process?.isRunning == true { process?.terminate() }
+    }
 
     private func reserveLocalPort() throws -> Int {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)

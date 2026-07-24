@@ -1,7 +1,8 @@
-import type {
-  ExtensionAPI,
-  ExtensionCommandContext,
-  MessageEndEvent,
+import {
+  copyToClipboard,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  type MessageEndEvent,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, type Component } from "@earendil-works/pi-tui";
 import { LiveSessionController } from "./controller.js";
@@ -68,6 +69,15 @@ function parseLiveCommand(
 
 function endpointSummary(pairing: LivePairingServer): string {
   return pairing.descriptor.endpoints.map((endpoint) => endpoint.type).join(" + ");
+}
+
+async function copyPairingUri(uri: string, ctx: ExtensionCommandContext): Promise<void> {
+  try {
+    await copyToClipboard(uri);
+    ctx.ui.notify("Pi Live pairing URL copied to clipboard", "info");
+  } catch (cause) {
+    ctx.ui.notify(`Pi Live could not copy pairing URL: ${errorFrom(cause).message}`, "warning");
+  }
 }
 
 function livePanel(
@@ -165,7 +175,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
       });
       try {
         const descriptor = await pairing.start();
-        ctx.ui.notify(`Pi Live pairing URL:\n${descriptor.uri}`, "info");
+        await copyPairingUri(descriptor.uri, ctx);
         await ctx.ui.custom<void>((tui, theme, _keybindings, done) => {
           let finished = false;
           let controller: LiveSessionController;
@@ -178,7 +188,6 @@ export default function liveExtension(pi: ExtensionAPI): void {
           };
           const visualizer = new LiveVisualizer({
             theme,
-            pairingUri: descriptor.uri,
             endpointSummary: endpointSummary(pairing),
             requestRender: () => {
               tui.requestRender();
@@ -189,8 +198,8 @@ export default function liveExtension(pi: ExtensionAPI): void {
             onToggleMute: () => {
               controller.toggleMute();
             },
-            onCopied: () => {
-              ctx.ui.notify("Pi Live pairing URL copied", "info");
+            onCopy: () => {
+              void copyPairingUri(descriptor.uri, ctx);
             },
           });
           controller = new LiveSessionController({

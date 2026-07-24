@@ -30,6 +30,11 @@ import {
   assessDelegationLanguage,
   delegationTranscriptRelation,
 } from "../src/extensions/live/delegation-language.js";
+import {
+  buildDelegationNormalizerInput,
+  LIVE_DELEGATION_NORMALIZER_MODELS,
+  sanitizeNormalizedDelegation,
+} from "../src/extensions/live/delegation-normalizer.js";
 
 const servers: LivePairingServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -296,6 +301,18 @@ describe("Pi Live Codex protocol", () => {
       ),
     ).toBe("synthesized");
     expect(delegationTranscriptRelation(transcript, "")).toBe("unknown");
+  });
+
+  it("prefers fast helper models and sanitizes normalized delegations", () => {
+    expect(LIVE_DELEGATION_NORMALIZER_MODELS.slice(0, 3)).toEqual([
+      { provider: "codex-openai", model: "gpt-5.4-mini" },
+      { provider: "opencode-go", model: "deepseek-v4-flash" },
+      { provider: "deepseek", model: "deepseek-v4-flash" },
+    ]);
+    expect(buildDelegationNormalizerInput("  مرحبا  ")).toContain("<source-delegation>\nمرحبا");
+    expect(sanitizeNormalizedDelegation('English task: "Inspect the latest commits."')).toBe(
+      "Inspect the latest commits.",
+    );
   });
 
   it("resolves configurable live identity fields", () => {

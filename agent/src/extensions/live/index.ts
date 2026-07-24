@@ -144,9 +144,9 @@ function messageContentText(content: unknown): string {
   return text.join("\n");
 }
 
-function delegationRelationLabel(
-  relation: LiveDelegationMessageDetails["transcriptRelation"],
-): string {
+function delegationRelationLabel(details: LiveDelegationMessageDetails): string {
+  if (details.normalizedBy !== undefined) return "translated workspace task";
+  const relation = details.transcriptRelation;
   switch (relation) {
     case "verbatim":
       return "verbatim voice request";
@@ -157,6 +157,17 @@ function delegationRelationLabel(
     default:
       return "workspace task";
   }
+}
+
+function delegationRelationTone(details: LiveDelegationMessageDetails): "success" | "warning" {
+  if (details.normalizedBy !== undefined) return "success";
+  return details.transcriptRelation === "verbatim" ? "warning" : "success";
+}
+
+function delegationLanguageLabel(details: LiveDelegationMessageDetails): string {
+  if (details.normalizedBy !== undefined) return `normalized by ${details.normalizedBy}`;
+  if (details.languageAssessment === "english") return "English task";
+  return "short command";
 }
 
 function registerDelegationRenderers(pi: ExtensionAPI): void {
@@ -171,16 +182,23 @@ function registerDelegationRenderers(pi: ExtensionAPI): void {
       };
       const box = new Box(1, 1, (line) => theme.bg("customMessageBg", line));
       const title = theme.fg("accent", theme.bold("◆ Pi Live → workspace"));
-      const relationTone = details.transcriptRelation === "verbatim" ? "warning" : "success";
-      const relation = theme.fg(relationTone, delegationRelationLabel(details.transcriptRelation));
+      const relationTone = delegationRelationTone(details);
+      const relation = theme.fg(relationTone, delegationRelationLabel(details));
       const request = theme.fg("customMessageText", messageContentText(message.content));
       const lines = [`${title}  ${relation}`, "", request];
+      if (details.originalRequest !== undefined) {
+        lines.push(
+          "",
+          theme.fg("dim", "Original voice delegation"),
+          theme.fg("muted", details.originalRequest),
+        );
+      }
       if (expanded) {
         lines.push(
           "",
           theme.fg(
             "dim",
-            `Triggers AgentSession · voice turn ${details.sourceTurn} · ${details.languageAssessment === "english" ? "English task" : "short command"} · ${details.delegationId}`,
+            `Triggers AgentSession · voice turn ${details.sourceTurn} · ${delegationLanguageLabel(details)} · ${details.delegationId}`,
           ),
         );
       }
@@ -194,18 +212,18 @@ function registerDelegationRenderers(pi: ExtensionAPI): void {
     (entry, { expanded }, theme) => {
       const details = entry.data;
       const box = new Box(1, 1, (line) => theme.bg("customMessageBg", line));
-      const title = theme.fg("warning", theme.bold("◇ Pi Live delegation blocked"));
+      const title = theme.fg("warning", theme.bold("◇ Pi Live delegation failed"));
       const body = theme.fg(
         "customMessageText",
         details?.request ?? "Non-English delegation unavailable",
       );
-      const lines = [`${title}  ${theme.fg("dim", "retrying in English")}`, "", body];
+      const lines = [`${title}  ${theme.fg("dim", "normalization unavailable")}`, "", body];
       if (expanded && details !== undefined) {
         lines.push(
           "",
           theme.fg(
             "dim",
-            `Not sent to AgentSession · ${details.detectedLanguage} · ${details.transcriptRelation} · ${details.delegationId}`,
+            `Not sent to AgentSession · ${details.detectedLanguage} · ${details.message} · ${details.delegationId}`,
           ),
         );
       }

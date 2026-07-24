@@ -129,9 +129,16 @@ An accepted delegation becomes:
 pi.sendMessage(
   {
     customType: "live-delegation",
-    content: request,
+    content: agentRequest,
     display: true,
-    details: { delegationId, sourceTurn, transcriptRelation, languageAssessment },
+    details: {
+      delegationId,
+      sourceTurn,
+      transcriptRelation,
+      languageAssessment,
+      originalRequest,
+      normalizedBy,
+    },
   },
   { triggerTurn: true, deliverAs: "steer" },
 );
@@ -141,15 +148,21 @@ The delegation is a Pi custom message rather than a typed user message. It inten
 participates in LLM context and triggers the coding turn, but it now has a dedicated message
 renderer instead of looking like a user prompt. The chat shows an accent-colored
 `Pi Live → workspace` execution card and labels it as either a synthesized workspace task or a
-verbatim voice request. Expanded mode includes the source turn, language-gate assessment, and
-delegation ID.
+verbatim voice request. If helper normalization was required, the English execution task is primary
+and the original live-model delegation is shown underneath in muted color. Expanded mode includes
+the source turn, helper model, and delegation ID.
 
 The TypeScript boundary no longer trusts prompt compliance alone. It uses lightweight language
-detection plus non-Latin prose analysis before `sendMessage()`. A non-English delegation is
-persisted as a UI-only blocked-delegation entry, never sent to AgentSession, and returned to the live
-model with an instruction to immediately retry as concise English. This is especially important for
-Arabic, Spanish, and multilingual calls. Short ASCII command-like tasks are accepted because
-trigram language detection is unreliable for strings such as `Run git status`.
+detection plus non-Latin prose analysis before `sendMessage()`. English delegations bypass helper
+normalization and are delivered immediately. A non-English delegation is sent to an isolated fast
+normalizer model—not the active AgentSession—which translates and synthesizes one concise English
+execution task. The preferred fallback order is `codex-openai/gpt-5.4-mini`,
+`opencode-go/deepseek-v4-flash`, then `deepseek/deepseek-v4-flash`, followed by the remaining shared
+fallback models. Requests use minimal reasoning, a small output budget, no retries, and a short
+timeout. The original non-English request remains UI-only metadata and never enters AgentSession.
+Only if every normalizer fails is the delegation persisted as a failed UI-only entry and withheld
+from the coding model. Short ASCII command-like tasks bypass normalization because trigram language
+detection is unreliable for strings such as `Run git status`.
 
 Assistant text explicitly marked with OpenAI's `commentary` phase is appended to the active live delegation through the sideband commentary channel. Providers without phase metadata retain the OMP-compatible tool-use-text fallback. This gives the voice model current progress for accurate progress questions without reading raw tool chatter aloud. The final-answer phase is separated from commentary and sent after `agent_settled` as speakable context.
 

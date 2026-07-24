@@ -23,6 +23,7 @@ import { readAssistantTextPhase } from "../../utils/pi-ai-text.js";
 import type { ResolvedLiveIdentity } from "./settings.js";
 import { setLiveInstructions, setLiveVoice } from "./settings.js";
 import { assessDelegationLanguage, delegationTranscriptRelation } from "./delegation-language.js";
+import { normalizeLiveDelegation } from "./delegation-normalizer.js";
 
 const DEFAULT_VOICE = "sol";
 const OUTPUT_ACTIVE_LEVEL = 0.015;
@@ -35,6 +36,8 @@ export interface LiveDelegationMessageDetails {
   sourceTurn: number;
   transcriptRelation: "verbatim" | "synthesized" | "unknown";
   languageAssessment: "english" | "short-ambiguous";
+  originalRequest?: string;
+  normalizedBy?: string;
 }
 
 export interface LiveRejectedDelegationEntryData {
@@ -43,7 +46,8 @@ export interface LiveRejectedDelegationEntryData {
   sourceTurn: number;
   transcriptRelation: "verbatim" | "synthesized" | "unknown";
   detectedLanguage: string;
-  reason: "non-latin-prose" | "non-english";
+  reason: "normalization-failed";
+  message: string;
   timestamp: number;
 }
 
@@ -187,6 +191,7 @@ export class LiveSessionController {
   #assistantTranscriptTurn = 0;
   #lastTranscript: LiveTranscript | undefined;
   #sentCommentary = new Set<string>();
+  #delegationChain: Promise<void> = Promise.resolve();
 
   constructor(options: LiveSessionControllerOptions) {
     this.#pi = options.pi;
@@ -464,7 +469,7 @@ export class LiveSessionController {
         this.#finishTranscript(event.turn.role, event.turn.transcript);
         break;
       case "delegation.created":
-        this.#handleDelegation(event);
+        this.#queueDelegation(event);
         break;
       case "error":
         this.#reportFailure(new Error(event.message));
@@ -472,7 +477,19 @@ export class LiveSessionController {
     }
   }
 
-  #handleDelegation(event: Extract<LiveServerEvent, { type: "delegation.created" }>): void {
+  #queueDelegation(event: Extract<LiveServerEvent, { type: "delegation.created" }>): void {
+    this.#delegationChain = this.#delegationChain
+      .then(async () => {
+        await this.#handleDelegation(event);
+      })
+      .catch((cause) => {
+        if (!this.#stopped) this.#reportFailure(errorFrom(cause));
+      });
+  }
+
+  async #handleDelegation(
+    event: Extract<LiveServerEvent, { type: "delegation.created" }>,
+  ): Promise<void> {
     let request = "";
     for (const content of event.item.content) {
       if (content.type === "input_text") request += `${request ? "\n" : ""}${content.text}`;
@@ -490,34 +507,76 @@ export class LiveSessionController {
       englishScore: language.englishScore,
       accepted: language.accepted,
     });
-    if (!language.accepted) {
-      this.#pi.appendEntry<LiveRejectedDelegationEntryData>(LIVE_REJECTED_DELEGATION_ENTRY_TYPE, {
-        delegationId: event.item.id,
-        request,
-        sourceTurn: this.#userTranscriptTurn,
-        transcriptRelation,
-        detectedLanguage: language.detectedLanguage,
-        reason: language.reason,
-        timestamp: Date.now(),
-      });
+    let agentRequest = request;
+    let normalizedBy: string | undefined;
+    if (language.accepted) {
       appendLiveDiagnostic(
         this.#context.sessionManager.getSessionId(),
-        "delegation.rejected-non-english",
+        "delegation.normalization-bypassed",
         {
           delegationId: event.item.id,
-          detectedLanguage: language.detectedLanguage,
           reason: language.reason,
         },
       );
-      this.#queueSend(
-        buildDelegationContextAppend(
-          event.item.id,
-          "The client rejected this delegation before execution because its prose was not English. Do not report a failure to the user. Immediately create a new client delegation that synthesizes the same intent as one concise, self-contained English workspace task. Preserve non-English text only when it is exact literal data such as a filename, identifier, or quoted string.",
-          "commentary",
-        ),
-      );
-      this.#refreshAudioPhase();
-      return;
+    } else {
+      appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.normalizing", {
+        delegationId: event.item.id,
+        detectedLanguage: language.detectedLanguage,
+        characters: request.length,
+      });
+      try {
+        const normalized = await normalizeLiveDelegation(
+          request,
+          this.#context,
+          (name, details) => {
+            appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), name, {
+              delegationId: event.item.id,
+              ...details,
+            });
+          },
+        );
+        if (this.#stopped) return;
+        agentRequest = normalized.request;
+        normalizedBy = normalized.model;
+        appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.normalized", {
+          delegationId: event.item.id,
+          model: normalized.model,
+          durationMs: normalized.durationMs,
+          sourceCharacters: request.length,
+          normalizedCharacters: agentRequest.length,
+        });
+      } catch (cause) {
+        const error = errorFrom(cause);
+        if (this.#stopped) return;
+        this.#pi.appendEntry<LiveRejectedDelegationEntryData>(LIVE_REJECTED_DELEGATION_ENTRY_TYPE, {
+          delegationId: event.item.id,
+          request,
+          sourceTurn: this.#userTranscriptTurn,
+          transcriptRelation,
+          detectedLanguage: language.detectedLanguage,
+          reason: "normalization-failed",
+          message: error.message,
+          timestamp: Date.now(),
+        });
+        appendLiveDiagnostic(
+          this.#context.sessionManager.getSessionId(),
+          "delegation.normalization-failed",
+          {
+            delegationId: event.item.id,
+            detectedLanguage: language.detectedLanguage,
+            message: error.message,
+          },
+        );
+        this.#queueSend(
+          buildDelegationContextAppend(
+            event.item.id,
+            "The client could not normalize this delegation for execution. Briefly tell the user that the workspace request could not be started and ask them to try again. Do not claim that any work was performed.",
+            "commentary",
+          ),
+        );
+        this.#refreshAudioPhase();
+        return;
+      }
     }
     this.#activeDelegationId = event.item.id;
     this.#sentCommentary.clear();
@@ -525,13 +584,14 @@ export class LiveSessionController {
     this.#pi.sendMessage(
       {
         customType: LIVE_DELEGATION_MESSAGE_TYPE,
-        content: request,
+        content: agentRequest,
         display: true,
         details: {
           delegationId: event.item.id,
           sourceTurn: this.#userTranscriptTurn,
           transcriptRelation,
-          languageAssessment: language.reason,
+          languageAssessment: language.accepted ? language.reason : "english",
+          ...(normalizedBy === undefined ? {} : { originalRequest: request, normalizedBy }),
         } satisfies LiveDelegationMessageDetails,
       },
       { triggerTurn: true, deliverAs: "steer" },

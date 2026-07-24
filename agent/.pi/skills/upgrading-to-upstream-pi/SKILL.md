@@ -29,25 +29,31 @@ Use this workflow from `/home/coder/dotai/agent` when upgrading `@earendil-works
 
 ## Patch Workflow
 
-Our recurring patch removes the internal spacer from upstream `ToolExecutionComponent`:
+Our recurring coding-agent patch removes the internal spacer from upstream `ToolExecutionComponent`:
 
 ```diff
 -        this.addChild(new Spacer(1));
 ```
 
-Check if still needed:
+Our recurring `pi-ai` patches add transient Codex/OpenAI retry patterns to both the root and nested copies of `pi-ai`.
+
+Check if the spacer is still needed:
 
 `grep -n "this.addChild(new Spacer(1))" node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js | head`
 
-If still present:
+Check if retry patches are still needed:
 
-1. Remove the line using `apply_patch`.
-2. Delete old `patches/@earendil-works+pi-coding-agent+OLD.patch` using `apply_patch`.
-3. Run `npm install` to refresh lockfile and prove postinstall can apply patches.
-4. Run `npm run patch:deps -- @earendil-works/pi-coding-agent`.
-5. Confirm new patch is minimal and named for target version.
+`npm test -- --run test/modes-failover.test.ts -t "upstream agent auto-retry patch"`
 
-Do not carry old helper logic forward. The best patch is currently one-line only.
+If the spacer or retry assertions still fail:
+
+1. Apply required changes to installed package files using `apply_patch`.
+2. Delete old-version patch files using `apply_patch`.
+3. Run `npm run patch:deps -- @earendil-works/pi-coding-agent` for the spacer patch.
+4. Run `npm run patch:deps -- @earendil-works/pi-ai` for the root retry patch.
+5. Run `npm run patch:deps -- @earendil-works/pi-coding-agent/@earendil-works/pi-ai` for the nested retry patch.
+6. Confirm all generated patches are minimal and named for the target version.
+7. Reverse patches, invalidate the postinstall marker by updating patch mtimes, run `npm install`, and verify all patches reapply.
 
 ## Verification
 

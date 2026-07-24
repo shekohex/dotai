@@ -527,12 +527,10 @@ export class LiteRuntime {
     onUpdate?: AgentToolUpdateCallback,
   ): void {
     this.forwardChildEvent(sessionId, event);
-
     const existing = this.states.get(sessionId);
     if (!existing) {
       return;
     }
-
     if (event.type === "message_update") {
       const assistantEvent = event.assistantMessageEvent;
       const delta = "delta" in assistantEvent ? assistantEvent.delta : undefined;
@@ -540,7 +538,6 @@ export class LiteRuntime {
         onUpdate?.({ content: [{ type: "text", text: delta }], details: { event: event.type } });
       }
     }
-
     if (event.type === "tool_execution_start") {
       this.states.set(sessionId, {
         ...existing,
@@ -560,7 +557,6 @@ export class LiteRuntime {
       this.emitChangedStates();
     }
   }
-
   private forwardChildEvent(
     sessionId: string,
     event: Parameters<LiteAgentSession["subscribe"]>[0] extends (event: infer TEvent) => void
@@ -581,12 +577,8 @@ export class LiteRuntime {
       case "turn_start":
         this.emitChildEvent(sessionId, {
           type: "turn_start",
-          turnIndex:
-            "turnIndex" in event && typeof event.turnIndex === "number" ? event.turnIndex : 0,
-          timestamp:
-            "timestamp" in event && typeof event.timestamp === "number"
-              ? event.timestamp
-              : Date.now(),
+          turnIndex: 0,
+          timestamp: Date.now(),
         });
         return;
       case "turn_end":
@@ -601,11 +593,15 @@ export class LiteRuntime {
       case "auto_retry_end":
       case "auto_retry_start":
       case "agent_settled":
+      case "bash_execution_update":
       case "compaction_end":
       case "compaction_start":
       case "entry_appended":
       case "queue_update":
       case "session_info_changed":
+      case "summarization_retry_attempt_start":
+      case "summarization_retry_finished":
+      case "summarization_retry_scheduled":
       case "thinking_level_changed":
         break;
     }

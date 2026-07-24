@@ -1,7 +1,7 @@
-diff --git a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-index b3c27c8..6b70506 100644
---- a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-+++ b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
+diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
+index ac5c157..7a53d91 100644
+--- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
++++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
 @@ -43,6 +43,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "connection.?lost",
      "other side closed",
@@ -9,10 +9,10 @@ index b3c27c8..6b70506 100644
 +    "request failed",
 +    "failed after retries",
 +    "no response body",
-     "upstream.?connect",
-     "reset before headers",
-     "socket hang up",
-@@ -53,17 +56,22 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+     "getaddrinfo",
+     "ENOTFOUND",
+     "EAI_AGAIN",
+@@ -56,11 +59,13 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      // WebSocket transports can report close/error text instead of HTTP/fetch text.
      "websocket.?closed",
      "websocket.?error",
@@ -23,9 +23,10 @@ index b3c27c8..6b70506 100644
      "ended without",
      "stream ended before message_stop",
 +    "stream closed before response\\.completed",
+     "stream ended before a terminal response event",
      "http2 request did not get a response",
      // Provider-requested retry delay cap failures should flow through the outer
-     // retry policy so callers can surface/abort the backoff (#1123).
+@@ -68,6 +73,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "retry delay",
      // Explicit retry guidance emitted mid-stream by OpenAI Responses and Bedrock
      // stream exceptions (#6019).

@@ -69,6 +69,10 @@ export function createCommandHandler(ctx: CommandHandlerContext): CommandHandler
           ? ok(id, "cycle_thinking_level", null)
           : ok(id, "cycle_thinking_level", { level });
       }
+      case "get_available_thinking_levels":
+        return ok(id, "get_available_thinking_levels", {
+          levels: session.getAvailableThinkingLevels(),
+        });
       case "set_steering_mode":
         session.setSteeringMode(command.mode);
         return ok(id, "set_steering_mode");

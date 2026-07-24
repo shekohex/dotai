@@ -225,7 +225,7 @@ describe("openwiki extension", () => {
     ]);
 
     try {
-      (session.session.agent as { streamFn: typeof playbook.streamFn }).streamFn = (
+      (session.session.agent as { streamFunction: typeof playbook.streamFn }).streamFunction = (
         model,
         context,
         options,

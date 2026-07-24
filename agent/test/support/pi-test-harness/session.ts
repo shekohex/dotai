@@ -213,7 +213,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
       playbookState = state;
 
       // Replace the model with the playbook
-      (session.agent as any).streamFn = streamFn;
+      (session.agent as any).streamFunction = streamFn;
       (session.agent as any).getApiKey = () => "test-key";
 
       // Always wrap tools for event collection; if no mocks configured, pass empty map

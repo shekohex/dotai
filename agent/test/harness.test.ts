@@ -2843,7 +2843,7 @@ timedTest(
         ]),
       ]);
 
-      (session.session.agent as { streamFn: unknown }).streamFn = playbook.streamFn;
+      (session.session.agent as { streamFunction: unknown }).streamFunction = playbook.streamFn;
 
       await session.session.prompt("Show me the release flow");
       await session.session.agent.waitForIdle();
@@ -3736,7 +3736,7 @@ timedTest("mermaid command still emits a standalone preview message", async () =
       ]),
     ]);
 
-    (session.session.agent as { streamFn: unknown }).streamFn = playbook.streamFn;
+    (session.session.agent as { streamFunction: unknown }).streamFunction = playbook.streamFn;
 
     await session.session.prompt("Render the system flow");
     await session.session.agent.waitForIdle();

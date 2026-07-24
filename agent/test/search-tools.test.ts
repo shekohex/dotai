@@ -470,7 +470,7 @@ describe("search_tools", () => {
       ]);
       const { streamFn } = createPlaybookStreamFn([turn]);
       const providerContexts: Context[] = [];
-      (testSession.session.agent as any).streamFn = (
+      (testSession.session.agent as any).streamFunction = (
         model: any,
         context: Context,
         options: any,

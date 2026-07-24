@@ -6,6 +6,7 @@ import fffExtension from "./fff/index.js";
 import glanceExtension from "./glance/index.js";
 import gitStateExtension from "./git-state.js";
 import litellmGatewayExtension from "./litellm.js";
+import liveExtension from "./live/index.js";
 import modesExtension from "./modes.js";
 import openAIBetterExtension from "./openai-better/index.js";
 import openUsageExtension from "./openusage/index.js";
@@ -22,6 +23,7 @@ export const groupedExtensionsA: GroupedExtensionDefinition[] = [
   { id: "coreui", factory: coreUIExtension },
   { id: "fff", factory: fffExtension },
   { id: "glance", factory: glanceExtension },
+  { id: "live", factory: liveExtension },
   { id: "litellm", factory: litellmGatewayExtension },
   { id: "openai-better", factory: openAIBetterExtension },
   { id: "openusage", factory: openUsageExtension },

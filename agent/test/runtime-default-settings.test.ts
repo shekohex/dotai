@@ -85,6 +85,12 @@ describe("runtime default settings", () => {
         theme: "catppuccin-mocha",
         retry: { enabled: true, maxRetries: 1024 },
         subagents: { enabled: false },
+        live: {
+          enabled: true,
+          identity: { firstName: "Shady", lastName: "Khalifa", username: "shekohex" },
+          voice: "onyx",
+          transport: "coder",
+        },
       });
     } finally {
       await rm(tempDir, { recursive: true, force: true });

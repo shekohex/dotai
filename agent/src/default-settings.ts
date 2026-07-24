@@ -14,6 +14,7 @@ import { defaultSessionArchiveSettings } from "./extensions/session-archive/sett
 import { defaultSubagentsSettings } from "./extensions/subagent/settings.js";
 import { defaultAiAutocompleteSettings } from "./extensions/coreui/ai-autocomplete-settings.js";
 import { defaultRecapSettings } from "./extensions/recap/settings.js";
+import { defaultLiveSettings } from "./extensions/live/settings.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
 type TerminalSettings = NonNullable<AgentSettings["terminal"]> & { titleSpinner: boolean };
@@ -40,6 +41,7 @@ export type DefaultSettings = Omit<AgentSettings, "terminal"> & {
   aiAutocomplete: typeof defaultAiAutocompleteSettings;
   openaiBetter: typeof defaultOpenAIBetterSettings;
   recap: typeof defaultRecapSettings;
+  live: typeof defaultLiveSettings;
 };
 
 export const defaultSettings = {
@@ -76,6 +78,7 @@ export const defaultSettings = {
   interview: defaultInterviewSettings,
   openaiBetter: defaultOpenAIBetterSettings,
   recap: defaultRecapSettings,
+  live: defaultLiveSettings,
 } as const satisfies DefaultSettings;
 
 export { defaultModes, defaultModesSchema };

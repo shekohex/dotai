@@ -77,6 +77,7 @@
     "proper-lockfile": "^4.1.2",
     "turndown": "^7.2.4",
     "typebox": "^1.1.24",
+    "ws": "^8.21.1",
     "yaml": "^2.9.0",
     "zigpty": "^0.1.6"
   },

@@ -41,10 +41,21 @@ export function finalTextFromAssistant(message: AssistantMessage): string {
     .join("\n")
     .trim();
   if (finalAnswer.length > 0) return finalAnswer;
-  return message.content
+  const nonCommentary = message.content
     .filter(
       (content): content is Extract<(typeof message.content)[number], { type: "text" }> =>
         content.type === "text" && readAssistantTextPhase(content) !== "commentary",
+    )
+    .map((content) => content.text)
+    .join("\n")
+    .trim();
+  if (nonCommentary.length > 0 || message.stopReason !== "stop") return nonCommentary;
+  // A terminal response containing only commentary is still the provider's final response. Treat
+  // it as such rather than reporting a false empty completion.
+  return message.content
+    .filter(
+      (content): content is Extract<(typeof message.content)[number], { type: "text" }> =>
+        content.type === "text",
     )
     .map((content) => content.text)
     .join("\n")
@@ -72,5 +83,18 @@ export function assistantFromMessages(
 export function emptyAgentResponseReason(message: AssistantMessage | undefined): string {
   const errorMessage = message?.errorMessage?.trim();
   if (errorMessage !== undefined && errorMessage.length > 0) return errorMessage;
-  return message?.stopReason ?? "empty response";
+  if (message === undefined) return "empty response";
+  const kinds = new Set<string>();
+  for (const content of message.content) {
+    if (content.type === "text") {
+      kinds.add(content.text.trim().length > 0 ? "text" : "empty text");
+    } else if (content.type === "thinking") {
+      kinds.add("thinking only");
+    } else {
+      kinds.add(content.type);
+    }
+  }
+  const shape = kinds.size === 0 ? "no content" : [...kinds].join(" + ");
+  const outputTokens = message.usage?.output;
+  return `${message.stopReason} · ${shape}${outputTokens === undefined ? "" : ` · ${outputTokens} output tokens`}`;
 }

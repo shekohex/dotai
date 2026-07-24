@@ -4,8 +4,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { buildCodexAttestation } from "../src/extensions/live/attestation.js";
-import { emptyAgentResponseReason } from "../src/extensions/live/agent-response.js";
+import {
+  emptyAgentResponseReason,
+  finalTextFromAssistant,
+} from "../src/extensions/live/agent-response.js";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { _test as liveExtensionTest } from "../src/extensions/live/index.js";
 import { LivePairingServer } from "../src/extensions/live/pairing/server.js";
 import { buildLiveInstructions } from "../src/extensions/live/prompts.js";
@@ -38,6 +42,10 @@ import {
   LIVE_DELEGATION_NORMALIZER_MODELS,
   sanitizeNormalizedDelegation,
 } from "../src/extensions/live/delegation-normalizer.js";
+import {
+  omitEmptyLiveDelegationAssistantTurns,
+  promoteLiveDelegationsInOpenAIResponsesPayload,
+} from "../src/extensions/live/provider-context.js";
 
 const servers: LivePairingServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -146,6 +154,70 @@ describe("Pi Live Codex protocol", () => {
         errorMessage: "You have reached your usage limit.",
       } as AssistantMessage),
     ).toBe("You have reached your usage limit.");
+    expect(
+      emptyAgentResponseReason({
+        content: [{ type: "thinking", thinking: "brief" }],
+        stopReason: "stop",
+        usage: { output: 4 },
+      } as AssistantMessage),
+    ).toBe("stop · thinking only · 4 output tokens");
+  });
+
+  it("uses terminal commentary as a final response when no final-answer phase exists", () => {
+    expect(
+      finalTextFromAssistant({
+        content: [
+          {
+            type: "text",
+            text: "The workspace is clean.",
+            textSignature: JSON.stringify({ v: 1, id: "commentary", phase: "commentary" }),
+          },
+        ],
+        stopReason: "stop",
+      } as AssistantMessage),
+    ).toBe("The workspace is clean.");
+  });
+
+  it("promotes live delegation requests to OpenAI developer messages", () => {
+    const request = "Inspect the latest workspace changes.";
+    const result = promoteLiveDelegationsInOpenAIResponsesPayload(
+      {
+        model: "gpt-5.6-sol",
+        input: [
+          { role: "developer", content: "system" },
+          { role: "user", content: [{ type: "input_text", text: request }] },
+          { role: "user", content: [{ type: "input_text", text: "ordinary user message" }] },
+        ],
+      },
+      new Set([request]),
+    );
+    expect(result.promoted).toBe(1);
+    expect(result.payload).toMatchObject({
+      input: [
+        { role: "developer" },
+        { role: "developer", content: [{ type: "input_text", text: request }] },
+        { role: "user" },
+      ],
+    });
+  });
+
+  it("omits thinking-only live completion tails from retry context", () => {
+    const messages = [
+      {
+        role: "custom",
+        customType: "live-delegation",
+        content: "Inspect the workspace",
+        display: true,
+        timestamp: 1,
+      },
+      {
+        role: "assistant",
+        content: [{ type: "thinking", thinking: "brief" }],
+        stopReason: "stop",
+        timestamp: 2,
+      },
+    ] as AgentMessage[];
+    expect(omitEmptyLiveDelegationAssistantTurns(messages)).toEqual([messages[0]]);
   });
 
   it("builds the OMP Codex DeviceCheck attestation envelope", () => {

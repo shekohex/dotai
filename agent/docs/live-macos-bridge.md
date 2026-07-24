@@ -201,6 +201,15 @@ File diagnostics are opt-in and disabled by default. Settings → General → Di
 
 Delegations respect an already-running AgentSession turn. If Pi is idle, the custom delegation starts a new turn immediately. If Pi is streaming or still settling an existing turn, the delegation is queued as a follow-up rather than steered into the turn that is ending. The controller does not mark a delegation active until Pi emits `message_start` for that exact `live-delegation` message, preventing unrelated commentary or `agent_settled` events from consuming it. If the provider returns an error, abort, or empty assistant response, Pi Live reports that failure to both the TUI and voice model instead of silently clearing the delegation as successful.
 
+OMP's agent-attributed custom messages are serialized to the provider as `developer` messages. Pi
+0.82 serializes extension custom messages as `user` messages, so Pi Live corrects only its known
+delegation items in the already-built OpenAI Responses payload through `before_provider_request`.
+This preserves the visible custom-message renderer while matching OMP's provider semantics without
+patching Pi. Successful but thinking-only/empty `stop` responses are removed from provider context
+and retried up to three times with a hidden continuation reminder before being reported as a real
+delegation failure. Terminal commentary-only responses are accepted as final text rather than
+misclassified as empty.
+
 VoiceInk 2.0 was inspected locally at revision `69ed170c1d7f582e76f3f63a2ac2c30ddb3a2d75`. Its Settings UI reinforced the use of a category sidebar, grouped native forms, menu pickers, `LabeledContent`, concise explanatory footers, and hidden scroll backgrounds; Pi Live implements those patterns independently without copying GPL source. VoiceInk's VAD is a bundled Silero v5.1.2 model invoked through whisper.cpp against PCM during local transcription. That design is appropriate for offline speech segmentation, but it cannot be dropped into Pi Live's media path without obtaining PCM through a second/custom capture pipeline. WebRTC M150 exposes no public Objective-C PCM tap on `RTCAudioTrack`, `RTCAudioSource`, or `RTCRtpReceiver`, so Pi Live keeps WebRTC's built-in media VAD and Codex turn detection and uses level telemetry only for orb presentation.
 
 The End button, window dismissal, remote `/live` stop, and app Quit path use a graceful close handshake. The Mac first sends `session.stop`; TypeScript closes the OpenAI session and replies with `session.stop`; both sides then close WebRTC and pairing normally. Intentional ICE `.closed` callbacks are ignored after the peer has been detached, duplicate stop completion is suppressed, and cleanup-only sideband errors are diagnostic warnings rather than user-facing call failures.

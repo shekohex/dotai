@@ -51,6 +51,11 @@ The app now hides the call window after clean hangup while remaining in the menu
 
 When `/live` runs inside an established session, a delegation starts immediately only if `ctx.isIdle()` is true. If an AgentSession turn is active or settling, the delegation is delivered as a follow-up and becomes active only when its custom message emits `message_start`; never steer it into the turn that is ending. Empty/error/aborted AgentSession completions are surfaced to the TUI and live model rather than silently treated as a successful delegation.
 
+Pi 0.82 converts extension custom messages to provider `user` messages, unlike OMP's agent-attributed
+`developer` messages. Pi Live now promotes only known live delegation items in OpenAI Responses
+payloads via `before_provider_request`, with no dependency patch. Thinking-only/empty successful
+stops are pruned from retry context and retried up to three times before a detailed failure is shown.
+
 VoiceInk 2.0 was reviewed at `69ed170c1d7f582e76f3f63a2ac2c30ddb3a2d75`. Pi Live independently adopted its general native Settings lessons (sidebar categories, grouped forms, `LabeledContent`, menu pickers, short footers); no GPL code was copied. VoiceInk's Silero v5.1.2 VAD is wired through whisper.cpp for PCM transcription segmentation, not WebRTC conversation media. Do not add it to Pi Live unless WebRTC gains a supported PCM tap that preserves the single APM/capture pipeline.
 
 Preserve the architecture: Swift owns local media/UI/WebRTC; TypeScript owns ChatGPT auth/signaling/sideband/delegation/Pi session. Do not move audio into SSH, Coder, Herdr, or terminal transport.

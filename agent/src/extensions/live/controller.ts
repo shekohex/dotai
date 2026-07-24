@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- One controller owns the live call state machine and lifecycle. */
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type {
@@ -39,9 +40,11 @@ import type { ResolvedLiveIdentity } from "./settings.js";
 import { setLiveDiagnosticsEnabled, setLiveInstructions, setLiveVoice } from "./settings.js";
 import { assessDelegationLanguage, delegationTranscriptRelation } from "./delegation-language.js";
 import { normalizeLiveDelegation } from "./delegation-normalizer.js";
+import { LiveProviderContext } from "./provider-context.js";
 
 const DEFAULT_VOICE = "sol";
 const OUTPUT_ACTIVE_LEVEL = 0.015;
+const EMPTY_STOP_MAX_RETRIES = 3;
 export const LIVE_DELEGATION_MESSAGE_TYPE = "live-delegation";
 export const LIVE_TRANSCRIPT_ENTRY_TYPE = "live-transcript";
 export const LIVE_REJECTED_DELEGATION_ENTRY_TYPE = "live-rejected-delegation";
@@ -53,6 +56,13 @@ export interface LiveDelegationMessageDetails {
   languageAssessment: "english" | "short-ambiguous";
   originalRequest?: string;
   normalizedBy?: string;
+  retryAttempt?: number;
+}
+
+interface LiveDelegationExecution {
+  request: string;
+  details: LiveDelegationMessageDetails;
+  retries: number;
 }
 
 export interface LiveRejectedDelegationEntryData {
@@ -147,6 +157,8 @@ export class LiveSessionController {
   #phase: LivePhase = "waiting-for-app";
   #activeDelegationId: string | undefined;
   readonly #pendingDelegationIds = new Set<string>();
+  readonly #delegationExecutions = new Map<string, LiveDelegationExecution>();
+  readonly providerContext: LiveProviderContext;
   #lastAgentResponse: AssistantMessage | undefined;
   #mediaOpened = false;
   #outputLevel = 0;
@@ -171,6 +183,7 @@ export class LiveSessionController {
     const voice = options.voice?.trim();
     this.#voice = voice !== undefined && voice.length > 0 ? voice : DEFAULT_VOICE;
     this.#customInstructions = options.customInstructions?.trim() ?? "";
+    this.providerContext = new LiveProviderContext(options.context.sessionManager.getSessionId());
   }
 
   get phase(): LivePhase {
@@ -339,8 +352,18 @@ export class LiveSessionController {
       for (const chunk of chunkLiveContext(`${AGENT_FINAL_MESSAGE_PREFIX}${text}`)) {
         this.#queueSend(buildDelegationContextAppend(delegationId, chunk));
       }
+      this.#delegationExecutions.delete(delegationId);
     } else {
       const response = this.#lastAgentResponse;
+      const execution = this.#delegationExecutions.get(delegationId);
+      if (
+        response?.stopReason === "stop" &&
+        execution !== undefined &&
+        execution.retries < EMPTY_STOP_MAX_RETRIES
+      ) {
+        this.#retryEmptyDelegation(delegationId, execution, response);
+        return;
+      }
       const reason = emptyAgentResponseReason(response);
       const message = `Workspace agent stopped without a final response (${reason}).`;
       appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.agent-empty", {
@@ -358,6 +381,7 @@ export class LiveSessionController {
           "commentary",
         ),
       );
+      this.#delegationExecutions.delete(delegationId);
     }
     this.#activeDelegationId = undefined;
     this.#lastAgentResponse = undefined;
@@ -594,6 +618,15 @@ export class LiveSessionController {
       }
     }
     const agentWasIdle = this.#context.isIdle();
+    const details = {
+      delegationId: event.item.id,
+      sourceTurn: this.#userTranscriptTurn,
+      transcriptRelation,
+      languageAssessment: language.accepted ? language.reason : "english",
+      ...(normalizedBy === undefined ? {} : { originalRequest: request, normalizedBy }),
+    } satisfies LiveDelegationMessageDetails;
+    this.#delegationExecutions.set(event.item.id, { request: agentRequest, details, retries: 0 });
+    this.providerContext.rememberDelegation(agentRequest);
     this.#pendingDelegationIds.add(event.item.id);
     this.#emitPhase("working");
     appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.dispatched", {
@@ -605,15 +638,47 @@ export class LiveSessionController {
         customType: LIVE_DELEGATION_MESSAGE_TYPE,
         content: agentRequest,
         display: true,
-        details: {
-          delegationId: event.item.id,
-          sourceTurn: this.#userTranscriptTurn,
-          transcriptRelation,
-          languageAssessment: language.accepted ? language.reason : "english",
-          ...(normalizedBy === undefined ? {} : { originalRequest: request, normalizedBy }),
-        } satisfies LiveDelegationMessageDetails,
+        details,
       },
       agentWasIdle ? { triggerTurn: true } : { triggerTurn: true, deliverAs: "followUp" },
+    );
+  }
+
+  #retryEmptyDelegation(
+    delegationId: string,
+    execution: LiveDelegationExecution,
+    response: AssistantMessage,
+  ): void {
+    execution.retries += 1;
+    const retryRequest = `${execution.request}\n\n<system-injection>\nYou stopped without completing the delegated task. Continue and provide a substantive final answer.\nAttempt #${execution.retries}/${EMPTY_STOP_MAX_RETRIES}\n</system-injection>`;
+    this.providerContext.rememberDelegation(retryRequest);
+    this.#activeDelegationId = undefined;
+    this.#lastAgentResponse = undefined;
+    this.#sentCommentary.clear();
+    this.#pendingDelegationIds.add(delegationId);
+    this.#emitPhase("working");
+    appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.empty-retry", {
+      delegationId,
+      attempt: execution.retries,
+      maxAttempts: EMPTY_STOP_MAX_RETRIES,
+      stopReason: response.stopReason,
+      outputTokens: response.usage?.output,
+      contentTypes: response.content.map((content) => content.type),
+    });
+    const options = this.#context.isIdle()
+      ? { triggerTurn: true as const }
+      : { triggerTurn: true as const, deliverAs: "followUp" as const };
+    this.#pi.sendMessage(
+      {
+        customType: LIVE_DELEGATION_MESSAGE_TYPE,
+        content: retryRequest,
+        display: false,
+        details: {
+          ...execution.details,
+          retryAttempt: execution.retries,
+        },
+      },
+      options,
     );
   }
 

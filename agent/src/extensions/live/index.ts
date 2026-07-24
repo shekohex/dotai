@@ -240,6 +240,14 @@ export default function liveExtension(pi: ExtensionAPI): void {
   registerTranscriptRenderer(pi);
   registerDelegationRenderers(pi);
 
+  pi.on("context", (event) => {
+    const messages = active?.controller.providerContext.prepareAgentContext(event.messages);
+    return messages === undefined ? undefined : { messages };
+  });
+  pi.on("before_provider_request", (event, ctx) =>
+    active?.controller.providerContext.prepareProviderPayload(event.payload, ctx.model),
+  );
+
   pi.registerCommand("live", {
     description: "Start a local-microphone Codex Live session via the Pi Live macOS app",
     getArgumentCompletions(prefix) {

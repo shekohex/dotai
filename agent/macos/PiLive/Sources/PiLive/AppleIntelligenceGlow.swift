@@ -48,7 +48,10 @@ struct AppleIntelligenceGlow: View {
                 glowStroke(angle: primaryAngle, width: 1.15 + energy * 0.55)
                     .opacity(0.72 + energy * 0.22)
             }
-            .blendMode(.plusLighter)
+            // Keep enough transparent inset for the blur kernel. Without this,
+            // SwiftUI clips the blurred circle at its rectangular render bounds,
+            // making the halo look like a glowing square.
+            .padding(12)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)

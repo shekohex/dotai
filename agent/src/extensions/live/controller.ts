@@ -6,7 +6,17 @@ import type {
   MessageEndEvent,
 } from "@earendil-works/pi-coding-agent";
 import { buildCodexAttestation, parseCodexDeviceCheckResult } from "./attestation.js";
-import { appendLiveDiagnostic, LIVE_DIAGNOSTIC_LOG_PATH } from "./diagnostics.js";
+import {
+  applyLiveDiagnosticsSetting,
+  applyLiveInstructionsSetting,
+  applyLiveVoiceSetting,
+} from "./client-settings.js";
+import {
+  appendLiveDiagnostic,
+  configureLiveDiagnostics,
+  liveDiagnosticsEnabled,
+  LIVE_DIAGNOSTIC_LOG_PATH,
+} from "./diagnostics.js";
 import {
   buildDelegationContextAppend,
   buildSessionClose,
@@ -21,7 +31,11 @@ import type { LivePhase } from "./visualizer.js";
 import { isUnknownRecord } from "../../utils/unknown-value.js";
 import { readAssistantTextPhase } from "../../utils/pi-ai-text.js";
 import type { ResolvedLiveIdentity } from "./settings.js";
-import { setLiveInstructions, setLiveVoice } from "./settings.js";
+import {
+  setLiveDiagnosticsEnabled,
+  setLiveInstructions,
+  setLiveVoice,
+} from "./settings.js";
 import { assessDelegationLanguage, delegationTranscriptRelation } from "./delegation-language.js";
 import { normalizeLiveDelegation } from "./delegation-normalizer.js";
 
@@ -241,10 +255,20 @@ export class LiveSessionController {
         typeof connection.customInstructions === "string"
           ? setLiveInstructions(connection.customInstructions)
           : this.#customInstructions;
+      const diagnosticsEnabled =
+        typeof connection.diagnosticsEnabled === "boolean"
+          ? setLiveDiagnosticsEnabled(connection.diagnosticsEnabled)
+          : liveDiagnosticsEnabled();
+      configureLiveDiagnostics(diagnosticsEnabled);
       connection.notify("settings.voice", { voice, saved: true, appliesTo: "current" });
       connection.notify("settings.instructions", {
         saved: true,
         instructions: customInstructions,
+        appliesTo: "current",
+      });
+      connection.notify("settings.diagnostics", {
+        enabled: diagnosticsEnabled,
+        saved: true,
         appliesTo: "current",
       });
       this.#emitPhase("pairing");
@@ -293,10 +317,10 @@ export class LiveSessionController {
         message: error.message,
       });
       const diagnosedError = new Error(
-        `${error.message}\nDiagnostics: ${LIVE_DIAGNOSTIC_LOG_PATH}`,
-        {
-          cause: error,
-        },
+        liveDiagnosticsEnabled()
+          ? `${error.message}\nDiagnostics: ${LIVE_DIAGNOSTIC_LOG_PATH}`
+          : error.message,
+        { cause: error },
       );
       this.#reportFailure(diagnosedError);
       await this.stop();
@@ -431,10 +455,13 @@ export class LiveSessionController {
         void this.stop();
         break;
       case "settings.setVoice":
-        this.#handleVoiceSetting(params);
+        this.#connection?.notify("settings.voice", applyLiveVoiceSetting(params));
         break;
       case "settings.setInstructions":
-        this.#handleInstructionsSetting(params);
+        this.#connection?.notify("settings.instructions", applyLiveInstructionsSetting(params));
+        break;
+      case "settings.setDiagnostics":
+        this.#connection?.notify("settings.diagnostics", applyLiveDiagnosticsSetting(params));
         break;
       case "client.error":
         this.#reportFailure(
@@ -700,44 +727,6 @@ export class LiveSessionController {
     else if (this.#outputLevel > OUTPUT_ACTIVE_LEVEL) this.#emitPhase("speaking");
     else if (this.#mediaOpened) this.#emitPhase("listening");
     else this.#emitPhase("connecting");
-  }
-
-  #handleVoiceSetting(params: unknown): void {
-    try {
-      if (!isUnknownRecord(params) || typeof params.voice !== "string") {
-        throw new Error("Voice setting is missing a voice");
-      }
-      const voice = setLiveVoice(params.voice);
-      this.#connection?.notify("settings.voice", {
-        voice,
-        saved: true,
-        appliesTo: "next-session",
-      });
-    } catch (cause) {
-      this.#connection?.notify("settings.voice", {
-        saved: false,
-        message: errorFrom(cause).message,
-      });
-    }
-  }
-
-  #handleInstructionsSetting(params: unknown): void {
-    try {
-      if (!isUnknownRecord(params) || typeof params.instructions !== "string") {
-        throw new Error("Instruction setting is missing instructions");
-      }
-      const instructions = setLiveInstructions(params.instructions);
-      this.#connection?.notify("settings.instructions", {
-        saved: true,
-        instructions,
-        appliesTo: "next-session",
-      });
-    } catch (cause) {
-      this.#connection?.notify("settings.instructions", {
-        saved: false,
-        message: errorFrom(cause).message,
-      });
-    }
   }
 
   #guardEvent(handler: () => void): void {

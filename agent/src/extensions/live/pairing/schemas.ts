@@ -70,6 +70,7 @@ export const PairRequestParamsSchema = Type.Object(
         {
           voice: Type.Optional(LiveVoiceSchema),
           instructions: Type.Optional(Type.String({ maxLength: 8_000 })),
+          diagnosticsEnabled: Type.Optional(Type.Boolean()),
         },
         { additionalProperties: false },
       ),

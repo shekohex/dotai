@@ -121,6 +121,7 @@ struct PairRequestParams: Encodable {
     struct Preferences: Encodable {
         let voice: String
         let instructions: String
+        let diagnosticsEnabled: Bool
     }
 
     let protocolVersion: Int
@@ -149,8 +150,15 @@ struct InstructionsSettingParams: Codable, Sendable {
     let appliesTo: String?
     let message: String?
 }
+struct DiagnosticsSettingParams: Codable, Sendable {
+    let saved: Bool?
+    let enabled: Bool?
+    let appliesTo: String?
+    let message: String?
+}
 struct VoicePreferenceParams: Codable, Sendable { let voice: String }
 struct InstructionsPreferenceParams: Codable, Sendable { let instructions: String }
+struct DiagnosticsPreferenceParams: Codable, Sendable { let enabled: Bool }
 struct StopParams: Codable, Sendable { let reason: String }
 struct ErrorMessageParams: Codable, Sendable { let message: String }
 struct PongParams: Codable, Sendable { let timestamp: Double }

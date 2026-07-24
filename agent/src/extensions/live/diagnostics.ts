@@ -16,6 +16,21 @@ type LiveDiagnosticEntry = Static<typeof LiveDiagnosticEntrySchema>;
 export const LIVE_DIAGNOSTIC_LOG_PATH = join(getAgentRuntime(), "logs", "live.jsonl");
 
 let writeTail: Promise<void> = Promise.resolve();
+let diagnosticsEnabled = false;
+
+/**
+ * Enables or disables redacted Pi Live file diagnostics.
+ *
+ * @param {boolean} enabled Whether future diagnostic entries are written.
+ */
+export function configureLiveDiagnostics(enabled: boolean): void {
+  diagnosticsEnabled = enabled;
+}
+
+/** @returns {boolean} Whether Pi Live file diagnostics are active. */
+export function liveDiagnosticsEnabled(): boolean {
+  return diagnosticsEnabled;
+}
 
 /**
  * Appends redacted Pi Live diagnostics without delaying session work.
@@ -30,6 +45,7 @@ export function appendLiveDiagnostic(
   event: string,
   details: Record<string, unknown>,
 ): void {
+  if (!diagnosticsEnabled) return;
   const entry = Value.Parse(LiveDiagnosticEntrySchema, {
     timestamp: new Date().toISOString(),
     event,

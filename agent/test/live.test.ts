@@ -21,6 +21,7 @@ import {
   defaultLiveSettings,
   normalizeLiveVoice,
   resolveLiveIdentity,
+  setLiveDiagnosticsEnabled,
   setLiveInstructions,
   setLiveVoice,
 } from "../src/extensions/live/settings.js";
@@ -91,7 +92,11 @@ describe("Pi Live pairing", () => {
             outputLevel: false,
             deviceSelection: false,
           },
-          preferences: { voice: "maple", instructions: "Keep replies especially concise." },
+          preferences: {
+            voice: "maple",
+            instructions: "Keep replies especially concise.",
+            diagnosticsEnabled: true,
+          },
         },
       }),
     );
@@ -106,6 +111,7 @@ describe("Pi Live pairing", () => {
       open: true,
       preferredVoice: "maple",
       customInstructions: "Keep replies especially concise.",
+      diagnosticsEnabled: true,
     });
     const closed = new Promise<boolean>((resolve) => {
       connection.onClose((_error, clean) => resolve(clean === true));
@@ -254,6 +260,23 @@ describe("Pi Live Codex protocol", () => {
         voice: "sol",
         instructions: "Keep responses concise.",
       },
+    });
+  });
+
+  it("keeps diagnostics disabled by default and persists client opt-in", () => {
+    expect(defaultLiveSettings.diagnosticsEnabled).toBe(false);
+    const runtime = mkdtempSync(join(tmpdir(), "pi-live-diagnostics-"));
+    temporaryDirectories.push(runtime);
+    vi.stubEnv("PI_CODING_AGENT_DIR", runtime);
+    writeFileSync(
+      join(runtime, "settings.json"),
+      JSON.stringify({ recap: { enabled: false }, live: { transport: "coder", voice: "sol" } }),
+    );
+
+    expect(setLiveDiagnosticsEnabled(true)).toBe(true);
+    expect(JSON.parse(readFileSync(join(runtime, "settings.json"), "utf8"))).toEqual({
+      recap: { enabled: false },
+      live: { transport: "coder", voice: "sol", diagnosticsEnabled: true },
     });
   });
 

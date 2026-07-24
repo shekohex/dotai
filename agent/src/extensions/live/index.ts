@@ -14,7 +14,7 @@ import {
   type LiveRejectedDelegationEntryData,
   type LiveTranscriptEntryData,
 } from "./controller.js";
-import { LIVE_DIAGNOSTIC_LOG_PATH } from "./diagnostics.js";
+import { configureLiveDiagnostics, LIVE_DIAGNOSTIC_LOG_PATH } from "./diagnostics.js";
 import { LivePairingServer, type LivePairingMode } from "./pairing/server.js";
 import { LiveVisualizer } from "./visualizer.js";
 import {
@@ -271,6 +271,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
         return;
       }
       const settings = getLiveSettings();
+      configureLiveDiagnostics(settings.diagnosticsEnabled);
       if (!settings.enabled) {
         ctx.ui.notify("Pi Live is disabled in settings.json", "warning");
         return;
@@ -293,7 +294,9 @@ export default function liveExtension(pi: ExtensionAPI): void {
       try {
         const descriptor = await pairing.start();
         await copyPairingUri(descriptor.uri, ctx);
-        ctx.ui.notify(`Pi Live diagnostics: ${LIVE_DIAGNOSTIC_LOG_PATH}`, "info");
+        if (settings.diagnosticsEnabled) {
+          ctx.ui.notify(`Pi Live diagnostics: ${LIVE_DIAGNOSTIC_LOG_PATH}`, "info");
+        }
         await ctx.ui.custom<void>((tui, theme, _keybindings, done) => {
           let finished = false;
           let controller: LiveSessionController;

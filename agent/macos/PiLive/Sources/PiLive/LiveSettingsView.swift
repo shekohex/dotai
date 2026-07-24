@@ -70,6 +70,20 @@ struct LiveSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section("Diagnostics") {
+                Toggle(
+                    "Enable diagnostic logging",
+                    isOn: Binding(
+                        get: { model.diagnosticsEnabled },
+                        set: { model.setDiagnosticsEnabled($0) }
+                    )
+                )
+                Text("Disabled by default. When enabled, Pi writes redacted live-session events to ~/.pi/agent/logs/live.jsonl in the workspace. Existing log files are not deleted when logging is turned off.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

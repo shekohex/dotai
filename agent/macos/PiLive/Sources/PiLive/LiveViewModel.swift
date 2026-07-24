@@ -20,6 +20,7 @@ final class LiveViewModel {
     var speechActive = false
     var settingsMessage = ""
     var customInstructions: String
+    var diagnosticsEnabled: Bool
 
     var connected: Bool {
         ![.idle, .pairing, .connecting, .error].contains(phase)
@@ -47,6 +48,7 @@ final class LiveViewModel {
         preferredTransport = preferences.transport
         selectedVoice = preferences.voice
         customInstructions = preferences.instructions
+        diagnosticsEnabled = preferences.diagnosticsEnabled
 
         eventTask = Task { [weak self, events = client.events] in
             for await event in events {
@@ -82,7 +84,8 @@ final class LiveViewModel {
                     coderToken: coderToken,
                     sshTarget: sshTarget,
                     voice: selectedVoice,
-                    customInstructions: normalizedInstructions
+                    customInstructions: normalizedInstructions,
+                    diagnosticsEnabled: diagnosticsEnabled
                 )
             } catch {
                 phase = .error
@@ -125,6 +128,12 @@ final class LiveViewModel {
         saveSettings()
     }
 
+    func setDiagnosticsEnabled(_ enabled: Bool) {
+        diagnosticsEnabled = enabled
+        preferences.saveDiagnosticsEnabled(enabled)
+        client.setDiagnosticsEnabled(enabled)
+    }
+
     func prepareForTermination() async {
         if connected || ![.idle, .error].contains(phase) {
             await client.endSession()
@@ -156,6 +165,12 @@ final class LiveViewModel {
             settingsMessage = appliesTo == "current"
                 ? "Assistant preferences are active for this call"
                 : "Assistant preferences saved for the next call"
+        case let .diagnosticsSetting(enabled, appliesTo):
+            diagnosticsEnabled = enabled
+            preferences.saveDiagnosticsEnabled(enabled)
+            settingsMessage = enabled
+                ? "Diagnostic logging enabled for \(appliesTo == "current" ? "this call" : "the next call")"
+                : "Diagnostic logging disabled"
         }
     }
 
@@ -175,7 +190,8 @@ final class LiveViewModel {
             sshTarget: sshTarget,
             transport: preferredTransport,
             voice: selectedVoice,
-            instructions: normalizedInstructions
+            instructions: normalizedInstructions,
+            diagnosticsEnabled: diagnosticsEnabled
         )
     }
 

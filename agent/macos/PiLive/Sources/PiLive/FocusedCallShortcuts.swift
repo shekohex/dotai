@@ -53,10 +53,11 @@ struct FocusedCallShortcuts: NSViewRepresentable {
                       self.enabled,
                       !event.isARepeat,
                       NSApp.isActive,
-                      event.window === self.window,
-                      self.window?.isKeyWindow == true,
                       !(self.window?.firstResponder is NSTextView)
                 else { return event }
+                guard let window = self.window, window.isVisible else { return event }
+                let eventWindow = event.window ?? NSApp.keyWindow
+                guard eventWindow === window || NSApp.keyWindow === window else { return event }
                 let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
                     .subtracting([.capsLock, .function, .numericPad])
                 guard modifiers.isEmpty else { return event }

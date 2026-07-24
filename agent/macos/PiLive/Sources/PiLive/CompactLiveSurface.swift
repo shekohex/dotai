@@ -30,7 +30,7 @@ struct CompactLiveSurface: View {
                     inputLevel: model.inputLevel,
                     outputLevel: model.outputLevel
                 )
-                .frame(width: 94, height: 94)
+                .frame(width: 106, height: 106)
                 .opacity(escapeArmed ? 0.45 : 1)
 
                 VoiceOrb(
@@ -71,7 +71,7 @@ struct CompactLiveSurface: View {
                 .frame(width: 92, height: 92)
                 .accessibilityHidden(true)
             }
-            .frame(width: 102, height: 102)
+            .frame(width: 106, height: 106)
             .contentShape(Circle())
             .contextMenu {
                 Button(model.muted ? "Unmute" : "Mute") {
@@ -97,8 +97,8 @@ struct CompactLiveSurface: View {
         }
         .padding(8)
         .frame(
-            width: escapeArmed ? 210 : 118,
-            height: escapeArmed ? 154 : 118,
+            width: escapeArmed ? 210 : 122,
+            height: escapeArmed ? 158 : 122,
             alignment: .bottom
         )
         .animation(.snappy(duration: 0.26), value: escapeArmed)

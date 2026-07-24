@@ -47,4 +47,15 @@ final class PairingModelsTests: XCTestCase {
         XCTAssertEqual(object["method"] as? String, "webrtc.createOffer")
         XCTAssertNotNil(object["params"] as? [String: Any])
     }
+
+    func testEncodesDiagnosticsPairingPreference() throws {
+        let preferences = PairRequestParams.Preferences(
+            voice: "sol",
+            instructions: "",
+            diagnosticsEnabled: false
+        )
+        let data = try JSONEncoder().encode(preferences)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["diagnosticsEnabled"] as? Bool, false)
+    }
 }

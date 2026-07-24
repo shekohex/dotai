@@ -22,6 +22,7 @@ export const LiveSettingsSchema = Type.Object(
     identity: Type.Optional(LiveIdentitySettingsSchema),
     voice: Type.Optional(Type.String()),
     instructions: Type.Optional(Type.String({ maxLength: 8_000 })),
+    diagnosticsEnabled: Type.Optional(Type.Boolean()),
     transport: Type.Optional(
       Type.Union([
         Type.Literal("auto"),
@@ -68,6 +69,7 @@ export const defaultLiveSettings = {
   },
   voice: "sol",
   instructions: "",
+  diagnosticsEnabled: false,
   transport: "coder",
   sshTarget: "",
   directHost: "",
@@ -133,6 +135,19 @@ export function setLiveInstructions(instructions: string): string {
     live.instructions = normalized;
   });
   return normalized;
+}
+
+/**
+ * Atomically persists whether redacted Pi Live diagnostics are written.
+ *
+ * @param {boolean} enabled Whether live.jsonl logging is enabled.
+ * @returns {boolean} Persisted value.
+ */
+export function setLiveDiagnosticsEnabled(enabled: boolean): boolean {
+  updateLiveSettings((live) => {
+    live.diagnosticsEnabled = enabled;
+  });
+  return enabled;
 }
 
 function updateLiveSettings(update: (live: Record<string, unknown>) => void): void {

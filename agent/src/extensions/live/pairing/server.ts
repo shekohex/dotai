@@ -133,6 +133,7 @@ function resolveEndpoints(options: {
 export class LiveMediaConnection {
   readonly preferredVoice: LiveVoice | undefined;
   readonly customInstructions: string | undefined;
+  readonly diagnosticsEnabled: boolean | undefined;
   readonly #socket: WebSocket;
   readonly #pending = new Map<
     string,
@@ -147,6 +148,7 @@ export class LiveMediaConnection {
     this.#socket = socket;
     this.preferredVoice = preferences?.voice;
     this.customInstructions = preferences?.instructions;
+    this.diagnosticsEnabled = preferences?.diagnosticsEnabled;
     socket.on("message", (data, isBinary) => {
       if (isBinary) return;
       this.#handleMessage(rawDataText(data));

@@ -32,13 +32,17 @@ final class LiveWindowCoordinator {
     }
 
     private func configure(_ window: NSWindow) {
-        window.styleMask = [.borderless]
+        // A truly borderless NSWindow does not become key by default, so it
+        // never receives Space/Escape. Keep an invisible full-size title bar
+        // to preserve key-window behavior while rendering no window chrome.
+        window.styleMask = [.titled, .fullSizeContentView]
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.isMovable = true
         window.isMovableByWindowBackground = true
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         window.isOpaque = false
         window.backgroundColor = .clear
         // AppKit otherwise shadows the rectangular transparent window rather

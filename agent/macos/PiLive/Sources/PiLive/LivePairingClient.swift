@@ -9,6 +9,7 @@ enum LiveClientEvent: Sendable {
     case levels(input: Double, output: Double, speechActive: Bool)
     case voiceSetting(voice: LiveVoice, appliesTo: String)
     case instructionsSetting(appliesTo: String)
+    case diagnosticsSetting(enabled: Bool, appliesTo: String)
 }
 
 @MainActor
@@ -57,7 +58,8 @@ final class LivePairingClient {
         coderToken: String,
         sshTarget: String,
         voice: LiveVoice,
-        customInstructions: String
+        customInstructions: String,
+        diagnosticsEnabled: Bool
     ) async throws {
         close()
         ending = false
@@ -101,7 +103,11 @@ final class LivePairingClient {
                     outputLevel: true,
                     deviceSelection: false
                 ),
-                preferences: .init(voice: voice.rawValue, instructions: customInstructions)
+                preferences: .init(
+                    voice: voice.rawValue,
+                    instructions: customInstructions,
+                    diagnosticsEnabled: diagnosticsEnabled
+                )
             )
         ))
         let pairResponse = try await receiveFrame()
@@ -136,6 +142,16 @@ final class LivePairingClient {
             try? await notify(
                 "settings.setInstructions",
                 params: InstructionsPreferenceParams(instructions: instructions)
+            )
+        }
+    }
+
+    func setDiagnosticsEnabled(_ enabled: Bool) {
+        guard socket != nil else { return }
+        Task {
+            try? await notify(
+                "settings.setDiagnostics",
+                params: DiagnosticsPreferenceParams(enabled: enabled)
             )
         }
     }
@@ -237,6 +253,16 @@ final class LivePairingClient {
             let params = try frame.params.decode(InstructionsSettingParams.self)
             if params.saved == true {
                 emit(.instructionsSetting(appliesTo: params.appliesTo ?? "next-session"))
+            } else if let message = params.message {
+                emit(.failure(PiLiveError.protocolError(message).localizedDescription))
+            }
+        case "settings.diagnostics":
+            let params = try frame.params.decode(DiagnosticsSettingParams.self)
+            if params.saved == true, let enabled = params.enabled {
+                emit(.diagnosticsSetting(
+                    enabled: enabled,
+                    appliesTo: params.appliesTo ?? "current"
+                ))
             } else if let message = params.message {
                 emit(.failure(PiLiveError.protocolError(message).localizedDescription))
             }

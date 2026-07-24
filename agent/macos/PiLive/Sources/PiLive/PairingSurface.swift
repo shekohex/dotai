@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct PairingSurface: View {
@@ -32,7 +33,7 @@ struct PairingSurface: View {
 
             Spacer()
 
-            Button { openSettings() } label: {
+            Button { showSettings() } label: {
                 Image(systemName: "gearshape.fill")
                     .frame(width: 30, height: 30)
             }
@@ -125,6 +126,11 @@ struct PairingSurface: View {
 
     private var pairingLinkReady: Bool {
         model.pairingURL.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("pi-live://pair#")
+    }
+
+    private func showSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
     }
 
     private var phaseLabel: String {

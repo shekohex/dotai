@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct CompactLiveSurface: View {
@@ -77,7 +78,7 @@ struct CompactLiveSurface: View {
                     model.toggleMute()
                 }
                 Button("Settings…") {
-                    openSettings()
+                    showSettings()
                 }
                 Divider()
                 Button("End Call", role: .destructive) {
@@ -112,5 +113,10 @@ struct CompactLiveSurface: View {
         if model.muted { return "Pi Live. Microphone muted." }
         if model.speechActive { return "Pi Live is hearing you." }
         return "Pi Live. \(model.phase.rawValue)."
+    }
+
+    private func showSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
     }
 }

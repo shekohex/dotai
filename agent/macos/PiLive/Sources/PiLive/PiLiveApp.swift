@@ -44,19 +44,40 @@ struct PiLiveApp: App {
         }
 
         MenuBarExtra("Pi Live", systemImage: "waveform.circle.fill") {
-            Button("Show Pi Live") {
-                model.activateFromGlobalShortcut()
+            PiLiveMenu(model: model)
+        }
+    }
+}
+
+private struct PiLiveMenu: View {
+    @Bindable var model: LiveViewModel
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        Button("Show Pi Live") {
+            model.activateFromGlobalShortcut()
+        }
+        Button("Settings…") {
+            showSettings()
+        }
+        .keyboardShortcut(",", modifiers: .command)
+        Divider()
+        Button("Quit") {
+            Task {
+                await model.prepareForTermination()
+                NSApp.terminate(nil)
             }
-            SettingsLink {
-                Text("Settings…")
-            }
-            Divider()
-            Button("Quit") {
-                Task {
-                    await model.prepareForTermination()
-                    NSApp.terminate(nil)
-                }
-            }
+        }
+    }
+
+    private func showSettings() {
+        // Menu-bar apps use the accessory activation policy. Explicitly activate
+        // before opening Settings so SwiftUI can create or raise its window.
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
+        Task { @MainActor in
+            await Task.yield()
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 }

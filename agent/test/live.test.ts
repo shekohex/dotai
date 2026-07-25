@@ -356,6 +356,11 @@ describe("Pi Live Codex protocol", () => {
     expect(instructions).toContain("MUST NOT delegate ordinary conversation");
     expect(instructions).toContain("Every client delegation MUST be written in English");
     expect(instructions).toContain("spoken reply MUST use the language of the user's latest turn");
+    expect(instructions).toContain("sharp, energetic coworker");
+    expect(instructions).toContain("collaborator, not a passive dictation interface");
+    expect(instructions).toContain(
+      "Clear, well-scoped, reversible work SHOULD be delegated immediately",
+    );
     expect(instructions).toContain("Use a warm tone.");
   });
 

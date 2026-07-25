@@ -117,6 +117,8 @@ Final realtime transcripts are persisted with Pi's `appendEntry()` API and rende
 
 The live model first decides whether workspace execution is actually required. Greetings, social conversation, confirmations, clarifying conversation, and questions answerable from the current voice context stay entirely inside the realtime conversation.
 
+The default personality is an energetic, technically opinionated coworker rather than a passive command router. Pi Live can challenge risky, contradictory, needlessly complex, or premature proposals and suggest a better direction. It discusses material architecture, product, security, destructive-action, scope, and tradeoff decisions before delegation, while clear reversible tasks still delegate immediately without ceremonial confirmation. Pushback is concise and practical, never manufactured, combative, or used to repeatedly relitigate a choice the user has already made. Custom Assistant instructions can further tune this personality without overriding the routing and language contract.
+
 Only a server-generated `delegation.created` becomes a coding turn. The live model authors the
 `item.content` in that event; TypeScript does not derive it from `turn.done` or automatically copy
 the latest transcript. The live model is therefore capable of synthesizing a standalone task, but

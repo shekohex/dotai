@@ -60,4 +60,6 @@ bypass normalization.
 
 VoiceInk 2.0 was reviewed at `69ed170c1d7f582e76f3f63a2ac2c30ddb3a2d75`. Pi Live independently adopted its general native Settings lessons (sidebar categories, grouped forms, `LabeledContent`, menu pickers, short footers); no GPL code was copied. VoiceInk's Silero v5.1.2 VAD is wired through whisper.cpp for PCM transcription segmentation, not WebRTC conversation media. Do not add it to Pi Live unless WebRTC gains a supported PCM tap that preserves the single APM/capture pipeline.
 
+The canonical live prompt now gives the realtime model a default coworker personality: energetic, warm, technically curious, opinionated, and lightly witty when natural. It should push back briefly on risky, contradictory, needlessly complex, or premature ideas and discuss unresolved material architecture/product/security/scope tradeoffs before delegation. It must not manufacture disagreement or ask for confirmation on clear reversible work; once the user chooses, it should execute without relitigating the decision. User-authored Assistant instructions may tune this personality but cannot override routing, delegation language, or source-language replies.
+
 Preserve the architecture: Swift owns local media/UI/WebRTC; TypeScript owns ChatGPT auth/signaling/sideband/delegation/Pi session. Do not move audio into SSH, Coder, Herdr, or terminal transport.

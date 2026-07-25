@@ -171,6 +171,8 @@ New voice requests can create a fresh delegation while work is active. Each one 
 
 Every delegation is synthesized in English rather than copied from the transcript. If the user speaks Arabic, Spanish, or another language, Pi Live continues speaking in that language while sending only a concise English execution request to the Pi AgentSession. Literal strings, filenames, identifiers, and quoted data retain their exact spelling when required.
 
+Long spoken turns are protected from delegation summarization loss. Once a user turn lasts roughly a minute or reaches an equivalent word/character threshold, TypeScript appends the complete transcript after the concise execution task. English transcript text is preserved verbatim. Non-English transcript text is translated faithfully in bounded chunks with a 6,144-token output budget per chunk, then all translated chunks are appended in order. Chunk boundaries preserve every source character, so long Arabic and other non-English turns are not reduced to the live model's short delegation excerpt.
+
 ## macOS app
 
 The app source is in `macos/PiLive`.

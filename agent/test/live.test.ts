@@ -41,8 +41,13 @@ import {
   buildDelegationNormalizerInput,
   LIVE_DELEGATION_NORMALIZER_MODELS,
   sanitizeNormalizedDelegation,
+  splitLiveTranscriptForTranslation,
 } from "../src/extensions/live/delegation-normalizer.js";
 import { omitEmptyLiveDelegationAssistantTurns } from "../src/extensions/live/provider-context.js";
+import {
+  buildDelegationWithTranscriptContext,
+  prepareLongTranscriptContext,
+} from "../src/extensions/live/delegation-context.js";
 
 const servers: LivePairingServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -394,6 +399,57 @@ describe("Pi Live Codex protocol", () => {
     expect(sanitizeNormalizedDelegation('English task: "Inspect the latest commits."')).toBe(
       "Inspect the latest commits.",
     );
+  });
+
+  it("delivers a long English transcript verbatim with the coding task", async () => {
+    const transcript = [
+      "ENGLISH_CONTEXT_BEGIN",
+      ...Array.from({ length: 120 }, (_, index) => `detail-${index}`),
+      "ENGLISH_CONTEXT_END",
+    ].join(" ");
+    const translate = vi.fn();
+    const context = await prepareLongTranscriptContext(transcript, 61_000, translate);
+    const request = buildDelegationWithTranscriptContext(
+      "Implement the requested changes.",
+      context,
+    );
+
+    expect(translate).not.toHaveBeenCalled();
+    expect(context?.text).toBe(transcript);
+    expect(request).toContain(transcript);
+    expect(request).toContain("ENGLISH_CONTEXT_BEGIN");
+    expect(request).toContain("ENGLISH_CONTEXT_END");
+  });
+
+  it("translates and delivers the complete long Arabic transcript context", async () => {
+    const transcript = [
+      "بداية_السياق",
+      ...Array.from({ length: 120 }, (_, index) => `تفصيل-${index}`),
+      "نهاية_السياق",
+    ].join(" ");
+    const completeTranslation = [
+      "ARABIC_CONTEXT_BEGIN",
+      ...Array.from({ length: 120 }, (_, index) => `translated-detail-${index}`),
+      "ARABIC_CONTEXT_END",
+    ].join(" ");
+    const translate = vi.fn(async (source: string) => {
+      expect(source).toBe(transcript);
+      return { text: completeTranslation, model: "codex-openai/gpt-5.4-mini" };
+    });
+    const context = await prepareLongTranscriptContext(transcript, 61_000, translate);
+    const request = buildDelegationWithTranscriptContext("Inspect the requested UI flow.", context);
+
+    expect(translate).toHaveBeenCalledOnce();
+    expect(context?.sourceCharacters).toBe(transcript.length);
+    expect(context?.text).toBe(completeTranslation);
+    expect(request).toContain(completeTranslation);
+    expect(request).toContain("ARABIC_CONTEXT_BEGIN");
+    expect(request).toContain("ARABIC_CONTEXT_END");
+  });
+
+  it("splits long translation input without dropping source characters", () => {
+    const transcript = `بداية ${"تفاصيل كثيرة ".repeat(900)} نهاية`;
+    expect(splitLiveTranscriptForTranslation(transcript).join("")).toBe(transcript);
   });
 
   it("resolves configurable live identity fields", () => {

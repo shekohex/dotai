@@ -367,3 +367,107 @@ export async function callRemoteCompactionEndpoint(params: {
     usage: extractRemoteCompactionUsage(params.model, parsed.usage),
   };
 }
+
+function extractResponseOutputText(value: unknown): string {
+  const response = asRecord(value);
+  if (typeof response?.output_text === "string") return response.output_text;
+  if (!Array.isArray(response?.output)) return "";
+  const parts: string[] = [];
+  for (const item of response.output as unknown[]) {
+    const content = asRecord(item)?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content as unknown[]) {
+      const record = asRecord(part);
+      if (record?.type === "output_text" && typeof record.text === "string") {
+        parts.push(record.text);
+      }
+    }
+  }
+  return parts.join("");
+}
+
+function parseRemoteContinuitySummaryEvents(events: unknown[]): string {
+  let completed = false;
+  let text = "";
+  for (const value of events) {
+    const event = asRecord(value);
+    const type = readString(event?.type);
+    if (type === "error") {
+      throw new Error(
+        `OpenAI continuity summary failed: ${readString(event?.message) ?? "Unknown error"}`,
+      );
+    }
+    if (type === "response.failed") {
+      throw new Error(`OpenAI continuity summary failed: ${remoteFailureMessage(event?.response)}`);
+    }
+    if (type === "response.output_text.delta") {
+      text += readString(event?.delta) ?? "";
+      continue;
+    }
+    if (type === "response.output_text.done" && text.trim().length === 0) {
+      text = readString(event?.text) ?? "";
+      continue;
+    }
+    if (type === "response.completed") {
+      completed = true;
+      if (text.trim().length === 0) text = extractResponseOutputText(event?.response);
+    }
+  }
+  if (!completed) {
+    throw new Error("OpenAI continuity summary stream ended before response.completed.");
+  }
+  const summary = text.trim();
+  if (summary.length === 0) throw new Error("OpenAI continuity summary returned no text.");
+  return summary;
+}
+
+export async function callRemoteContinuitySummaryEndpoint(params: {
+  model: Model<Api>;
+  apiKey: string;
+  headers?: Record<string, string>;
+  sessionId?: string;
+  input: ResponseItem[];
+  instructions?: string;
+  prompt: string;
+  reasoning?: ResponsesReasoningConfig;
+  text?: ResponsesTextConfig;
+  signal?: AbortSignal;
+}): Promise<string> {
+  if (!supportsOpenAIRemoteCompaction(params.model)) {
+    throw new Error("Remote continuity summary only supports codex-openai and openai-codex.");
+  }
+  const input = [
+    ...params.input,
+    {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: params.prompt }],
+    },
+  ];
+  const response = await fetch(remoteCompactionEndpointUrl(params.model), {
+    method: "POST",
+    headers: buildRemoteCompactionHeaders(params),
+    body: JSON.stringify({
+      model: params.model.id,
+      input,
+      instructions: params.instructions,
+      tools: [],
+      parallel_tool_calls: false,
+      stream: true,
+      store: false,
+      include: ["reasoning.encrypted_content"],
+      max_output_tokens: 8192,
+      ...(params.sessionId === undefined ? {} : { prompt_cache_key: params.sessionId }),
+      ...(params.reasoning === undefined ? {} : { reasoning: params.reasoning }),
+      ...(params.text === undefined ? {} : { text: params.text }),
+    }),
+    signal: params.signal,
+  });
+  if (!response.ok) {
+    const responseText = await response.text().catch(() => "");
+    throw new Error(
+      `OpenAI continuity summary failed (${response.status}): ${responseText || response.statusText}`,
+    );
+  }
+  return parseRemoteContinuitySummaryEvents(parseSseData(await response.text()));
+}

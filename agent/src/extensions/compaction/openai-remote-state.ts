@@ -238,13 +238,176 @@ export function messageMatchesModel(message: AgentMessage, model: Model<Api>): b
 export function applyRemoteHistoryPayload(
   payload: unknown,
   explicitHistory: ResponseItem[],
+  replacementHistoryLength = 0,
 ): Record<string, unknown> | undefined {
   const record = asRecord(payload);
   if (record === undefined) return undefined;
-  const nextPayload: Record<string, unknown> = { ...record, input: explicitHistory };
+  const nextPayload: Record<string, unknown> = {
+    ...record,
+    input: mergeRemoteHistoryWithFreshPayload(record, explicitHistory, replacementHistoryLength),
+  };
   delete nextPayload.messages;
   delete nextPayload.previous_response_id;
   return nextPayload;
+}
+
+type ProviderInputItem = Record<string, unknown>;
+
+function parseResponseInput(record: Record<string, unknown>): ProviderInputItem[] {
+  if (!Value.Check(RequestInputSchema, record.input)) return [];
+  return Value.Parse(RequestInputSchema, record.input).flatMap((value) => {
+    const item = asRecord(value);
+    return item === undefined ? [] : [structuredClone(item)];
+  });
+}
+
+function isProviderPreambleItem(item: ProviderInputItem): boolean {
+  return item.role === "developer" || item.role === "system";
+}
+
+function splitFreshProviderInput(input: ProviderInputItem[]): {
+  leading: ProviderInputItem[];
+  conversation: ProviderInputItem[];
+  trailing: ProviderInputItem[];
+} {
+  let leadingEnd = 0;
+  while (leadingEnd < input.length && isProviderPreambleItem(input[leadingEnd])) leadingEnd += 1;
+  let trailingStart = input.length;
+  while (trailingStart > leadingEnd && isProviderPreambleItem(input[trailingStart - 1])) {
+    trailingStart -= 1;
+  }
+  return {
+    leading: input.slice(0, leadingEnd),
+    conversation: input.slice(leadingEnd, trailingStart),
+    trailing: input.slice(trailingStart),
+  };
+}
+
+function providerInputItemType(item: ProviderInputItem): string {
+  if (typeof item.type === "string") return item.type;
+  return typeof item.role === "string" ? "message" : "unknown";
+}
+
+function responseItemIdentity(item: ProviderInputItem): string {
+  const type = providerInputItemType(item);
+  if (typeof item.call_id === "string") return `${type}:call:${item.call_id}`;
+  if (typeof item.id === "string") return `${type}:id:${item.id}`;
+  if (type === "message") {
+    return `${type}:${String(item.role)}:${JSON.stringify(item.content)}`;
+  }
+  if (type === "reasoning" && typeof item.encrypted_content === "string") {
+    return `${type}:encrypted:${item.encrypted_content}`;
+  }
+  return `${type}:${JSON.stringify(item)}`;
+}
+
+function alignRemoteTailToFreshInput(
+  remoteTail: ResponseItem[],
+  freshConversation: ProviderInputItem[],
+): number[] | undefined {
+  if (remoteTail.length === 0) return [];
+  const matches = Array.from({ length: remoteTail.length }, () => -1);
+  let freshCursor = freshConversation.length - 1;
+  for (let remoteIndex = remoteTail.length - 1; remoteIndex >= 0; remoteIndex -= 1) {
+    const identity = responseItemIdentity(remoteTail[remoteIndex]);
+    let matchedIndex = -1;
+    for (let index = freshCursor; index >= 0; index -= 1) {
+      if (responseItemIdentity(freshConversation[index]) !== identity) continue;
+      matchedIndex = index;
+      break;
+    }
+    if (matchedIndex < 0) return undefined;
+    matches[remoteIndex] = matchedIndex;
+    freshCursor = matchedIndex - 1;
+  }
+  return matches;
+}
+
+function mergeAlignedProviderTail(
+  remoteTail: ResponseItem[],
+  freshConversation: ProviderInputItem[],
+  matches: number[],
+): ProviderInputItem[] {
+  if (remoteTail.length === 0) return [];
+  const merged: ProviderInputItem[] = [];
+  for (const [remoteIndex, remoteItem] of remoteTail.entries()) {
+    merged.push(structuredClone(remoteItem));
+    const freshIndex = matches[remoteIndex];
+    const nextFreshIndex = matches[remoteIndex + 1] ?? freshConversation.length;
+    merged.push(
+      ...freshConversation
+        .slice(freshIndex + 1, nextFreshIndex)
+        .map((item) => structuredClone(item)),
+    );
+  }
+  return merged;
+}
+
+function isClientToolSearchPair(call: ProviderInputItem, output: ProviderInputItem): boolean {
+  return (
+    call.type === "tool_search_call" &&
+    output.type === "tool_search_output" &&
+    call.execution === "client" &&
+    output.execution === "client" &&
+    typeof call.call_id === "string" &&
+    call.call_id === output.call_id
+  );
+}
+
+function mergeClientToolSearchFallback(
+  explicitHistory: ResponseItem[],
+  freshConversation: ProviderInputItem[],
+): ProviderInputItem[] {
+  const merged: ProviderInputItem[] = explicitHistory.map((item) => structuredClone(item));
+  const existingCallIds = new Set(
+    merged.flatMap((item) =>
+      item.type === "tool_search_call" && typeof item.call_id === "string" ? [item.call_id] : [],
+    ),
+  );
+  for (let index = 0; index < freshConversation.length - 1; index += 1) {
+    const call = freshConversation[index];
+    const output = freshConversation[index + 1];
+    if (!isClientToolSearchPair(call, output) || existingCallIds.has(String(call.call_id))) {
+      continue;
+    }
+    const anchor = freshConversation[index - 1];
+    const anchorIdentity = anchor === undefined ? undefined : responseItemIdentity(anchor);
+    let insertAt = merged.length;
+    if (anchorIdentity !== undefined) {
+      const anchorIndex = merged.findLastIndex(
+        (item) => responseItemIdentity(item) === anchorIdentity,
+      );
+      if (anchorIndex >= 0) insertAt = anchorIndex + 1;
+    }
+    merged.splice(insertAt, 0, structuredClone(call), structuredClone(output));
+    existingCallIds.add(String(call.call_id));
+    index += 1;
+  }
+  return merged;
+}
+
+function mergeRemoteHistoryWithFreshPayload(
+  record: Record<string, unknown>,
+  explicitHistory: ResponseItem[],
+  replacementHistoryLength: number,
+): ProviderInputItem[] {
+  const fresh = splitFreshProviderInput(parseResponseInput(record));
+  const replacementEnd = Math.min(explicitHistory.length, Math.max(0, replacementHistoryLength));
+  const replacementHistory = explicitHistory.slice(0, replacementEnd);
+  const remoteTail = explicitHistory.slice(replacementEnd);
+  const matches = alignRemoteTailToFreshInput(remoteTail, fresh.conversation);
+  const replayHistory =
+    matches === undefined
+      ? mergeClientToolSearchFallback(explicitHistory, fresh.conversation)
+      : [
+          ...replacementHistory.map((item) => structuredClone(item)),
+          ...mergeAlignedProviderTail(remoteTail, fresh.conversation, matches),
+        ];
+  return [
+    ...fresh.leading.map((item) => structuredClone(item)),
+    ...replayHistory,
+    ...fresh.trailing.map((item) => structuredClone(item)),
+  ];
 }
 
 function extractProviderInstructions(record: Record<string, unknown>): string | undefined {

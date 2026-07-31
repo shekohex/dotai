@@ -4,6 +4,7 @@ import {
   type compact,
   type ExtensionAPI,
   type ExtensionContext,
+  type SessionBeforeCompactEvent,
   type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
@@ -32,6 +33,7 @@ import {
 import {
   buildRemoteCompactionTools,
   callRemoteCompactionEndpoint,
+  callRemoteContinuitySummaryEndpoint,
   remoteCompactionEndpointUrl,
   remoteCompactionModelKey,
   supportsOpenAIRemoteCompaction,
@@ -90,83 +92,9 @@ export default function (pi: ExtensionAPI) {
     requestShapes.clear();
   });
 
-  pi.on("session_before_compact", async (event, ctx) => {
-    const preparation = event.preparation;
-    const signal = event.signal;
-    const sanitizedPreparation = sanitizePreparationForCompaction(ctx, preparation);
-    const allMessages = [
-      ...sanitizedPreparation.messagesToSummarize,
-      ...sanitizedPreparation.turnPrefixMessages,
-    ];
-    const model = ctx.model;
-
-    if (!supportsOpenAIRemoteCompaction(model)) {
-      ctx.ui.notify(
-        `Compaction [fallback]: OpenAI server-side compaction is unavailable for ${modelLabel(model)}; using a portable text summary.`,
-        "info",
-      );
-      const summary = await summarizeWithFallbacks(
-        ctx,
-        allMessages,
-        preparation.previousSummary,
-        event.customInstructions,
-        signal,
-        preparation.tokensBefore,
-      );
-      return summary === undefined
-        ? {}
-        : buildCompactionResult(summary, preparation, sanitizedPreparation.details);
-    }
-
-    ctx.ui.notify(
-      `Compaction [server]: requesting OpenAI-native compaction with ${modelLabel(model)} via ${remoteCompactionHost(model)}.`,
-      "info",
-    );
-    const sessionId = ctx.sessionManager.getSessionId();
-    let remoteResult: RemoteCompactionResult;
-    try {
-      remoteResult = await createRemoteCompaction({
-        pi,
-        ctx,
-        model,
-        sessionId,
-        branchEntries: event.branchEntries,
-        remoteState: matchingRemoteState(remoteCompactionStates, sessionId, model),
-        requestShape: requestShapes.get(sessionId),
-        signal,
-      });
-    } catch (error) {
-      if (isAbortSignalAborted(signal)) return {};
-      ctx.ui.notify(
-        `Compaction [server] failed; starting the portable fallback. ${errorMessage(error)}`,
-        "warning",
-      );
-      const fallbackSummary = await summarizeWithFallbacks(
-        ctx,
-        allMessages,
-        preparation.previousSummary,
-        event.customInstructions,
-        signal,
-        preparation.tokensBefore,
-      );
-      return fallbackSummary === undefined
-        ? {}
-        : buildCompactionResult(fallbackSummary, preparation, sanitizedPreparation.details);
-    }
-
-    ctx.ui.notify(
-      `Compaction [server]: complete for ${modelLabel(model)}; native history was stored without running a fallback model.`,
-      "info",
-    );
-    return buildCompactionResult(remoteCompactionSummaryText(model), preparation, {
-      ...sanitizedPreparation.details,
-      remoteCompaction: buildRemoteCompactionDetails(
-        model,
-        remoteResult.output,
-        remoteResult.usage,
-      ),
-    });
-  });
+  pi.on("session_before_compact", (event, ctx) =>
+    handleSessionBeforeCompact(event, ctx, pi, remoteCompactionStates, requestShapes),
+  );
 
   pi.on("message_end", (event, ctx) => {
     const model = ctx.model;
@@ -186,6 +114,182 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_provider_request", (event, ctx) =>
     rewriteRemoteCompactionRequest(event.payload, ctx, remoteCompactionStates, requestShapes),
   );
+}
+
+async function handleSessionBeforeCompact(
+  event: SessionBeforeCompactEvent,
+  ctx: ExtensionContext,
+  pi: ExtensionAPI,
+  remoteCompactionStates: Map<string, RemoteCompactionSessionState>,
+  requestShapes: Map<string, ResponsesRequestShape>,
+) {
+  const preparation = event.preparation;
+  const signal = event.signal;
+  const sanitizedPreparation = sanitizePreparationForCompaction(ctx, preparation);
+  const allMessages = [
+    ...sanitizedPreparation.messagesToSummarize,
+    ...sanitizedPreparation.turnPrefixMessages,
+  ];
+  const model = ctx.model;
+
+  if (!supportsOpenAIRemoteCompaction(model)) {
+    ctx.ui.notify(
+      `Compaction [fallback]: OpenAI server-side compaction is unavailable for ${modelLabel(model)}; using a portable text summary.`,
+      "info",
+    );
+    const summary = await summarizeWithFallbacks(
+      ctx,
+      allMessages,
+      preparation.previousSummary,
+      event.customInstructions,
+      signal,
+      preparation.tokensBefore,
+    );
+    return summary === undefined
+      ? {}
+      : buildCompactionResult(summary, preparation, sanitizedPreparation.details);
+  }
+
+  ctx.ui.notify(
+    `Compaction [server]: requesting OpenAI-native compaction with ${modelLabel(model)} via ${remoteCompactionHost(model)}.`,
+    "info",
+  );
+  const sessionId = ctx.sessionManager.getSessionId();
+  const remoteState = matchingRemoteState(remoteCompactionStates, sessionId, model);
+  const requestShape = requestShapes.get(sessionId);
+  let remoteResult: RemoteCompactionResult;
+  try {
+    remoteResult = await createRemoteCompaction({
+      pi,
+      ctx,
+      model,
+      sessionId,
+      branchEntries: event.branchEntries,
+      remoteState,
+      requestShape,
+      signal,
+    });
+  } catch (error) {
+    if (isAbortSignalAborted(signal)) {
+      return remoteState === undefined ? {} : { cancel: true };
+    }
+    if (remoteState !== undefined) {
+      return handleRemoteContinuityFallback({
+        pi,
+        ctx,
+        model,
+        sessionId,
+        remoteState,
+        requestShape,
+        preparation,
+        sanitizedDetails: sanitizedPreparation.details,
+        customInstructions: event.customInstructions,
+        signal,
+        remoteError: error,
+      });
+    }
+    ctx.ui.notify(
+      `Compaction [server] failed; starting the portable fallback. ${errorMessage(error)}`,
+      "warning",
+    );
+    const fallbackSummary = await summarizeWithFallbacks(
+      ctx,
+      allMessages,
+      preparation.previousSummary,
+      event.customInstructions,
+      signal,
+      preparation.tokensBefore,
+    );
+    return fallbackSummary === undefined
+      ? {}
+      : buildCompactionResult(fallbackSummary, preparation, sanitizedPreparation.details);
+  }
+
+  ctx.ui.notify(
+    `Compaction [server]: complete for ${modelLabel(model)}; native history was stored without running a fallback model.`,
+    "info",
+  );
+  return buildCompactionResult(remoteCompactionSummaryText(model), preparation, {
+    ...sanitizedPreparation.details,
+    remoteCompaction: buildRemoteCompactionDetails(model, remoteResult.output, remoteResult.usage),
+  });
+}
+
+async function handleRemoteContinuityFallback(params: {
+  pi: ExtensionAPI;
+  ctx: ExtensionContext;
+  model: Model<Api>;
+  sessionId: string;
+  remoteState: RemoteCompactionSessionState;
+  requestShape?: ResponsesRequestShape;
+  preparation: CompactionPreparation;
+  sanitizedDetails: unknown;
+  customInstructions?: string;
+  signal?: AbortSignal;
+  remoteError: unknown;
+}) {
+  params.ctx.ui.notify(
+    `Compaction [server] failed; generating a portable summary with the previous native compacted window included. ${errorMessage(params.remoteError)}`,
+    "warning",
+  );
+  try {
+    const fallbackSummary = await summarizeRemoteCompactionContinuity(params);
+    return buildCompactionResult(fallbackSummary, params.preparation, params.sanitizedDetails);
+  } catch (fallbackError) {
+    if (isAbortSignalAborted(params.signal)) return { cancel: true };
+    params.ctx.ui.notify(
+      `Compaction [fallback] failed and was cancelled to preserve the previous native compacted window. ${errorMessage(fallbackError)}`,
+      "error",
+    );
+    return { cancel: true };
+  }
+}
+
+async function summarizeRemoteCompactionContinuity(params: {
+  pi: ExtensionAPI;
+  ctx: ExtensionContext;
+  model: Model<Api>;
+  sessionId: string;
+  remoteState: RemoteCompactionSessionState;
+  requestShape?: ResponsesRequestShape;
+  customInstructions?: string;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const auth = await params.ctx.modelRegistry.getApiKeyAndHeaders(params.model);
+  if (!auth.ok) throw new Error(`Auth failed for ${params.model.id}: ${auth.error}`);
+  if (auth.apiKey === undefined || auth.apiKey.length === 0) {
+    throw new Error(`No API key available for ${params.model.id}`);
+  }
+  return callRemoteContinuitySummaryEndpoint({
+    model: params.model,
+    apiKey: auth.apiKey,
+    headers: auth.headers,
+    sessionId: params.sessionId,
+    input: normalizeResponseItemsForPrompt(params.remoteState.explicitHistory, params.model),
+    instructions: params.requestShape?.instructions ?? params.ctx.getSystemPrompt(),
+    prompt: buildContinuitySummaryPrompt(params.customInstructions),
+    reasoning:
+      params.requestShape?.reasoning ??
+      fallbackRemoteReasoning(params.model, params.pi.getThinkingLevel()),
+    text: params.requestShape?.text,
+    signal: params.signal,
+  });
+}
+
+export function buildContinuitySummaryPrompt(customInstructions: string | undefined): string {
+  const additionalInstructions =
+    customInstructions !== undefined && customInstructions.trim().length > 0
+      ? `\n\n# Additional Constraints And Instructions\n${customInstructions.trim()}`
+      : "";
+  return `You are performing a CONTEXT CHECKPOINT COMPACTION. Create a portable handoff summary of all conversation context before this message, including the provider-native compacted history.${additionalInstructions}
+
+Include:
+- Current progress and key decisions made
+- Important context, constraints, or user preferences
+- What remains to be done (clear next steps)
+- Any critical data, examples, or references needed to continue
+
+Be concise, structured, and focused on helping another LLM seamlessly continue the work. Output only the structured markdown summary.`;
 }
 
 function modelLabel(model: Model<Api> | undefined): string {
@@ -217,6 +321,7 @@ function rewriteRemoteCompactionRequest(
       rewrittenPayload = applyRemoteHistoryPayload(
         payload,
         normalizeResponseItemsForPrompt(remoteState.explicitHistory, model),
+        remoteState.replacementHistory.length,
       );
     }
   }

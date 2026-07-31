@@ -75,6 +75,7 @@ function createCompactionHandlerHarness(
   toolState: {
     allTools?: ReturnType<ExtensionAPI["getAllTools"]>;
     activeTools?: string[];
+    branchEntries?: SessionEntry[];
   } = {},
 ): {
   handler: CompactionHandler;
@@ -107,10 +108,12 @@ function createCompactionHandlerHarness(
     },
     sessionManager: {
       getSessionId: () => "session-123",
-      getBranch: () => [],
+      getBranch: () => toolState.branchEntries ?? [],
     },
     getSystemPrompt: () => "system",
   } as unknown as ExtensionContext;
+  const sessionStartHandler = handlers.get("session_start")?.[0];
+  sessionStartHandler?.({} as never, ctx as never);
   const handler = handlers.get("session_before_compact")?.[0];
   if (handler === undefined) throw new Error("Compaction handler was not registered");
   const providerRequestHandler = handlers.get("before_provider_request")?.[0];
@@ -519,6 +522,131 @@ describe("compaction extension", () => {
     expect(fallbackIndex).toBeGreaterThan(serverFailureIndex);
   });
 
+  test("includes the previous native window when portable fallback follows a remote failure", async () => {
+    useTemporaryCodexHome();
+    const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
+    const nativeWindow = [{ type: "compaction", encrypted_content: "opaque-history" }];
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response("remote failure", { status: 500, statusText: "Server Error" }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          [
+            'data: {"type":"response.output_text.delta","delta":"Portable complete history"}',
+            "",
+            'data: {"type":"response.completed","response":{}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+    const harness = createCompactionHandlerHarness(codexOpenAIModel, {
+      branchEntries: [
+        {
+          type: "compaction",
+          id: "compact-1",
+          parentId: null,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          summary: "native checkpoint placeholder",
+          firstKeptEntryId: "message-1",
+          tokensBefore: 100,
+          details: {
+            remoteCompaction: {
+              version: 2,
+              provider: "openai-responses-compaction",
+              modelKey,
+              replacementHistory: nativeWindow,
+            },
+          },
+        },
+      ] as SessionEntry[],
+    });
+    await harness.providerRequestHandler(
+      {
+        payload: {
+          model: codexOpenAIModel.id,
+          input: [],
+          instructions: "Base instructions\n\nDynamic fallback instructions",
+        },
+      },
+      harness.ctx,
+    );
+
+    const result = await harness.handler(manualCompactionEvent(), harness.ctx);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const continuityBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+      input: Array<Record<string, unknown>>;
+      instructions?: string;
+      tools?: unknown[];
+    };
+    expect(continuityBody.input[0]).toEqual(nativeWindow[0]);
+    expect(continuityBody.instructions).toBe("Base instructions\n\nDynamic fallback instructions");
+    expect(continuityBody.tools).toEqual([]);
+    expect(continuityBody.input.at(-1)).toMatchObject({
+      type: "message",
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: expect.stringContaining("CONTEXT CHECKPOINT COMPACTION"),
+        },
+      ],
+    });
+    expect(result).toMatchObject({
+      compaction: { summary: expect.stringContaining("Portable complete history") },
+    });
+    expect(harness.notices).toContainEqual(
+      expect.stringContaining("previous native compacted window"),
+    );
+    expect(harness.notices.some((notice) => notice.includes("could not find"))).toBe(false);
+  });
+
+  test("cancels compaction instead of silently dropping native history", async () => {
+    useTemporaryCodexHome();
+    const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response("remote failure", { status: 500, statusText: "Server Error" }),
+      )
+      .mockResolvedValueOnce(
+        new Response("summary failure", { status: 500, statusText: "Server Error" }),
+      );
+    const harness = createCompactionHandlerHarness(codexOpenAIModel, {
+      branchEntries: [
+        {
+          type: "compaction",
+          id: "compact-1",
+          parentId: null,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          summary: "native checkpoint placeholder",
+          firstKeptEntryId: "message-1",
+          tokensBefore: 100,
+          details: {
+            remoteCompaction: {
+              version: 2,
+              provider: "openai-responses-compaction",
+              modelKey,
+              replacementHistory: [{ type: "compaction", encrypted_content: "opaque-history" }],
+            },
+          },
+        },
+      ] as SessionEntry[],
+    });
+
+    const result = await harness.handler(manualCompactionEvent(), harness.ctx);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ cancel: true });
+    expect(harness.notices).toContainEqual(
+      expect.stringContaining("cancelled to preserve the previous native compacted window"),
+    );
+    expect(harness.notices.some((notice) => notice.includes("could not find"))).toBe(false);
+  });
+
   test("builds exact remote request shape", () => {
     const body = buildRemoteCompactionRequestBody({
       model: codexOpenAIModel,
@@ -635,6 +763,74 @@ describe("compaction extension", () => {
         state?.explicitHistory ?? [],
       ),
     ).toEqual({ model: codexOpenAIModel.id, input: state?.explicitHistory });
+  });
+
+  test("preserves deferred tool discovery artifacts while replaying native history", () => {
+    const nativeHistory = [
+      { type: "compaction", encrypted_content: "opaque" },
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "Load the subagent tool" }],
+      },
+      { type: "function_call", name: "search_tools", call_id: "search-call", arguments: "{}" },
+      { type: "function_call_output", call_id: "search-call", output: "Loaded subagent" },
+    ];
+    const toolSearchCall = {
+      type: "tool_search_call",
+      call_id: "pi_tool_load_subagent",
+      execution: "client",
+      status: "completed",
+      arguments: { query: "subagent", limit: 1 },
+    };
+    const toolSearchOutput = {
+      type: "tool_search_output",
+      call_id: "pi_tool_load_subagent",
+      execution: "client",
+      status: "completed",
+      tools: [
+        {
+          type: "function",
+          name: "subagent",
+          description: "Manage child sessions",
+          parameters: { type: "object", properties: {} },
+          defer_loading: true,
+        },
+      ],
+    };
+    const dynamicDeveloperInstructions = {
+      role: "developer",
+      content: [{ type: "input_text", text: "Dynamic extension instructions" }],
+    };
+
+    expect(
+      applyRemoteHistoryPayload(
+        {
+          model: codexOpenAIModel.id,
+          input: [
+            dynamicDeveloperInstructions,
+            {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: "native checkpoint placeholder" }],
+            },
+            {
+              role: "user",
+              content: [{ type: "input_text", text: "Load the subagent tool" }],
+            },
+            nativeHistory[2],
+            nativeHistory[3],
+            toolSearchCall,
+            toolSearchOutput,
+          ],
+        },
+        nativeHistory,
+        1,
+      ),
+    ).toEqual({
+      model: codexOpenAIModel.id,
+      input: [dynamicDeveloperInstructions, ...nativeHistory, toolSearchCall, toolSearchOutput],
+    });
   });
 
   test("reconstructs custom extension turns after remote compaction", () => {

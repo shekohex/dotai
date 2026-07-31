@@ -19,6 +19,13 @@ export type ResponsesReasoningConfig = {
 
 export type ResponsesTextConfig = Record<string, unknown>;
 
+export type ResponsesRequestShape = {
+  instructions?: string;
+  tools?: Record<string, unknown>[];
+  reasoning?: ResponsesReasoningConfig;
+  text?: ResponsesTextConfig;
+};
+
 export type RemoteCompactionDetails = {
   version: 1 | 2;
   provider: "openai-responses-compact" | "openai-responses-compaction";

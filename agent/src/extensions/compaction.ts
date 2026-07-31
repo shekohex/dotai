@@ -48,18 +48,13 @@ import {
 import type {
   RemoteCompactionResult,
   RemoteCompactionSessionState,
+  ResponsesRequestShape,
   ResponsesReasoningConfig,
-  ResponsesTextConfig,
 } from "./compaction/openai-remote-types.js";
 
 type CompactionPreparation = Parameters<typeof compact>[0];
 const SUMMARY_PREFIX =
   "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:";
-
-type ResponsesRequestShape = {
-  reasoning?: ResponsesReasoningConfig;
-  text?: ResponsesTextConfig;
-};
 
 export default function (pi: ExtensionAPI) {
   const remoteCompactionStates = new Map<string, RemoteCompactionSessionState>();
@@ -333,8 +328,12 @@ async function createRemoteCompaction(params: {
     headers: auth.headers,
     sessionId: params.sessionId,
     input: normalizeResponseItemsForPrompt(responseItems, params.model),
-    instructions: params.ctx.getSystemPrompt(),
-    tools: buildRemoteCompactionTools(params.pi.getAllTools(), params.pi.getActiveTools()),
+    instructions: params.requestShape?.instructions ?? params.ctx.getSystemPrompt(),
+    tools: buildRemoteCompactionTools(
+      params.pi.getAllTools(),
+      params.pi.getActiveTools(),
+      params.requestShape?.tools,
+    ),
     reasoning,
     text: params.requestShape?.text,
     signal: params.signal,

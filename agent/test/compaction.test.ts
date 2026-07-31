@@ -65,8 +65,20 @@ type CompactionHandler = (
   ctx: ExtensionContext,
 ) => Promise<unknown>;
 
-function createCompactionHandlerHarness(model: Model<Api>): {
+type ProviderRequestHandler = (
+  event: { payload: unknown },
+  ctx: ExtensionContext,
+) => Promise<unknown> | unknown;
+
+function createCompactionHandlerHarness(
+  model: Model<Api>,
+  toolState: {
+    allTools?: ReturnType<ExtensionAPI["getAllTools"]>;
+    activeTools?: string[];
+  } = {},
+): {
   handler: CompactionHandler;
+  providerRequestHandler: ProviderRequestHandler;
   ctx: ExtensionContext;
   notices: string[];
 } {
@@ -79,8 +91,8 @@ function createCompactionHandlerHarness(model: Model<Api>): {
       handlers.set(event, registered);
     },
     getThinkingLevel: () => "high",
-    getAllTools: () => [],
-    getActiveTools: () => [],
+    getAllTools: () => toolState.allTools ?? [],
+    getActiveTools: () => toolState.activeTools ?? [],
   } as unknown as ExtensionAPI;
   compactionExtension(pi);
 
@@ -101,7 +113,16 @@ function createCompactionHandlerHarness(model: Model<Api>): {
   } as unknown as ExtensionContext;
   const handler = handlers.get("session_before_compact")?.[0];
   if (handler === undefined) throw new Error("Compaction handler was not registered");
-  return { handler: handler as CompactionHandler, ctx, notices };
+  const providerRequestHandler = handlers.get("before_provider_request")?.[0];
+  if (providerRequestHandler === undefined) {
+    throw new Error("Provider request handler was not registered");
+  }
+  return {
+    handler: handler as CompactionHandler,
+    providerRequestHandler: providerRequestHandler as ProviderRequestHandler,
+    ctx,
+    notices,
+  };
 }
 
 function manualCompactionEvent(): Record<string, unknown> {
@@ -367,6 +388,116 @@ describe("compaction extension", () => {
         },
       },
     });
+  });
+
+  test("preserves dynamic provider instructions and tools during server-side compaction", async () => {
+    useTemporaryCodexHome();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          [
+            'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
+            "",
+            'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+    const searchTool = {
+      name: "search_tools",
+      label: "Search Tools",
+      description: "Load optional tools",
+      parameters: { type: "object", properties: {} },
+    };
+    const dynamicTool = {
+      name: "dynamic_tool",
+      label: "Dynamic Tool",
+      description: "Available only after search_tools loads it",
+      parameters: { type: "object", properties: {} },
+    };
+    const staleTool = {
+      name: "stale_tool",
+      label: "Stale Tool",
+      description: "Was disabled after the previous provider request",
+      parameters: { type: "object", properties: {} },
+    };
+    const harness = createCompactionHandlerHarness(codexOpenAIModel, {
+      allTools: [dynamicTool, searchTool, staleTool] as ReturnType<ExtensionAPI["getAllTools"]>,
+      activeTools: ["search_tools", "dynamic_tool"],
+    });
+    const providerSearchTool = {
+      type: "function",
+      name: "search_tools",
+      description: "Load optional tools",
+      parameters: { type: "object", properties: {} },
+    };
+    const providerDynamicTool = {
+      type: "function",
+      name: "dynamic_tool",
+      description: "Available only after search_tools loads it",
+      parameters: { type: "object", properties: {} },
+      defer_loading: true,
+    };
+    const providerStaleTool = {
+      type: "function",
+      name: "stale_tool",
+      description: "Was disabled after the previous provider request",
+      parameters: { type: "object", properties: {} },
+    };
+    const namedProviderTool = {
+      type: "function",
+      name: "provider_native_tool",
+      description: "Defined by the provider",
+      parameters: { type: "object", properties: {} },
+    };
+    const unnamedProviderTool = { type: "web_search_preview" };
+
+    await harness.providerRequestHandler(
+      {
+        payload: {
+          model: codexOpenAIModel.id,
+          input: [
+            {
+              type: "tool_search_output",
+              call_id: "load-dynamic-tool",
+              execution: "client",
+              status: "completed",
+              tools: [providerDynamicTool],
+            },
+          ],
+          instructions: "Base instructions\n\nDynamic extension instructions",
+          tools: [
+            providerSearchTool,
+            providerStaleTool,
+            namedProviderTool,
+            namedProviderTool,
+            unnamedProviderTool,
+          ],
+        },
+      },
+      harness.ctx,
+    );
+    await harness.handler(manualCompactionEvent(), harness.ctx);
+
+    const request = fetchMock.mock.calls[0]?.[1];
+    const body = JSON.parse(String(request?.body)) as {
+      instructions?: string;
+      tools?: unknown[];
+    };
+    expect(body.instructions).toBe("Base instructions\n\nDynamic extension instructions");
+    expect(body.tools).toEqual([
+      providerSearchTool,
+      {
+        type: "function",
+        name: "dynamic_tool",
+        description: "Available only after search_tools loads it",
+        parameters: { type: "object", properties: {} },
+      },
+      namedProviderTool,
+      unnamedProviderTool,
+    ]);
   });
 
   test("starts fallback models only after server-side compaction fails", async () => {

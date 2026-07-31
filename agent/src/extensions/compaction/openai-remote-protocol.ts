@@ -174,16 +174,47 @@ export function buildRemoteCompactionHeaders(params: {
 export function buildRemoteCompactionTools(
   allTools: ToolInfo[],
   activeToolNames: string[],
+  providerTools: Record<string, unknown>[] = [],
 ): Record<string, unknown>[] {
-  const activeTools = new Set(activeToolNames);
-  return allTools
-    .filter((tool) => activeTools.has(tool.name))
-    .map((tool) => ({
-      type: "function",
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-    }));
+  const toolsByName = new Map(allTools.map((tool) => [tool.name, tool]));
+  const providerToolsByName = new Map<string, Record<string, unknown>>();
+  const providerOnlyToolNames = new Set<string>();
+  const providerOnlyTools: Record<string, unknown>[] = [];
+  for (const tool of providerTools) {
+    const name = readString(tool.name);
+    if (name === undefined) {
+      providerOnlyTools.push(promoteRemoteCompactionTool(tool));
+    } else {
+      providerToolsByName.set(name, tool);
+      if (!toolsByName.has(name) && !providerOnlyToolNames.has(name)) {
+        providerOnlyToolNames.add(name);
+        providerOnlyTools.push(promoteRemoteCompactionTool(tool));
+      }
+    }
+  }
+
+  const activeTools = activeToolNames.flatMap((name): Record<string, unknown>[] => {
+    const providerTool = providerToolsByName.get(name);
+    if (providerTool !== undefined) return [promoteRemoteCompactionTool(providerTool)];
+    const tool = toolsByName.get(name);
+    return tool === undefined
+      ? []
+      : [
+          {
+            type: "function",
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+          },
+        ];
+  });
+  return [...activeTools, ...providerOnlyTools];
+}
+
+function promoteRemoteCompactionTool(tool: Record<string, unknown>): Record<string, unknown> {
+  const promoted = structuredClone(tool);
+  delete promoted.defer_loading;
+  return promoted;
 }
 
 export function buildRemoteCompactionRequestBody(params: {

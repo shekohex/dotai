@@ -11,7 +11,7 @@ import type {
   RemoteCompactionSessionState,
   ResponseItem,
   ResponsesReasoningConfig,
-  ResponsesTextConfig,
+  ResponsesRequestShape,
 } from "./openai-remote-types.js";
 
 const ResponseItemSchema = Type.Object({ type: Type.String() }, { additionalProperties: true });
@@ -113,6 +113,10 @@ const RequestReasoningSchema = Type.Object(
   },
   { additionalProperties: true },
 );
+
+const RequestInputSchema = Type.Array(Type.Unknown());
+const RequestContentSchema = Type.Array(Type.Unknown());
+const RequestToolsSchema = Type.Array(Type.Record(Type.String(), Type.Unknown()));
 
 function normalizeRemoteCompactionDetails(details: {
   version: 1 | 2;
@@ -243,22 +247,64 @@ export function applyRemoteHistoryPayload(
   return nextPayload;
 }
 
-export function extractResponsesRequestShape(payload: unknown):
-  | {
-      reasoning?: ResponsesReasoningConfig;
-      text?: ResponsesTextConfig;
-    }
-  | undefined {
+function extractProviderInstructions(record: Record<string, unknown>): string | undefined {
+  if (typeof record.instructions === "string") return record.instructions;
+  if (!Value.Check(RequestInputSchema, record.input)) return undefined;
+  for (const value of Value.Parse(RequestInputSchema, record.input)) {
+    const item = asRecord(value);
+    if (item?.role !== "developer" && item?.role !== "system") continue;
+    if (typeof item.content === "string") return item.content;
+    if (!Value.Check(RequestContentSchema, item.content)) continue;
+    const text = Value.Parse(RequestContentSchema, item.content)
+      .flatMap((part) => {
+        const contentPart = asRecord(part);
+        return contentPart?.type === "input_text" && typeof contentPart.text === "string"
+          ? [contentPart.text]
+          : [];
+      })
+      .join("\n");
+    if (text.length > 0) return text;
+  }
+  return undefined;
+}
+
+function extractProviderTools(
+  record: Record<string, unknown>,
+): Record<string, unknown>[] | undefined {
+  const tools: Record<string, unknown>[] = [];
+  let foundTools = false;
+  if (Value.Check(RequestToolsSchema, record.tools)) {
+    foundTools = true;
+    tools.push(
+      ...Value.Parse(RequestToolsSchema, record.tools).map((tool) => structuredClone(tool)),
+    );
+  }
+  if (!Value.Check(RequestInputSchema, record.input)) return foundTools ? tools : undefined;
+  for (const value of Value.Parse(RequestInputSchema, record.input)) {
+    const item = asRecord(value);
+    if (item?.type !== "tool_search_output" || item.execution !== "client") continue;
+    if (!Value.Check(RequestToolsSchema, item.tools)) continue;
+    foundTools = true;
+    tools.push(...Value.Parse(RequestToolsSchema, item.tools).map((tool) => structuredClone(tool)));
+  }
+  return foundTools ? tools : undefined;
+}
+
+export function extractResponsesRequestShape(payload: unknown): ResponsesRequestShape | undefined {
   const record = asRecord(payload);
   if (record === undefined) return undefined;
   if (record.input === undefined && record.messages === undefined && record.model === undefined) {
     return undefined;
   }
+  const instructions = extractProviderInstructions(record);
+  const tools = extractProviderTools(record);
   const reasoning = Value.Check(RequestReasoningSchema, record.reasoning)
     ? Value.Parse(RequestReasoningSchema, record.reasoning)
     : undefined;
   const text = asRecord(record.text);
   return {
+    ...(instructions === undefined ? {} : { instructions }),
+    ...(tools === undefined ? {} : { tools }),
     ...(reasoning === undefined ? {} : { reasoning }),
     ...(text === undefined ? {} : { text: structuredClone(text) }),
   };

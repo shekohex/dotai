@@ -15,6 +15,7 @@ import promptStashExtension from "./prompt-stash.js";
 import searchToolsExtension from "./search-tools.js";
 import terminalTmuxUiExtension from "./terminal-tmux-ui.js";
 import tmuxShareExtension from "./tmux-share/index.js";
+import viewImageExtension from "./view-image.js";
 import warpExtension from "./warp/index.js";
 import type { GroupedExtensionDefinition } from "./definitions.js";
 
@@ -29,6 +30,7 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "prompt-stash", factory: promptStashExtension },
   { id: "ask-user-question", factory: askUserQuestionExtension },
   { id: "search-tools", factory: searchToolsExtension },
+  { id: "view-image", factory: viewImageExtension },
   { id: "plannotator", factory: plannotatorExtension },
   { id: "terminal-tmux-ui", factory: terminalTmuxUiExtension },
   { id: "pi-osc", factory: piOscExtension },

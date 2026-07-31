@@ -15,6 +15,7 @@ export const DEFERRED_TOOL_NAMES = new Set([
   "goal",
   "session_query",
   "subagent",
+  "view_image",
   "workflow",
 ]);
 
@@ -44,6 +45,7 @@ export const SEARCH_TOOL_ALIASES: Readonly<Record<string, readonly string[]>> = 
     "prior conversations",
   ],
   subagent: ["delegate", "delegation", "child agent", "parallel agent"],
+  view_image: ["view image", "inspect image", "open image", "analyze image", "screenshot"],
   workflow: ["workflow", "fan out", "fanout", "multi agent", "orchestration", "parallel"],
 };
 

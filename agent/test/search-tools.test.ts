@@ -368,6 +368,7 @@ describe("search_tools", () => {
       "goal",
       "session_query",
       "subagent",
+      "view_image",
       "workflow",
     ]) {
       registerTool(fakePi, toolName, toolName);

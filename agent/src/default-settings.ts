@@ -56,6 +56,7 @@ export const defaultSettings = {
   enableInstallTelemetry: false,
   lastChangelogVersion: packageJson.version,
   theme: "catppuccin-mocha",
+  showCacheMissNotices: true,
   retry: {
     enabled: true,
     maxRetries: 1024,

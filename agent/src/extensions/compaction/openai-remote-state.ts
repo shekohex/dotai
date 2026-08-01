@@ -1,5 +1,5 @@
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
-import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
@@ -169,13 +169,6 @@ export function extractRemoteCompactionDetails(
   return normalizeRemoteCompactionDetails(Value.Parse(RemoteCompactionDetailsSchema, details));
 }
 
-function assistantMessageMatchesModelKey(message: AgentMessage, targetModelKey: string): boolean {
-  if (message.role !== "assistant") return false;
-  const [provider, api, modelId] = targetModelKey.split(":", 3);
-  if (!provider || !api || !modelId) return false;
-  return provider === message.provider && modelId === message.model;
-}
-
 export function reconstructRemoteCompactionState(
   branchEntries: readonly SessionEntry[],
 ): RemoteCompactionSessionState | undefined {
@@ -192,7 +185,6 @@ export function reconstructRemoteCompactionState(
   if (latestDetails === undefined || latestCompactionIndex < 0) return undefined;
 
   const trailingMessages: ResponseItem[] = [];
-  let pendingTurnItems: ResponseItem[] = [];
   for (const entry of branchEntries.slice(latestCompactionIndex + 1)) {
     if (entry.type === "custom_message") {
       const items = messageToResponseItems({
@@ -203,20 +195,13 @@ export function reconstructRemoteCompactionState(
         details: entry.details,
         timestamp: Date.parse(entry.timestamp),
       });
-      pendingTurnItems.push(...items);
+      trailingMessages.push(...items);
       continue;
     }
     if (entry.type !== "message") continue;
     const items = messageToResponseItems(entry.message);
     if (items.length === 0) continue;
-    if (entry.message.role === "assistant") {
-      if (assistantMessageMatchesModelKey(entry.message, latestDetails.modelKey)) {
-        trailingMessages.push(...pendingTurnItems, ...items);
-      }
-      pendingTurnItems = [];
-      continue;
-    }
-    pendingTurnItems.push(...items);
+    trailingMessages.push(...items);
   }
 
   return {
@@ -225,14 +210,6 @@ export function reconstructRemoteCompactionState(
     replacementHistory: latestDetails.replacementHistory,
     explicitHistory: [...latestDetails.replacementHistory, ...trailingMessages],
   };
-}
-
-export function messageMatchesModel(message: AgentMessage, model: Model<Api>): boolean {
-  return (
-    message.role === "assistant" &&
-    message.provider === model.provider &&
-    message.model === model.id
-  );
 }
 
 export function applyRemoteHistoryPayload(
@@ -288,16 +265,29 @@ function providerInputItemType(item: ProviderInputItem): string {
   return typeof item.role === "string" ? "message" : "unknown";
 }
 
+function responseMessageContentIdentity(content: unknown): string {
+  if (!Array.isArray(content)) return JSON.stringify(content);
+  return JSON.stringify(
+    content.map((value: unknown) => {
+      const part = asRecord(value);
+      if (part === undefined) return value;
+      const normalized = { ...part };
+      delete normalized.annotations;
+      return normalized;
+    }),
+  );
+}
+
 function responseItemIdentity(item: ProviderInputItem): string {
   const type = providerInputItemType(item);
   if (typeof item.call_id === "string") return `${type}:call:${item.call_id}`;
-  if (typeof item.id === "string") return `${type}:id:${item.id}`;
   if (type === "message") {
-    return `${type}:${String(item.role)}:${JSON.stringify(item.content)}`;
+    return `${type}:${String(item.role)}:${String(item.phase)}:${responseMessageContentIdentity(item.content)}`;
   }
   if (type === "reasoning" && typeof item.encrypted_content === "string") {
     return `${type}:encrypted:${item.encrypted_content}`;
   }
+  if (typeof item.id === "string") return `${type}:id:${item.id}`;
   return `${type}:${JSON.stringify(item)}`;
 }
 
@@ -324,23 +314,13 @@ function alignRemoteTailToFreshInput(
 }
 
 function mergeAlignedProviderTail(
-  remoteTail: ResponseItem[],
   freshConversation: ProviderInputItem[],
   matches: number[],
 ): ProviderInputItem[] {
-  if (remoteTail.length === 0) return [];
-  const merged: ProviderInputItem[] = [];
-  for (const [remoteIndex, remoteItem] of remoteTail.entries()) {
-    merged.push(structuredClone(remoteItem));
-    const freshIndex = matches[remoteIndex];
-    const nextFreshIndex = matches[remoteIndex + 1] ?? freshConversation.length;
-    merged.push(
-      ...freshConversation
-        .slice(freshIndex + 1, nextFreshIndex)
-        .map((item) => structuredClone(item)),
-    );
-  }
-  return merged;
+  const firstMatch = matches[0];
+  return firstMatch === undefined
+    ? []
+    : freshConversation.slice(firstMatch).map((item) => structuredClone(item));
 }
 
 function isClientToolSearchPair(call: ProviderInputItem, output: ProviderInputItem): boolean {
@@ -401,7 +381,7 @@ function mergeRemoteHistoryWithFreshPayload(
       ? mergeClientToolSearchFallback(explicitHistory, fresh.conversation)
       : [
           ...replacementHistory.map((item) => structuredClone(item)),
-          ...mergeAlignedProviderTail(remoteTail, fresh.conversation, matches),
+          ...mergeAlignedProviderTail(fresh.conversation, matches),
         ];
   return [
     ...fresh.leading.map((item) => structuredClone(item)),

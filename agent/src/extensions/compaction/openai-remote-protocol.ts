@@ -41,7 +41,7 @@ const RemoteCompactionEventSchema = Type.Object(
 );
 
 const CompactionItemSchema = Type.Object(
-  { type: Type.Literal("compaction") },
+  { type: Type.Literal("compaction"), encrypted_content: Type.String({ minLength: 1 }) },
   { additionalProperties: true },
 );
 
@@ -287,7 +287,9 @@ export function parseRemoteCompactionEvents(events: unknown[]): {
     }
     if (event.type === "response.output_item.done") {
       if (!Value.Check(CompactionItemSchema, event.item)) continue;
-      compactionItems.push(Value.Parse(CompactionItemSchema, event.item));
+      const compactionItem = Value.Parse(CompactionItemSchema, event.item);
+      if (compactionItem.encrypted_content.trim().length === 0) continue;
+      compactionItems.push(compactionItem);
       continue;
     }
     if (event.type === "response.completed") {

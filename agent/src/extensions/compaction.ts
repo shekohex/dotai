@@ -41,7 +41,6 @@ import {
   applyRemoteHistoryPayload,
   buildRemoteCompactionDetails,
   extractResponsesRequestShape,
-  messageMatchesModel,
   reconstructRemoteCompactionState,
   remoteCompactionSummaryText,
   thinkingLevelToResponsesReasoning,
@@ -85,6 +84,7 @@ export default function (pi: ExtensionAPI) {
   });
   pi.on("model_select", (_event, ctx) => {
     requestShapes.delete(ctx.sessionManager.getSessionId());
+    syncRemoteCompactionState(ctx);
   });
   pi.on("session_shutdown", () => {
     remoteCompactionStates.clear();
@@ -101,7 +101,6 @@ export default function (pi: ExtensionAPI) {
     const sessionId = ctx.sessionManager.getSessionId();
     const remoteState = matchingRemoteState(remoteCompactionStates, sessionId, model);
     if (remoteState === undefined) return;
-    if (event.message.role === "assistant" && !messageMatchesModel(event.message, model)) return;
     const items = messageToResponseItems(event.message);
     if (items.length === 0) return;
     remoteCompactionStates.set(sessionId, {
@@ -170,7 +169,7 @@ async function handleSessionBeforeCompact(
     });
   } catch (error) {
     if (isAbortSignalAborted(signal)) {
-      return remoteState === undefined ? {} : { cancel: true };
+      return { cancel: true };
     }
     if (remoteState !== undefined) {
       return handleRemoteContinuityFallback({
@@ -317,10 +316,18 @@ function rewriteRemoteCompactionRequest(
     if (requestShape !== undefined) requestShapes.set(sessionId, requestShape);
     const remoteState = matchingRemoteState(remoteCompactionStates, sessionId, model);
     if (remoteState !== undefined) {
+      const normalizedReplacementHistory = normalizeResponseItemsForPrompt(
+        remoteState.replacementHistory,
+        model,
+      );
+      const normalizedTailHistory = normalizeResponseItemsForPrompt(
+        remoteState.explicitHistory.slice(remoteState.replacementHistory.length),
+        model,
+      );
       rewrittenPayload = applyRemoteHistoryPayload(
         payload,
-        normalizeResponseItemsForPrompt(remoteState.explicitHistory, model),
-        remoteState.replacementHistory.length,
+        [...normalizedReplacementHistory, ...normalizedTailHistory],
+        normalizedReplacementHistory.length,
       );
     }
   }

@@ -18,6 +18,7 @@ import {
   buildRemoteCompactionHeaders,
   buildRemoteCompactionRequestBody,
   callRemoteCompactionEndpoint,
+  parseRemoteCompactionEvents,
   remoteCompactionEndpointUrl,
   supportsOpenAIRemoteCompaction,
 } from "../src/extensions/compaction/openai-remote-protocol.js";
@@ -360,6 +361,15 @@ describe("compaction extension", () => {
     expect(body.store).toBe(false);
   });
 
+  test("rejects compaction artifacts without encrypted content", () => {
+    expect(() =>
+      parseRemoteCompactionEvents([
+        { type: "response.output_item.done", item: { type: "compaction" } },
+        { type: "response.completed", response: {} },
+      ]),
+    ).toThrow("expected exactly one compaction item, got 0");
+  });
+
   test("does not run a fallback model after server-side compaction succeeds", async () => {
     useTemporaryCodexHome();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -520,6 +530,23 @@ describe("compaction extension", () => {
     );
     expect(serverFailureIndex).toBeGreaterThanOrEqual(0);
     expect(fallbackIndex).toBeGreaterThan(serverFailureIndex);
+  });
+
+  test("cancels an aborted remote compaction before Pi fallback", async () => {
+    useTemporaryCodexHome();
+    const controller = new AbortController();
+    controller.abort();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new DOMException("This operation was aborted", "AbortError"),
+    );
+    const harness = createCompactionHandlerHarness(codexOpenAIModel);
+
+    const result = await harness.handler(
+      { ...manualCompactionEvent(), signal: controller.signal },
+      harness.ctx,
+    );
+
+    expect(result).toEqual({ cancel: true });
   });
 
   test("includes the previous native window when portable fallback follows a remote failure", async () => {
@@ -775,6 +802,17 @@ describe("compaction extension", () => {
       },
       { type: "function_call", name: "search_tools", call_id: "search-call", arguments: "{}" },
       { type: "function_call_output", call_id: "search-call", output: "Loaded subagent" },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "Need delegated review" }],
+        encrypted_content: "encrypted-reasoning",
+      },
+      {
+        type: "message",
+        role: "assistant",
+        phase: "commentary",
+        content: [{ type: "output_text", text: "Starting reviewer" }],
+      },
     ];
     const toolSearchCall = {
       type: "tool_search_call",
@@ -818,10 +856,26 @@ describe("compaction extension", () => {
               role: "user",
               content: [{ type: "input_text", text: "Load the subagent tool" }],
             },
-            nativeHistory[2],
+            { ...nativeHistory[2], id: "fc_search" },
             nativeHistory[3],
             toolSearchCall,
             toolSearchOutput,
+            {
+              ...nativeHistory[4],
+              id: "rs_reasoning",
+            },
+            {
+              ...nativeHistory[5],
+              id: "msg_reviewer",
+              status: "completed",
+              content: [
+                {
+                  type: "output_text",
+                  text: "Starting reviewer",
+                  annotations: [],
+                },
+              ],
+            },
           ],
         },
         nativeHistory,
@@ -829,7 +883,117 @@ describe("compaction extension", () => {
       ),
     ).toEqual({
       model: codexOpenAIModel.id,
-      input: [dynamicDeveloperInstructions, ...nativeHistory, toolSearchCall, toolSearchOutput],
+      input: [
+        dynamicDeveloperInstructions,
+        nativeHistory[0],
+        {
+          role: "user",
+          content: [{ type: "input_text", text: "Load the subagent tool" }],
+        },
+        { ...nativeHistory[2], id: "fc_search" },
+        nativeHistory[3],
+        toolSearchCall,
+        toolSearchOutput,
+        { ...nativeHistory[4], id: "rs_reasoning" },
+        {
+          ...nativeHistory[5],
+          id: "msg_reviewer",
+          status: "completed",
+          content: [
+            {
+              type: "output_text",
+              text: "Starting reviewer",
+              annotations: [],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  test("uses normalized replacement length when rewriting provider-only tail items", async () => {
+    const rawReplacementHistory = [
+      { type: "function_call_output", call_id: "orphan", output: "orphan" },
+    ];
+    const userMessage = {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "Load the subagent tool" }],
+    };
+    const assistantMessage = {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "Loaded" }],
+    };
+    const toolSearchCall = {
+      type: "tool_search_call",
+      call_id: "load-subagent",
+      execution: "client",
+      status: "completed",
+      arguments: { query: "subagent", limit: 1 },
+    };
+    const toolSearchOutput = {
+      type: "tool_search_output",
+      call_id: "load-subagent",
+      execution: "client",
+      status: "completed",
+      tools: [{ type: "function", name: "subagent" }],
+    };
+    const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
+    const harness = createCompactionHandlerHarness(codexOpenAIModel, {
+      branchEntries: [
+        {
+          type: "compaction",
+          id: "compact-1",
+          details: {
+            remoteCompaction: {
+              version: 2,
+              provider: "openai-responses-compaction",
+              modelKey,
+              replacementHistory: rawReplacementHistory,
+            },
+          },
+        },
+        {
+          type: "message",
+          id: "user-1",
+          message: { role: "user", content: "Load the subagent tool", timestamp: 1 },
+        },
+        {
+          type: "message",
+          id: "assistant-1",
+          message: {
+            role: "assistant",
+            api: "openai-responses",
+            provider: "codex-openai",
+            model: codexOpenAIModel.id,
+            content: [{ type: "text", text: "Loaded" }],
+            usage: {
+              input: 1,
+              output: 1,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 2,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: "stop",
+            timestamp: 2,
+          },
+        },
+      ] as SessionEntry[],
+    });
+
+    expect(
+      await harness.providerRequestHandler(
+        {
+          payload: {
+            input: [userMessage, toolSearchCall, toolSearchOutput, assistantMessage],
+          },
+        },
+        harness.ctx,
+      ),
+    ).toEqual({
+      input: [userMessage, toolSearchCall, toolSearchOutput, assistantMessage],
     });
   });
 
@@ -902,7 +1066,7 @@ describe("compaction extension", () => {
     ]);
   });
 
-  test("drops post-compaction turns completed by another model", () => {
+  test("preserves post-compaction turns completed by another model", () => {
     const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
     const branchEntries = [
       {
@@ -945,6 +1109,18 @@ describe("compaction extension", () => {
       },
     ] as SessionEntry[];
 
-    expect(JSON.stringify(reconstructRemoteCompactionState(branchEntries))).not.toContain("DROP_");
+    expect(reconstructRemoteCompactionState(branchEntries)?.explicitHistory).toEqual([
+      { type: "compaction", encrypted_content: "opaque" },
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "DROP_USER" }],
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "DROP_ASSISTANT" }],
+      },
+    ]);
   });
 });

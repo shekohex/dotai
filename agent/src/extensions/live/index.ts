@@ -26,7 +26,10 @@ import {
   type LiveSettings,
 } from "./settings.js";
 import { isUnknownRecord } from "../../utils/unknown-value.js";
-import { omitEmptyLiveDelegationAssistantTurns } from "./provider-context.js";
+import {
+  applyLiveDelegationConversationContext,
+  omitEmptyLiveDelegationAssistantTurns,
+} from "./provider-context.js";
 
 const ANIMATION_INTERVAL_MS = 80;
 
@@ -236,9 +239,18 @@ export default function liveExtension(pi: ExtensionAPI): void {
   registerDelegationRenderers(pi);
 
   pi.on("context", (event) => {
-    const messages =
-      active === undefined ? undefined : omitEmptyLiveDelegationAssistantTurns(event.messages);
-    return messages === undefined ? undefined : { messages };
+    if (active === undefined) {
+      // eslint-disable-next-line unicorn/no-useless-undefined -- undefined means no context change.
+      return undefined;
+    }
+    const withoutEmptyTurns = omitEmptyLiveDelegationAssistantTurns(event.messages);
+    const messages = withoutEmptyTurns ?? event.messages;
+    const withConversationContext = applyLiveDelegationConversationContext(messages);
+    if (withoutEmptyTurns === undefined && withConversationContext === undefined) {
+      // eslint-disable-next-line unicorn/no-useless-undefined -- undefined means no context change.
+      return undefined;
+    }
+    return { messages: withConversationContext ?? withoutEmptyTurns ?? event.messages };
   });
 
   pi.registerCommand("live", {
@@ -292,6 +304,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
         directHost: options.directHost,
         pairingTtlMs: settings.pairingTtlMs,
         heartbeatMs: settings.heartbeatMs,
+        reconnectGraceMs: settings.reconnectGraceMs,
       });
       try {
         const descriptor = await pairing.start();
@@ -383,6 +396,14 @@ export default function liveExtension(pi: ExtensionAPI): void {
 
   pi.on("message_end", (event: MessageEndEvent) => {
     active?.controller.handleMessageEnd(event);
+  });
+  pi.on("message_update", (event) => {
+    active?.controller.handleMessageUpdate(event);
+  });
+  pi.on("input", (event) => {
+    if (event.streamingBehavior === "steer" && event.source !== "extension") {
+      active?.controller.handlePiSteer(event.text);
+    }
   });
   pi.on("message_start", (event: MessageStartEvent) => {
     active?.controller.handleMessageStart(event.message);

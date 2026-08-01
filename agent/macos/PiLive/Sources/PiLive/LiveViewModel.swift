@@ -13,6 +13,7 @@ final class LiveViewModel {
     var selectedVoice: LiveVoice
     var phase: LivePhase = .idle
     var transcript = ""
+    var agentProgress = ""
     var errorMessage = ""
     var muted = false
     var inputLevel = 0.0
@@ -34,6 +35,7 @@ final class LiveViewModel {
     @ObservationIgnored private let preferences: LivePreferences
     @ObservationIgnored private let client: LivePairingClient
     @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private var agentProgressDelegationId = ""
 
     init(
         credentials: CredentialStore = CredentialStore(),
@@ -147,6 +149,12 @@ final class LiveViewModel {
             muted = newPhase == .muted
         case let .transcript(text):
             transcript = text
+        case let .agentProgress(delegationId, text, _):
+            if delegationId != agentProgressDelegationId {
+                agentProgressDelegationId = delegationId
+                agentProgress = ""
+            }
+            agentProgress = String((agentProgress + text).suffix(2_000))
         case let .failure(message):
             errorMessage = message
         case .stopped:
@@ -178,6 +186,8 @@ final class LiveViewModel {
         muted = false
         phase = .idle
         transcript = ""
+        agentProgress = ""
+        agentProgressDelegationId = ""
         inputLevel = 0
         outputLevel = 0
         speechActive = false

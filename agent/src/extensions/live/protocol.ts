@@ -230,6 +230,25 @@ export function buildSessionContextAppend(
   };
 }
 
+function escapeLiveContext(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+/**
+ * Formats direct Pi steering as voice-model context without creating another delegation.
+ *
+ * @param {string} input Interactive or RPC steering already delivered to Pi.
+ * @returns {string | undefined} Bounded voice-model context, or undefined for invalid input.
+ */
+export function buildPiSteerContext(input: string): string | undefined {
+  const text = input.trim();
+  if (text.length === 0 || Buffer.byteLength(text) > 32 * 1024) return undefined;
+  return `<pi-steer>
+${escapeLiveContext(text)}
+This input was already delivered to the active Pi run. Update your understanding, do not delegate it again, and wait for authoritative Pi updates.
+</pi-steer>`;
+}
+
 /** @returns {LiveClientMessage} Message that gracefully closes a live session. */
 export function buildSessionClose(): LiveClientMessage {
   return { type: "session.close" };

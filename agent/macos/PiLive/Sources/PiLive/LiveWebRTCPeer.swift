@@ -6,6 +6,7 @@ final class LiveWebRTCPeer: NSObject {
     var onOpened: (() -> Void)?
     var onFailure: ((Error) -> Void)?
     var onLevels: ((Double, Double, Bool) -> Void)?
+    var onState: ((String) -> Void)?
 
     private let factory: RTCPeerConnectionFactory
     private var peerConnection: RTCPeerConnection?
@@ -44,6 +45,7 @@ final class LiveWebRTCPeer: NSObject {
             throw PiLiveError.protocolError("Unable to create WebRTC peer")
         }
         peerConnection = peer
+        onState?("connecting")
 
         let audioSource = factory.audioSource(with: RTCMediaConstraints(
             mandatoryConstraints: [
@@ -144,6 +146,7 @@ final class LiveWebRTCPeer: NSObject {
         inputLevel = 0
         outputLevel = 0
         speechHangoverFrames = 0
+        muted = false
     }
 
     private func startLevelMonitoring() {
@@ -221,13 +224,22 @@ extension LiveWebRTCPeer: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     nonisolated func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        if newState == .failed || newState == .closed {
-            Task { @MainActor [weak self] in
-                guard let self,
-                      self.peerConnection === peerConnection,
-                      !self.closing
-                else { return }
+        Task { @MainActor [weak self] in
+            guard let self,
+                  self.peerConnection === peerConnection,
+                  !self.closing
+            else { return }
+            switch newState {
+            case .checking:
+                self.onState?("connecting")
+            case .connected, .completed:
+                self.onState?("connected")
+            case .disconnected:
+                self.onState?("disconnected")
+            case .failed, .closed:
                 self.onFailure?(PiLiveError.protocolError("WebRTC connection failed"))
+            default:
+                break
             }
         }
     }

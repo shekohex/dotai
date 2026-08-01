@@ -65,6 +65,7 @@ Global defaults live under `settings.json#live` and are seeded from `src/default
     "directHost": "",
     "pairingTtlMs": 120000,
     "heartbeatMs": 10000,
+    "reconnectGraceMs": 30000,
     "appOpenTimeoutMs": 25000
   }
 }
@@ -107,6 +108,7 @@ It extracts `chatgpt-account-id`, performs the authenticated SDP request, and op
 - Two-minute expiry.
 - One successful client only.
 - Constant-time secret comparison.
+- Protocol v2 returns a separate opaque resume token after pairing. Unclean JSON-RPC transport loss keeps the logical call alive for `reconnectGraceMs`; the app retries with `resume`, session ID, and server nonce while WebRTC media stays attached.
 - Pairing server closes with the live session.
 - No ChatGPT token, SDP, or transcript is included in the pairing URL.
 - Coder tokens are stored in macOS Keychain.
@@ -200,7 +202,9 @@ pairing screen. Pi Live remains available as a menu-bar app. Settings includes a
 global shortcut powered by `sindresorhus/KeyboardShortcuts`; invoking it from any application imports
 a valid `pi-live://pair#...` URL from the clipboard and shows Pi Live above the Dock.
 
-The native pairing protocol uses Codable JSON-RPC envelopes and typed parameter/result payloads rather than `[String: Any]` dictionaries. `LivePairingClient` emits one typed `AsyncStream<LiveClientEvent>` consumed by the Observation model. SSH local port selection uses `NWListener`, and readiness is proven by a WebSocket health check instead of a fixed startup sleep.
+The native pairing protocol uses Codable JSON-RPC envelopes and typed parameter/result payloads rather than `[String: Any]` dictionaries. `LivePairingClient` emits one typed `AsyncStream<LiveClientEvent>` consumed by the Observation model. It reconnects the control socket with bounded backoff without recreating the WebRTC peer. SSH local port selection uses `NWListener`, and readiness is proven by a WebSocket health check instead of a fixed startup sleep.
+
+Pi `message_update` text and thinking deltas are buffered for 200 ms, forwarded over `delegation.context.append` using `speakable` or `commentary`, and mirrored to the native app as typed `agent.progress` notifications. Completed streamed answers use a final marker instead of replaying the full answer into the voice model.
 
 File diagnostics are opt-in and disabled by default. Settings → General → Diagnostics synchronizes the `live.diagnosticsEnabled` value to the Pi workspace during pairing and can change it during an active call. When enabled, redacted events are appended to `~/.pi/agent/logs/live.jsonl`; disabling logging stops future writes but intentionally does not delete an existing file. Error messages mention the diagnostics path only while logging is enabled.
 

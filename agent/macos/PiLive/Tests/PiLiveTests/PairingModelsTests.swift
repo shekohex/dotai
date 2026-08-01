@@ -11,7 +11,7 @@ final class PairingModelsTests: XCTestCase {
 
     func testDecodesFragmentOnlyPairingURL() throws {
         let payload = PairingPayload(
-            protocolVersion: 1,
+            protocolVersion: livePairingProtocolVersion,
             sessionId: "session",
             serverNonce: "nonce",
             expiresAt: Int(Date().addingTimeInterval(60).timeIntervalSince1970 * 1_000),
@@ -57,5 +57,29 @@ final class PairingModelsTests: XCTestCase {
         let data = try JSONEncoder().encode(preferences)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["diagnosticsEnabled"] as? Bool, false)
+    }
+
+    func testEncodesSessionResumeCapability() throws {
+        let capabilities = PairRequestParams.Capabilities(
+            webrtc: true,
+            inputLevel: true,
+            outputLevel: true,
+            deviceSelection: false,
+            sessionResume: true
+        )
+        let data = try JSONEncoder().encode(capabilities)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["sessionResume"] as? Bool, true)
+    }
+
+    func testDecodesAgentProgressNotification() throws {
+        let data = Data(
+            #"{"jsonrpc":"2.0","method":"agent.progress","params":{"delegationId":"d1","channel":"commentary","text":"Checking tests"}}"#.utf8
+        )
+        let frame = try JSONDecoder().decode(RPCIncomingFrame.self, from: data)
+        let progress = try frame.params.decode(AgentProgressParams.self)
+        XCTAssertEqual(progress.delegationId, "d1")
+        XCTAssertEqual(progress.channel, "commentary")
+        XCTAssertEqual(progress.text, "Checking tests")
     }
 }

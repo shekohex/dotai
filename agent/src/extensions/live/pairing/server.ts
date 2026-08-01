@@ -10,6 +10,7 @@ import {
   LIVE_PAIRING_PROTOCOL_VERSION,
   parseJsonRpcMessage,
   parsePairRequestParams,
+  parseResumeRequestParams,
   type JsonRpcId,
   type LivePairingEndpoint,
   type PairingDescriptor,
@@ -20,7 +21,9 @@ import type { LiveVoice } from "../voices.js";
 
 const DEFAULT_PAIRING_TTL_MS = 120_000;
 const DEFAULT_HEARTBEAT_MS = 10_000;
+const DEFAULT_RECONNECT_GRACE_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_SDP_BYTES = 256 * 1024;
 
 export type LivePairingMode = "auto" | "local" | "coder" | "ssh" | "direct";
 
@@ -32,10 +35,12 @@ export interface LivePairingServerOptions {
   environment?: NodeJS.ProcessEnv;
   pairingTtlMs?: number;
   heartbeatMs?: number;
+  reconnectGraceMs?: number;
 }
 
 type NotificationHandler = (method: string, params: unknown) => void;
 type CloseHandler = (error?: Error, clean?: boolean) => void;
+type ConnectionStateHandler = (state: "connected" | "reconnecting") => void;
 
 function errorFrom(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(String(cause));
@@ -134,35 +139,33 @@ export class LiveMediaConnection {
   readonly preferredVoice: LiveVoice | undefined;
   readonly customInstructions: string | undefined;
   readonly diagnosticsEnabled: boolean | undefined;
-  readonly #socket: WebSocket;
+  #socket: WebSocket | undefined;
   readonly #pending = new Map<
     string,
     { resolve: (value: unknown) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }
   >();
   readonly #notificationHandlers = new Set<NotificationHandler>();
   readonly #closeHandlers = new Set<CloseHandler>();
+  readonly #stateHandlers = new Set<ConnectionStateHandler>();
+  readonly #onTransportClose: (error: Error | undefined, clean: boolean) => void;
   #nextRequestId = 1;
-  #closed = false;
+  #transportGeneration = 0;
+  #terminated = false;
 
-  constructor(socket: WebSocket, preferences?: PairRequestParams["preferences"]) {
-    this.#socket = socket;
+  constructor(
+    socket: WebSocket,
+    preferences: PairRequestParams["preferences"] | undefined,
+    onTransportClose: (error: Error | undefined, clean: boolean) => void,
+  ) {
     this.preferredVoice = preferences?.voice;
     this.customInstructions = preferences?.instructions;
     this.diagnosticsEnabled = preferences?.diagnosticsEnabled;
-    socket.on("message", (data, isBinary) => {
-      if (isBinary) return;
-      this.#handleMessage(rawDataText(data));
-    });
-    socket.on("error", (cause) => {
-      this.#emitClose(errorFrom(cause));
-    });
-    socket.on("close", (code) => {
-      this.#emitClose(undefined, code === 1000);
-    });
+    this.#onTransportClose = onTransportClose;
+    this.#bindSocket(socket);
   }
 
   get open(): boolean {
-    return !this.#closed && this.#socket.readyState === WebSocket.OPEN;
+    return !this.#terminated && this.#socket?.readyState === WebSocket.OPEN;
   }
 
   onNotification(handler: NotificationHandler): () => void {
@@ -176,6 +179,13 @@ export class LiveMediaConnection {
     this.#closeHandlers.add(handler);
     return () => {
       this.#closeHandlers.delete(handler);
+    };
+  }
+
+  onState(handler: ConnectionStateHandler): () => void {
+    this.#stateHandlers.add(handler);
+    return () => {
+      this.#stateHandlers.delete(handler);
     };
   }
 
@@ -209,15 +219,56 @@ export class LiveMediaConnection {
   }
 
   close(code = 1000, reason = "done"): void {
-    if (this.#closed) return;
-    this.#closed = true;
-    this.#socket.close(code, reason);
+    if (this.#terminated) return;
+    this.#terminated = true;
+    this.#transportGeneration += 1;
+    this.#socket?.close(code, reason);
+    this.#socket = undefined;
     this.#rejectPending(new Error("Pi Live app connection closed"));
+  }
+
+  resume(socket: WebSocket): void {
+    if (this.#terminated) throw new Error("Pi Live app connection has ended");
+    if (this.open) throw new Error("Pi Live app is already connected");
+    this.#bindSocket(socket);
+    this.#emitState("connected");
+  }
+
+  markReconnecting(): void {
+    if (!this.#terminated) this.#emitState("reconnecting");
+  }
+
+  terminate(error?: Error, clean = false): void {
+    if (this.#terminated) return;
+    this.#terminated = true;
+    this.#transportGeneration += 1;
+    this.#socket = undefined;
+    this.#rejectPending(error ?? new Error("Pi Live app disconnected"));
+    for (const handler of this.#closeHandlers) handler(error, clean);
   }
 
   #send(value: unknown): void {
     if (!this.open) throw new Error("Pi Live app is disconnected");
-    this.#socket.send(JSON.stringify(value));
+    this.#socket?.send(JSON.stringify(value));
+  }
+
+  #bindSocket(socket: WebSocket): void {
+    this.#socket = socket;
+    const generation = ++this.#transportGeneration;
+    let transportError: Error | undefined;
+    socket.on("message", (data, isBinary) => {
+      if (this.#terminated || generation !== this.#transportGeneration || isBinary) return;
+      this.#handleMessage(rawDataText(data));
+    });
+    socket.on("error", (cause) => {
+      transportError = errorFrom(cause);
+    });
+    socket.on("close", (code) => {
+      if (this.#terminated || generation !== this.#transportGeneration) return;
+      this.#socket = undefined;
+      this.#rejectPending(transportError ?? new Error("Pi Live app disconnected"));
+      this.#onTransportClose(transportError, code === 1000);
+    });
   }
 
   #handleMessage(payload: string): void {
@@ -240,11 +291,8 @@ export class LiveMediaConnection {
     }
   }
 
-  #emitClose(error?: Error, clean = false): void {
-    if (this.#closed) return;
-    this.#closed = true;
-    this.#rejectPending(error ?? new Error("Pi Live app disconnected"));
-    for (const handler of this.#closeHandlers) handler(error, clean);
+  #emitState(state: "connected" | "reconnecting"): void {
+    for (const handler of this.#stateHandlers) handler(state);
   }
 
   #rejectPending(error: Error): void {
@@ -261,7 +309,11 @@ export class LivePairingServer {
   readonly #options: LivePairingServerOptions;
   readonly #secret = randomBytes(32).toString("base64url");
   readonly #serverNonce = randomBytes(16).toString("base64url");
-  readonly #websocketServer = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
+  readonly #resumeToken = randomBytes(32).toString("base64url");
+  readonly #websocketServer = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_SDP_BYTES * 2,
+  });
   #server: Server | undefined;
   #descriptor: PairingDescriptor | undefined;
   #connection: LiveMediaConnection | undefined;
@@ -270,6 +322,7 @@ export class LivePairingServer {
   #acceptReject: ((error: Error) => void) | undefined;
   #expiryTimer: NodeJS.Timeout | undefined;
   #heartbeatTimer: NodeJS.Timeout | undefined;
+  #reconnectTimer: NodeJS.Timeout | undefined;
   #closed = false;
 
   constructor(options: LivePairingServerOptions) {
@@ -307,8 +360,8 @@ export class LivePairingServer {
     this.#server = server;
     server.on("upgrade", (request, socket, head) => {
       const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
-      if (pathname !== "/live" || this.#connection !== undefined) {
-        socket.write("HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n");
+      if (pathname !== "/live") {
+        socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
         socket.destroy();
         return;
       }
@@ -369,6 +422,7 @@ export class LivePairingServer {
     this.#closed = true;
     if (this.#expiryTimer !== undefined) clearTimeout(this.#expiryTimer);
     if (this.#heartbeatTimer !== undefined) clearInterval(this.#heartbeatTimer);
+    if (this.#reconnectTimer !== undefined) clearTimeout(this.#reconnectTimer);
     this.#connection?.close();
     this.#websocketServer.close();
     const server = this.#server;
@@ -394,19 +448,30 @@ export class LivePairingServer {
         return;
       }
       const message = parseJsonRpcMessage(rawDataText(data));
-      if (message === undefined || message.kind !== "request" || message.value.method !== "pair") {
-        socket.send(jsonRpcError("0", -32600, "First request must be pair"));
+      if (message === undefined || message.kind !== "request") {
+        socket.send(jsonRpcError("0", -32600, "First request must be pair or resume"));
         socket.close(1008, "pair first");
         return;
       }
-      const params = parsePairRequestParams(message.value.params);
-      if (params === undefined) {
-        socket.send(jsonRpcError(message.value.id, -32001, "Pairing rejected"));
-        socket.close(1008, "pairing rejected");
-        return;
-      }
-      if (params.capabilities.webrtc && this.#secretMatches(params.secret)) {
-        this.#completePairing(socket, message.value.id, params);
+      if (message.value.method === "pair") {
+        const params = parsePairRequestParams(message.value.params);
+        if (
+          params !== undefined &&
+          params.capabilities.webrtc &&
+          this.#secretMatches(params.secret)
+        ) {
+          this.#completePairing(socket, message.value.id, params);
+          return;
+        }
+      } else if (message.value.method === "resume") {
+        const params = parseResumeRequestParams(message.value.params);
+        if (params !== undefined && this.#resumeMatches(params)) {
+          this.#resumePairing(socket, message.value.id);
+          return;
+        }
+      } else {
+        socket.send(jsonRpcError(message.value.id, -32601, "Unsupported initial request"));
+        socket.close(1008, "unsupported request");
         return;
       }
       socket.send(jsonRpcError(message.value.id, -32001, "Pairing rejected"));
@@ -434,19 +499,77 @@ export class LivePairingServer {
           protocolVersion: LIVE_PAIRING_PROTOCOL_VERSION,
           sessionId: this.#options.sessionId,
           serverNonce: this.#serverNonce,
+          resumeToken: this.#resumeToken,
         },
       }),
     );
-    const connection = new LiveMediaConnection(socket, params.preferences);
+    const connection = new LiveMediaConnection(socket, params.preferences, (error, clean) => {
+      this.#handleTransportClose(error, clean);
+    });
     this.#connection = connection;
     this.#acceptResolve?.(connection);
     this.#startHeartbeat(connection);
+  }
+
+  #resumePairing(socket: WebSocket, requestId: JsonRpcId): void {
+    const connection = this.#connection;
+    if (connection === undefined || connection.open || this.#reconnectTimer === undefined) {
+      socket.send(jsonRpcError(requestId, -32003, "Session is not awaiting reconnection"));
+      socket.close(1008, "resume unavailable");
+      return;
+    }
+    clearTimeout(this.#reconnectTimer);
+    this.#reconnectTimer = undefined;
+    socket.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: requestId,
+        result: {
+          protocolVersion: LIVE_PAIRING_PROTOCOL_VERSION,
+          sessionId: this.#options.sessionId,
+          serverNonce: this.#serverNonce,
+          resumed: true,
+        },
+      }),
+    );
+    connection.resume(socket);
   }
 
   #secretMatches(candidate: string): boolean {
     const expected = Buffer.from(this.#secret, "utf8");
     const actual = Buffer.from(candidate, "utf8");
     return expected.length === actual.length && timingSafeEqual(expected, actual);
+  }
+
+  #resumeMatches(params: { sessionId: string; serverNonce: string; resumeToken: string }): boolean {
+    return (
+      params.sessionId === this.#options.sessionId &&
+      params.serverNonce === this.#serverNonce &&
+      this.#constantTimeMatches(this.#resumeToken, params.resumeToken)
+    );
+  }
+
+  #constantTimeMatches(expectedValue: string, candidateValue: string): boolean {
+    const expected = Buffer.from(expectedValue, "utf8");
+    const actual = Buffer.from(candidateValue, "utf8");
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  }
+
+  #handleTransportClose(error: Error | undefined, clean: boolean): void {
+    const connection = this.#connection;
+    if (connection === undefined) return;
+    if (clean) {
+      connection.terminate(error, true);
+      return;
+    }
+    connection.markReconnecting();
+    if (this.#reconnectTimer !== undefined) clearTimeout(this.#reconnectTimer);
+    const reconnectGraceMs = this.#options.reconnectGraceMs ?? DEFAULT_RECONNECT_GRACE_MS;
+    this.#reconnectTimer = setTimeout(() => {
+      this.#reconnectTimer = undefined;
+      connection.terminate(error ?? new Error("Pi Live app reconnection timed out"));
+    }, reconnectGraceMs);
+    this.#reconnectTimer.unref?.();
   }
 
   #startHeartbeat(connection: LiveMediaConnection): void {

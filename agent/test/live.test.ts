@@ -10,17 +10,27 @@ import {
 } from "../src/extensions/live/agent-response.js";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { MessageUpdateEvent } from "@earendil-works/pi-coding-agent";
 import { _test as liveExtensionTest } from "../src/extensions/live/index.js";
+import {
+  LiveAgentProgressBuffer,
+  readLiveAgentDelta,
+} from "../src/extensions/live/agent-progress.js";
 import { LivePairingServer } from "../src/extensions/live/pairing/server.js";
 import { buildLiveInstructions } from "../src/extensions/live/prompts.js";
 import {
   decodePairingUri,
   LIVE_PAIRING_PROTOCOL_VERSION,
 } from "../src/extensions/live/pairing/schemas.js";
-import { chunkLiveContext, parseLiveServerEvent } from "../src/extensions/live/protocol.js";
+import {
+  buildPiSteerContext,
+  chunkLiveContext,
+  parseLiveServerEvent,
+} from "../src/extensions/live/protocol.js";
 import {
   _test as liveTransportTest,
   buildLiveSidebandUrl,
+  CodexLiveControl,
   parseLiveCallId,
 } from "../src/extensions/live/transport.js";
 import {
@@ -43,9 +53,13 @@ import {
   sanitizeNormalizedDelegation,
   splitLiveTranscriptForTranslation,
 } from "../src/extensions/live/delegation-normalizer.js";
-import { omitEmptyLiveDelegationAssistantTurns } from "../src/extensions/live/provider-context.js";
+import {
+  applyLiveDelegationConversationContext,
+  omitEmptyLiveDelegationAssistantTurns,
+} from "../src/extensions/live/provider-context.js";
 import {
   buildDelegationWithTranscriptContext,
+  LiveConversationTracker,
   prepareLongTranscriptContext,
 } from "../src/extensions/live/delegation-context.js";
 
@@ -56,6 +70,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true });
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("Pi Live pairing", () => {
@@ -103,6 +118,7 @@ describe("Pi Live pairing", () => {
             inputLevel: false,
             outputLevel: false,
             deviceSelection: false,
+            sessionResume: true,
           },
           preferences: {
             voice: "maple",
@@ -131,9 +147,230 @@ describe("Pi Live pairing", () => {
     socket.close(1000, "done");
     await expect(closed).resolves.toBe(true);
   });
+
+  it("resumes the same logical connection after an unclean transport loss", async () => {
+    const server = new LivePairingServer({
+      sessionId: "session-resume",
+      mode: "local",
+      reconnectGraceMs: 1_000,
+    });
+    servers.push(server);
+    const descriptor = await server.start();
+    const { payload, secret } = decodePairingUri(descriptor.uri);
+    const endpoint = payload.endpoints.find((candidate) => candidate.type === "local");
+    if (!endpoint || endpoint.type !== "local") throw new Error("Missing local endpoint");
+    const accepted = server.accept();
+    const firstSocket = new WebSocket(endpoint.url);
+    await new Promise<void>((resolve, reject) => {
+      firstSocket.once("open", resolve);
+      firstSocket.once("error", reject);
+    });
+    firstSocket.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: "pair",
+        method: "pair",
+        params: {
+          protocolVersion: LIVE_PAIRING_PROTOCOL_VERSION,
+          secret,
+          client: { name: "test", platform: "macOS", appVersion: "0.1.0" },
+          capabilities: {
+            webrtc: true,
+            inputLevel: false,
+            outputLevel: false,
+            deviceSelection: false,
+            sessionResume: true,
+          },
+        },
+      }),
+    );
+    const pairResponse = await new Promise<{
+      result: { sessionId: string; serverNonce: string; resumeToken: string };
+    }>((resolve) => {
+      firstSocket.once("message", (data) => resolve(JSON.parse(data.toString()) as never));
+    });
+    const connection = await accepted;
+    const states: string[] = [];
+    let terminated = false;
+    connection.onState((state) => states.push(state));
+    connection.onClose(() => {
+      terminated = true;
+    });
+
+    firstSocket.terminate();
+    await vi.waitFor(() => expect(states).toContain("reconnecting"));
+
+    const resumedSocket = new WebSocket(endpoint.url);
+    await new Promise<void>((resolve, reject) => {
+      resumedSocket.once("open", resolve);
+      resumedSocket.once("error", reject);
+    });
+    resumedSocket.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: "resume",
+        method: "resume",
+        params: {
+          protocolVersion: LIVE_PAIRING_PROTOCOL_VERSION,
+          sessionId: pairResponse.result.sessionId,
+          serverNonce: pairResponse.result.serverNonce,
+          resumeToken: pairResponse.result.resumeToken,
+        },
+      }),
+    );
+    const resumeResponse = await new Promise<{ result: { resumed: boolean } }>((resolve) => {
+      resumedSocket.once("message", (data) => resolve(JSON.parse(data.toString()) as never));
+    });
+    expect(resumeResponse.result.resumed).toBe(true);
+    await vi.waitFor(() => expect(states).toContain("connected"));
+    expect(connection.open).toBe(true);
+    expect(terminated).toBe(false);
+
+    const notification = new Promise<Record<string, unknown>>((resolve) => {
+      resumedSocket.once("message", (data) =>
+        resolve(JSON.parse(data.toString()) as Record<string, unknown>),
+      );
+    });
+    connection.notify("session.phase", { phase: "working" });
+    await expect(notification).resolves.toMatchObject({
+      method: "session.phase",
+      params: { phase: "working" },
+    });
+    resumedSocket.close(1000, "done");
+  });
+});
+
+describe("Pi Live agent progress", () => {
+  it("classifies thinking and commentary deltas without exposing raw event shapes", () => {
+    expect(
+      readLiveAgentDelta({
+        assistantMessageEvent: { type: "thinking_delta", delta: "Checking", partial: {} },
+      } as MessageUpdateEvent),
+    ).toEqual({ channel: "commentary", text: "Checking" });
+    expect(
+      readLiveAgentDelta({
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "Done",
+          partial: {
+            content: [
+              {
+                type: "text",
+                text: "Done",
+                textSignature: JSON.stringify({ v: 1, phase: "final_answer" }),
+              },
+            ],
+          },
+        },
+      } as MessageUpdateEvent),
+    ).toEqual({ channel: "speakable", text: "Done" });
+  });
+
+  it("batches token deltas and flushes immediately when the semantic channel changes", () => {
+    vi.useFakeTimers();
+    try {
+      const flushed: Array<{ channel: string; text: string }> = [];
+      const buffer = new LiveAgentProgressBuffer((progress) => flushed.push(progress));
+      buffer.push({ channel: "commentary", text: "Check" });
+      buffer.push({ channel: "commentary", text: "ing" });
+      vi.advanceTimersByTime(199);
+      expect(flushed).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(flushed).toEqual([{ channel: "commentary", text: "Checking" }]);
+
+      buffer.push({ channel: "commentary", text: "Tests pass" });
+      buffer.push({ channel: "speakable", text: "Completed" });
+      expect(flushed.at(-1)).toEqual({ channel: "commentary", text: "Tests pass" });
+      buffer.flush();
+      expect(flushed.at(-1)).toEqual({ channel: "speakable", text: "Completed" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("Pi Live Codex protocol", () => {
+  it("aborts pending signaling when live control closes", async () => {
+    const externalAbortController = new AbortController();
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+        requestSignal = init?.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          requestSignal?.addEventListener(
+            "abort",
+            () => reject(requestSignal?.reason ?? new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      }),
+    );
+    const control = new CodexLiveControl({
+      attestation: "attestation",
+      context: {
+        modelRegistry: {
+          getProviderAuth: async () => ({
+            auth: { apiKey: "access-token", headers: {} },
+            source: "test",
+          }),
+        },
+        sessionManager: { getSessionId: () => "session-1" },
+      } as never,
+      sessionId: "session-1",
+      instructions: "instructions",
+      voice: "sol",
+      onEvent() {},
+      signal: externalAbortController.signal,
+    });
+
+    const connecting = control.connect("offer");
+    await vi.waitFor(() => expect(requestSignal).toBeDefined());
+    await control.close();
+    const abortedByClose = requestSignal?.aborted;
+    externalAbortController.abort();
+
+    await expect(connecting).rejects.toMatchObject({ name: "AbortError" });
+    expect(abortedByClose).toBe(true);
+  });
+
+  it("rejects oversized signaling responses before WebRTC handoff", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("x".repeat(256 * 1024 + 1), {
+            status: 201,
+            headers: {
+              "content-length": String(256 * 1024 + 1),
+              location: "https://api.openai.com/v1/live/rtc_oversized",
+            },
+          }),
+      ),
+    );
+    const control = new CodexLiveControl({
+      attestation: "attestation",
+      context: {
+        modelRegistry: {
+          getProviderAuth: async () => ({
+            auth: { apiKey: "access-token", headers: {} },
+            source: "test",
+          }),
+        },
+        sessionManager: { getSessionId: () => "session-1" },
+      } as never,
+      sessionId: "session-1",
+      instructions: "instructions",
+      voice: "sol",
+      onEvent() {},
+    });
+
+    await expect(control.connect("offer")).rejects.toThrow(
+      "Codex live response exceeded 262144 bytes",
+    );
+  });
+
   it("reads pi-ai commentary and final-answer text phases", () => {
     expect(
       readAssistantTextPhase({
@@ -255,6 +492,8 @@ describe("Pi Live Codex protocol", () => {
     expect(
       chunkLiveContext("🙂".repeat(200)).every((chunk) => Buffer.byteLength(chunk) <= 500),
     ).toBe(true);
+    expect(buildPiSteerContext("  focus on auth tests  ")).toContain("focus on auth tests");
+    expect(buildPiSteerContext(" ")).toBeUndefined();
   });
 
   it("parses local, SSH, Coder, and direct command adapters", () => {
@@ -355,6 +594,8 @@ describe("Pi Live Codex protocol", () => {
     );
     expect(instructions).toContain("MUST NOT delegate ordinary conversation");
     expect(instructions).toContain("Every client delegation MUST be written in English");
+    expect(instructions).toContain("exactly one client delegation");
+    expect(instructions).toContain("Arabic conversational prose");
     expect(instructions).toContain("spoken reply MUST use the language of the user's latest turn");
     expect(instructions).toContain("sharp, energetic coworker");
     expect(instructions).toContain("collaborator, not a passive dictation interface");
@@ -380,6 +621,13 @@ describe("Pi Live Codex protocol", () => {
         "Revisa los últimos commits del proyecto y resume los cambios recientes.",
       ),
     ).toMatchObject({ accepted: false, detectedLanguage: "spa" });
+    expect(assessDelegationLanguage("Fix auth و tests")).toMatchObject({
+      accepted: false,
+      reason: "non-latin-prose",
+    });
+    expect(assessDelegationLanguage('Rename the label to "مرحبا"')).toMatchObject({
+      accepted: true,
+    });
   });
 
   it("distinguishes copied transcripts from synthesized delegations", () => {
@@ -424,6 +672,92 @@ describe("Pi Live Codex protocol", () => {
     expect(request).toContain(transcript);
     expect(request).toContain("ENGLISH_CONTEXT_BEGIN");
     expect(request).toContain("ENGLISH_CONTEXT_END");
+  });
+
+  it("deduplicates active delegations and allows a repeat after settlement", () => {
+    const conversation = new LiveConversationTracker();
+    conversation.updateTranscript("user", 1, "Check the server logs");
+
+    expect(conversation.acceptDelegation("Inspect the server logs", "delegation-1")).toEqual({
+      conversationContext: "user: Check the server logs\nuser: Inspect the server logs",
+    });
+    expect(
+      conversation.acceptDelegation("Inspect the server logs", "delegation-1"),
+    ).toBeUndefined();
+    expect(
+      conversation.acceptDelegation("Inspect the server logs", "delegation-2"),
+    ).toBeUndefined();
+
+    conversation.settleDelegation("delegation-1");
+    expect(conversation.acceptDelegation("Inspect the server logs", "delegation-3")).toEqual({
+      conversationContext: "user: Inspect the server logs",
+    });
+  });
+
+  it("carries conversation since the previous workspace handoff", () => {
+    const conversation = new LiveConversationTracker();
+    conversation.updateTranscript("user", 1, "Check temperatures on the laptop");
+    conversation.updateTranscript("assistant", 1, "Do you also want the server?");
+    conversation.updateTranscript("user", 2, "Yes, do the same there");
+
+    expect(conversation.acceptDelegation("Check both machines", "delegation-1")).toEqual({
+      conversationContext: [
+        "user: Check temperatures on the laptop",
+        "assistant: Do you also want the server?",
+        "user: Yes, do the same there",
+        "user: Check both machines",
+      ].join("\n"),
+    });
+    conversation.updateTranscript("assistant", 2, "I sent that to the workspace");
+    conversation.updateTranscript("user", 3, "What is the status?");
+    expect(conversation.acceptDelegation("Report workspace status", "delegation-2")).toEqual({
+      conversationContext: [
+        "assistant: I sent that to the workspace",
+        "user: What is the status?",
+        "user: Report workspace status",
+      ].join("\n"),
+    });
+  });
+
+  it("does not replay a delegated user transcript when its final event arrives late", () => {
+    const conversation = new LiveConversationTracker();
+    conversation.updateTranscript("user", 1, "Check the logs", false);
+    expect(conversation.acceptDelegation("Inspect the logs", "delegation-1")).toBeDefined();
+
+    conversation.updateTranscript("user", 1, "Check the logs", true);
+    conversation.updateTranscript("assistant", 1, "I am checking now", true);
+
+    expect(conversation.acceptDelegation("Report current progress", "delegation-2")).toEqual({
+      conversationContext: ["assistant: I am checking now", "user: Report current progress"].join(
+        "\n",
+      ),
+    });
+  });
+
+  it("adds voice conversation context only to provider-facing delegation content", () => {
+    const message = {
+      role: "custom" as const,
+      customType: "live-delegation",
+      content: "Check both machines",
+      display: true,
+      details: {
+        delegationId: "delegation-1",
+        sourceTurn: 2,
+        transcriptRelation: "synthesized",
+        languageAssessment: "english",
+        conversationContext: "user: Check temperatures\nuser: Yes, both machines",
+      },
+      timestamp: 1,
+    };
+
+    const messages = applyLiveDelegationConversationContext([message]);
+
+    expect(messages?.[0]).toMatchObject({
+      role: "custom",
+      content: expect.stringContaining("<live-conversation-context>"),
+    });
+    expect((messages?.[0] as typeof message).content).toContain("Check both machines");
+    expect(message.content).toBe("Check both machines");
   });
 
   it("translates and delivers the complete long Arabic transcript context", async () => {

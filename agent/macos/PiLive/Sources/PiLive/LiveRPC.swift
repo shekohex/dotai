@@ -116,6 +116,7 @@ struct PairRequestParams: Encodable {
         let inputLevel: Bool
         let outputLevel: Bool
         let deviceSelection: Bool
+        let sessionResume: Bool
     }
 
     struct Preferences: Encodable {
@@ -133,7 +134,13 @@ struct PairRequestParams: Encodable {
 
 struct PhaseParams: Codable, Sendable { let phase: String }
 struct TranscriptParams: Codable, Sendable { let text: String }
+struct AgentProgressParams: Codable, Sendable {
+    let delegationId: String
+    let channel: String
+    let text: String
+}
 struct MutedParams: Codable, Sendable { let muted: Bool }
+struct WebRTCStateParams: Codable, Sendable { let state: String }
 struct AudioLevelsParams: Codable, Sendable {
     let input: Double
     let output: Double
@@ -165,6 +172,27 @@ struct PongParams: Codable, Sendable { let timestamp: Double }
 struct AcceptAnswerParams: Codable, Sendable { let sdp: String }
 struct OfferResult: Codable, Sendable { let sdp: String }
 struct AcceptAnswerResult: Codable, Sendable { let accepted: Bool }
+struct PairResult: Codable, Sendable {
+    let protocolVersion: Int
+    let sessionId: String
+    let serverNonce: String
+    let resumeToken: String
+}
+struct ResumeRequestParams: Codable, Sendable {
+    let protocolVersion: Int
+    let sessionId: String
+    let serverNonce: String
+    let resumeToken: String
+}
+struct ResumeResult: Codable, Sendable {
+    let protocolVersion: Int
+    let sessionId: String
+    let serverNonce: String
+    let resumed: Bool
+}
+
+let maxLiveRPCFrameBytes = 512 * 1024
+let maxLiveSDPBytes = 256 * 1024
 
 extension Optional where Wrapped == JSONValue {
     func decode<Value: Decodable>(_ type: Value.Type, default defaultValue: Value? = nil) throws -> Value {

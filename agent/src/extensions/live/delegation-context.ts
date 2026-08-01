@@ -3,7 +3,18 @@ import { assessDelegationLanguage } from "./delegation-language.js";
 const LONG_TRANSCRIPT_DURATION_MS = 55_000;
 const LONG_TRANSCRIPT_WORDS = 100;
 const LONG_TRANSCRIPT_CHARACTERS = 700;
+const MAX_CONVERSATION_CONTEXT_BYTES = 32 * 1024;
 const WORD_PATTERN = /[\p{Letter}\p{Number}][\p{Letter}\p{Mark}\p{Number}'’-]*/gu;
+
+interface LiveConversationEntry {
+  role: "user" | "assistant";
+  turn: number;
+  text: string;
+}
+
+export interface AcceptedLiveDelegation {
+  conversationContext: string;
+}
 
 export interface TranslatedLiveTranscript {
   text: string;
@@ -15,6 +26,95 @@ export interface LiveTranscriptContext {
   sourceCharacters: number;
   sourceLanguage: string;
   translatedBy?: string;
+}
+
+/** Tracks bounded voice context and suppresses repeated active delegations. */
+export class LiveConversationTracker {
+  readonly #delegationIds = new Set<string>();
+  readonly #outstandingDelegations = new Map<string, string>();
+  readonly #outstandingInputs = new Set<string>();
+  #entries: LiveConversationEntry[] = [];
+  #delegationsAwaitingUserFinish = 0;
+  #userTranscriptOpen = false;
+
+  updateTranscript(
+    role: LiveConversationEntry["role"],
+    turn: number,
+    transcript: string,
+    final = false,
+  ): void {
+    const text = transcript.trim();
+    if (text.length === 0) return;
+    if (role === "user") {
+      this.#userTranscriptOpen = !final;
+      if (final && this.#delegationsAwaitingUserFinish > 0) {
+        this.#delegationsAwaitingUserFinish -= 1;
+        return;
+      }
+    }
+    const existingIndex = this.#entries.findIndex(
+      (entry) => entry.role === role && entry.turn === turn,
+    );
+    const entry = { role, turn, text } satisfies LiveConversationEntry;
+    if (existingIndex === -1) this.#entries.push(entry);
+    else this.#entries[existingIndex] = entry;
+    this.#boundEntries();
+  }
+
+  acceptDelegation(input: string, delegationId: string): AcceptedLiveDelegation | undefined {
+    const normalized = input.trim();
+    if (normalized.length === 0 || this.#delegationIds.has(delegationId)) return undefined;
+    this.#delegationIds.add(delegationId);
+    if (this.#delegationIds.size > 128) {
+      const oldestDelegationId = this.#delegationIds.values().next().value;
+      if (oldestDelegationId !== undefined) this.#delegationIds.delete(oldestDelegationId);
+    }
+    if (this.#outstandingInputs.has(normalized)) return undefined;
+    this.#outstandingDelegations.set(delegationId, normalized);
+    this.#outstandingInputs.add(normalized);
+    const hasUserTranscript = this.#entries.some((entry) => entry.role === "user");
+    if (this.#userTranscriptOpen || !hasUserTranscript) this.#delegationsAwaitingUserFinish += 1;
+    if (!this.#entries.some((entry) => entry.role === "user" && entry.text === normalized)) {
+      this.#entries.push({ role: "user", turn: Number.MAX_SAFE_INTEGER, text: normalized });
+      this.#boundEntries();
+    }
+    const conversationContext = this.#renderEntries();
+    this.#entries = [];
+    return { conversationContext };
+  }
+
+  settleDelegation(delegationId: string): void {
+    const input = this.#outstandingDelegations.get(delegationId);
+    if (input === undefined) return;
+    this.#outstandingDelegations.delete(delegationId);
+    this.#outstandingInputs.delete(input);
+  }
+
+  reset(): void {
+    this.#entries = [];
+    this.#delegationIds.clear();
+    this.#outstandingDelegations.clear();
+    this.#outstandingInputs.clear();
+    this.#delegationsAwaitingUserFinish = 0;
+    this.#userTranscriptOpen = false;
+  }
+
+  #boundEntries(): void {
+    this.#entries = this.#entries.filter(
+      (entry) =>
+        Buffer.byteLength(`${entry.role}: ${entry.text}`) <= MAX_CONVERSATION_CONTEXT_BYTES,
+    );
+    while (
+      this.#entries.length > 0 &&
+      Buffer.byteLength(this.#renderEntries()) > MAX_CONVERSATION_CONTEXT_BYTES
+    ) {
+      this.#entries.shift();
+    }
+  }
+
+  #renderEntries(): string {
+    return this.#entries.map((entry) => `${entry.role}: ${entry.text}`).join("\n");
+  }
 }
 
 /**

@@ -4,6 +4,7 @@ import Foundation
 enum LiveClientEvent: Sendable {
     case phase(LivePhase)
     case transcript(String)
+    case agentProgress(delegationId: String, text: String, channel: String)
     case failure(String)
     case stopped
     case levels(input: Double, output: Double, speechActive: Bool)
@@ -14,6 +15,11 @@ enum LiveClientEvent: Sendable {
 
 @MainActor
 final class LivePairingClient {
+    private struct ControlEndpoint {
+        let url: URL
+        let coderToken: String?
+    }
+
     let events: AsyncStream<LiveClientEvent>
 
     private let eventContinuation: AsyncStream<LiveClientEvent>.Continuation
@@ -30,6 +36,8 @@ final class LivePairingClient {
     private var stopFinished = true
     private var preferredVoice: LiveVoice = .sol
     private var muted = false
+    private var controlEndpoint: ControlEndpoint?
+    private var pairResult: PairResult?
 
     init() {
         let pair = AsyncStream.makeStream(of: LiveClientEvent.self)
@@ -40,6 +48,9 @@ final class LivePairingClient {
             Task { try? await self?.notify("webrtc.opened", params: EmptyParams()) }
         }
         peer.onFailure = { [weak self] error in self?.fail(error) }
+        peer.onState = { [weak self] state in
+            Task { try? await self?.notify("webrtc.state", params: WebRTCStateParams(state: state)) }
+        }
         peer.onLevels = { [weak self] input, output, speechActive in
             guard let self else { return }
             self.emit(.levels(input: input, output: output, speechActive: speechActive))
@@ -73,17 +84,12 @@ final class LivePairingClient {
             coderToken: coderToken,
             sshTarget: sshTarget
         )
-        var request = URLRequest(url: resolved.url)
-        request.timeoutInterval = 15
-        if resolved.needsCoderToken {
-            guard !coderToken.isEmpty else { throw PiLiveError.missingCoderToken }
-            request.setValue(coderToken, forHTTPHeaderField: "Coder-Session-Token")
-        }
-        let session = URLSession(configuration: .ephemeral)
-        let socket = session.webSocketTask(with: request)
-        self.session = session
-        self.socket = socket
-        socket.resume()
+        let endpoint = ControlEndpoint(
+            url: resolved.url,
+            coderToken: resolved.needsCoderToken ? coderToken : nil
+        )
+        controlEndpoint = endpoint
+        openControlTransport(endpoint)
         emit(.phase(.pairing))
 
         try await send(RPCRequest(
@@ -101,7 +107,8 @@ final class LivePairingClient {
                     webrtc: true,
                     inputLevel: true,
                     outputLevel: true,
-                    deviceSelection: false
+                    deviceSelection: false,
+                    sessionResume: true
                 ),
                 preferences: .init(
                     voice: voice.rawValue,
@@ -114,9 +121,17 @@ final class LivePairingClient {
         if let error = pairResponse.error {
             throw PiLiveError.pairingRejected(error.message)
         }
-        guard pairResponse.result != nil else {
+        guard let result = pairResponse.result else {
             throw PiLiveError.protocolError("Pair response is missing result")
         }
+        let pairResult = try result.decode(PairResult.self)
+        guard pairResult.protocolVersion == livePairingProtocolVersion,
+              pairResult.sessionId == envelope.payload.sessionId,
+              pairResult.serverNonce == envelope.payload.serverNonce
+        else {
+            throw PiLiveError.protocolError("Pair response does not match requested session")
+        }
+        self.pairResult = pairResult
         emit(.phase(.connecting))
         receiveTask = Task { [weak self] in await self?.receiveLoop() }
     }
@@ -189,25 +204,38 @@ final class LivePairingClient {
         endingTask = nil
         receiveTask?.cancel()
         receiveTask = nil
-        if let socket {
-            socket.cancel(with: .normalClosure, reason: nil)
-        }
-        socket = nil
-        session?.invalidateAndCancel()
-        session = nil
+        closeControlTransport()
         peer.close()
+        muted = false
         tunnel.close()
+        controlEndpoint = nil
+        pairResult = nil
     }
 
     private func receiveLoop() async {
-        do {
-            while !Task.isCancelled {
+        while !Task.isCancelled {
+            do {
                 try await handle(receiveFrame())
+            } catch is CancellationError {
+                return
+            } catch {
+                if ending {
+                    finishStop()
+                    return
+                }
+                guard shouldReconnect(after: error) else {
+                    fail(error)
+                    return
+                }
+                do {
+                    try await reconnectControlTransport()
+                } catch is CancellationError {
+                    return
+                } catch {
+                    fail(error)
+                    return
+                }
             }
-        } catch is CancellationError {
-        } catch {
-            if ending { finishStop() }
-            else { fail(error) }
         }
     }
 
@@ -231,6 +259,13 @@ final class LivePairingClient {
             emit(.phase(LivePhase(rawValue: params.phase) ?? .connecting))
         case "transcript.updated":
             emit(.transcript(try frame.params.decode(TranscriptParams.self).text))
+        case "agent.progress":
+            let params = try frame.params.decode(AgentProgressParams.self)
+            emit(.agentProgress(
+                delegationId: params.delegationId,
+                text: params.text,
+                channel: params.channel
+            ))
         case "audio.setMuted":
             let params = try frame.params.decode(MutedParams.self)
             muted = params.muted
@@ -284,6 +319,9 @@ final class LivePairingClient {
             try await send(RPCSuccess(id: id, result: OfferResult(sdp: try await peer.createOffer())))
         case "webrtc.acceptAnswer":
             let answer = try params.decode(AcceptAnswerParams.self)
+            guard answer.sdp.utf8.count <= maxLiveSDPBytes else {
+                throw PiLiveError.protocolError("WebRTC answer SDP is oversized")
+            }
             try await peer.acceptAnswer(answer.sdp)
             try await send(RPCSuccess(id: id, result: AcceptAnswerResult(accepted: true)))
         default:
@@ -313,7 +351,93 @@ final class LivePairingClient {
         case let .data(value): data = value
         @unknown default: throw PiLiveError.protocolError("Unsupported WebSocket frame")
         }
+        guard data.count <= maxLiveRPCFrameBytes else {
+            throw PiLiveError.protocolError("JSON-RPC frame is oversized")
+        }
         return try decoder.decode(RPCIncomingFrame.self, from: data)
+    }
+
+    private func openControlTransport(_ endpoint: ControlEndpoint, timeoutInterval: TimeInterval = 15) {
+        var request = URLRequest(url: endpoint.url)
+        request.timeoutInterval = timeoutInterval
+        if let coderToken = endpoint.coderToken {
+            request.setValue(coderToken, forHTTPHeaderField: "Coder-Session-Token")
+        }
+        let session = URLSession(configuration: .ephemeral)
+        let socket = session.webSocketTask(with: request)
+        self.session = session
+        self.socket = socket
+        socket.resume()
+    }
+
+    private func closeControlTransport() {
+        socket?.cancel(with: .normalClosure, reason: nil)
+        socket = nil
+        session?.invalidateAndCancel()
+        session = nil
+    }
+
+    private func reconnectControlTransport() async throws {
+        guard let endpoint = controlEndpoint, let pairResult else {
+            throw PiLiveError.protocolError("Pairing session cannot be resumed")
+        }
+        emit(.phase(.reconnecting))
+        closeControlTransport()
+        let retryDelays: [Duration] = [
+            .zero,
+            .milliseconds(250),
+            .milliseconds(500),
+            .seconds(1),
+            .seconds(2),
+            .seconds(3),
+        ]
+        var lastError: Error = PiLiveError.protocolError("Pairing reconnection failed")
+        for delay in retryDelays {
+            guard !ending, !Task.isCancelled else { throw CancellationError() }
+            if delay != .zero { try await Task.sleep(for: delay) }
+            do {
+                openControlTransport(endpoint, timeoutInterval: 3)
+                try await send(RPCRequest(
+                    id: .string("resume"),
+                    method: "resume",
+                    params: ResumeRequestParams(
+                        protocolVersion: livePairingProtocolVersion,
+                        sessionId: pairResult.sessionId,
+                        serverNonce: pairResult.serverNonce,
+                        resumeToken: pairResult.resumeToken
+                    )
+                ))
+                let response = try await receiveFrame()
+                if let error = response.error { throw PiLiveError.pairingRejected(error.message) }
+                guard let result = response.result else {
+                    throw PiLiveError.protocolError("Resume response is missing result")
+                }
+                let resumed = try result.decode(ResumeResult.self)
+                guard resumed.resumed,
+                      resumed.protocolVersion == livePairingProtocolVersion,
+                      resumed.sessionId == pairResult.sessionId,
+                      resumed.serverNonce == pairResult.serverNonce
+                else {
+                    throw PiLiveError.protocolError("Resume response does not match paired session")
+                }
+                return
+            } catch {
+                lastError = error
+                closeControlTransport()
+            }
+        }
+        throw lastError
+    }
+
+    private func shouldReconnect(after error: Error) -> Bool {
+        if error is DecodingError { return false }
+        guard let liveError = error as? PiLiveError else { return true }
+        switch liveError {
+        case .pairingRejected, .protocolError:
+            return false
+        default:
+            return true
+        }
     }
 
     private func resolveEndpoint(

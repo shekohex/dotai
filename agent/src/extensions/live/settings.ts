@@ -36,6 +36,7 @@ export const LiveSettingsSchema = Type.Object(
     directHost: Type.Optional(Type.String()),
     pairingTtlMs: Type.Optional(Type.Number({ minimum: 1_000 })),
     heartbeatMs: Type.Optional(Type.Number({ minimum: 1_000 })),
+    reconnectGraceMs: Type.Optional(Type.Number({ minimum: 1_000 })),
     appOpenTimeoutMs: Type.Optional(Type.Number({ minimum: 1_000 })),
   },
   { additionalProperties: true },
@@ -75,6 +76,7 @@ export const defaultLiveSettings = {
   directHost: "",
   pairingTtlMs: 120_000,
   heartbeatMs: 10_000,
+  reconnectGraceMs: 30_000,
   appOpenTimeoutMs: 25_000,
 } as const satisfies LiveSettings;
 

@@ -20,6 +20,7 @@ const LIVE_PROVIDER = "openai-codex";
 const LIVE_ORIGINATOR = "Codex Desktop";
 const LIVE_CALL_ID_PATTERN = /^rtc_[\w-]+$/u;
 const MAX_ERROR_BODY_LENGTH = 2_048;
+const MAX_LIVE_SDP_BYTES = 256 * 1024;
 const SIDEBAND_CONNECT_ATTEMPTS = 5;
 const SIDEBAND_CONNECT_TIMEOUT_MS = 15_000;
 
@@ -174,6 +175,32 @@ function boundedErrorBody(body: string, statusText: string): string {
   return `${normalized.slice(0, MAX_ERROR_BODY_LENGTH)}…`;
 }
 
+async function readBoundedResponseText(response: Response, maxBytes: number): Promise<string> {
+  const declaredBytes = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
+    throw new Error(`Codex live response exceeded ${maxBytes} bytes`);
+  }
+  if (response.body === null) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      bytes += result.value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`Codex live response exceeded ${maxBytes} bytes`);
+      }
+      chunks.push(result.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, bytes).toString("utf8");
+}
+
 function abortReason(signal: AbortSignal | undefined): Error {
   if (signal?.reason instanceof Error) return signal.reason;
   return new DOMException("Live connection aborted", "AbortError");
@@ -274,6 +301,8 @@ function readCliproxyCodexCredential(payload: unknown): {
 export class CodexLiveControl {
   readonly #options: CodexLiveControlOptions;
   readonly #realtimeSessionId = crypto.randomUUID();
+  readonly #abortController = new AbortController();
+  readonly #lifecycleSignal: AbortSignal;
   #sideband: WebSocket | undefined;
   #state: Lifecycle = "idle";
   #connectPromise: Promise<string> | undefined;
@@ -283,6 +312,10 @@ export class CodexLiveControl {
 
   constructor(options: CodexLiveControlOptions) {
     this.#options = options;
+    this.#lifecycleSignal =
+      options.signal === undefined
+        ? this.#abortController.signal
+        : AbortSignal.any([options.signal, this.#abortController.signal]);
   }
 
   connect(offer: string): Promise<string> {
@@ -300,10 +333,10 @@ export class CodexLiveControl {
   }
 
   async #connect(offer: string): Promise<string> {
-    if (this.#options.signal?.aborted === true) throw abortReason(this.#options.signal);
+    if (this.#lifecycleSignal.aborted) throw abortReason(this.#lifecycleSignal);
     const signaling = await this.#signal(offer);
     await this.#connectSideband(signaling.callId, signaling.access);
-    if (this.#state !== "connecting") throw abortReason(this.#options.signal);
+    if (this.#state !== "connecting") throw abortReason(this.#lifecycleSignal);
     this.#state = "connected";
     return signaling.answer;
   }
@@ -344,9 +377,9 @@ export class CodexLiveControl {
         sdp: offer,
         session: buildLiveSessionPayload(this.#options.instructions, this.#options.voice),
       }),
-      signal: this.#options.signal,
+      signal: this.#lifecycleSignal,
     });
-    const responseBody = await response.text();
+    const responseBody = await readBoundedResponseText(response, MAX_LIVE_SDP_BYTES);
     const callId = parseLiveCallId(response.headers.get("location"));
     appendLiveDiagnostic(this.#options.sessionId, "signaling.response", {
       status: response.status,
@@ -376,7 +409,7 @@ export class CodexLiveControl {
         return;
       } catch (cause) {
         failure = errorFrom(cause);
-        if (this.#options.signal?.aborted === true) throw abortReason(this.#options.signal);
+        if (this.#lifecycleSignal.aborted) throw abortReason(this.#lifecycleSignal);
         if (attempt + 1 < SIDEBAND_CONNECT_ATTEMPTS) await sleep(200 * 2 ** attempt);
       }
     }
@@ -410,15 +443,15 @@ export class CodexLiveControl {
     timeout.unref?.();
     const onAbort = (): void => {
       socket.close(1000, "aborted");
-      rejectUnsettled(abortReason(this.#options.signal));
+      rejectUnsettled(abortReason(this.#lifecycleSignal));
     };
-    this.#options.signal?.addEventListener("abort", onAbort, { once: true });
+    this.#lifecycleSignal.addEventListener("abort", onAbort, { once: true });
     socket.on("open", () => {
       if (settled) return;
       opened = true;
       settled = true;
       clearTimeout(timeout);
-      this.#options.signal?.removeEventListener("abort", onAbort);
+      this.#lifecycleSignal.removeEventListener("abort", onAbort);
       this.#sideband = socket;
       appendLiveDiagnostic(this.#options.sessionId, "sideband.opened", {});
       resolve();
@@ -494,6 +527,7 @@ export class CodexLiveControl {
 
   close(): Promise<void> {
     if (this.#closePromise !== undefined) return this.#closePromise;
+    this.#abortController.abort(new DOMException("Live control closed", "AbortError"));
     this.#state = "closing";
     this.#closePromise = this.#close();
     return this.#closePromise;

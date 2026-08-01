@@ -5,6 +5,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   MessageEndEvent,
+  MessageUpdateEvent,
 } from "@earendil-works/pi-coding-agent";
 import { buildCodexAttestation, parseCodexDeviceCheckResult } from "./attestation.js";
 import {
@@ -26,6 +27,7 @@ import {
 } from "./diagnostics.js";
 import {
   buildDelegationContextAppend,
+  buildPiSteerContext,
   buildSessionClose,
   chunkLiveContext,
   type LiveClientMessage,
@@ -40,11 +42,13 @@ import type { ResolvedLiveIdentity } from "./settings.js";
 import { setLiveDiagnosticsEnabled, setLiveInstructions, setLiveVoice } from "./settings.js";
 import {
   buildDelegationWithTranscriptContext,
+  LiveConversationTracker,
   prepareLongTranscriptContext,
   type LiveTranscriptContext,
 } from "./delegation-context.js";
 import { assessDelegationLanguage, delegationTranscriptRelation } from "./delegation-language.js";
 import { normalizeLiveDelegation, translateLiveTranscript } from "./delegation-normalizer.js";
+import { LiveAgentProgressBuffer, readLiveAgentDelta } from "./agent-progress.js";
 
 const DEFAULT_VOICE = "sol";
 const OUTPUT_ACTIVE_LEVEL = 0.015;
@@ -65,6 +69,7 @@ export interface LiveDelegationMessageDetails {
   fullTranscriptDurationMs?: number;
   fullTranscriptLanguage?: string;
   fullTranscriptTranslatedBy?: string;
+  conversationContext?: string;
   retryAttempt?: number;
 }
 
@@ -135,6 +140,9 @@ function readSdp(value: unknown): string {
   if (typeof sdp !== "string" || !sdp.trim()) {
     throw new Error("Pi Live app returned an empty SDP");
   }
+  if (Buffer.byteLength(sdp) > 256 * 1024) {
+    throw new Error("Pi Live app returned an oversized SDP");
+  }
   return sdp;
 }
 
@@ -142,6 +150,18 @@ function readLevels(value: unknown): { input: number; output: number } | undefin
   if (!isUnknownRecord(value)) return undefined;
   if (typeof value.input !== "number" || typeof value.output !== "number") return undefined;
   return { input: clampLevel(value.input), output: clampLevel(value.output) };
+}
+
+function readWebRtcState(value: unknown): "connecting" | "connected" | "disconnected" | undefined {
+  if (!isUnknownRecord(value)) return undefined;
+  if (
+    value.state === "connecting" ||
+    value.state === "connected" ||
+    value.state === "disconnected"
+  ) {
+    return value.state;
+  }
+  return undefined;
 }
 
 /** Coordinates the remote Codex control plane with the macOS media peer and Pi AgentSession. */
@@ -154,6 +174,9 @@ export class LiveSessionController {
   readonly #appOpenTimeoutMs: number;
   readonly #voice: string;
   readonly #customInstructions: string;
+  #activeVoice: string;
+  #activeInstructions: string;
+  #diagnosticsEnabled = false;
   #control: CodexLiveControl | undefined;
   #connection: LiveMediaConnection | undefined;
   #sendChain: Promise<void> = Promise.resolve();
@@ -180,7 +203,14 @@ export class LiveSessionController {
   #assistantTranscriptTurn = 0;
   #lastTranscript: LiveTranscript | undefined;
   #sentCommentary = new Set<string>();
+  #streamedCommentary = false;
+  #streamedSpeakable = false;
+  #lastAgentProgress:
+    | { delegationId: string; channel: "speakable" | "commentary"; text: string }
+    | undefined;
   #delegationChain: Promise<void> = Promise.resolve();
+  readonly #conversation = new LiveConversationTracker();
+  readonly #agentProgress: LiveAgentProgressBuffer;
 
   constructor(options: LiveSessionControllerOptions) {
     this.#pi = options.pi;
@@ -192,6 +222,11 @@ export class LiveSessionController {
     const voice = options.voice?.trim();
     this.#voice = voice !== undefined && voice.length > 0 ? voice : DEFAULT_VOICE;
     this.#customInstructions = options.customInstructions?.trim() ?? "";
+    this.#activeVoice = this.#voice;
+    this.#activeInstructions = this.#customInstructions;
+    this.#agentProgress = new LiveAgentProgressBuffer((progress) => {
+      this.#flushAgentProgress(progress.channel, progress.text);
+    });
   }
 
   get phase(): LivePhase {
@@ -222,6 +257,19 @@ export class LiveSessionController {
         if (clean === true) void this.stop();
         else this.#reportFailure(error ?? new Error("Pi Live app disconnected"));
       });
+      connection.onState((state) => {
+        if (this.#stopped) return;
+        if (state === "reconnecting") {
+          this.#emitPhase("reconnecting");
+          return;
+        }
+        try {
+          this.#syncAppConnection();
+        } catch (cause) {
+          if (connection.open) this.#reportFailure(errorFrom(cause));
+        }
+        this.#refreshAudioPhase();
+      });
       const voice =
         typeof connection.preferredVoice === "string"
           ? setLiveVoice(connection.preferredVoice)
@@ -235,17 +283,10 @@ export class LiveSessionController {
           ? setLiveDiagnosticsEnabled(connection.diagnosticsEnabled)
           : liveDiagnosticsEnabled();
       configureLiveDiagnostics(diagnosticsEnabled);
-      connection.notify("settings.voice", { voice, saved: true, appliesTo: "current" });
-      connection.notify("settings.instructions", {
-        saved: true,
-        instructions: customInstructions,
-        appliesTo: "current",
-      });
-      connection.notify("settings.diagnostics", {
-        enabled: diagnosticsEnabled,
-        saved: true,
-        appliesTo: "current",
-      });
+      this.#activeVoice = voice;
+      this.#activeInstructions = customInstructions;
+      this.#diagnosticsEnabled = diagnosticsEnabled;
+      this.#syncAppConnection();
       this.#emitPhase("pairing");
       connection.notify("session.phase", { phase: "pairing" });
       const offerResult = await connection.request("webrtc.createOffer", {
@@ -306,16 +347,14 @@ export class LiveSessionController {
   toggleMute(): void {
     if (this.#stopped) return;
     this.#muted = !this.#muted;
-    try {
-      this.#connection?.notify("audio.setMuted", { muted: this.#muted });
-    } catch (cause) {
-      this.#reportFailure(errorFrom(cause));
-    }
+    this.#notifyApp("audio.setMuted", { muted: this.#muted });
     this.#refreshAudioPhase();
   }
 
   handleMessageEnd(event: MessageEndEvent): void {
     if (this.#activeDelegationId === undefined || event.message.role !== "assistant") return;
+    this.#agentProgress.flush();
+    if (this.#streamedCommentary) return;
     const progress = commentaryFromAssistant(event.message);
     if (progress.length === 0 || this.#sentCommentary.has(progress)) return;
     this.#sentCommentary.add(progress);
@@ -333,17 +372,46 @@ export class LiveSessionController {
     }
   }
 
+  handleMessageUpdate(event: MessageUpdateEvent): void {
+    if (this.#activeDelegationId === undefined) return;
+    const progress = readLiveAgentDelta(event);
+    if (progress !== undefined) this.#agentProgress.push(progress);
+  }
+
+  handlePiSteer(input: string): void {
+    const delegationId = this.#activeDelegationId;
+    const context = buildPiSteerContext(input);
+    if (delegationId === undefined || context === undefined) return;
+    for (const chunk of chunkLiveContext(context)) {
+      this.#queueSend(buildDelegationContextAppend(delegationId, chunk, "commentary"));
+    }
+  }
+
   handleMessageStart(message: unknown): void {
+    if (isUnknownRecord(message) && message.role === "assistant") {
+      this.#agentProgress.clear();
+      this.#streamedCommentary = false;
+      this.#streamedSpeakable = false;
+      return;
+    }
     if (!isUnknownRecord(message) || message.role !== "custom") return;
     if (message.customType !== LIVE_DELEGATION_MESSAGE_TYPE || !isUnknownRecord(message.details)) {
       return;
     }
     const delegationId = message.details.delegationId;
     if (typeof delegationId !== "string" || delegationId.length === 0) return;
+    if (this.#activeDelegationId !== undefined && this.#activeDelegationId !== delegationId) {
+      this.#conversation.settleDelegation(this.#activeDelegationId);
+      this.#delegationExecutions.delete(this.#activeDelegationId);
+    }
     this.#pendingDelegationIds.delete(delegationId);
     this.#activeDelegationId = delegationId;
     this.#lastAgentResponse = undefined;
     this.#sentCommentary.clear();
+    this.#agentProgress.clear();
+    this.#streamedCommentary = false;
+    this.#streamedSpeakable = false;
+    this.#lastAgentProgress = undefined;
     this.#emitPhase("working");
   }
 
@@ -355,9 +423,13 @@ export class LiveSessionController {
   handleAgentSettled(): void {
     const delegationId = this.#activeDelegationId;
     if (delegationId === undefined) return;
+    this.#agentProgress.flush();
     const text = this.#lastAgentResponse ? finalTextFromAssistant(this.#lastAgentResponse) : "";
     if (text.length > 0) {
-      for (const chunk of chunkLiveContext(`${AGENT_FINAL_MESSAGE_PREFIX}${text}`)) {
+      const finalContext = this.#streamedSpeakable
+        ? `${AGENT_FINAL_MESSAGE_PREFIX}The preceding streamed speakable context is the complete final answer. Present any result not already spoken, without repeating earlier progress.`
+        : `${AGENT_FINAL_MESSAGE_PREFIX}${text}`;
+      for (const chunk of chunkLiveContext(finalContext)) {
         this.#queueSend(buildDelegationContextAppend(delegationId, chunk));
       }
       this.#delegationExecutions.delete(delegationId);
@@ -391,9 +463,14 @@ export class LiveSessionController {
       );
       this.#delegationExecutions.delete(delegationId);
     }
+    this.#conversation.settleDelegation(delegationId);
     this.#activeDelegationId = undefined;
     this.#lastAgentResponse = undefined;
     this.#sentCommentary.clear();
+    this.#agentProgress.clear();
+    this.#streamedCommentary = false;
+    this.#streamedSpeakable = false;
+    this.#lastAgentProgress = undefined;
     this.#refreshAudioPhase();
   }
 
@@ -426,6 +503,8 @@ export class LiveSessionController {
     } catch {}
     this.#connection?.close();
     this.#connection = undefined;
+    this.#agentProgress.clear();
+    this.#conversation.reset();
     await this.#pairing.close();
     if (cleanupError !== undefined) {
       appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "session.cleanup-warning", {
@@ -456,6 +535,14 @@ export class LiveSessionController {
         this.#mediaOpenResolve?.();
         this.#mediaOpenResolve = undefined;
         break;
+      case "webrtc.state": {
+        const state = readWebRtcState(params);
+        if (state === "disconnected") this.#emitPhase("reconnecting");
+        else if (state === "connecting") {
+          this.#emitPhase(this.#mediaOpened ? "reconnecting" : "connecting");
+        } else if (state === "connected") this.#refreshAudioPhase();
+        break;
+      }
       case "audio.levels": {
         const levels = readLevels(params);
         if (levels) {
@@ -475,13 +562,13 @@ export class LiveSessionController {
         void this.stop();
         break;
       case "settings.setVoice":
-        this.#connection?.notify("settings.voice", applyLiveVoiceSetting(params));
+        this.#notifyApp("settings.voice", applyLiveVoiceSetting(params));
         break;
       case "settings.setInstructions":
-        this.#connection?.notify("settings.instructions", applyLiveInstructionsSetting(params));
+        this.#notifyApp("settings.instructions", applyLiveInstructionsSetting(params));
         break;
       case "settings.setDiagnostics":
-        this.#connection?.notify("settings.diagnostics", applyLiveDiagnosticsSetting(params));
+        this.#notifyApp("settings.diagnostics", applyLiveDiagnosticsSetting(params));
         break;
       case "client.error":
         this.#reportFailure(
@@ -543,9 +630,10 @@ export class LiveSessionController {
     }
     request = request.trim();
     if (request.length === 0) return;
+    const conversationContext = this.#acceptDelegation(event.item.id, request);
+    if (conversationContext === undefined) return;
     const sourceTranscript = this.#userTranscript;
-    const transcriptDurationMs =
-      this.#userTranscriptStartedAt === 0 ? 0 : Date.now() - this.#userTranscriptStartedAt;
+    const transcriptDurationMs = this.#currentUserTranscriptDurationMs();
     const transcriptRelation = delegationTranscriptRelation(request, sourceTranscript);
     const language = assessDelegationLanguage(request);
     appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.received", {
@@ -638,6 +726,7 @@ export class LiveSessionController {
       sourceTurn: this.#userTranscriptTurn,
       transcriptRelation,
       languageAssessment: language.accepted ? language.reason : "english",
+      conversationContext,
       ...(normalizedBy === undefined
         ? {}
         : {
@@ -659,6 +748,20 @@ export class LiveSessionController {
           }),
     } satisfies LiveDelegationMessageDetails;
     this.#dispatchDelegation(event.item.id, agentRequest, details);
+  }
+
+  #currentUserTranscriptDurationMs(): number {
+    return this.#userTranscriptStartedAt === 0 ? 0 : Date.now() - this.#userTranscriptStartedAt;
+  }
+
+  #acceptDelegation(delegationId: string, request: string): string | undefined {
+    const accepted = this.#conversation.acceptDelegation(request, delegationId);
+    if (accepted !== undefined) return accepted.conversationContext;
+    appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.duplicate", {
+      delegationId,
+      characters: request.length,
+    });
+    return undefined;
   }
 
   async #resolveLongTranscriptContext(
@@ -707,6 +810,7 @@ export class LiveSessionController {
     detectedLanguage: string,
     error: Error,
   ): void {
+    this.#conversation.settleDelegation(delegationId);
     this.#pi.appendEntry<LiveRejectedDelegationEntryData>(LIVE_REJECTED_DELEGATION_ENTRY_TYPE, {
       delegationId,
       request,
@@ -863,6 +967,7 @@ export class LiveSessionController {
       this.#assistantTranscript = normalized;
       this.#assistantTranscriptFinal = final;
     }
+    this.#conversation.updateTranscript(role, turn, normalized, final);
     if (
       this.#lastTranscript?.role === role &&
       this.#lastTranscript.turn === turn &&
@@ -873,9 +978,7 @@ export class LiveSessionController {
     }
     const transcript = { role, turn, text: normalized, final } satisfies LiveTranscript;
     this.#emitTranscript(transcript);
-    try {
-      this.#connection?.notify("transcript.updated", transcript);
-    } catch {}
+    this.#notifyApp("transcript.updated", transcript);
     return true;
   }
 
@@ -889,6 +992,58 @@ export class LiveSessionController {
       .catch((cause) => {
         this.#reportFailure(errorFrom(cause));
       });
+  }
+
+  #flushAgentProgress(channel: "speakable" | "commentary", text: string): void {
+    const delegationId = this.#activeDelegationId;
+    if (delegationId === undefined || text.length === 0) return;
+    if (channel === "commentary") this.#streamedCommentary = true;
+    else this.#streamedSpeakable = true;
+    this.#lastAgentProgress = { delegationId, channel, text };
+    appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "agent.progress-forwarded", {
+      delegationId,
+      channel,
+      characters: text.length,
+    });
+    for (const chunk of chunkLiveContext(text)) {
+      this.#queueSend(buildDelegationContextAppend(delegationId, chunk, channel));
+    }
+    this.#notifyApp("agent.progress", { delegationId, channel, text });
+  }
+
+  #syncAppConnection(): void {
+    const connection = this.#connection;
+    if (connection?.open !== true) return;
+    this.#notifyApp("settings.voice", {
+      voice: this.#activeVoice,
+      saved: true,
+      appliesTo: "current",
+    });
+    this.#notifyApp("settings.instructions", {
+      saved: true,
+      instructions: this.#activeInstructions,
+      appliesTo: "current",
+    });
+    this.#notifyApp("settings.diagnostics", {
+      enabled: this.#diagnosticsEnabled,
+      saved: true,
+      appliesTo: "current",
+    });
+    this.#notifyApp("session.phase", { phase: this.#phase });
+    this.#notifyApp("audio.setMuted", { muted: this.#muted });
+    if (this.#lastTranscript !== undefined) {
+      this.#notifyApp("transcript.updated", this.#lastTranscript);
+    }
+    if (this.#lastAgentProgress !== undefined) {
+      this.#notifyApp("agent.progress", this.#lastAgentProgress);
+    }
+  }
+
+  #notifyApp(method: string, params: unknown): void {
+    if (this.#connection?.open !== true) return;
+    try {
+      this.#connection.notify(method, params);
+    } catch {}
   }
 
   #refreshAudioPhase(): void {
@@ -915,10 +1070,10 @@ export class LiveSessionController {
     this.#phase = phase;
     try {
       this.#callbacks.onPhase(phase);
-      this.#connection?.notify("session.phase", { phase });
     } catch (cause) {
       this.#reportFailure(errorFrom(cause));
     }
+    this.#notifyApp("session.phase", { phase });
   }
 
   #emitPhaseSafely(phase: LivePhase): void {

@@ -4,7 +4,7 @@ const MIN_LANGUAGE_SAMPLE_LENGTH = 32;
 const ENGLISH_ACCEPTANCE_SCORE = 0.85;
 const NON_LATIN_SCRIPT_PATTERN =
   /[\p{Script=Arabic}\p{Script=Cyrillic}\p{Script=Devanagari}\p{Script=Han}\p{Script=Hangul}\p{Script=Hebrew}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/gu;
-const LETTER_PATTERN = /\p{Letter}/gu;
+const PROTECTED_LITERAL_PATTERN = /`[^`]*`|"[^"]*"|'[^']*'/gu;
 
 interface DelegationLanguageAssessmentBase {
   detectedLanguage: string;
@@ -31,14 +31,13 @@ function characterCount(value: string, pattern: RegExp): number {
  */
 export function assessDelegationLanguage(request: string): DelegationLanguageAssessment {
   const normalized = request.normalize("NFKC").trim();
-  const letters = characterCount(normalized, LETTER_PATTERN);
-  const nonLatinLetters = characterCount(normalized, NON_LATIN_SCRIPT_PATTERN);
-  const nonLatinRatio = letters === 0 ? 0 : nonLatinLetters / letters;
+  const prose = normalized.replaceAll(PROTECTED_LITERAL_PATTERN, "");
+  const nonLatinLetters = characterCount(prose, NON_LATIN_SCRIPT_PATTERN);
   const ranked = francAll(normalized, { minLength: 3 });
   const detectedLanguage = ranked[0]?.[0] ?? "und";
   const englishScore = ranked.find(([language]) => language === "eng")?.[1];
 
-  if (nonLatinRatio >= 0.25) {
+  if (nonLatinLetters > 0) {
     return {
       accepted: false,
       detectedLanguage,

@@ -2,7 +2,7 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { LiveVoiceSchema } from "../voices.js";
 
-export const LIVE_PAIRING_PROTOCOL_VERSION = 1;
+export const LIVE_PAIRING_PROTOCOL_VERSION = 2;
 
 const JsonRpcIdSchema = Type.Union([Type.String(), Type.Number()]);
 
@@ -62,6 +62,7 @@ export const PairRequestParamsSchema = Type.Object(
         inputLevel: Type.Boolean(),
         outputLevel: Type.Boolean(),
         deviceSelection: Type.Boolean(),
+        sessionResume: Type.Literal(true),
       },
       { additionalProperties: false },
     ),
@@ -75,6 +76,16 @@ export const PairRequestParamsSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+  },
+  { additionalProperties: false },
+);
+
+export const ResumeRequestParamsSchema = Type.Object(
+  {
+    protocolVersion: Type.Literal(LIVE_PAIRING_PROTOCOL_VERSION),
+    sessionId: Type.String({ minLength: 1 }),
+    serverNonce: Type.String({ minLength: 1 }),
+    resumeToken: Type.String({ minLength: 32 }),
   },
   { additionalProperties: false },
 );
@@ -120,6 +131,7 @@ export type JsonRpcRequest = Static<typeof JsonRpcRequestSchema>;
 export type JsonRpcNotification = Static<typeof JsonRpcNotificationSchema>;
 export type JsonRpcResponse = Static<typeof JsonRpcResponseSchema>;
 export type PairRequestParams = Static<typeof PairRequestParamsSchema>;
+export type ResumeRequestParams = Static<typeof ResumeRequestParamsSchema>;
 
 export type LivePairingEndpoint =
   | { type: "local"; url: string }
@@ -167,6 +179,12 @@ export function parseJsonRpcMessage(
 export function parsePairRequestParams(value: unknown): PairRequestParams | undefined {
   return Value.Check(PairRequestParamsSchema, value)
     ? Value.Parse(PairRequestParamsSchema, value)
+    : undefined;
+}
+
+export function parseResumeRequestParams(value: unknown): ResumeRequestParams | undefined {
+  return Value.Check(ResumeRequestParamsSchema, value)
+    ? Value.Parse(ResumeRequestParamsSchema, value)
     : undefined;
 }
 

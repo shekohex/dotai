@@ -1,6 +1,6 @@
 import Foundation
 
-let livePairingProtocolVersion = 1
+let livePairingProtocolVersion = 2
 
 struct PairingEnvelope: Equatable {
     let payload: PairingPayload

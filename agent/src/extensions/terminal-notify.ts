@@ -15,13 +15,14 @@ import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import { isChildSession, readChildState } from "../subagent-sdk/index.js";
 import type { ChildBootstrapState } from "../subagent-sdk/types.js";
 import { isRecord } from "../utils/unknown-data.js";
+import { readTerminalOutputOverride, type TerminalOutput } from "./terminal-output-boundary.js";
 
 const ESC = "\u001B";
 const BEL = "\u0007";
 const ST = `${ESC}\\`;
 const OSC_CONTROL_CHARACTERS = /\p{Cc}/gu;
 
-export const terminalNotifyRuntime = {
+export const terminalNotifyRuntime: TerminalOutput = readTerminalOutputOverride() ?? {
   execFileSync,
   stdoutWrite: (sequence: string) => process.stdout.write(sequence),
   writeFileSync,

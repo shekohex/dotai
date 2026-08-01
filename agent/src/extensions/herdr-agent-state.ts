@@ -1,9 +1,5 @@
-import { createConnection } from "node:net";
-import path from "node:path";
-
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { parseHerdrSocketResponse } from "../herdr/client.js";
 import {
   ASK_USER_QUESTION_ANSWERED_EVENT,
   ASK_USER_QUESTION_CANCELLED_EVENT,
@@ -15,6 +11,28 @@ import { extractLastAssistantText, formatNotification } from "./terminal-notify.
 import { isChildSession, readChildState } from "../subagent-sdk/index.js";
 import type { ChildBootstrapState } from "../subagent-sdk/types.js";
 import { asRecord, readString } from "../utils/unknown-data.js";
+import {
+  HERDR_WINDOW_TITLE_EVENT,
+  type HerdrWindowTitleEvent,
+} from "./herdr-window-title-events.js";
+import {
+  customStatusForState,
+  messageActivitySummary,
+  metadataTokens,
+  sessionTabTitle,
+  sessionTitle,
+  toolActivitySummary,
+} from "./herdr-agent-presentation.js";
+import {
+  currentPaneId,
+  currentTabId,
+  HERDR_AGENT_SOURCE as source,
+  herdrEnabled,
+  nextReportSeq,
+  randomRequestId,
+  sendRequest,
+  sendRequestWithResponse,
+} from "./herdr-agent-socket.js";
 
 type AgentState = "working" | "blocked" | "idle";
 
@@ -24,31 +42,11 @@ type QueuedState = {
   seq: number;
 };
 
-type HerdrStateRequest = {
-  id: string;
-  method:
-    | "client.window_title.clear"
-    | "client.window_title.set"
-    | "notification.show"
-    | "pane.report_agent"
-    | "pane.report_agent_session"
-    | "pane.report_metadata"
-    | "pane.release_agent";
-  params: Record<string, unknown>;
-};
-
-const source = "herdr:pi";
 const retryableErrorPattern =
   /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|http2 request did not get a response|timed? out|timeout|terminated|retry delay/i;
 
-let reportSeq = Date.now() * 1000;
 let currentAgentSessionId: string | undefined;
 let currentAgentSessionPath: string | undefined;
-
-function nextReportSeq(): number {
-  reportSeq += 1;
-  return reportSeq;
-}
 
 function parseDurationEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -57,78 +55,6 @@ function parseDurationEnv(name: string, fallback: number): number {
   }
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-}
-
-function herdrEnabled(): boolean {
-  return (
-    process.env.PI_HERDR_AGENT_STATE !== "0" &&
-    process.env.HERDR_ENV === "1" &&
-    readString(process.env.HERDR_SOCKET_PATH) !== undefined &&
-    readString(process.env.HERDR_PANE_ID) !== undefined
-  );
-}
-
-function currentSocketPath(): string | undefined {
-  return herdrEnabled() ? process.env.HERDR_SOCKET_PATH : undefined;
-}
-
-function currentPaneId(): string | undefined {
-  return herdrEnabled() ? process.env.HERDR_PANE_ID : undefined;
-}
-
-function randomRequestId(kind: string): string {
-  return `${source}:${kind}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
-}
-
-function sendRequestAttempt(request: HerdrStateRequest, timeoutMs: number): Promise<boolean> {
-  const socketPath = currentSocketPath();
-  if (socketPath === undefined) {
-    return Promise.resolve(true);
-  }
-
-  return new Promise((resolve) => {
-    const socket = createConnection(socketPath);
-    let buffer = "";
-    let done = false;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    const finish = (delivered: boolean) => {
-      if (done) return;
-      done = true;
-      if (timeout !== undefined) clearTimeout(timeout);
-      socket.destroy();
-      resolve(delivered);
-    };
-
-    socket.on("error", () => {
-      finish(false);
-    });
-    socket.on("connect", () => socket.write(`${JSON.stringify(request)}\n`));
-    socket.on("data", (chunk) => {
-      buffer += chunk.toString("utf8");
-      const newlineIndex = buffer.indexOf("\n");
-      if (newlineIndex === -1) return;
-      try {
-        const response = parseHerdrSocketResponse(
-          JSON.parse(buffer.slice(0, newlineIndex)) as unknown,
-        );
-        finish(response.id === request.id && !("error" in response));
-      } catch {
-        finish(false);
-      }
-    });
-    socket.on("end", () => {
-      finish(false);
-    });
-    timeout = setTimeout(() => {
-      finish(false);
-    }, timeoutMs);
-    timeout.unref?.();
-  });
-}
-
-async function sendRequest(request: HerdrStateRequest): Promise<void> {
-  if (await sendRequestAttempt(request, 500)) return;
-  await sendRequestAttempt(request, 1500);
 }
 
 function updateSessionRef(ctx: ExtensionContext): void {
@@ -208,19 +134,6 @@ function sendState(state: AgentState, message?: string, seq = nextReportSeq()): 
   });
 }
 
-function customStatusForState(state: AgentState, message?: string): string {
-  if (message !== undefined && message.length > 0) {
-    return message;
-  }
-  if (state === "working") {
-    return "working";
-  }
-  if (state === "blocked") {
-    return "needs input";
-  }
-  return "ready";
-}
-
 function sendMetadata(params: Record<string, unknown>): Promise<void> {
   const paneId = currentPaneId();
   if (paneId === undefined) {
@@ -257,6 +170,50 @@ function clearWindowTitle(): Promise<void> {
   });
 }
 
+type CurrentPaneContext = {
+  focused: boolean;
+  tabId: string;
+};
+
+async function readCurrentPaneContext(): Promise<CurrentPaneContext | undefined> {
+  const paneId = currentPaneId();
+  if (paneId === undefined) return undefined;
+
+  const response = await sendRequestWithResponse({
+    id: randomRequestId("current-pane"),
+    method: "pane.current",
+    params: { caller_pane_id: paneId },
+  });
+  if (response === undefined || "error" in response) return undefined;
+
+  const pane = asRecord(response.result.pane);
+  const tabId = readString(pane?.tab_id);
+  if (tabId === undefined || typeof pane?.focused !== "boolean") return undefined;
+  return { tabId, focused: pane.focused };
+}
+
+function renameTab(tabId: string, label: string): Promise<void> {
+  return sendRequest({
+    id: randomRequestId("tab-title"),
+    method: "tab.rename",
+    params: { tab_id: tabId, label },
+  });
+}
+
+async function sendWindowTitleIfFocused(title: string): Promise<void> {
+  const pane = await readCurrentPaneContext();
+  if (pane?.focused === true) {
+    await sendWindowTitle(title);
+  }
+}
+
+async function clearWindowTitleIfFocused(): Promise<void> {
+  const pane = await readCurrentPaneContext();
+  if (pane?.focused === true) {
+    await clearWindowTitle();
+  }
+}
+
 function sendNotification(title: string, body?: string, sound: "done" | "request" = "done"): void {
   void sendRequest({
     id: randomRequestId("notification"),
@@ -265,12 +222,9 @@ function sendNotification(title: string, body?: string, sound: "done" | "request
   });
 }
 
-function sessionTitle(ctx: ExtensionContext): string {
-  const sessionName = ctx.sessionManager.getSessionName();
-  const cwdBasename = path.basename(ctx.cwd);
-  return sessionName !== undefined && sessionName.length > 0
-    ? `π - ${sessionName} - ${cwdBasename}`
-    : `π - ${cwdBasename}`;
+function parseWindowTitleEvent(data: unknown): HerdrWindowTitleEvent | undefined {
+  const title = readString(asRecord(data)?.title);
+  return title === undefined ? undefined : { title };
 }
 
 function releaseAgent(): Promise<void> {
@@ -373,12 +327,24 @@ class HerdrAgentStateReporter {
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private sendInFlight = false;
   private queuedState: QueuedState | undefined;
+  private queuedWindowTitle: string | undefined;
+  private windowTitleInFlight = false;
+  private currentSummary = "Ready";
+  private currentTool: string | null = null;
+  private readonly activeTools = new Map<string, { name: string; summary: string }>();
+  private queuedMetadata: Record<string, unknown> | undefined;
+  private metadataDrainPromise: Promise<void> | undefined;
 
   constructor(private readonly childState: ChildBootstrapState | undefined) {}
 
   register(pi: ExtensionAPI): void {
     pi.on("session_start", (_event, ctx) => {
       this.onSessionStart(ctx);
+    });
+    pi.on("session_info_changed", async (_event, ctx) => {
+      if (!this.rootSession || this.isChildSession(ctx)) return;
+      this.currentContext = ctx;
+      await this.updateTitle(ctx);
     });
     pi.on("before_agent_start", (_event, ctx) => {
       if (!this.rootSession) return;
@@ -389,6 +355,13 @@ class HerdrAgentStateReporter {
     });
     pi.events.on("herdr:blocked", (data) => {
       this.onBlockedEvent(data);
+    });
+    pi.events.on(HERDR_WINDOW_TITLE_EVENT, (data) => {
+      if (!this.rootSession || this.isChildSession()) return;
+      const event = parseWindowTitleEvent(data);
+      if (event !== undefined) {
+        this.queueWindowTitle(event.title);
+      }
     });
     pi.events.on(ASK_USER_QUESTION_PROMPT_EVENT, (data) => {
       this.onAskUserQuestionPrompt(data);
@@ -402,20 +375,52 @@ class HerdrAgentStateReporter {
     pi.on("agent_start", (_event, ctx) => {
       this.onAgentStart(ctx);
     });
-    pi.on("agent_end", (event) => {
-      this.onAgentEnd(event);
+    pi.on("agent_end", (event, ctx) => {
+      this.onAgentEnd(event, ctx);
+    });
+    pi.on("message_update", (event, ctx) => {
+      const summary = messageActivitySummary(event.assistantMessageEvent.type);
+      if (summary === undefined) return;
+      this.currentSummary = summary;
+      this.updateActivity(ctx);
+    });
+    pi.on("tool_call", (event, ctx) => {
+      this.onToolStart(event.toolCallId, event.toolName, event.input, ctx);
+    });
+    pi.on("tool_execution_start", (event, ctx) => {
+      this.onToolStart(event.toolCallId, event.toolName, event.args, ctx);
+    });
+    pi.on("tool_execution_end", (event, ctx) => {
+      this.onToolEnd(event.toolCallId, ctx);
+    });
+    pi.on("model_select", (_event, ctx) => {
+      this.updateActivity(ctx);
+    });
+    pi.on("session_before_compact", (_event, ctx) => {
+      this.currentSummary = "Compacting context";
+      this.currentTool = null;
+      this.updateActivity(ctx);
+    });
+    pi.on("session_compact", (_event, ctx) => {
+      this.currentSummary = this.agentActive ? "Thinking" : "Ready";
+      this.updateActivity(ctx);
     });
     pi.on("session_shutdown", async (event) => {
       if (!this.rootSession) return;
       this.clearPendingTimers();
       if (readString(asRecord(event)?.reason) !== "quit") return;
       await Promise.all([
-        sendMetadata({
+        this.queueMetadata({
           clear_title: true,
-          clear_custom_status: true,
           clear_state_labels: true,
+          tokens: {
+            context: null,
+            model: null,
+            summary: null,
+            tool: null,
+          },
         }),
-        clearWindowTitle(),
+        clearWindowTitleIfFocused(),
         releaseAgent(),
       ]);
     });
@@ -426,9 +431,12 @@ class HerdrAgentStateReporter {
     this.rootSession = true;
     this.currentContext = ctx;
     updateSessionRef(ctx);
-    void reportSession();
     this.agentActive = !ctx.isIdle();
-    if (!this.isChildSession(ctx)) {
+    this.currentSummary = this.agentActive ? "Working" : "Ready";
+    if (this.isChildSession(ctx)) {
+      void reportSession();
+    } else {
+      void reportSession();
       void this.updateTitle(ctx);
     }
     this.publishState(true);
@@ -436,20 +444,113 @@ class HerdrAgentStateReporter {
 
   private async updateTitle(ctx: ExtensionContext): Promise<void> {
     const title = sessionTitle(ctx);
+    const tabTitle = sessionTabTitle(ctx);
+    const tokens = this.metadataTokens(ctx);
+    void this.queueMetadata({
+      title,
+      display_agent: "π",
+      tokens,
+      state_labels: {
+        working: "working",
+        blocked: "needs input",
+        idle: "ready",
+        done: "done",
+        unknown: "unknown",
+      },
+    });
+    const pane = await readCurrentPaneContext();
+    const tabId = pane?.tabId ?? currentTabId();
     await Promise.all([
-      sendMetadata({
-        title,
-        display_agent: "π",
-        state_labels: {
-          working: "working",
-          blocked: "needs input",
-          idle: "ready",
-          done: "done",
-          unknown: "unknown",
-        },
-      }),
-      sendWindowTitle(title),
+      pane?.focused === true ? sendWindowTitle(title) : Promise.resolve(),
+      tabId === undefined ? Promise.resolve() : renameTab(tabId, tabTitle),
     ]);
+  }
+
+  private metadataTokens(ctx: ExtensionContext) {
+    return metadataTokens(ctx, this.currentSummary, this.currentTool);
+  }
+
+  private updateActivity(ctx: ExtensionContext): void {
+    if (!this.rootSession || this.isChildSession(ctx)) return;
+    this.currentContext = ctx;
+    void this.queueMetadata({ tokens: this.metadataTokens(ctx) });
+  }
+
+  private onToolStart(
+    toolCallId: string,
+    toolName: string,
+    args: unknown,
+    ctx: ExtensionContext,
+  ): void {
+    if (!this.rootSession) return;
+    const summary = toolActivitySummary(toolName, args);
+    this.activeTools.set(toolCallId, { name: toolName, summary });
+    this.currentSummary = summary;
+    this.currentTool = toolName;
+    this.updateActivity(ctx);
+  }
+
+  private onToolEnd(toolCallId: string, ctx: ExtensionContext): void {
+    if (!this.rootSession) return;
+    this.activeTools.delete(toolCallId);
+    const activeTool = [...this.activeTools.values()].at(-1);
+    this.currentSummary = activeTool?.summary ?? (this.agentActive ? "Thinking" : "Ready");
+    this.currentTool = activeTool?.name ?? null;
+    this.updateActivity(ctx);
+  }
+
+  private queueMetadata(params: Record<string, unknown>): Promise<void> {
+    const queuedTokens = asRecord(this.queuedMetadata?.tokens);
+    const nextTokens = asRecord(params.tokens);
+    this.queuedMetadata = {
+      ...this.queuedMetadata,
+      ...params,
+      ...(queuedTokens === undefined && nextTokens === undefined
+        ? {}
+        : { tokens: { ...queuedTokens, ...nextTokens } }),
+    };
+    this.metadataDrainPromise ??= this.drainMetadataQueue();
+    return this.metadataDrainPromise;
+  }
+
+  private async drainMetadataQueue(): Promise<void> {
+    try {
+      while (this.queuedMetadata !== undefined) {
+        const metadata = this.queuedMetadata;
+        this.queuedMetadata = undefined;
+        await sendMetadata(metadata);
+      }
+    } finally {
+      this.metadataDrainPromise = undefined;
+      if (this.queuedMetadata !== undefined) {
+        this.metadataDrainPromise = this.drainMetadataQueue();
+      }
+    }
+  }
+
+  private queueWindowTitle(title: string): void {
+    this.queuedWindowTitle = title;
+    if (!this.windowTitleInFlight) {
+      void this.drainWindowTitleQueue();
+    }
+  }
+
+  private async drainWindowTitleQueue(): Promise<void> {
+    if (this.windowTitleInFlight) return;
+
+    this.windowTitleInFlight = true;
+    try {
+      while (this.queuedWindowTitle !== undefined) {
+        const title = this.queuedWindowTitle;
+        this.queuedWindowTitle = undefined;
+        await sendWindowTitleIfFocused(title);
+      }
+    } finally {
+      this.windowTitleInFlight = false;
+      if (this.queuedWindowTitle !== undefined) {
+        void this.drainWindowTitleQueue();
+      }
+    }
   }
 
   private onBlockedEvent(data: unknown): void {
@@ -506,26 +607,36 @@ class HerdrAgentStateReporter {
     if (!this.rootSession) return;
     this.currentContext = ctx;
     updateSessionRef(ctx);
-    void reportSession();
     this.clearPendingTimers();
     this.clearFailureState();
     this.agentActive = true;
+    this.currentSummary = "Thinking";
+    this.currentTool = null;
+    this.activeTools.clear();
     this.publishState();
+    void reportSession();
+    this.updateActivity(ctx);
   }
 
-  private onAgentEnd(event: unknown): void {
+  private onAgentEnd(event: unknown, ctx: ExtensionContext): void {
     if (!this.rootSession) return;
     if (!this.agentActive) {
       return;
     }
 
     this.agentActive = false;
+    this.currentTool = null;
+    this.activeTools.clear();
     const retryableMessage = retryableErrorMessage(event);
     if (retryableMessage !== undefined) {
+      this.currentSummary = "Retrying";
+      this.updateActivity(ctx);
       this.holdForRetry(retryableMessage);
       return;
     }
 
+    this.currentSummary = "Ready";
+    this.updateActivity(ctx);
     this.scheduleIdle();
     this.notifyAgentEnd(event);
   }

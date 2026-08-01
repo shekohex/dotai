@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
+import { installTerminalOutputOverride } from "../../src/extensions/terminal-output-boundary.ts";
+import { controlledTerminalOutput } from "./controlled-terminal-output.ts";
 import { cleanupRegisteredTempPaths } from "./temp-paths.ts";
 
 const suppressedStderrPatterns = [
@@ -59,7 +61,13 @@ if (
 }
 
 process.env.PI_TERMINAL_TMUX_UI = "0";
+process.env.PI_HERDR_AGENT_STATE = "0";
 delete process.env.WARP_CLI_AGENT_PROTOCOL_VERSION;
+installTerminalOutputOverride(controlledTerminalOutput);
+
+beforeEach(() => {
+  controlledTerminalOutput.reset();
+});
 
 afterEach(async () => {
   const agentDir = process.env.TEST_PI_CODING_AGENT_DIR?.trim();

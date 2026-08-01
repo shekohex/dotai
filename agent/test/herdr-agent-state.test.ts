@@ -8,6 +8,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 import herdrAgentStateExtension from "../src/extensions/herdr-agent-state.js";
 import { ASK_USER_QUESTION_PROMPT_EVENT } from "../src/extensions/ask-user-question/index.js";
+import { HERDR_WINDOW_TITLE_EVENT } from "../src/extensions/herdr-window-title-events.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
 type EventHandler = (event: unknown) => unknown;
@@ -20,6 +21,11 @@ class FakePi {
       const handlers = this.eventHandlers.get(eventName) ?? [];
       handlers.push(handler);
       this.eventHandlers.set(eventName, handlers);
+    },
+    emit: (eventName: string, event: unknown) => {
+      for (const handler of this.eventHandlers.get(eventName) ?? []) {
+        handler(event);
+      }
     },
   };
 
@@ -34,6 +40,7 @@ const previousEnv = {
   HERDR_ENV: process.env.HERDR_ENV,
   HERDR_PANE_ID: process.env.HERDR_PANE_ID,
   HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH,
+  HERDR_TAB_ID: process.env.HERDR_TAB_ID,
   PI_HERDR_AGENT_STATE: process.env.PI_HERDR_AGENT_STATE,
   PI_SUBAGENT_CHILD_STATE: process.env.PI_SUBAGENT_CHILD_STATE,
 };
@@ -75,6 +82,12 @@ test("reports title metadata and custom status to Herdr", async () => {
         pane_id: "w1:p1",
         title: "π - Test Session - agent",
         display_agent: "π",
+        tokens: {
+          context: "42% ctx",
+          model: "Claude Sonnet",
+          summary: "Ready",
+          tool: null,
+        },
       }),
     }),
   );
@@ -86,10 +99,161 @@ test("reports title metadata and custom status to Herdr", async () => {
   );
   expect(requests).toContainEqual(
     expect.objectContaining({
+      method: "tab.rename",
+      params: { tab_id: "w1:t1", label: "Test Session" },
+    }),
+  );
+  expect(requests).toContainEqual(
+    expect.objectContaining({
       method: "pane.report_agent",
       params: expect.objectContaining({ state: "working", custom_status: "working" }),
     }),
   );
+});
+
+test("reports live activity and current tool as Herdr metadata", async () => {
+  const { requests, waitForRequest } = await startSocketServer();
+  const fakePi = new FakePi();
+  herdrAgentStateExtension(fakePi as unknown as ExtensionAPI);
+  const ctx = createContext();
+
+  await emit(fakePi, "session_start", {}, ctx);
+  await emit(
+    fakePi,
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "tool-read",
+      toolName: "read",
+      input: { file_path: "/tmp/agent/src/auth.ts" },
+    },
+    ctx,
+  );
+  await waitForRequest(
+    (request) =>
+      request.method === "pane.report_metadata" &&
+      asParams(asParams(request.params).tokens).summary === "Reading auth.ts",
+  );
+
+  expect(requests).toContainEqual(
+    expect.objectContaining({
+      method: "pane.report_metadata",
+      params: expect.objectContaining({
+        tokens: expect.objectContaining({
+          summary: "Reading auth.ts",
+          tool: "read",
+        }),
+      }),
+    }),
+  );
+});
+
+test("refreshes context metadata when an agent turn ends", async () => {
+  let contextPercent = 42;
+  const { requests, waitForRequest } = await startSocketServer();
+  const fakePi = new FakePi();
+  herdrAgentStateExtension(fakePi as unknown as ExtensionAPI);
+  const ctx = createContext({
+    getContextUsage: () => ({ tokens: 640, contextWindow: 1000, percent: contextPercent }),
+  });
+
+  await emit(fakePi, "session_start", {}, ctx);
+  await emit(fakePi, "agent_start", {}, ctx);
+  contextPercent = 64;
+  await emit(fakePi, "agent_end", { messages: [] }, ctx);
+  await waitForRequest(
+    (request) =>
+      request.method === "pane.report_metadata" &&
+      asParams(asParams(request.params).tokens).context === "64% ctx",
+  );
+
+  expect(requests).toContainEqual(
+    expect.objectContaining({
+      method: "pane.report_metadata",
+      params: expect.objectContaining({
+        tokens: expect.objectContaining({
+          context: "64% ctx",
+          summary: "Ready",
+          tool: null,
+        }),
+      }),
+    }),
+  );
+});
+
+test("updates Herdr presentation when the Pi session name changes", async () => {
+  let sessionName = "Initial Session";
+  const { requests, waitForRequest } = await startSocketServer();
+  const fakePi = new FakePi();
+  herdrAgentStateExtension(fakePi as unknown as ExtensionAPI);
+  const ctx = createContext({
+    sessionManager: {
+      getSessionName: () => sessionName,
+      getSessionFile: () => "/tmp/session.jsonl",
+      getSessionId: () => "session-id",
+    } as ExtensionContext["sessionManager"],
+  });
+
+  await emit(fakePi, "session_start", {}, ctx);
+  sessionName = "Renamed Conversation";
+  await emit(
+    fakePi,
+    "session_info_changed",
+    { type: "session_info_changed", name: sessionName },
+    ctx,
+  );
+  await waitForRequest(
+    (request) =>
+      request.method === "tab.rename" && asParams(request.params).label === "Renamed Conversation",
+  );
+
+  expect(requests).toContainEqual(
+    expect.objectContaining({
+      method: "pane.report_metadata",
+      params: expect.objectContaining({ title: "π - Renamed Conversation - agent" }),
+    }),
+  );
+  expect(requests).toContainEqual(
+    expect.objectContaining({
+      method: "client.window_title.set",
+      params: { title: "π - Renamed Conversation - agent" },
+    }),
+  );
+});
+
+test("forwards live spinner titles to the foreground Herdr client", async () => {
+  const { requests, waitForRequest } = await startSocketServer();
+  const fakePi = new FakePi();
+  herdrAgentStateExtension(fakePi as unknown as ExtensionAPI);
+  const ctx = createContext();
+
+  await emit(fakePi, "session_start", {}, ctx);
+  fakePi.events.emit(HERDR_WINDOW_TITLE_EVENT, { title: "⠋ π - Test Session - agent" });
+  await waitForRequest(
+    (request) =>
+      request.method === "client.window_title.set" &&
+      asParams(request.params).title === "⠋ π - Test Session - agent",
+  );
+
+  expect(requests).toContainEqual(
+    expect.objectContaining({
+      method: "client.window_title.set",
+      params: { title: "⠋ π - Test Session - agent" },
+    }),
+  );
+});
+
+test("does not replace the outer title from a background pane", async () => {
+  const { requests } = await startSocketServer({ focused: false });
+  const fakePi = new FakePi();
+  herdrAgentStateExtension(fakePi as unknown as ExtensionAPI);
+  const ctx = createContext();
+
+  await emit(fakePi, "session_start", {}, ctx);
+  fakePi.events.emit(HERDR_WINDOW_TITLE_EVENT, { title: "⠋ background" });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  expect(requests.some((request) => request.method === "client.window_title.set")).toBe(false);
 });
 
 test("sends Herdr notifications for input requests and completion", async () => {
@@ -294,7 +458,7 @@ test("does not claim Herdr lifecycle authority for headless sessions", async () 
 });
 
 async function startSocketServer(
-  options: { errorResponses?: number; ignoredResponses?: number } = {},
+  options: { errorResponses?: number; focused?: boolean; ignoredResponses?: number } = {},
 ): Promise<{
   requests: Array<{ id?: string; method?: string; params?: unknown }>;
   waitForRequests: (count: number) => Promise<void>;
@@ -329,6 +493,20 @@ async function startSocketServer(
               error: { code: "pane_report_failed", message: "retry" },
             })}\n`,
           );
+        } else if (request.method === "pane.current") {
+          socket.end(
+            `${JSON.stringify({
+              id: request.id,
+              result: {
+                type: "pane_current",
+                pane: {
+                  pane_id: "w1:p1",
+                  tab_id: "w1:t1",
+                  focused: options.focused ?? true,
+                },
+              },
+            })}\n`,
+          );
         } else {
           socket.end(`${JSON.stringify({ id: request.id, result: { type: "ok" } })}\n`);
         }
@@ -340,6 +518,7 @@ async function startSocketServer(
   process.env.HERDR_ENV = "1";
   process.env.HERDR_PANE_ID = "w1:p1";
   process.env.HERDR_SOCKET_PATH = socketPath;
+  process.env.HERDR_TAB_ID = "w1:t1";
   delete process.env.PI_HERDR_AGENT_STATE;
   return {
     requests,
@@ -363,8 +542,10 @@ function asParams(value: unknown): Record<string, unknown> {
 function createContext(overrides: Partial<ExtensionContext> = {}): ExtensionContext {
   return {
     cwd: "/tmp/agent",
+    getContextUsage: () => ({ tokens: 420, contextWindow: 1000, percent: 42 }),
     hasUI: true,
     isIdle: () => true,
+    model: { id: "claude-sonnet", name: "Claude Sonnet" },
     sessionManager: {
       getSessionName: () => "Test Session",
       getSessionFile: () => "/tmp/session.jsonl",
@@ -395,6 +576,7 @@ function restoreEnv(): void {
   restoreEnvValue("HERDR_ENV", previousEnv.HERDR_ENV);
   restoreEnvValue("HERDR_PANE_ID", previousEnv.HERDR_PANE_ID);
   restoreEnvValue("HERDR_SOCKET_PATH", previousEnv.HERDR_SOCKET_PATH);
+  restoreEnvValue("HERDR_TAB_ID", previousEnv.HERDR_TAB_ID);
   restoreEnvValue("PI_HERDR_AGENT_STATE", previousEnv.PI_HERDR_AGENT_STATE);
   restoreEnvValue("PI_SUBAGENT_CHILD_STATE", previousEnv.PI_SUBAGENT_CHILD_STATE);
 }

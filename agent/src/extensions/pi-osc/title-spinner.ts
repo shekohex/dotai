@@ -7,6 +7,10 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { isChildSession } from "../../subagent-sdk/index.js";
 import type { ChildBootstrapState } from "../../subagent-sdk/types.js";
+import {
+  HERDR_WINDOW_TITLE_EVENT,
+  type HerdrWindowTitleEvent,
+} from "../herdr-window-title-events.js";
 import type { ToolTitleActivity } from "./tool-presentations.js";
 
 const TITLE_SPINNER_INTERVAL_MS = 100;
@@ -92,7 +96,9 @@ const setTitle = (
 ): boolean => {
   try {
     if (!ctx.hasUI || isChildSession(childState, ctx)) return false;
-    ctx.ui.setTitle(prefix === undefined ? titleBase(pi, ctx) : `${prefix} ${titleBase(pi, ctx)}`);
+    const title = prefix === undefined ? titleBase(pi, ctx) : `${prefix} ${titleBase(pi, ctx)}`;
+    ctx.ui.setTitle(title);
+    pi.events.emit(HERDR_WINDOW_TITLE_EVENT, { title } satisfies HerdrWindowTitleEvent);
     return true;
   } catch {
     return false;

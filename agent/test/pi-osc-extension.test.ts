@@ -16,6 +16,7 @@ vi.mock("../src/subagent-sdk/index.js", () => ({
 import piOscExtension, { piOscRuntime } from "../src/extensions/pi-osc/extension.js";
 import { titleSpinnerRuntime } from "../src/extensions/pi-osc/title-spinner.js";
 import { terminalNotifyRuntime } from "../src/extensions/terminal-notify.js";
+import { HERDR_WINDOW_TITLE_EVENT } from "../src/extensions/herdr-window-title-events.js";
 
 const originalTmux = process.env.TMUX;
 const originalSshConnection = process.env.SSH_CONNECTION;
@@ -322,6 +323,12 @@ test("agent lifecycle animates terminal title spinner", () => {
   vi.useFakeTimers();
   const cwd = createEphemeralTitleSpinnerCwd();
   const pi = createPi();
+  const forwardedTitles: string[] = [];
+  pi.events.on(HERDR_WINDOW_TITLE_EVENT, (event) => {
+    if (typeof event === "object" && event !== null && "title" in event) {
+      forwardedTitles.push(String(event.title));
+    }
+  });
   vi.spyOn(terminalNotifyRuntime, "stdoutWrite").mockImplementation(() => true);
   piOscExtension(pi);
   const ctx = createContextWithCwd(cwd);
@@ -411,6 +418,9 @@ test("agent lifecycle animates terminal title spinner", () => {
   expect(ctx.ui.setTitle).toHaveBeenCalledWith("- π - workspace");
   expect(ctx.ui.setTitle).toHaveBeenCalledWith("✶ π - workspace");
   expect(ctx.ui.setTitle).toHaveBeenLastCalledWith("π - workspace");
+  expect(forwardedTitles).toContain("· π - workspace");
+  expect(forwardedTitles).toContain("⣾ π - workspace");
+  expect(forwardedTitles).toHaveLength(ctx.ui.setTitle.mock.calls.length);
 });
 
 test("agent end restores base title when spinner config is disabled mid-run", () => {

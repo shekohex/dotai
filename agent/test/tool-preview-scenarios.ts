@@ -22,6 +22,7 @@ import {
   createWriteToolOverrideDefinition,
 } from "../src/extensions/coreui/tools.js";
 import { shortenPathForTool } from "../src/extensions/coreui/path.js";
+import { createLookAtToolDefinition } from "../src/extensions/live/screen-capture.js";
 
 type ToolResultContent = Array<{ type: string; text?: string }>;
 
@@ -93,6 +94,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const bashDefinition = createBashToolOverrideDefinition(previewPi);
   const batchReadDefinition = createReadBatchPreviewDefinition(cwd);
   const subagentDefinition = getSubagentPreviewDefinition();
+  const lookAtDefinition = createLookAtToolDefinition(() => undefined);
   const parentSessionPath = joinPath(
     cwd,
     ".pi/agent/sessions/parent/2026-04-11T17-45-51-124Z_parent.jsonl",
@@ -309,6 +311,59 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   ].join("\n");
 
   return [
+    {
+      id: "look_at:vision",
+      title: "look_at direct vision preview",
+      toolName: lookAtDefinition.name,
+      toolDefinition: lookAtDefinition,
+      cwd,
+      args: {},
+      partialResult: {
+        content: [{ type: "text", text: "Capturing the current display" }],
+      },
+      successResult: {
+        content: [{ type: "text", text: "BASE64_SHOULD_NEVER_RENDER" }],
+        details: {
+          path: "/tmp/pi-live-preview/display.jpg",
+          mimeType: "image/jpeg",
+          width: 2_560,
+          height: 1_440,
+          displayId: "42",
+          timestamp: Date.parse("2026-04-12T10:00:00.000Z"),
+          byteSize: 234_567,
+          sha256: "a".repeat(64),
+          pointerX: 1_280,
+          pointerY: 720,
+        },
+      },
+      errorResult: {
+        content: [
+          { type: "text", text: "Screen Recording access is required to capture the display." },
+        ],
+      },
+    },
+    {
+      id: "look_at:described",
+      title: "look_at helper-described preview",
+      toolName: lookAtDefinition.name,
+      toolDefinition: lookAtDefinition,
+      cwd,
+      args: {},
+      successResult: {
+        content: [{ type: "text", text: "SENSITIVE SCREEN DESCRIPTION SHOULD NEVER RENDER" }],
+        details: {
+          path: "/tmp/pi-live-preview/display-described.jpg",
+          mimeType: "image/jpeg",
+          width: 1_920,
+          height: 1_080,
+          displayId: "7",
+          timestamp: Date.parse("2026-04-12T10:01:00.000Z"),
+          byteSize: 123_456,
+          sha256: "b".repeat(64),
+          describedBy: "openai-codex/gpt-5.6-luna",
+        },
+      },
+    },
     {
       id: "executor:compact",
       title: "executor compact call and result",

@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 
 enum LiveClientEvent: Sendable {
@@ -27,6 +26,7 @@ final class LivePairingClient {
     private let eventContinuation: AsyncStream<LiveClientEvent>.Continuation
     private let peer = LiveWebRTCPeer()
     private let screenCaptureHandler: any ScreenCaptureRPCHandling
+    private let microphonePermission: any LivePermissionServicing
     private let tunnel = SSHTunnel()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -44,8 +44,12 @@ final class LivePairingClient {
     private var nextRequestID = 1
     private var pendingRequests: [String: CheckedContinuation<JSONValue, Error>] = [:]
 
-    init(screenCaptureHandler: any ScreenCaptureRPCHandling = ScreenCaptureRPCHandler()) {
+    init(
+        screenCaptureHandler: any ScreenCaptureRPCHandling = ScreenCaptureRPCHandler(),
+        microphonePermission: any LivePermissionServicing = MicrophonePermissionService()
+    ) {
         self.screenCaptureHandler = screenCaptureHandler
+        self.microphonePermission = microphonePermission
         let pair = AsyncStream.makeStream(of: LiveClientEvent.self)
         events = pair.stream
         eventContinuation = pair.continuation
@@ -82,7 +86,9 @@ final class LivePairingClient {
         ending = false
         stopFinished = false
         preferredVoice = voice
-        guard await requestMicrophonePermission() else { throw PiLiveError.microphoneDenied }
+        guard await microphonePermission.requestPermission() == .allowed else {
+            throw PiLiveError.microphoneDenied
+        }
         let envelope = try PairingEnvelope(uri: pairingURL.trimmingCharacters(in: .whitespacesAndNewlines))
         let resolved = try await resolveEndpoint(
             envelope.payload.endpoints,
@@ -378,6 +384,7 @@ final class LivePairingClient {
                 RPCSuccess(id: id, result: result),
                 maximumBytes: maxScreenCaptureEncodedFrameBytes
             )
+            screenCaptureHandler.confirmCaptureDelivered()
             return
         }
         switch method {
@@ -582,15 +589,6 @@ final class LivePairingClient {
         if preferredTransport == .coder { throw PiLiveError.missingCoderToken }
         if preferredTransport == .ssh { throw PiLiveError.missingSSHTarget }
         throw PiLiveError.unsupportedTransport
-    }
-
-    private func requestMicrophonePermission() async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized: true
-        case .denied, .restricted: false
-        case .notDetermined: await AVCaptureDevice.requestAccess(for: .audio)
-        @unknown default: false
-        }
     }
 
     private func fail(_ error: Error) {

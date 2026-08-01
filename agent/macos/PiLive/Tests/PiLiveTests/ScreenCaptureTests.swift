@@ -9,6 +9,29 @@ private struct TestScreenCaptureAuthorizer: ScreenCaptureAuthorizing {
 }
 
 @MainActor
+private final class TestCaptureSoundPlayer: ScreenCaptureConfirmationSoundPlaying {
+    private(set) var playCount = 0
+
+    func playCaptureConfirmation() {
+        playCount += 1
+    }
+}
+
+private struct TestScreenCaptureEncoder: ScreenCaptureEncoding {
+    let result: Result<ScreenCaptureResult, Error>
+
+    func encode(
+        image: CGImage,
+        displayID: String,
+        timestamp: Double,
+        requestID: RPCID,
+        pointer: CGPoint?
+    ) throws -> ScreenCaptureResult {
+        try result.get()
+    }
+}
+
+@MainActor
 private final class TestScreenCaptureProvider: ScreenCaptureProviding {
     let displays: [ScreenCaptureDisplay]
     let image: CGImage
@@ -28,6 +51,23 @@ private final class TestScreenCaptureProvider: ScreenCaptureProviding {
 }
 
 @MainActor
+private final class FailingScreenCaptureProvider: ScreenCaptureProviding {
+    let error: Error
+
+    init(error: Error) {
+        self.error = error
+    }
+
+    func availableDisplays() async throws -> [ScreenCaptureDisplay] {
+        throw error
+    }
+
+    func capture(display: ScreenCaptureDisplay) async throws -> CGImage {
+        throw error
+    }
+}
+
+@MainActor
 private final class TestScreenCaptureRPCHandler: ScreenCaptureRPCHandling {
     let result: ScreenCaptureResult
     private(set) var requestIDs: [RPCID] = []
@@ -38,18 +78,22 @@ private final class TestScreenCaptureRPCHandler: ScreenCaptureRPCHandling {
         requestIDs.append(requestID)
         return result
     }
+
+    func confirmCaptureDelivered() {}
 }
 
 @MainActor
 final class ScreenCaptureTests: XCTestCase {
     func testPermissionDenialStopsBeforeCapture() async throws {
+        let soundPlayer = TestCaptureSoundPlayer()
         let provider = TestScreenCaptureProvider(
             displays: [display(id: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100))],
             image: try makeImage(width: 100, height: 100)
         )
         let handler = ScreenCaptureRPCHandler(
             authorizer: TestScreenCaptureAuthorizer(allowed: false),
-            provider: provider
+            provider: provider,
+            soundPlayer: soundPlayer
         )
 
         do {
@@ -62,6 +106,40 @@ final class ScreenCaptureTests: XCTestCase {
             )
         }
         XCTAssertNil(provider.capturedDisplay)
+        XCTAssertEqual(soundPlayer.playCount, 0)
+    }
+
+    func testPointerCoordinateMappingHandlesRetinaScaleAndYInversion() throws {
+        let pointer = try XCTUnwrap(ScreenCapturePointerMapper.mapToImagePixels(
+            globalPoint: CGPoint(x: 720, y: 100),
+            displayFrame: CGRect(x: 0, y: 0, width: 1_440, height: 900),
+            imageWidth: 2_880,
+            imageHeight: 1_800
+        ))
+
+        XCTAssertEqual(pointer.x, 1_440, accuracy: 0.001)
+        XCTAssertEqual(pointer.y, 1_600, accuracy: 0.001)
+    }
+
+    func testPointerCoordinateMappingHandlesNegativeDisplayOrigin() throws {
+        let pointer = try XCTUnwrap(ScreenCapturePointerMapper.mapToImagePixels(
+            globalPoint: CGPoint(x: -960, y: 540),
+            displayFrame: CGRect(x: -1_920, y: 0, width: 1_920, height: 1_080),
+            imageWidth: 1_920,
+            imageHeight: 1_080
+        ))
+
+        XCTAssertEqual(pointer.x, 960, accuracy: 0.001)
+        XCTAssertEqual(pointer.y, 540, accuracy: 0.001)
+    }
+
+    func testPointerOutsideSelectedDisplayIsOmitted() {
+        XCTAssertNil(ScreenCapturePointerMapper.mapToImagePixels(
+            globalPoint: CGPoint(x: 2_000, y: 500),
+            displayFrame: CGRect(x: 0, y: 0, width: 1_920, height: 1_080),
+            imageWidth: 1_920,
+            imageHeight: 1_080
+        ))
     }
 
     func testSelectsPointerDisplayThenMainDisplayFallback() {
@@ -95,8 +173,9 @@ final class ScreenCaptureTests: XCTestCase {
             originalHeight: 2_880,
             displayID: "7",
             timestamp: 123,
-            requestID: .string("capture")
-        ) { width, height, quality in
+            requestID: .string("capture"),
+            pointer: CGPoint(x: 2_560, y: 1_440)
+        ) { width, height, quality, _ in
             attempts.append((width, height, quality))
             return Data(repeating: 1, count: 4 * 1024 * 1024)
         }
@@ -105,6 +184,8 @@ final class ScreenCaptureTests: XCTestCase {
         XCTAssertEqual(result.height, 2_880)
         XCTAssertEqual(attempts.count, 1)
         XCTAssertEqual(attempts.first?.quality, 0.85)
+        XCTAssertEqual(result.pointerX, 2_560)
+        XCTAssertEqual(result.pointerY, 1_440)
         XCTAssertGreaterThan(result.byteSize, maxLiveRPCFrameBytes)
         XCTAssertLessThanOrEqual(
             try JSONEncoder().encode(RPCSuccess(id: RPCID.string("capture"), result: result)).count,
@@ -119,8 +200,9 @@ final class ScreenCaptureTests: XCTestCase {
             originalHeight: 2_880,
             displayID: "7",
             timestamp: 123,
-            requestID: .string("capture")
-        ) { width, height, quality in
+            requestID: .string("capture"),
+            pointer: CGPoint(x: 2_560, y: 1_440)
+        ) { width, height, quality, _ in
             attempts.append((width, height, quality))
             if width > 4_096 { return Data(repeating: 1, count: maxScreenCaptureImageBytes + 1) }
             return Data(repeating: 2, count: 1_024)
@@ -131,6 +213,8 @@ final class ScreenCaptureTests: XCTestCase {
         XCTAssertEqual(attempts.prefix(7).map(\.width), Array(repeating: 5_120, count: 7))
         XCTAssertEqual(attempts.last?.width, 4_096)
         XCTAssertEqual(attempts.last?.quality, 0.85)
+        XCTAssertEqual(result.pointerX, 2_048)
+        XCTAssertEqual(result.pointerY, 1_152)
     }
 
     func testReportsMetadataAndRoutesScreenCaptureRPCExactlyOnce() async throws {
@@ -163,6 +247,8 @@ final class ScreenCaptureTests: XCTestCase {
     }
 
     func testCaptureMetadataUsesSelectedDisplayAndEncodedImage() async throws {
+        let soundPlayer = TestCaptureSoundPlayer()
+        var pointerSampleCount = 0
         let pointerDisplay = display(
             id: 2,
             frame: CGRect(x: 100, y: 0, width: 100, height: 50)
@@ -177,11 +263,18 @@ final class ScreenCaptureTests: XCTestCase {
         let handler = ScreenCaptureRPCHandler(
             authorizer: TestScreenCaptureAuthorizer(allowed: true),
             provider: provider,
-            pointerLocation: { CGPoint(x: 150, y: 25) },
-            now: { Date(timeIntervalSince1970: 10) }
+            pointerLocation: {
+                pointerSampleCount += 1
+                return CGPoint(x: 150, y: 25)
+            },
+            now: { Date(timeIntervalSince1970: 10) },
+            soundPlayer: soundPlayer
         )
 
         let result = try await handler.capture(requestID: .string("capture"))
+        XCTAssertEqual(soundPlayer.playCount, 0)
+        handler.confirmCaptureDelivered()
+        handler.confirmCaptureDelivered()
 
         XCTAssertEqual(provider.capturedDisplay, pointerDisplay)
         XCTAssertEqual(result.mimeType, "image/jpeg")
@@ -189,8 +282,43 @@ final class ScreenCaptureTests: XCTestCase {
         XCTAssertEqual(result.height, 50)
         XCTAssertEqual(result.displayId, "2")
         XCTAssertEqual(result.timestamp, 10_000)
+        XCTAssertEqual(result.pointerX, 50)
+        XCTAssertEqual(result.pointerY, 25)
         XCTAssertEqual(Data(base64Encoded: result.data)?.count, result.byteSize)
         XCTAssertEqual(result.sha256.count, 64)
+        XCTAssertEqual(pointerSampleCount, 1)
+        XCTAssertEqual(soundPlayer.playCount, 1)
+    }
+
+    func testEncodingFailureDoesNotPlayCaptureSound() async throws {
+        let soundPlayer = TestCaptureSoundPlayer()
+        let provider = TestScreenCaptureProvider(
+            displays: [display(id: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100))],
+            image: try makeImage(width: 100, height: 100)
+        )
+        let handler = ScreenCaptureRPCHandler(
+            authorizer: TestScreenCaptureAuthorizer(allowed: true),
+            provider: provider,
+            encoder: TestScreenCaptureEncoder(
+                result: .failure(PiLiveError.protocolError("encoding failed"))
+            ),
+            soundPlayer: soundPlayer
+        )
+
+        await XCTAssertThrowsErrorAsync(try await handler.capture(requestID: .string("capture")))
+        XCTAssertEqual(soundPlayer.playCount, 0)
+    }
+
+    func testCancellationDoesNotPlayCaptureSound() async {
+        let soundPlayer = TestCaptureSoundPlayer()
+        let handler = ScreenCaptureRPCHandler(
+            authorizer: TestScreenCaptureAuthorizer(allowed: true),
+            provider: FailingScreenCaptureProvider(error: CancellationError()),
+            soundPlayer: soundPlayer
+        )
+
+        await XCTAssertThrowsErrorAsync(try await handler.capture(requestID: .string("capture")))
+        XCTAssertEqual(soundPlayer.playCount, 0)
     }
 
     func testFailsWhenNoEncodingFitsSizeLimits() {
@@ -200,8 +328,9 @@ final class ScreenCaptureTests: XCTestCase {
                 originalHeight: 2_880,
                 displayID: "7",
                 timestamp: 123,
-                requestID: .string("capture")
-            ) { _, _, _ in Data(repeating: 1, count: maxScreenCaptureImageBytes + 1) }
+                requestID: .string("capture"),
+                pointer: nil
+            ) { _, _, _, _ in Data(repeating: 1, count: maxScreenCaptureImageBytes + 1) }
         ) { error in
             XCTAssertTrue(error.localizedDescription.contains("cannot fit"))
         }
@@ -270,4 +399,15 @@ final class ScreenCaptureTests: XCTestCase {
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         return try XCTUnwrap(context.makeImage())
     }
+}
+
+private func XCTAssertThrowsErrorAsync<T>(
+    _ expression: @autoclosure () async throws -> T,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    do {
+        _ = try await expression()
+        XCTFail("Expected error", file: file, line: line)
+    } catch {}
 }

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Api, AssistantMessage, ImageContent, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { LivePairingServer } from "../src/extensions/live/pairing/server.js";
@@ -79,6 +80,22 @@ function captureResult(overrides: Record<string, unknown> = {}): Record<string, 
   };
 }
 
+function renderText(component: unknown): string {
+  if (!(component instanceof Text)) throw new Error("Expected Text renderer component");
+  return component.render(200).join("\n");
+}
+
+const rendererTheme = {
+  fg: (_token: string, text: string) => text,
+  bg: (_token: string, text: string) => text,
+  bold: (text: string) => text,
+  dim: (text: string) => text,
+  italic: (text: string) => text,
+  underline: (text: string) => text,
+  inverse: (text: string) => text,
+  strikethrough: (text: string) => text,
+};
+
 function connection(
   result: unknown = captureResult(),
   options: {
@@ -118,6 +135,126 @@ afterEach(async () => {
 });
 
 describe("look_at", () => {
+  it("owns self-rendered call and result UI", () => {
+    const tool = createLookAtToolDefinition(() => undefined);
+
+    expect(tool.renderShell).toBe("self");
+    expect(tool.renderCall).toBeTypeOf("function");
+    expect(tool.renderResult).toBeTypeOf("function");
+  });
+
+  it("renders partial, collapsed, expanded, and helper-described states without screen content", () => {
+    const tool = createLookAtToolDefinition(() => undefined);
+    const state: Record<string, unknown> = {};
+    const call = tool.renderCall?.(
+      {},
+      rendererTheme as never,
+      {
+        state,
+        lastComponent: undefined,
+        isPartial: true,
+        isError: false,
+        expanded: false,
+      } as never,
+    );
+    expect(renderText(call)).toContain("capturing current display");
+
+    const details = {
+      path: "/tmp/pi-live/capture.jpg",
+      mimeType: "image/jpeg" as const,
+      width: 2_560,
+      height: 1_440,
+      displayId: "42",
+      timestamp: Date.parse("2026-04-12T10:00:00.000Z"),
+      byteSize: 234_567,
+      sha256: "a".repeat(64),
+      pointerX: 1_280,
+      pointerY: 720,
+      describedBy: "openai-codex/gpt-5.6-luna",
+    };
+    const result = {
+      content: [{ type: "text" as const, text: "SECRET SCREEN DESCRIPTION BASE64_PAYLOAD" }],
+      details,
+    };
+    const collapsed = tool.renderResult?.(
+      result,
+      { expanded: false, isPartial: false },
+      rendererTheme as never,
+      {
+        args: {},
+        state,
+        lastComponent: undefined,
+        isPartial: false,
+        isError: false,
+      } as never,
+    );
+    const collapsedCallText = renderText(call);
+    expect(collapsedCallText).toContain("display 42");
+    expect(collapsedCallText).toContain("2560×1440");
+    expect(collapsedCallText).toContain("described by openai-codex/gpt-5.6-luna");
+    expect(renderText(collapsed)).toBe("");
+
+    const expanded = tool.renderResult?.(
+      result,
+      { expanded: true, isPartial: false },
+      rendererTheme as never,
+      {
+        args: {},
+        state,
+        lastComponent: undefined,
+        isPartial: false,
+        isError: false,
+      } as never,
+    );
+    const expandedText = renderText(expanded);
+    expect(expandedText).toContain("path: /tmp/pi-live/capture.jpg");
+    expect(expandedText).toContain("mimeType: image/jpeg");
+    expect(expandedText).toContain("dimensions: 2560×1440");
+    expect(expandedText).toContain("pointer: 1280, 720");
+    expect(expandedText).toContain("sha256: aaaaaaaaaaaa…");
+    expect(expandedText).not.toContain("SECRET SCREEN DESCRIPTION");
+    expect(expandedText).not.toContain("BASE64_PAYLOAD");
+  });
+
+  it.each([
+    "Pi Live screen capture is unavailable: no active paired Pi Live app",
+    "Pi Live app disconnected",
+    "Paired Pi Live app does not support screenCapture; update the app to capture the display",
+    "Screen Recording access is required to capture the display.",
+    "Pi Live screen capture is already in progress",
+    "Pi Live app request timed out: screen.capture",
+    "Cancelled",
+    "view_image could not describe the image: no authenticated vision model is available",
+  ])("renders concise capture error: %s", (message) => {
+    const tool = createLookAtToolDefinition(() => undefined);
+    const state: Record<string, unknown> = {};
+    const call = tool.renderCall?.(
+      {},
+      rendererTheme as never,
+      {
+        state,
+        lastComponent: undefined,
+        isPartial: false,
+        isError: true,
+        expanded: false,
+      } as never,
+    );
+    const result = tool.renderResult?.(
+      { content: [{ type: "text", text: message }] },
+      { expanded: false, isPartial: false },
+      rendererTheme as never,
+      {
+        args: {},
+        state,
+        lastComponent: undefined,
+        isPartial: false,
+        isError: true,
+      } as never,
+    );
+
+    expect(renderText(call)).toContain("look_at · error");
+    expect(renderText(result)).toContain(message);
+  });
   it("reports unavailable when no live app is paired", async () => {
     const tool = createLookAtToolDefinition(() => undefined);
     await expect(
@@ -194,6 +331,26 @@ describe("look_at", () => {
 
     await session.close();
     expect(existsSync(result.details.path)).toBe(false);
+  });
+
+  it("accepts valid pointer metadata within captured image bounds", async () => {
+    const session = createSession("pointer-valid");
+    session.attach(connection(captureResult({ pointerX: 139, pointerY: 0 })));
+
+    await expect(session.capture()).resolves.toMatchObject({ pointerX: 139, pointerY: 0 });
+  });
+
+  it.each([
+    [{ pointerX: 140, pointerY: 0 }, "pointer coordinates"],
+    [{ pointerX: 0, pointerY: 140 }, "pointer coordinates"],
+    [{ pointerX: -1, pointerY: 0 }, "invalid screen.capture metadata"],
+    [{ pointerX: 1 }, "pointer metadata"],
+    [{ pointerY: 1 }, "pointer metadata"],
+  ])("rejects invalid optional pointer metadata %#", async (overrides, expected) => {
+    const session = createSession("pointer-invalid");
+    session.attach(connection(captureResult(overrides)));
+
+    await expect(session.capture()).rejects.toThrow(expected);
   });
 
   it("returns a vision-helper description to text-only models", async () => {

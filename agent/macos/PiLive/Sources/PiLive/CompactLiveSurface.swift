@@ -16,7 +16,7 @@ struct CompactLiveSurface: View {
                     .padding(.horizontal, 11)
                     .padding(.vertical, 7)
                     .liveGlass(
-                        tint: Color.red.opacity(0.17),
+                        tint: model.selectedVoice.accent.opacity(0.17),
                         in: Capsule(style: .continuous)
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -46,7 +46,7 @@ struct CompactLiveSurface: View {
 
                 if escapeArmed {
                     Circle()
-                        .stroke(Color.red.opacity(0.8), lineWidth: 2)
+                        .stroke(model.selectedVoice.accent.opacity(0.8), lineWidth: 2)
                         .frame(width: 88, height: 88)
                         .transition(.opacity)
                 }
@@ -56,7 +56,7 @@ struct CompactLiveSurface: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 24, height: 24)
-                        .background(.orange.gradient, in: Circle())
+                        .background(model.selectedVoice.accent.gradient, in: Circle())
                         .overlay(Circle().stroke(.white.opacity(0.38), lineWidth: 0.7))
                         .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
                         .offset(x: 31, y: 31)

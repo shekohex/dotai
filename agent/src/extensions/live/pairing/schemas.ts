@@ -92,6 +92,8 @@ export const ScreenCaptureResultSchema = Type.Object(
     timestamp: Type.Number({ minimum: 0 }),
     byteSize: Type.Integer({ minimum: 1 }),
     sha256: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+    pointerX: Type.Optional(Type.Integer({ minimum: 0, maximum: 16_383 })),
+    pointerY: Type.Optional(Type.Integer({ minimum: 0, maximum: 16_383 })),
   },
   { additionalProperties: false },
 );

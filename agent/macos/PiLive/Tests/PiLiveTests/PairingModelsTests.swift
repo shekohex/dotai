@@ -76,6 +76,22 @@ final class PairingModelsTests: XCTestCase {
         XCTAssertEqual(object["screenCapture"] as? Bool, true)
     }
 
+    func testScreenCapturePointerMetadataIsBackwardsCompatible() throws {
+        let legacy = try JSONDecoder().decode(
+            ScreenCaptureResult.self,
+            from: Data(#"{"mimeType":"image/jpeg","data":"/9j/2Q==","width":100,"height":50,"displayId":"9","timestamp":456,"byteSize":4,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#.utf8)
+        )
+        let withPointer = try JSONDecoder().decode(
+            ScreenCaptureResult.self,
+            from: Data(#"{"mimeType":"image/jpeg","data":"/9j/2Q==","width":100,"height":50,"displayId":"9","timestamp":456,"byteSize":4,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pointerX":25,"pointerY":30}"#.utf8)
+        )
+
+        XCTAssertNil(legacy.pointerX)
+        XCTAssertNil(legacy.pointerY)
+        XCTAssertEqual(withPointer.pointerX, 25)
+        XCTAssertEqual(withPointer.pointerY, 30)
+    }
+
     func testDecodesAgentProgressNotification() throws {
         let data = Data(
             #"{"jsonrpc":"2.0","method":"agent.progress","params":{"delegationId":"d1","channel":"commentary","text":"Checking tests"}}"#.utf8

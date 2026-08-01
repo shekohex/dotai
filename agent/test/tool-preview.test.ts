@@ -194,6 +194,56 @@ timedTest("search_tools preview stays compact and expands ranked diagnostics", (
   expect(errorText).toMatch(/Tool catalog unavailable/);
 });
 
+timedTest("look_at previews stay compact, metadata-only, and Base64-free", () => {
+  const visionScenario = getToolPreviewScenarios().find((item) => item.id === "look_at:vision");
+  const describedScenario = getToolPreviewScenarios().find(
+    (item) => item.id === "look_at:described",
+  );
+  expect(visionScenario).toBeTruthy();
+  expect(describedScenario).toBeTruthy();
+
+  const partial = getToolPreviewPanels(visionScenario).find(
+    (panel) => panel.id === "partial-collapsed",
+  );
+  const collapsed = getToolPreviewPanels(visionScenario).find(
+    (panel) => panel.id === "success-collapsed",
+  );
+  const expanded = getToolPreviewPanels(visionScenario).find(
+    (panel) => panel.id === "success-expanded",
+  );
+  const error = getToolPreviewPanels(visionScenario).find(
+    (panel) => panel.id === "error-collapsed",
+  );
+  const described = getToolPreviewPanels(describedScenario).find(
+    (panel) => panel.id === "success-collapsed",
+  );
+  expect(partial).toBeTruthy();
+  expect(collapsed).toBeTruthy();
+  expect(expanded).toBeTruthy();
+  expect(error).toBeTruthy();
+  expect(described).toBeTruthy();
+
+  const partialText = stripAnsi(renderPreviewText(visionScenario, partial, 120));
+  const collapsedLines = renderPreviewLines(visionScenario, collapsed, 120).filter(
+    (line) => stripAnsi(line).trim().length > 0,
+  );
+  const collapsedText = stripAnsi(collapsedLines.join("\n"));
+  const expandedText = stripAnsi(renderPreviewText(visionScenario, expanded, 120));
+  const errorText = stripAnsi(renderPreviewText(visionScenario, error, 120));
+  const describedText = stripAnsi(renderPreviewText(describedScenario, described, 120));
+
+  expect(partialText).toMatch(/capturing current display/);
+  expect(collapsedLines).toHaveLength(1);
+  expect(collapsedText).toMatch(/look_at · display 42 · 2560×1440 · .* JPEG · viewed directly/);
+  expect(expandedText).toMatch(/pointer: 1280, 720/);
+  expect(expandedText).toMatch(/capturedAt: 2026-04-12T10:00:00.000Z/);
+  expect(errorText).toMatch(/Screen Recording access is required/);
+  expect(describedText).toMatch(/described by openai-codex\/gpt-5.6-luna/);
+  for (const text of [partialText, collapsedText, expandedText, errorText, describedText]) {
+    expect(text).not.toMatch(/BASE64_SHOULD_NEVER_RENDER|SENSITIVE SCREEN DESCRIPTION/);
+  }
+});
+
 timedTest("subagent previews render representative action summaries and expanded metadata", () => {
   const startScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:start");
   const messageScenario = getToolPreviewScenarios().find((item) => item.id === "subagent:message");

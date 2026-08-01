@@ -1,5 +1,7 @@
-import SwiftUI
+import AppKit
+import Combine
 import KeyboardShortcuts
+import SwiftUI
 
 struct LiveSettingsView: View {
     @Bindable var model: LiveViewModel
@@ -47,6 +49,7 @@ struct LiveSettingsView: View {
         case .assistant: assistantSettings
         case .connection: connectionSettings
         case .audio: audioSettings
+        case .permissions: permissionsSettings
         }
     }
 
@@ -254,6 +257,10 @@ struct LiveSettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
     }
+
+    private var permissionsSettings: some View {
+        PermissionsSettingsView(model: model.permissions)
+    }
 }
 
 private enum LiveSettingsSection: String, CaseIterable, Identifiable {
@@ -262,6 +269,7 @@ private enum LiveSettingsSection: String, CaseIterable, Identifiable {
     case assistant
     case connection
     case audio
+    case permissions
 
     var id: String { rawValue }
 
@@ -272,6 +280,7 @@ private enum LiveSettingsSection: String, CaseIterable, Identifiable {
         case .assistant: "Assistant"
         case .connection: "Connection"
         case .audio: "Audio"
+        case .permissions: "Permissions"
         }
     }
 
@@ -282,6 +291,7 @@ private enum LiveSettingsSection: String, CaseIterable, Identifiable {
         case .assistant: "sparkles"
         case .connection: "network"
         case .audio: "waveform.badge.mic"
+        case .permissions: "hand.raised.fill"
         }
     }
 
@@ -292,7 +302,105 @@ private enum LiveSettingsSection: String, CaseIterable, Identifiable {
         case .assistant: "Conversation and workspace preferences"
         case .connection: "Transport, SSH, and Coder credentials"
         case .audio: "Microphone processing and speech activity"
+        case .permissions: "Review microphone and Screen Recording access"
         }
+    }
+}
+
+private struct PermissionsSettingsView: View {
+    @Bindable var model: PermissionsViewModel
+
+    var body: some View {
+        Form {
+            Section("Privacy & Security") {
+                PermissionSettingsRow(
+                    title: "Microphone",
+                    detail: "Required for realtime voice conversations.",
+                    status: model.microphoneStatus,
+                    requesting: model.requestingMicrophone,
+                    requestAction: {
+                        Task { await model.requestMicrophonePermission() }
+                    },
+                    openSettingsAction: model.openMicrophoneSystemSettings
+                )
+
+                PermissionSettingsRow(
+                    title: "Screen Recording",
+                    detail: "Used only after you explicitly ask Pi to inspect the current display.",
+                    status: model.screenRecordingStatus,
+                    requesting: model.requestingScreenRecording,
+                    requestAction: {
+                        Task { await model.requestScreenRecordingPermission() }
+                    },
+                    openSettingsAction: model.openScreenRecordingSystemSettings
+                )
+            }
+
+            Section("Screen Recording changes") {
+                Text("macOS may require Pi Live to be quit and reopened after Screen Recording access changes before capture succeeds.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .onAppear { model.refresh() }
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification
+        )) { _ in
+            model.refresh()
+        }
+    }
+}
+
+private struct PermissionSettingsRow: View {
+    let title: String
+    let detail: String
+    let status: LivePermissionStatus
+    let requesting: Bool
+    let requestAction: () -> Void
+    let openSettingsAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: status.systemImage)
+                    .font(.title3)
+                    .foregroundStyle(status == .allowed ? Color.accentColor : Color.secondary)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.headline)
+                    Text(detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Text(status.title)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(status == .allowed ? Color.accentColor : Color.secondary)
+                    .accessibilityLabel("\(title) status: \(status.title)")
+            }
+
+            HStack {
+                Spacer()
+                if status == .notRequested {
+                    Button(requesting ? "Requesting…" : "Request Access", action: requestAction)
+                        .disabled(requesting)
+                        .accessibilityLabel("Request \(title) access")
+                } else if status.requiresSystemSettings {
+                    Button("Open System Settings", action: openSettingsAction)
+                        .accessibilityLabel("Open \(title) settings")
+                }
+            }
+        }
+        .padding(.vertical, 5)
     }
 }
 

@@ -22,6 +22,7 @@ final class LiveViewModel {
     var settingsMessage = ""
     var customInstructions: String
     var diagnosticsEnabled: Bool
+    let permissions: PermissionsViewModel
 
     var connected: Bool {
         ![.idle, .pairing, .connecting, .error].contains(phase)
@@ -40,11 +41,13 @@ final class LiveViewModel {
     init(
         credentials: CredentialStore = CredentialStore(),
         preferences: LivePreferences = LivePreferences(),
-        client: LivePairingClient = LivePairingClient()
+        client: LivePairingClient = LivePairingClient(),
+        permissions: PermissionsViewModel = PermissionsViewModel()
     ) {
         self.credentials = credentials
         self.preferences = preferences
         self.client = client
+        self.permissions = permissions
         coderToken = credentials.readCoderToken()
         sshTarget = preferences.sshTarget
         preferredTransport = preferences.transport

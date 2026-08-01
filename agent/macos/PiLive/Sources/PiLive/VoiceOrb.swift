@@ -54,7 +54,7 @@ struct VoiceOrb: View {
         let tilt = reduceMotion || !active
             ? 0
             : sin(time * 5.2 + 0.8) * (0.35 + displayedEnergy * 1.1)
-        let activityColor: Color = localSpeaking ? .green : voice.accent
+        let activityColor = voice.accent
 
         ZStack {
             Circle()

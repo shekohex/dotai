@@ -8,6 +8,7 @@ import { Type } from "typebox";
 import { isUnknownRecord } from "../../utils/unknown-value.js";
 import { parseScreenCaptureResult } from "./pairing/schemas.js";
 import { presentImageToModel } from "../view-image.js";
+import { renderLookAtCall, renderLookAtResult } from "./screen-capture-render.js";
 
 export const MAX_CAPTURE_IMAGE_BYTES = 6 * 1024 * 1024;
 export const MAX_SCREEN_CAPTURE_FRAME_BYTES = 8 * 1024 * 1024;
@@ -36,6 +37,8 @@ export type LiveScreenCaptureDetails = {
   timestamp: number;
   byteSize: number;
   sha256: string;
+  pointerX?: number;
+  pointerY?: number;
   describedBy?: string;
 };
 
@@ -96,6 +99,18 @@ function decodeCaptureImage(value: unknown): {
   if (result.mimeType !== JPEG_MIME_TYPE) {
     throw new Error(`Pi Live screen capture must use ${JPEG_MIME_TYPE}`);
   }
+  const hasPointerX = result.pointerX !== undefined;
+  const hasPointerY = result.pointerY !== undefined;
+  if (hasPointerX !== hasPointerY) {
+    throw new Error("Pi Live screen capture pointer metadata must include both coordinates");
+  }
+  if (
+    result.pointerX !== undefined &&
+    result.pointerY !== undefined &&
+    (result.pointerX >= result.width || result.pointerY >= result.height)
+  ) {
+    throw new Error("Pi Live screen capture pointer coordinates are outside image bounds");
+  }
   if (!isStrictBase64(result.data)) {
     throw new Error("Pi Live app returned invalid Base64 screen capture data");
   }
@@ -142,6 +157,8 @@ function decodeCaptureImage(value: unknown): {
       timestamp: result.timestamp,
       byteSize: result.byteSize,
       sha256: result.sha256,
+      ...(result.pointerX === undefined ? {} : { pointerX: result.pointerX }),
+      ...(result.pointerY === undefined ? {} : { pointerY: result.pointerY }),
     },
   };
 }
@@ -230,12 +247,15 @@ export function createLookAtToolDefinition(getSession: () => LiveScreenCaptureSe
   return defineTool<typeof LookAtParams, LiveScreenCaptureDetails>({
     name: "look_at",
     label: "Look At Display",
+    renderShell: "self",
     description: "Capture and inspect the full current display from the paired Pi Live macOS app.",
     promptSnippet: "Capture the current display from the paired Pi Live app",
     promptGuidelines: [
       "Use look_at only when the user explicitly asks you to inspect the current screen; never capture automatically.",
     ],
     parameters: LookAtParams,
+    renderCall: renderLookAtCall,
+    renderResult: renderLookAtResult,
     async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
       const session = getSession();
       if (session === undefined) {

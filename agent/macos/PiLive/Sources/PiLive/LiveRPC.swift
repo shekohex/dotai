@@ -252,6 +252,32 @@ struct ScreenCaptureResult: Codable, Sendable, Equatable {
     let timestamp: Double
     let byteSize: Int
     let sha256: String
+    let pointerX: Int?
+    let pointerY: Int?
+
+    init(
+        mimeType: String,
+        data: String,
+        width: Int,
+        height: Int,
+        displayId: String,
+        timestamp: Double,
+        byteSize: Int,
+        sha256: String,
+        pointerX: Int? = nil,
+        pointerY: Int? = nil
+    ) {
+        self.mimeType = mimeType
+        self.data = data
+        self.width = width
+        self.height = height
+        self.displayId = displayId
+        self.timestamp = timestamp
+        self.byteSize = byteSize
+        self.sha256 = sha256
+        self.pointerX = pointerX
+        self.pointerY = pointerY
+    }
 }
 
 let maxLiveRPCFrameBytes = 512 * 1024

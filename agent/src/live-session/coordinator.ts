@@ -7,6 +7,7 @@ import {
 } from "../subagent-sdk/parent-message.js";
 import type { RuntimeSubagent, SubagentDelivery } from "../subagent-sdk/types.js";
 import type { SubagentSDK } from "../subagent-sdk/sdk.js";
+import { appendTrustedParentMessageGuidance } from "./parent-message-guidance.js";
 
 const MAX_THREAD_EVENTS = 256;
 const COMMENTARY_BATCH_MS = 200;
@@ -333,7 +334,11 @@ export class LiveSessionCoordinator {
       this.#emit(
         "thread.completed",
         state.sessionId,
-        { status: next.status, summary: next.finalSummary },
+        {
+          status: next.status,
+          summary: next.finalSummary,
+          completionNotificationEnabled: state.completion !== false,
+        },
         state.updatedAt,
       );
     }
@@ -382,7 +387,13 @@ export class LiveSessionCoordinator {
     this.#parentMessageApi?.sendMessage(
       {
         customType: SUBAGENT_PARENT_MESSAGE_TYPE,
-        content: message.message,
+        content: appendTrustedParentMessageGuidance({
+          sessionId,
+          name: thread?.name,
+          kind: message.kind,
+          status: thread?.status,
+          message: message.message,
+        }),
         display: true,
         details: {
           sessionId,

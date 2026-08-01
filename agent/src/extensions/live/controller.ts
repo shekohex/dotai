@@ -198,6 +198,7 @@ export class LiveSessionController {
   #lastAgentProgress:
     | { delegationId: string; channel: "speakable" | "commentary"; text: string }
     | undefined;
+  readonly #spokenSubagentResults = new Map<string, string>();
   #delegationChain: Promise<void> = Promise.resolve();
   readonly #conversation = new LiveConversationTracker();
   readonly #agentProgress: LiveAgentProgressBuffer;
@@ -502,6 +503,7 @@ export class LiveSessionController {
     this.#connection?.close();
     this.#connection = undefined;
     this.#agentProgress.clear();
+    this.#spokenSubagentResults.clear();
     this.#unsubscribeCoordinator?.();
     this.#unsubscribeCoordinator = undefined;
     this.#conversation.reset();
@@ -621,6 +623,15 @@ export class LiveSessionController {
       ...event,
       ...(inspection === undefined ? {} : { thread: inspection.thread }),
     });
+    if (
+      event.type === "thread.started" ||
+      (event.type === "thread.status" &&
+        event.data.status !== "completed" &&
+        event.data.status !== "failed" &&
+        event.data.status !== "cancelled")
+    ) {
+      this.#spokenSubagentResults.delete(event.threadId);
+    }
     if (event.type !== "thread.message" && event.type !== "thread.completed") return;
     let message: string | undefined;
     if (event.type === "thread.message") {
@@ -629,6 +640,15 @@ export class LiveSessionController {
       message = inspection?.thread.finalSummary;
     }
     if (message === undefined || message.length === 0) return;
+    const normalizedMessage = message.replaceAll(/\s+/g, " ").trim();
+    if (event.type === "thread.completed") {
+      const spokenResult = this.#spokenSubagentResults.get(event.threadId);
+      this.#spokenSubagentResults.delete(event.threadId);
+      if (event.data.completionNotificationEnabled === false) return;
+      if (spokenResult === normalizedMessage) return;
+    } else if (event.data.kind === "result") {
+      this.#spokenSubagentResults.set(event.threadId, normalizedMessage);
+    }
     const threadPath = inspection?.thread.path ?? event.threadId;
     const context = `<subagent-update thread="${threadPath}" type="${event.type}">\n${message}\n</subagent-update>`;
     for (const chunk of chunkLiveContext(context)) {

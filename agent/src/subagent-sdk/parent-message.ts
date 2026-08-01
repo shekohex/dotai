@@ -9,6 +9,8 @@ export const SubagentParentMessageKindSchema = Type.Union([
   Type.Literal("progress"),
   Type.Literal("result"),
   Type.Literal("blocker"),
+  Type.Literal("decision"),
+  Type.Literal("question"),
 ]);
 
 export const SubagentParentMessageSchema = Type.Object(
@@ -34,7 +36,7 @@ export const SubagentParentMessageToolParamsSchema = Type.Object(
       minLength: 1,
       maxLength: 32 * 1024,
       description:
-        "Concise update for the parent: useful progress, a blocker, a decision request, or the result. Do not send raw chain-of-thought.",
+        "Concise update for the parent: useful progress, a blocker, a decision or question, or the result. Do not send raw chain-of-thought.",
     }),
     delivery: Type.Optional(
       Type.Union([Type.Literal("steer"), Type.Literal("followUp")], {
@@ -61,12 +63,12 @@ export function createSubagentParentMessageTool(send: (message: SubagentParentMe
     name: "subagent",
     label: "π",
     description:
-      "Message the parent session from this child thread. Use explicit, concise updates for blockers, decisions, material progress, or results. Messages steer the parent immediately by default. Routine token progress already streams automatically; do not spam or expose raw chain-of-thought.",
+      "Message the parent session from this child thread. Use explicit, concise updates for blockers, decisions, questions, material progress, or results. Messages steer the parent immediately by default. Routine token progress already streams automatically; do not spam or expose raw chain-of-thought.",
     parameters: SubagentParentMessageToolParamsSchema,
     execute(_toolCallId, params) {
       const message: SubagentParentMessage = {
         kind: params.kind ?? "commentary",
-        message: params.message.trim(),
+        message: params.message,
         delivery: params.delivery ?? "steer",
         createdAt: Date.now(),
       };

@@ -39,6 +39,7 @@ export interface LivePairingServerOptions {
 }
 
 type NotificationHandler = (method: string, params: unknown) => void;
+type RequestHandler = (method: string, params: unknown) => unknown;
 type CloseHandler = (error?: Error, clean?: boolean) => void;
 type ConnectionStateHandler = (state: "connected" | "reconnecting") => void;
 
@@ -145,6 +146,7 @@ export class LiveMediaConnection {
     { resolve: (value: unknown) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }
   >();
   readonly #notificationHandlers = new Set<NotificationHandler>();
+  readonly #requestHandlers = new Set<RequestHandler>();
   readonly #closeHandlers = new Set<CloseHandler>();
   readonly #stateHandlers = new Set<ConnectionStateHandler>();
   readonly #onTransportClose: (error: Error | undefined, clean: boolean) => void;
@@ -172,6 +174,13 @@ export class LiveMediaConnection {
     this.#notificationHandlers.add(handler);
     return () => {
       this.#notificationHandlers.delete(handler);
+    };
+  }
+
+  onRequest(handler: RequestHandler): () => void {
+    this.#requestHandlers.add(handler);
+    return () => {
+      this.#requestHandlers.delete(handler);
     };
   }
 
@@ -279,6 +288,10 @@ export class LiveMediaConnection {
         handler(message.value.method, message.value.params);
       return;
     }
+    if (message.kind === "request") {
+      this.#handleRequest(message.value.id, message.value.method, message.value.params);
+      return;
+    }
     if (message.kind !== "response") return;
     const pending = this.#pending.get(String(message.value.id));
     if (pending === undefined) return;
@@ -289,6 +302,22 @@ export class LiveMediaConnection {
     } else {
       pending.reject(new Error(message.value.error.message));
     }
+  }
+
+  #handleRequest(id: JsonRpcId, method: string, params: unknown): void {
+    const handler = this.#requestHandlers.values().next().value;
+    if (handler === undefined) {
+      this.#send(JSON.parse(jsonRpcError(id, -32601, `Unsupported request: ${method}`)));
+      return;
+    }
+    void Promise.resolve(handler(method, params)).then(
+      (result) => {
+        if (this.open) this.#send({ jsonrpc: "2.0", id, result });
+      },
+      (cause) => {
+        if (this.open) this.#send(JSON.parse(jsonRpcError(id, -32000, errorFrom(cause).message)));
+      },
+    );
   }
 
   #emitState(state: "connected" | "reconnecting"): void {
@@ -303,6 +332,8 @@ export class LiveMediaConnection {
     this.#pending.clear();
   }
 }
+
+export { parseThreadIdParams, parseThreadMessageParams } from "./schemas.js";
 
 // eslint-disable-next-line max-classes-per-file -- server and accepted connection share one lifecycle.
 export class LivePairingServer {

@@ -3,9 +3,11 @@ import type { Static } from "typebox";
 
 import type { SubagentRuntimeEvent } from "./events.js";
 import type { SubagentChildIpcEvent } from "./ipc.js";
+import type { SubagentParentMessageEvent } from "./ipc.js";
 import type { PaneCapture } from "./mux.js";
 import type {
   CancelSubagentParams,
+  InterruptSubagentParams,
   MessageSubagentParams,
   MessageSubagentResult,
   ResumeSubagentParams,
@@ -28,6 +30,7 @@ export interface SubagentHandle {
     onUpdate?: AgentToolUpdateCallback,
   ): Promise<MessageSubagentResult>;
   cancel(): Promise<RuntimeSubagent>;
+  interrupt(): Promise<RuntimeSubagent>;
   waitForCompletion(options?: { signal?: AbortSignal }): Promise<RuntimeSubagent>;
   captureOutput(lines?: number): Promise<PaneCapture>;
   onEvent(listener: (event: SubagentSDKEvent) => void): () => void;
@@ -103,6 +106,7 @@ export interface SubagentSDK {
     onUpdate?: AgentToolUpdateCallback,
   ): Promise<{ handle: SubagentHandle; result: MessageSubagentResult }>;
   cancel(params: CancelSubagentParams): Promise<RuntimeSubagent>;
+  interrupt(params: InterruptSubagentParams): Promise<RuntimeSubagent>;
   get(sessionId: string): SubagentHandle | undefined;
   list(): RuntimeSubagent[];
   captureOutput(params: { sessionId: string; lines?: number }): Promise<PaneCapture>;
@@ -112,6 +116,8 @@ export interface SubagentSDK {
     eventType: SubagentChildIpcEvent["type"],
     listener: (event: SubagentChildIpcEvent) => void,
   ): () => void;
+  onAnyChildEvent(listener: (event: SubagentChildIpcEvent, sessionId: string) => void): () => void;
+  onParentMessage(listener: (event: SubagentParentMessageEvent) => void): () => void;
   dispose(): void;
 }
 

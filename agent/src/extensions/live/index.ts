@@ -1,18 +1,16 @@
 import {
   copyToClipboard,
   type ExtensionAPI,
-  type ExtensionCommandContext,
+  type ExtensionContext,
   type MessageEndEvent,
   type MessageStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, type Component } from "@earendil-works/pi-tui";
 import {
   LIVE_DELEGATION_MESSAGE_TYPE,
-  LIVE_REJECTED_DELEGATION_ENTRY_TYPE,
   LIVE_TRANSCRIPT_ENTRY_TYPE,
   LiveSessionController,
   type LiveDelegationMessageDetails,
-  type LiveRejectedDelegationEntryData,
   type LiveTranscriptEntryData,
 } from "./controller.js";
 import { configureLiveDiagnostics, LIVE_DIAGNOSTIC_LOG_PATH } from "./diagnostics.js";
@@ -30,6 +28,8 @@ import {
   applyLiveDelegationConversationContext,
   omitEmptyLiveDelegationAssistantTurns,
 } from "./provider-context.js";
+import { getLiveSessionCoordinator } from "../../live-session/coordinator.js";
+import { MODE_ACTIVATE_EVENT } from "../modes/index.js";
 
 const ANIMATION_INTERVAL_MS = 80;
 
@@ -86,13 +86,25 @@ function endpointSummary(pairing: LivePairingServer): string {
   return pairing.descriptor.endpoints.map((endpoint) => endpoint.type).join(" + ");
 }
 
-async function copyPairingUri(uri: string, ctx: ExtensionCommandContext): Promise<void> {
+async function copyPairingUri(uri: string, ctx: ExtensionContext): Promise<void> {
   try {
     await copyToClipboard(uri);
     ctx.ui.notify("Pi Live pairing URL copied to clipboard", "info");
   } catch (cause) {
     ctx.ui.notify(`Pi Live could not copy pairing URL: ${errorFrom(cause).message}`, "warning");
   }
+}
+
+async function activateLiveMode(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    pi.events.emit(MODE_ACTIVATE_EVENT, {
+      ctx,
+      mode: "live",
+      reason: "apply",
+      source: "command",
+      done: { resolve, reject },
+    });
+  });
 }
 
 function livePanel(
@@ -150,8 +162,6 @@ function messageContentText(content: unknown): string {
 }
 
 function delegationRelationLabel(details: LiveDelegationMessageDetails): string {
-  if (details.normalizationReason === "translation") return "translated workspace task";
-  if (details.normalizedBy !== undefined) return "synthesized workspace task";
   const relation = details.transcriptRelation;
   switch (relation) {
     case "verbatim":
@@ -165,12 +175,6 @@ function delegationRelationLabel(details: LiveDelegationMessageDetails): string 
   }
 }
 
-function delegationLanguageLabel(details: LiveDelegationMessageDetails): string {
-  if (details.normalizedBy !== undefined) return `normalized by ${details.normalizedBy}`;
-  if (details.languageAssessment === "english") return "English task";
-  return "short command";
-}
-
 function registerDelegationRenderers(pi: ExtensionAPI): void {
   pi.registerMessageRenderer<LiveDelegationMessageDetails>(
     LIVE_DELEGATION_MESSAGE_TYPE,
@@ -179,50 +183,17 @@ function registerDelegationRenderers(pi: ExtensionAPI): void {
         delegationId: "unknown",
         sourceTurn: 0,
         transcriptRelation: "unknown",
-        languageAssessment: "short-ambiguous",
       };
       const box = new Box(1, 1, (line) => theme.bg("customMessageBg", line));
       const title = theme.fg("accent", theme.bold("◆ Pi Live → workspace"));
       const request = theme.fg("customMessageText", messageContentText(message.content));
       const lines = [title, "", request];
-      if (details.originalRequest !== undefined) {
-        lines.push(
-          "",
-          theme.fg("dim", "Original voice delegation"),
-          theme.fg("muted", details.originalRequest),
-        );
-      }
       if (expanded) {
         lines.push(
           "",
           theme.fg(
             "dim",
-            `${delegationRelationLabel(details)} · Triggers AgentSession · voice turn ${details.sourceTurn} · ${delegationLanguageLabel(details)} · ${details.delegationId}`,
-          ),
-        );
-      }
-      box.addChild(new Text(lines.join("\n"), 0, 0));
-      return box;
-    },
-  );
-
-  pi.registerEntryRenderer<LiveRejectedDelegationEntryData>(
-    LIVE_REJECTED_DELEGATION_ENTRY_TYPE,
-    (entry, { expanded }, theme) => {
-      const details = entry.data;
-      const box = new Box(1, 1, (line) => theme.bg("customMessageBg", line));
-      const title = theme.fg("warning", theme.bold("◇ Pi Live delegation failed"));
-      const body = theme.fg(
-        "customMessageText",
-        details?.request ?? "Non-English delegation unavailable",
-      );
-      const lines = [`${title}  ${theme.fg("dim", "normalization unavailable")}`, "", body];
-      if (expanded && details !== undefined) {
-        lines.push(
-          "",
-          theme.fg(
-            "dim",
-            `Not sent to AgentSession · ${details.detectedLanguage} · ${details.message} · ${details.delegationId}`,
+            `${delegationRelationLabel(details)} · Triggers AgentSession · voice turn ${details.sourceTurn} · ${details.delegationId}`,
           ),
         );
       }
@@ -235,8 +206,15 @@ function registerDelegationRenderers(pi: ExtensionAPI): void {
 // eslint-disable-next-line max-lines-per-function -- command UI and lifecycle share one active session.
 export default function liveExtension(pi: ExtensionAPI): void {
   let active: ActiveLiveSession | undefined;
+  let pendingStartupContext: ExtensionContext | undefined;
+  const coordinator = getLiveSessionCoordinator(pi);
   registerTranscriptRenderer(pi);
   registerDelegationRenderers(pi);
+
+  pi.registerFlag("live", {
+    description: "Start in live coordinator mode and launch Pi Live voice",
+    type: "boolean",
+  });
 
   pi.on("context", (event) => {
     if (active === undefined) {
@@ -253,9 +231,9 @@ export default function liveExtension(pi: ExtensionAPI): void {
     return { messages: withConversationContext ?? withoutEmptyTurns ?? event.messages };
   });
 
-  pi.registerCommand("live", {
+  const liveCommand = {
     description: "Start a local-microphone Codex Live session via the Pi Live macOS app",
-    getArgumentCompletions(prefix) {
+    getArgumentCompletions(prefix: string) {
       const values = [
         { value: "auto", label: "auto", description: "Coder, SSH, and local adapters" },
         { value: "local", label: "local", description: "Pi and app on this Mac" },
@@ -275,7 +253,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
       const matches = values.filter((item) => item.value.startsWith(normalized));
       return matches.length > 0 ? matches : null;
     },
-    async handler(args: string, ctx: ExtensionCommandContext): Promise<void> {
+    async handler(args: string, ctx: ExtensionContext): Promise<void> {
       if (active) {
         await active.stop();
         return;
@@ -286,15 +264,16 @@ export default function liveExtension(pi: ExtensionAPI): void {
       }
       const settings = getLiveSettings();
       configureLiveDiagnostics(settings.diagnosticsEnabled);
-      if (!settings.enabled) {
-        ctx.ui.notify("Pi Live is disabled in settings.json", "warning");
-        return;
-      }
       let options: LiveCommandOptions;
       try {
         options = parseLiveCommand(args, settings);
       } catch (cause) {
         ctx.ui.notify(errorFrom(cause).message, "error");
+        return;
+      }
+      await activateLiveMode(pi, ctx);
+      if (!settings.enabled) {
+        ctx.ui.notify("Pi Live is disabled in settings.json", "warning");
         return;
       }
       const pairing = new LivePairingServer({
@@ -346,6 +325,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
             appOpenTimeoutMs: settings.appOpenTimeoutMs,
             voice: options.voice,
             customInstructions: settings.instructions,
+            coordinator,
             callbacks: {
               onPhase(phase) {
                 visualizer.setPhase(phase);
@@ -392,6 +372,20 @@ export default function liveExtension(pi: ExtensionAPI): void {
         if (current?.pairing === pairing) active = undefined;
       }
     },
+  };
+  pi.registerCommand("live", liveCommand);
+
+  pi.on("session_start", (_event, ctx) => {
+    pendingStartupContext = pi.getFlag("live") === true ? ctx : undefined;
+  });
+  pi.events.on("modes:changed", (data) => {
+    if (pendingStartupContext === undefined || !isUnknownRecord(data)) return;
+    if (data.source !== "session_start") return;
+    const context = pendingStartupContext;
+    pendingStartupContext = undefined;
+    queueMicrotask(() => {
+      void liveCommand.handler("", context);
+    });
   });
 
   pi.on("message_end", (event: MessageEndEvent) => {

@@ -103,6 +103,7 @@ class FakeMuxAdapter implements MuxAdapter {
   }> = [];
   readonly sent: Array<{ paneId: string; text: string; submitMode?: PaneSubmitMode }> = [];
   readonly killed: string[] = [];
+  readonly interrupted: string[] = [];
   readonly existingPanes = new Set<string>();
 
   async isAvailable(): Promise<boolean> {
@@ -132,6 +133,10 @@ class FakeMuxAdapter implements MuxAdapter {
   async killPane(paneId: string): Promise<void> {
     this.killed.push(paneId);
     this.existingPanes.delete(paneId);
+  }
+
+  async interruptPane(paneId: string): Promise<void> {
+    this.interrupted.push(paneId);
   }
 
   async capturePane(): Promise<{ text: string }> {
@@ -2823,16 +2828,19 @@ timedTest("subagent tool metadata explains terminal inspection and result modes"
   const tool = fakePi.registeredTools.get("subagent");
   expect(tool).toBeTruthy();
 
-  expect(tool.description).toMatch(/no read action/i);
+  expect(tool.description).toMatch(/actions: start, list, inspect, message, interrupt, cancel/i);
+  expect(tool.description).toMatch(/message.*steer.*immediately/i);
+  expect(tool.description).toMatch(/child.*parent/i);
   expect(tool.description).toMatch(/json_schema blocks and returns validated JSON directly/i);
   expect(tool.description).toMatch(/completion:false to suppress status/i);
-  expect(tool.description).toMatch(/don't poll with `list` for final output/i);
+  expect(tool.description).toMatch(/proactive.*status.*list.*inspect/i);
+  expect(tool.description).toMatch(/avoid tight-loop polling/i);
   expect(tool.promptSnippet).toBeUndefined();
   expect(tool.promptGuidelines).toBeUndefined();
 
   const parameterDescriptions =
     (tool.parameters as { properties?: Record<string, { description?: string }> }).properties ?? {};
-  expect(parameterDescriptions.action?.description ?? "").toMatch(/no subagent read action/i);
+  expect(parameterDescriptions.action?.description ?? "").toMatch(/inspect.*current activity/i);
   expect(parameterDescriptions.name?.description ?? "").toMatch(
     /terminal title shown immediately on launch/i,
   );
@@ -2844,6 +2852,55 @@ timedTest("subagent tool metadata explains terminal inspection and result modes"
     /use backend terminal output when available/i,
   );
 });
+
+timedTest(
+  "subagent inspect reports current activity and interrupt preserves the thread",
+  async () => {
+    const fakePi = new FakePi();
+    const fakeMux = new FakeMuxAdapter();
+    createSubagentExtension({ adapterFactory: () => fakeMux })(fakePi as unknown as ExtensionAPI);
+    const tool = fakePi.registeredTools.get("subagent");
+    expect(tool).toBeTruthy();
+    const ctx = createFakeContext({ cwd: process.cwd(), sessionId: "parent-session-id" });
+
+    const started = await tool.execute(
+      "start-inspectable",
+      { action: "start", name: "tests", task: "Run integration tests" },
+      undefined,
+      undefined,
+      ctx,
+    );
+    const state = (started.details as { state: RuntimeSubagent }).state;
+    const inspected = await tool.execute(
+      "inspect-child",
+      { action: "inspect", sessionId: state.sessionId },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(inspected.content[0]?.text).toMatch(/tests · running/i);
+    expect(inspected.details).toMatchObject({
+      action: "inspect",
+      thread: { id: state.sessionId, status: "running" },
+    });
+
+    const interrupted = await tool.execute(
+      "interrupt-child",
+      { action: "interrupt", sessionId: state.sessionId },
+      undefined,
+      undefined,
+      ctx,
+    );
+    expect(interrupted.content[0]?.text).toMatch(/interrupted/i);
+    expect(interrupted.details).toMatchObject({
+      action: "interrupt",
+      state: { sessionId: state.sessionId, status: "idle" },
+    });
+    expect(fakeMux.interrupted).toEqual([state.paneId]);
+    expect(fakeMux.killed).toEqual([]);
+  },
+);
 
 timedTest("subagent tool definition remains stable when modes change", async () => {
   const cwd = await createTempDir("agent-subagent-modes-prompt-");
@@ -3825,6 +3882,10 @@ timedTest("subagent tool execute preserves prompt and expanded start details", a
     expect((started.details as { prompt: string }).prompt).toContain(
       "You are not chatting with the end user directly.",
     );
+    expect((started.details as { prompt: string }).prompt).toContain(
+      "Message the parent proactively",
+    );
+    expect((started.details as { prompt: string }).prompt).toContain('target: "parent"');
     expect((started.details as { prompt: string }).prompt).toContain(
       `Assigned task:\n${startTask}`,
     );

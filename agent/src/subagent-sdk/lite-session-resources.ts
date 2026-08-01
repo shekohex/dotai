@@ -11,6 +11,7 @@ import { getLiteBundledExtensionFactories } from "../extensions/lite-bundled-ext
 import { applyModeSystemPrompt } from "../mode-system-prompt.js";
 import { createStructuredOutputTool } from "./bootstrap.js";
 import { STRUCTURED_OUTPUT_TOOL_NAME } from "./bootstrap-core.js";
+import { createSubagentParentMessageTool, type SubagentParentMessage } from "./parent-message.js";
 import type { ResolvedSubagentMode } from "./modes.js";
 import {
   SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
@@ -32,6 +33,7 @@ export async function createLiteSessionResources(input: {
   };
   sessionManager: SessionManager;
   structuredCapture: { value?: unknown };
+  sendParentMessage?: (message: SubagentParentMessage) => void;
 }) {
   const settingsManager = SettingsManager.create(input.cwd, input.agentDir);
   installBundledResourcePaths();
@@ -45,8 +47,17 @@ export async function createLiteSessionResources(input: {
   return {
     settingsManager,
     resourceLoader,
-    customTools: createLiteCustomTools(input.params, input.structuredCapture, input.sessionManager),
-    sessionTools: createLiteSessionTools(input.mode, input.params),
+    customTools: createLiteCustomTools(
+      input.params,
+      input.structuredCapture,
+      input.sessionManager,
+      input.sendParentMessage,
+    ),
+    sessionTools: createLiteSessionTools(
+      input.mode,
+      input.params,
+      input.sendParentMessage !== undefined,
+    ),
   };
 }
 
@@ -70,11 +81,17 @@ function createLiteCustomTools(
   params: { customTools?: ToolDefinition[]; outputFormat?: OutputFormat<TSchemaBase> },
   structuredCapture: { value?: unknown },
   sessionManager: SessionManager,
+  sendParentMessage: ((message: SubagentParentMessage) => void) | undefined,
 ): ToolDefinition[] {
   const outputFormat = params.outputFormat;
-  if (outputFormat?.type !== "json_schema") return params.customTools ?? [];
-  return [
+  const customTools = [
     ...(params.customTools ?? []),
+    ...(sendParentMessage === undefined
+      ? []
+      : [createSubagentParentMessageTool(sendParentMessage)]),
+  ];
+  if (outputFormat?.type !== "json_schema") return customTools;
+  customTools.push(
     createStructuredOutputTool(outputFormat.schema, (structuredParams, toolCtx) => {
       structuredCapture.value = structuredParams;
       sessionManager.appendCustomEntry(
@@ -89,17 +106,25 @@ function createLiteCustomTools(
       );
       toolCtx.shutdown();
     }),
-  ];
+  );
+  return customTools;
 }
 
 function createLiteSessionTools(
   mode: ResolvedSubagentMode,
   params: { toolNames?: string[]; outputFormat?: OutputFormat<TSchemaBase> },
+  parentMessagingEnabled: boolean,
 ): string[] {
   const structuredToolNames =
     params.outputFormat?.type === "json_schema" ? [STRUCTURED_OUTPUT_TOOL_NAME] : [];
-  return Array.from(new Set([...mode.tools, ...(params.toolNames ?? []), ...structuredToolNames]))
-    .filter((toolName) => toolName !== "subagent")
+  return Array.from(
+    new Set([
+      ...mode.tools,
+      ...(params.toolNames ?? []),
+      ...(parentMessagingEnabled ? ["subagent"] : []),
+      ...structuredToolNames,
+    ]),
+  )
     .filter((toolName) => !UNAVAILABLE_LITE_TOOL_NAMES.has(toolName))
     .toSorted((left, right) => left.localeCompare(right));
 }

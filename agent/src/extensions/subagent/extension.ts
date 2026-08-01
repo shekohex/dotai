@@ -17,6 +17,7 @@ import {
 import { createSubagentToolDefinition, registerSubagentRuntimeEvents } from "./tool.js";
 import { isSubagentToolEnabled, setSubagentToolEnabled, SUBAGENT_TOOL_NAME } from "./state.js";
 import { getSubagentsSettings } from "./settings.js";
+import { getLiveSessionCoordinator } from "../../live-session/coordinator.js";
 
 function installEnabledSubagentExtension(
   pi: ExtensionAPI,
@@ -51,7 +52,9 @@ function installEnabledSubagentExtension(
     },
   });
   const sdk = createSubagentSDK(pi, { adapter, buildLaunchCommand, hooks });
-  const subagentTool = createSubagentToolDefinition(sdk);
+  const coordinator = getLiveSessionCoordinator(pi);
+  coordinator.bindSubagentSDK(sdk);
+  const subagentTool = createSubagentToolDefinition(sdk, coordinator);
 
   pi.registerTool(subagentTool);
   registerSubagentRuntimeEvents(
@@ -63,6 +66,7 @@ function installEnabledSubagentExtension(
     readChildState,
     isSubagentToolEnabled,
     restoreToolState,
+    coordinator,
   );
 }
 
@@ -71,6 +75,10 @@ function createSubagentExtension(options?: CreateSubagentExtensionOptions) {
 
   return function subagentExtension(pi: ExtensionAPI): void {
     installChildBootstrap(pi);
+
+    if (readChildState() !== undefined) {
+      return;
+    }
 
     if (resolvedOptions.enabled === false) {
       return;

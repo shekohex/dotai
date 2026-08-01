@@ -1,4 +1,5 @@
 import type { SubagentChildIpcEvent } from "./ipc.js";
+import type { SubagentParentMessageEvent } from "./ipc.js";
 import type { RuntimeSubagent } from "./types.js";
 
 export type SubagentRuntimeEvent = {
@@ -29,6 +30,7 @@ export class SubagentRuntimeEventBus {
   private childEventListeners = new Set<
     (event: SubagentChildIpcEvent, sessionId: string) => void
   >();
+  private parentMessageListeners = new Set<(event: SubagentParentMessageEvent) => void>();
   private stateSignatures = new Map<string, string>();
 
   emitChangedStates(states: RuntimeSubagent[]): void {
@@ -65,6 +67,17 @@ export class SubagentRuntimeEventBus {
     this.childEventListeners.add(listener);
     return () => {
       this.childEventListeners.delete(listener);
+    };
+  }
+
+  emitParentMessage(event: SubagentParentMessageEvent): void {
+    for (const listener of this.parentMessageListeners) listener(event);
+  }
+
+  subscribeParentMessage(listener: (event: SubagentParentMessageEvent) => void): () => void {
+    this.parentMessageListeners.add(listener);
+    return () => {
+      this.parentMessageListeners.delete(listener);
     };
   }
 }

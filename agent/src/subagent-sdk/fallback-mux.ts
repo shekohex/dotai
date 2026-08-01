@@ -81,6 +81,14 @@ export class FallbackMuxAdapter implements MuxAdapter {
     return this.resolveAdapter(paneId, backend).killPane(paneId);
   }
 
+  interruptPane(paneId: string, backend?: string): Promise<void> {
+    const adapter = this.resolveAdapter(paneId, backend);
+    if (adapter.interruptPane === undefined) {
+      throw new Error(`Mux adapter ${adapter.backend} cannot interrupt a pane`);
+    }
+    return adapter.interruptPane(paneId);
+  }
+
   capturePane(paneId: string, lines?: number, backend?: string): Promise<PaneCapture> {
     return this.resolveAdapter(paneId, backend).capturePane(paneId, lines);
   }

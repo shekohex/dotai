@@ -36,6 +36,10 @@ export class SDKSubagentHandle implements SubagentHandle {
     return this.sdk.cancel({ sessionId: this.sessionId });
   }
 
+  interrupt() {
+    return this.sdk.interrupt({ sessionId: this.sessionId });
+  }
+
   waitForCompletion(options: { signal?: AbortSignal } = {}): Promise<RuntimeSubagent> {
     const currentState = this.getState();
     if (isTerminalSubagentStatus(currentState.status)) {

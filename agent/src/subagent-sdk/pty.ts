@@ -138,6 +138,11 @@ export class PtyAdapter implements MuxAdapter {
     return Promise.resolve();
   }
 
+  interruptPane(paneId: string): Promise<void> {
+    this.getPane(paneId).pty.write("\u0003");
+    return Promise.resolve();
+  }
+
   async capturePane(paneId: string, lines = 120): Promise<PaneCapture> {
     const pane = this.getPane(paneId);
     await pane.writeChain;

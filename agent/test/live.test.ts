@@ -43,16 +43,7 @@ import {
 } from "../src/extensions/live/settings.js";
 import { LIVE_VOICES } from "../src/extensions/live/voices.js";
 import { readAssistantTextPhase } from "../src/utils/pi-ai-text.js";
-import {
-  assessDelegationLanguage,
-  delegationTranscriptRelation,
-} from "../src/extensions/live/delegation-language.js";
-import {
-  buildDelegationNormalizerInput,
-  LIVE_DELEGATION_NORMALIZER_MODELS,
-  sanitizeNormalizedDelegation,
-  splitLiveTranscriptForTranslation,
-} from "../src/extensions/live/delegation-normalizer.js";
+import { delegationTranscriptRelation } from "../src/extensions/live/delegation-language.js";
 import {
   applyLiveDelegationConversationContext,
   omitEmptyLiveDelegationAssistantTurns,
@@ -62,6 +53,7 @@ import {
   LiveConversationTracker,
   prepareLongTranscriptContext,
 } from "../src/extensions/live/delegation-context.js";
+import { defaultModes } from "../src/default-modes.js";
 
 const servers: LivePairingServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -119,6 +111,7 @@ describe("Pi Live pairing", () => {
             outputLevel: false,
             deviceSelection: false,
             sessionResume: true,
+            threadCoordination: true,
           },
           preferences: {
             voice: "maple",
@@ -140,6 +133,22 @@ describe("Pi Live pairing", () => {
       preferredVoice: "maple",
       customInstructions: "Keep replies especially concise.",
       diagnosticsEnabled: true,
+    });
+    connection.onRequest((method) => {
+      if (method === "threads.list") return { threads: [{ id: "child-1" }] };
+      throw new Error(`Unsupported request: ${method}`);
+    });
+    socket.send(
+      JSON.stringify({ jsonrpc: "2.0", id: "threads", method: "threads.list", params: {} }),
+    );
+    const threadResponse = await new Promise<Record<string, unknown>>((resolve) => {
+      socket.once("message", (data) =>
+        resolve(JSON.parse(data.toString()) as Record<string, unknown>),
+      );
+    });
+    expect(threadResponse).toMatchObject({
+      id: "threads",
+      result: { threads: [{ id: "child-1" }] },
     });
     const closed = new Promise<boolean>((resolve) => {
       connection.onClose((_error, clean) => resolve(clean === true));
@@ -180,6 +189,7 @@ describe("Pi Live pairing", () => {
             outputLevel: false,
             deviceSelection: false,
             sessionResume: true,
+            threadCoordination: true,
           },
         },
       }),
@@ -605,31 +615,6 @@ describe("Pi Live Codex protocol", () => {
     expect(instructions).toContain("Use a warm tone.");
   });
 
-  it("blocks non-English live delegations before AgentSession delivery", () => {
-    expect(
-      assessDelegationLanguage(
-        "Inspect the latest commits in this repository and summarize the recent work.",
-      ),
-    ).toMatchObject({ accepted: true });
-    expect(
-      assessDelegationLanguage(
-        "تمام، قولي كده سريعاً عن المشروع ده إيه الأخبار، يعني آخر كوميتس حصلت فيه؟",
-      ),
-    ).toMatchObject({ accepted: false, detectedLanguage: "arb" });
-    expect(
-      assessDelegationLanguage(
-        "Revisa los últimos commits del proyecto y resume los cambios recientes.",
-      ),
-    ).toMatchObject({ accepted: false, detectedLanguage: "spa" });
-    expect(assessDelegationLanguage("Fix auth و tests")).toMatchObject({
-      accepted: false,
-      reason: "non-latin-prose",
-    });
-    expect(assessDelegationLanguage('Rename the label to "مرحبا"')).toMatchObject({
-      accepted: true,
-    });
-  });
-
   it("distinguishes copied transcripts from synthesized delegations", () => {
     const transcript = "Check the latest commits in this repository";
     expect(delegationTranscriptRelation(transcript, transcript)).toBe("verbatim");
@@ -642,32 +627,29 @@ describe("Pi Live Codex protocol", () => {
     expect(delegationTranscriptRelation(transcript, "")).toBe("unknown");
   });
 
-  it("prefers fast helper models and sanitizes normalized delegations", () => {
-    expect(LIVE_DELEGATION_NORMALIZER_MODELS.slice(0, 3)).toEqual([
-      { provider: "codex-openai", model: "gpt-5.6-luna" },
-      { provider: "opencode-go", model: "deepseek-v4-flash" },
-      { provider: "deepseek", model: "deepseek-v4-flash" },
-    ]);
-    expect(buildDelegationNormalizerInput("  مرحبا  ")).toContain("<source-delegation>\nمرحبا");
-    expect(sanitizeNormalizedDelegation('English task: "Inspect the latest commits."')).toBe(
-      "Inspect the latest commits.",
+  it("defines live as an append-mode coordinator with direct orchestration tools", () => {
+    expect(defaultModes.modes.live.systemPromptMode).toBe("append");
+    expect(defaultModes.modes.live.tools).toEqual(
+      expect.arrayContaining(["bash", "subagent", "goal"]),
+    );
+    expect(defaultModes.modes.live.systemPrompt).toContain("Never perform coding work yourself");
+    expect(defaultModes.modes.live.systemPrompt).toContain(
+      "Every task and message sent to a child session MUST be concise, self-contained, plain English",
     );
   });
 
-  it("delivers a long English transcript verbatim with the coding task", async () => {
+  it("delivers a long English transcript verbatim with the coding task", () => {
     const transcript = [
       "ENGLISH_CONTEXT_BEGIN",
       ...Array.from({ length: 120 }, (_, index) => `detail-${index}`),
       "ENGLISH_CONTEXT_END",
     ].join(" ");
-    const translate = vi.fn();
-    const context = await prepareLongTranscriptContext(transcript, 61_000, translate);
+    const context = prepareLongTranscriptContext(transcript, 61_000);
     const request = buildDelegationWithTranscriptContext(
       "Implement the requested changes.",
       context,
     );
 
-    expect(translate).not.toHaveBeenCalled();
     expect(context?.text).toBe(transcript);
     expect(request).toContain(transcript);
     expect(request).toContain("ENGLISH_CONTEXT_BEGIN");
@@ -744,7 +726,6 @@ describe("Pi Live Codex protocol", () => {
         delegationId: "delegation-1",
         sourceTurn: 2,
         transcriptRelation: "synthesized",
-        languageAssessment: "english",
         conversationContext: "user: Check temperatures\nuser: Yes, both machines",
       },
       timestamp: 1,
@@ -760,35 +741,19 @@ describe("Pi Live Codex protocol", () => {
     expect(message.content).toBe("Check both machines");
   });
 
-  it("translates and delivers the complete long Arabic transcript context", async () => {
+  it("preserves the complete long Arabic transcript for coordinator context", () => {
     const transcript = [
       "بداية_السياق",
       ...Array.from({ length: 120 }, (_, index) => `تفصيل-${index}`),
       "نهاية_السياق",
     ].join(" ");
-    const completeTranslation = [
-      "ARABIC_CONTEXT_BEGIN",
-      ...Array.from({ length: 120 }, (_, index) => `translated-detail-${index}`),
-      "ARABIC_CONTEXT_END",
-    ].join(" ");
-    const translate = vi.fn(async (source: string) => {
-      expect(source).toBe(transcript);
-      return { text: completeTranslation, model: "codex-openai/gpt-5.6-luna" };
-    });
-    const context = await prepareLongTranscriptContext(transcript, 61_000, translate);
+    const context = prepareLongTranscriptContext(transcript, 61_000);
     const request = buildDelegationWithTranscriptContext("Inspect the requested UI flow.", context);
 
-    expect(translate).toHaveBeenCalledOnce();
     expect(context?.sourceCharacters).toBe(transcript.length);
-    expect(context?.text).toBe(completeTranslation);
-    expect(request).toContain(completeTranslation);
-    expect(request).toContain("ARABIC_CONTEXT_BEGIN");
-    expect(request).toContain("ARABIC_CONTEXT_END");
-  });
-
-  it("splits long translation input without dropping source characters", () => {
-    const transcript = `بداية ${"تفاصيل كثيرة ".repeat(900)} نهاية`;
-    expect(splitLiveTranscriptForTranslation(transcript).join("")).toBe(transcript);
+    expect(context?.text).toBe(transcript);
+    expect(request).toContain(transcript);
+    expect(request).toContain("original language");
   });
 
   it("resolves configurable live identity fields", () => {

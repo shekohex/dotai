@@ -21,6 +21,7 @@ import {
 } from "./bootstrap-core.js";
 import { registerChildBootstrapHandlers } from "./bootstrap-handlers.js";
 import { registerChildIpcBridge } from "./bootstrap-ipc.js";
+import { createSubagentParentMessageTool } from "./parent-message.js";
 import { renderChildSessionWidget } from "./ui.js";
 
 const bootstrapInstalledSymbol = Symbol.for("@shekohex/agent/subagent-sdk/bootstrap-installed");
@@ -234,6 +235,9 @@ export function installChildBootstrap(pi: ExtensionAPI): void {
     });
   });
   registerStructuredOutputTool(pi, childState, state);
-  registerChildIpcBridge(pi, childState);
+  const sendParentMessage = registerChildIpcBridge(pi, childState);
+  if (sendParentMessage !== undefined) {
+    pi.registerTool(createSubagentParentMessageTool(sendParentMessage));
+  }
   registerChildBootstrapHandlers(pi, childState, state, STRUCTURED_OUTPUT_SYSTEM_PROMPT);
 }

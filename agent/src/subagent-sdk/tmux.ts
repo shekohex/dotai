@@ -121,6 +121,13 @@ export class TmuxAdapter implements MuxAdapter {
     }
   }
 
+  async interruptPane(paneId: string): Promise<void> {
+    this.assertOk(
+      await this.exec("tmux", ["send-keys", "-t", paneId, "C-c"], { cwd: this.cwd }),
+      "interrupt pane",
+    );
+  }
+
   async capturePane(paneId: string, lines = 120): Promise<PaneCapture> {
     const start = Math.max(0, lines - 1) * -1;
     const result = await this.exec(

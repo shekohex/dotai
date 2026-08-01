@@ -30,12 +30,26 @@ Audio never travels through the terminal, Pi JSON-RPC, SSH stdio, Coder PTY, or 
 ## Start
 
 ```text
+pi --live
+pi --mode-live
 /live
 /live local
 /live coder
 /live ssh target=pi.coder
 /live direct host=10.0.0.20
 ```
+
+`--live` is an extension-owned boolean flag. It switches the initial session into the built-in
+`live` mode and starts pairing automatically. `--mode-live` selects the coordinator mode without
+starting voice. `/live` switches the current session into `live` mode before pairing and leaves it
+there after the call ends.
+
+The `live` mode appends `src/resources/modes/live.md` to the normal system prompt. The parent remains
+conversational and can inspect the workspace, use shell diagnostics, manage goals, and edit
+documentation, but it never implements coding work itself. Code changes, tests, builds, and
+verification are delegated to persistent child Pi sessions. The parent reuses existing threads,
+checks their activity proactively, and sends every child task or follow-up in clear English even
+when the user speaks Arabic or another language.
 
 Optional voice:
 
@@ -139,9 +153,6 @@ pi.sendMessage(
       delegationId,
       sourceTurn,
       transcriptRelation,
-      languageAssessment,
-      originalRequest,
-      normalizedBy,
     },
   },
   { triggerTurn: true, deliverAs: "steer" },
@@ -152,22 +163,12 @@ The delegation is a Pi custom message rather than a typed user message. It inten
 participates in LLM context and triggers the coding turn, but it now has a dedicated message
 renderer instead of looking like a user prompt. The chat shows an accent-colored
 `Pi Live → workspace` execution card and labels it as either a synthesized workspace task or a
-direct voice request. If helper normalization was required, the English execution task is primary
-and the original live-model delegation is shown underneath in muted color. Expanded mode includes
-the source turn, helper model, and delegation ID.
+direct voice request. Expanded mode includes the source turn and delegation ID.
 
-The TypeScript boundary no longer trusts prompt compliance alone. It uses lightweight language
-detection plus non-Latin prose analysis before `sendMessage()`. Concise English tasks are delivered
-immediately, while English prose copied directly from the transcript is synthesized into a clean,
-standalone task. A non-English delegation is sent to an isolated fast
-normalizer model—not the active AgentSession—which translates and synthesizes one concise English
-execution task. The preferred fallback order is `codex-openai/gpt-5.6-luna`,
-`opencode-go/deepseek-v4-flash`, then `deepseek/deepseek-v4-flash`, followed by the remaining shared
-fallback models. Requests use minimal reasoning, a small output budget, no retries, and a short
-timeout. The original non-English request remains UI-only metadata and never enters AgentSession.
-Only if every normalizer fails is the delegation persisted as a failed UI-only entry and withheld
-from the coding model. Short ASCII command-like tasks bypass normalization because trigram language
-detection is unreliable for strings such as `Run git status`.
+The realtime prompt owns delegation synthesis and requires one concise English task regardless of
+the user's spoken language. TypeScript no longer runs a second helper model for language detection,
+normalization, or transcript translation. This removes extra latency and avoids translating the
+user before the coordinator sees their original intent.
 
 Assistant text explicitly marked with OpenAI's `commentary` phase is appended to the active live delegation through the sideband commentary channel. Providers without phase metadata retain the OMP-compatible tool-use-text fallback. This gives the voice model current progress for accurate progress questions without reading raw tool chatter aloud. The final-answer phase is separated from commentary and sent after `agent_settled` as speakable context.
 
@@ -175,7 +176,7 @@ New voice requests can create a fresh delegation while work is active. Each one 
 
 Every delegation is synthesized in English rather than copied from the transcript. If the user speaks Arabic, Spanish, or another language, Pi Live continues speaking in that language while sending only a concise English execution request to the Pi AgentSession. Literal strings, filenames, identifiers, and quoted data retain their exact spelling when required.
 
-Long spoken turns are protected from delegation summarization loss. Once a user turn lasts roughly a minute or reaches an equivalent word/character threshold, TypeScript appends the complete transcript after the concise execution task. English transcript text is preserved verbatim. Non-English transcript text is translated faithfully in bounded chunks with a 6,144-token output budget per chunk, then all translated chunks are appended in order. Chunk boundaries preserve every source character, so long Arabic and other non-English turns are not reduced to the live model's short delegation excerpt.
+Long spoken turns are protected from delegation summarization loss. Once a user turn lasts roughly a minute or reaches an equivalent word/character threshold, TypeScript appends the complete original-language transcript after the concise English execution task. Arabic and other non-English turns reach the coordinator verbatim; the coordinator translates and synthesizes only messages sent onward to child sessions.
 
 ## macOS app
 
@@ -202,7 +203,9 @@ pairing screen. Pi Live remains available as a menu-bar app. Settings includes a
 global shortcut powered by `sindresorhus/KeyboardShortcuts`; invoking it from any application imports
 a valid `pi-live://pair#...` URL from the clipboard and shows Pi Live above the Dock.
 
-The native pairing protocol uses Codable JSON-RPC envelopes and typed parameter/result payloads rather than `[String: Any]` dictionaries. `LivePairingClient` emits one typed `AsyncStream<LiveClientEvent>` consumed by the Observation model. It reconnects the control socket with bounded backoff without recreating the WebRTC peer. SSH local port selection uses `NWListener`, and readiness is proven by a WebSocket health check instead of a fixed startup sleep.
+The native pairing protocol remains version 2 and uses Codable JSON-RPC envelopes and typed parameter/result payloads rather than `[String: Any]` dictionaries. `LivePairingClient` emits one typed `AsyncStream<LiveClientEvent>` consumed by the Observation model. It reconnects the control socket with bounded backoff without recreating the WebRTC peer. SSH local port selection uses `NWListener`, and readiness is proven by a WebSocket health check instead of a fixed startup sleep.
+
+The control channel also carries session-scoped thread coordination. `threads.list`, `threads.inspect`, `threads.message`, and `threads.interrupt` operate on concurrent subagent threads; snapshots and ordered `thread.*` notifications replay current activity after reconnect. Swift implements typed protocol support only and does not add a thread-management UI. A newly attached voice call receives a bounded summary of recent parent conversation and delegated work.
 
 Pi `message_update` text and thinking deltas are buffered for 200 ms, forwarded over `delegation.context.append` using `speakable` or `commentary`, and mirrored to the native app as typed `agent.progress` notifications. Completed streamed answers use a final marker instead of replaying the full answer into the voice model.
 
@@ -215,9 +218,7 @@ keeps that turn-driving role: the dedicated custom renderer changes only the TUI
 provider semantics. Successful but thinking-only or empty `stop` responses are removed from provider
 context and retried up to three times with a hidden continuation reminder before being reported as a
 real delegation failure. Terminal commentary-only responses are accepted as final text rather than
-misclassified as empty. English delegations that merely repeat prose from the transcript are passed
-through the fast normalizer to produce a clean, standalone task; concise command-like requests still
-bypass normalization.
+misclassified as empty.
 
 VoiceInk 2.0 was inspected locally at revision `69ed170c1d7f582e76f3f63a2ac2c30ddb3a2d75`. Its Settings UI reinforced the use of a category sidebar, grouped native forms, menu pickers, `LabeledContent`, concise explanatory footers, and hidden scroll backgrounds; Pi Live implements those patterns independently without copying GPL source. VoiceInk's VAD is a bundled Silero v5.1.2 model invoked through whisper.cpp against PCM during local transcription. That design is appropriate for offline speech segmentation, but it cannot be dropped into Pi Live's media path without obtaining PCM through a second/custom capture pipeline. WebRTC M150 exposes no public Objective-C PCM tap on `RTCAudioTrack`, `RTCAudioSource`, or `RTCRtpReceiver`, so Pi Live keeps WebRTC's built-in media VAD and Codex turn detection and uses level telemetry only for orb presentation.
 

@@ -1,5 +1,6 @@
 import type { CustomEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ContextPruneConfigPatch } from "../extensions/context-prune/types.js";
+import type { LiveCoordinatorEvent, LiveThreadSnapshot } from "../live-session/coordinator.js";
 import type { Static, TSchema } from "typebox";
 import { Value } from "typebox/value";
 
@@ -156,6 +157,10 @@ export type CancelSubagentParams = {
   sessionId: string;
 };
 
+export type InterruptSubagentParams = {
+  sessionId: string;
+};
+
 export type ListSubagentParams = Record<string, never>;
 
 export type ChildBootstrapState = Static<typeof ChildBootstrapStateSchema>;
@@ -205,15 +210,31 @@ export type SubagentCancelResultDetails = {
   state: RuntimeSubagent;
 };
 
+export type SubagentInterruptResultDetails = {
+  action: "interrupt";
+  args: SubagentToolParams;
+  state: RuntimeSubagent;
+};
+
+export type SubagentInspectResultDetails = {
+  action: "inspect";
+  args: SubagentToolParams;
+  thread: LiveThreadSnapshot;
+  events: LiveCoordinatorEvent[];
+};
+
 export type SubagentListResultDetails = {
   action: "list";
   args: SubagentToolParams;
   subagents: RuntimeSubagent[];
+  threads?: LiveThreadSnapshot[];
 };
 
 export type SubagentToolResultDetails =
   | SubagentStartResultDetails
   | SubagentMessageResultDetails
+  | SubagentInspectResultDetails
+  | SubagentInterruptResultDetails
   | SubagentCancelResultDetails
   | SubagentListResultDetails;
 

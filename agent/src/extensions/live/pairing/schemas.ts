@@ -63,6 +63,7 @@ export const PairRequestParamsSchema = Type.Object(
         outputLevel: Type.Boolean(),
         deviceSelection: Type.Boolean(),
         sessionResume: Type.Literal(true),
+        threadCoordination: Type.Literal(true),
       },
       { additionalProperties: false },
     ),
@@ -86,6 +87,20 @@ export const ResumeRequestParamsSchema = Type.Object(
     sessionId: Type.String({ minLength: 1 }),
     serverNonce: Type.String({ minLength: 1 }),
     resumeToken: Type.String({ minLength: 32 }),
+  },
+  { additionalProperties: false },
+);
+
+export const ThreadIdParamsSchema = Type.Object(
+  { threadId: Type.String({ minLength: 1, maxLength: 256 }) },
+  { additionalProperties: false },
+);
+
+export const ThreadMessageParamsSchema = Type.Object(
+  {
+    threadId: Type.String({ minLength: 1, maxLength: 256 }),
+    message: Type.String({ minLength: 1, maxLength: 32 * 1024 }),
+    delivery: Type.Optional(Type.Union([Type.Literal("steer"), Type.Literal("followUp")])),
   },
   { additionalProperties: false },
 );
@@ -132,6 +147,8 @@ export type JsonRpcNotification = Static<typeof JsonRpcNotificationSchema>;
 export type JsonRpcResponse = Static<typeof JsonRpcResponseSchema>;
 export type PairRequestParams = Static<typeof PairRequestParamsSchema>;
 export type ResumeRequestParams = Static<typeof ResumeRequestParamsSchema>;
+export type ThreadIdParams = Static<typeof ThreadIdParamsSchema>;
+export type ThreadMessageParams = Static<typeof ThreadMessageParamsSchema>;
 
 export type LivePairingEndpoint =
   | { type: "local"; url: string }
@@ -185,6 +202,18 @@ export function parsePairRequestParams(value: unknown): PairRequestParams | unde
 export function parseResumeRequestParams(value: unknown): ResumeRequestParams | undefined {
   return Value.Check(ResumeRequestParamsSchema, value)
     ? Value.Parse(ResumeRequestParamsSchema, value)
+    : undefined;
+}
+
+export function parseThreadIdParams(value: unknown): ThreadIdParams | undefined {
+  return Value.Check(ThreadIdParamsSchema, value)
+    ? Value.Parse(ThreadIdParamsSchema, value)
+    : undefined;
+}
+
+export function parseThreadMessageParams(value: unknown): ThreadMessageParams | undefined {
+  return Value.Check(ThreadMessageParamsSchema, value)
+    ? Value.Parse(ThreadMessageParamsSchema, value)
     : undefined;
 }
 

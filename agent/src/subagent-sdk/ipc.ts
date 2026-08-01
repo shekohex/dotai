@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import type { ExtensionEvent } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { SubagentParentMessageSchema, type SubagentParentMessage } from "./parent-message.js";
 
 export const SubagentIpcConfigSchema = Type.Object(
   {
@@ -26,6 +27,16 @@ export const SubagentChildEventFrameSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const SubagentParentMessageFrameSchema = Type.Object(
+  {
+    kind: Type.Literal("parent_message"),
+    sessionId: Type.String(),
+    token: Type.String(),
+    message: SubagentParentMessageSchema,
+  },
+  { additionalProperties: false },
+);
+
 export type SubagentChildIpcEvent = ExtensionEvent;
 export type SubagentIpcConfig = Static<typeof SubagentIpcConfigSchema>;
 export type SubagentChildEventFrame = Omit<
@@ -34,16 +45,23 @@ export type SubagentChildEventFrame = Omit<
 > & {
   event: SubagentChildIpcEvent;
 };
+export type SubagentParentMessageFrame = Static<typeof SubagentParentMessageFrameSchema>;
 
 export type SubagentChildEvent = {
   sessionId: string;
   event: SubagentChildIpcEvent;
 };
 
+export type SubagentParentMessageEvent = {
+  sessionId: string;
+  message: SubagentParentMessage;
+};
+
 export type SubagentIpcServer = {
   readonly endpoint: string;
   createRoute(sessionId: string): SubagentIpcConfig;
   onChildEvent(listener: (event: SubagentChildEvent) => void): () => void;
+  onParentMessage(listener: (event: SubagentParentMessageEvent) => void): () => void;
   dispose(): void;
 };
 
@@ -86,6 +104,7 @@ export function createSubagentIpcServer(): SubagentIpcServer {
   const { endpoint, cleanupPath } = createEndpoint();
   const routes = new Map<string, string>();
   const listeners = new Set<(event: SubagentChildEvent) => void>();
+  const parentMessageListeners = new Set<(event: SubagentParentMessageEvent) => void>();
   const sockets = new Set<Socket>();
   const server: Server = net.createServer((socket) => {
     sockets.add(socket);
@@ -95,16 +114,29 @@ export function createSubagentIpcServer(): SubagentIpcServer {
     socket.on(
       "data",
       createJsonLineReader((value) => {
-        if (!Value.Check(SubagentChildEventFrameSchema, value)) {
+        const childEventFrame = Value.Check(SubagentChildEventFrameSchema, value);
+        const parentMessageFrame = Value.Check(SubagentParentMessageFrameSchema, value);
+        if (!childEventFrame && !parentMessageFrame) {
           return;
         }
-        const routeToken = routes.get(value.sessionId);
-        if (routeToken !== value.token) {
+        const frame = childEventFrame
+          ? Value.Parse(SubagentChildEventFrameSchema, value)
+          : Value.Parse(SubagentParentMessageFrameSchema, value);
+        const routeToken = routes.get(frame.sessionId);
+        if (routeToken !== frame.token) {
+          return;
+        }
+        if (frame.kind === "parent_message") {
+          const parentMessage: SubagentParentMessageEvent = {
+            sessionId: frame.sessionId,
+            message: frame.message,
+          };
+          for (const listener of parentMessageListeners) listener(parentMessage);
           return;
         }
         const childEvent: SubagentChildEvent = {
-          sessionId: value.sessionId,
-          event: value.event,
+          sessionId: frame.sessionId,
+          event: frame.event,
         };
         for (const listener of listeners) {
           listener(childEvent);
@@ -129,6 +161,12 @@ export function createSubagentIpcServer(): SubagentIpcServer {
         listeners.delete(listener);
       };
     },
+    onParentMessage(listener) {
+      parentMessageListeners.add(listener);
+      return () => {
+        parentMessageListeners.delete(listener);
+      };
+    },
     dispose() {
       for (const socket of sockets) {
         socket.destroy();
@@ -136,6 +174,7 @@ export function createSubagentIpcServer(): SubagentIpcServer {
       server.close();
       routes.clear();
       listeners.clear();
+      parentMessageListeners.clear();
       if (cleanupPath !== undefined) {
         rmSync(cleanupPath, { recursive: true, force: true });
       }
@@ -145,6 +184,7 @@ export function createSubagentIpcServer(): SubagentIpcServer {
 
 export function connectSubagentIpcClient(input: { sessionId: string; config: SubagentIpcConfig }): {
   emit(event: SubagentChildIpcEvent): void;
+  emitParentMessage(message: SubagentParentMessage): void;
   dispose(): void;
   disposeAfterFlush(): void;
 } {
@@ -157,6 +197,15 @@ export function connectSubagentIpcClient(input: { sessionId: string; config: Sub
         sessionId: input.sessionId,
         token: input.config.token,
         event,
+      };
+      socket.write(serializeJsonLine(frame));
+    },
+    emitParentMessage(message) {
+      const frame: SubagentParentMessageFrame = {
+        kind: "parent_message",
+        sessionId: input.sessionId,
+        token: input.config.token,
+        message,
       };
       socket.write(serializeJsonLine(frame));
     },

@@ -1,6 +1,7 @@
 import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type {
   CancelSubagentParams,
+  InterruptSubagentParams,
   MessageSubagentParams,
   MessageSubagentResult,
   RuntimeSubagent,
@@ -10,6 +11,42 @@ import { emitProgressUpdate, runtimeSubagentError } from "./base.js";
 import { SubagentRuntimeExecution } from "./execution.js";
 
 export abstract class SubagentRuntimeMessaging extends SubagentRuntimeExecution {
+  async interrupt(params: InterruptSubagentParams): Promise<RuntimeSubagent> {
+    const state = this.getStateOrThrow("interrupt", params.sessionId);
+    if (!this.activeSessionIds.has(params.sessionId)) {
+      throw runtimeSubagentError(
+        "interrupt",
+        `${state.name} (${state.sessionId}) does not have a live mux target right now.`,
+      );
+    }
+    if (this.adapter.interruptPane === undefined) {
+      throw runtimeSubagentError(
+        "interrupt",
+        `mux backend ${state.muxBackend ?? this.adapter.backend} cannot interrupt`,
+      );
+    }
+    await this.adapter.interruptPane(state.paneId, state.muxBackend);
+    const now = Date.now();
+    const interrupted: RuntimeSubagent = {
+      ...state,
+      event: "updated",
+      status: "idle",
+      activity: {
+        sessionId: state.sessionId,
+        kind: "idle",
+        label: "interrupted",
+        startedAt: now,
+        updatedAt: now,
+        done: true,
+      },
+      updatedAt: now,
+    };
+    this.states.set(interrupted.sessionId, interrupted);
+    await this.hooks.persistState(interrupted);
+    this.refreshWidget();
+    return this.toPublicState(interrupted);
+  }
+
   async message(
     params: MessageSubagentParams,
     ctx: ExtensionContext,

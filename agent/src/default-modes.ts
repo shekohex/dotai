@@ -219,6 +219,34 @@ export const defaultModes = {
         { provider: "zai", modelId: "glm-5.2", thinkingLevel: "max" },
       ],
     },
+    live: {
+      provider: "codex-openai",
+      modelId: "gpt-5.6-sol",
+      thinkingLevel: "high",
+      color: "accent",
+      tmuxTarget: "window",
+      tools: [
+        "read",
+        "grep",
+        "find",
+        "bash",
+        "websearch",
+        "subagent",
+        "goal",
+        "apply_patch",
+        "edit",
+        "write",
+      ],
+      description:
+        "Use as a conversational coordinator that delegates coding work to persistent child sessions.",
+      systemPrompt: modeSystemPrompt("live"),
+      systemPromptMode: "append",
+      fallbacks: [
+        { provider: "deepseek", modelId: "deepseek-v4-flash", thinkingLevel: "high" },
+        { provider: "zai-coding-plan", modelId: "glm-5.2", thinkingLevel: "max" },
+        { provider: "zai", modelId: "glm-5.2", thinkingLevel: "max" },
+      ],
+    },
   },
 } as const satisfies DefaultModes;
 

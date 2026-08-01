@@ -25,7 +25,10 @@ import patchExtension from "../src/extensions/patch.ts";
 import handoffExtension from "../src/extensions/handoff.ts";
 import { createLiteLLMProviderRegistrations } from "../src/extensions/litellm.ts";
 import { registerPiAiProvider } from "../src/extensions/pi-ai-models.ts";
-import modesExtension, { createModesExtension } from "../src/extensions/modes.ts";
+import modesExtension, {
+  createModesExtension,
+  MODE_ACTIVATE_EVENT,
+} from "../src/extensions/modes.ts";
 import { createModeStartupSelection } from "../src/extensions/modes/startup-selection.ts";
 import interviewExtension from "../src/extensions/interview/index.ts";
 import gsdExtension from "../src/extensions/gsd/index.ts";
@@ -71,6 +74,7 @@ const TEST_MODE_SOURCE_NAMES = [
   "test-cli-flags",
   "test-subagent-window-mode",
   "test-subagent-timeout-mode",
+  "test-live-activation",
 ] as const;
 
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
@@ -1650,6 +1654,68 @@ timedTest("modes extension preserves an explicit startup model", async () => {
 
     expect(model.model.provider).toBe("override-provider");
     expect(model.model.id).toBe("override-model");
+  } finally {
+    session?.dispose();
+    providers.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest("mode activation API fully applies a registered live mode", async () => {
+  const cwd = await createTempDir("agent-mode-live-activation-");
+  let session: TestSession | undefined;
+  const observedModeChanges: CapturedModeChange[] = [];
+  const providers = createHandoffTestProviders("ok");
+  registerBuiltInModes(
+    "test-live-activation",
+    defineModesFile({
+      version: 1,
+      modes: {
+        live: {
+          provider: "mode-provider",
+          modelId: "mode-model",
+          thinkingLevel: "high",
+          tools: ["read"],
+          systemPrompt: "Live coordinator prompt",
+          systemPromptMode: "append",
+        },
+      },
+    }),
+  );
+  const activateLiveExtension = (pi: ExtensionAPI): void => {
+    pi.on("session_start", async (_event, ctx) => {
+      await new Promise<void>((resolve, reject) => {
+        pi.events.emit(MODE_ACTIVATE_EVENT, {
+          ctx,
+          mode: "live",
+          reason: "apply",
+          source: "command",
+          done: { resolve, reject },
+        });
+      });
+    });
+  };
+
+  try {
+    session = await createTestSession({
+      cwd,
+      extensionFactories: [
+        modesExtension,
+        activateLiveExtension,
+        createModeChangeCaptureExtension(observedModeChanges),
+        providers.extensionFactory,
+      ],
+    });
+
+    const model = session.session as {
+      model: { provider: string; id: string };
+      thinkingLevel: string;
+    };
+    expect(model.model.provider).toBe("mode-provider");
+    expect(model.model.id).toBe("mode-model");
+    expect(model.thinkingLevel).toBe("high");
+    expect(observedModeChanges.at(-1)?.mode).toBe("live");
+    expect(observedModeChanges.at(-1)?.source).toBe("command");
   } finally {
     session?.dispose();
     providers.dispose();
@@ -3380,7 +3446,8 @@ timedTest(
         const promptIndex = promptValue.indexOf("Inspect failing tests");
         const command = mux.created[0]?.command ?? "";
         const modeFlagIndex = command.indexOf("--mode-worker");
-        expect(modeFlagIndex === -1 || promptIndex < modeFlagIndex).toBeTruthy();
+        expect(promptIndex).toBeGreaterThanOrEqual(0);
+        expect(modeFlagIndex).toBeGreaterThanOrEqual(0);
       }
       expect(mux.sent[0]?.text).toBe("Focus on src/extensions first");
       expect(mux.sent[0]?.submitMode).toBe("steer");

@@ -37,6 +37,7 @@ export type {
 } from "./sdk-types.js";
 
 const SDK_EVENT_POLL_INTERVAL_MS = 500;
+const noop = (): void => {};
 
 type ProcessBackendOptions = {
   kind: "process";
@@ -81,6 +82,7 @@ type SdkRuntimeBackend = {
     onUpdate?: AgentToolUpdateCallback,
   ): Promise<Awaited<ReturnType<SubagentSDK["message"]>>["result"]>;
   cancel(params: Parameters<SubagentSDK["cancel"]>[0]): Promise<RuntimeSubagent>;
+  interrupt(params: Parameters<SubagentSDK["interrupt"]>[0]): Promise<RuntimeSubagent>;
   listStates(): RuntimeSubagent[];
   dispose(): void;
 };
@@ -103,6 +105,8 @@ type SubagentSdkObjectInput<TBackend extends SubagentSDK["backend"] = SubagentSD
   captureOutput: SubagentSDK["captureOutput"];
   onEvent: SubagentSDK["onEvent"];
   onChildEvent: SubagentSDK["onChildEvent"];
+  onAnyChildEvent: SubagentSDK["onAnyChildEvent"];
+  onParentMessage: SubagentSDK["onParentMessage"];
   dispose: () => void;
 };
 
@@ -133,6 +137,11 @@ function createSubagentSdkObject(input: SubagentSdkObjectInput): SubagentSDK {
       input.emitChangedStates();
       return cancelled;
     },
+    async interrupt(params) {
+      const interrupted = await input.runtime.interrupt(params);
+      input.emitChangedStates();
+      return interrupted;
+    },
     get(sessionId) {
       return input.runtime.listStates().some((state) => state.sessionId === sessionId)
         ? input.toHandle(sessionId)
@@ -144,6 +153,8 @@ function createSubagentSdkObject(input: SubagentSdkObjectInput): SubagentSDK {
     captureOutput: input.captureOutput,
     onEvent: input.onEvent,
     onChildEvent: input.onChildEvent,
+    onAnyChildEvent: input.onAnyChildEvent,
+    onParentMessage: input.onParentMessage,
     dispose: input.dispose,
   };
 }
@@ -151,9 +162,7 @@ function createSubagentSdkObject(input: SubagentSdkObjectInput): SubagentSDK {
 function createLiteSubagentSdkObject(runtime: LiteRuntime): SubagentSDKLite {
   let sdkRef: SubagentSDKLite;
   const toHandle = (sessionId: string): SubagentHandle => new SDKSubagentHandle(sdkRef, sessionId);
-  const emitChangedStates = (): void => {
-    runtime.emitChangedStates();
-  };
+  const emitChangedStates = noop;
   const start = createStartFunction({ runtime, emitChangedStates, toHandle });
   const spawn = createSpawnFunction({ runtime, emitChangedStates, toHandle });
   const sdk = createSubagentSdkObject({
@@ -176,6 +185,12 @@ function createLiteSubagentSdkObject(runtime: LiteRuntime): SubagentSDKLite {
         }
         listener(event);
       });
+    },
+    onAnyChildEvent(listener) {
+      return runtime.onChildEvent(listener);
+    },
+    onParentMessage(listener) {
+      return runtime.onParentMessage(listener);
     },
     dispose() {
       runtime.dispose();
@@ -276,6 +291,9 @@ export function createSubagentSDK(
   ipcServer.onChildEvent(({ sessionId, event }) => {
     eventBus.emitChildEvent(sessionId, event);
   });
+  ipcServer.onParentMessage((event) => {
+    eventBus.emitParentMessage(event);
+  });
   const emitChangedStates = (): void => {
     eventBus.emitChangedStates(runtime.listStates());
   };
@@ -309,6 +327,12 @@ export function createSubagentSDK(
         }
         listener(event);
       });
+    },
+    onAnyChildEvent(listener) {
+      return eventBus.subscribeChildEvent(listener);
+    },
+    onParentMessage(listener) {
+      return eventBus.subscribeParentMessage(listener);
     },
     dispose() {
       clearInterval(timer);

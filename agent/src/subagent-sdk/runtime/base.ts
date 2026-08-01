@@ -27,14 +27,14 @@ import { reduceRuntimeSubagents } from "../persistence.js";
 import type { resolveSubagentMode } from "../modes.js";
 
 export function runtimeSubagentError(
-  action: "start" | "resume" | "message" | "cancel",
+  action: "start" | "resume" | "message" | "interrupt" | "cancel",
   detail: string,
 ): Error {
   return new Error(`subagent ${action} failed: ${detail}`);
 }
 
 export function unknownSessionError(
-  action: "message" | "cancel" | "resume",
+  action: "message" | "interrupt" | "cancel" | "resume",
   sessionId: string,
 ): Error {
   return runtimeSubagentError(
@@ -165,7 +165,7 @@ export abstract class SubagentRuntimeBase {
   }
 
   protected getStateOrThrow(
-    action: "resume" | "message" | "cancel",
+    action: "resume" | "message" | "interrupt" | "cancel",
     sessionId: string,
   ): RuntimeSubagent {
     const state = this.states.get(sessionId);

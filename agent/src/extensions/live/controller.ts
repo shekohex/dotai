@@ -28,6 +28,7 @@ import {
 import {
   buildDelegationContextAppend,
   buildPiSteerContext,
+  buildSessionContextAppend,
   buildSessionClose,
   chunkLiveContext,
   type LiveClientMessage,
@@ -46,29 +47,27 @@ import {
   prepareLongTranscriptContext,
   type LiveTranscriptContext,
 } from "./delegation-context.js";
-import { assessDelegationLanguage, delegationTranscriptRelation } from "./delegation-language.js";
-import { normalizeLiveDelegation, translateLiveTranscript } from "./delegation-normalizer.js";
+import { delegationTranscriptRelation } from "./delegation-language.js";
 import { LiveAgentProgressBuffer, readLiveAgentDelta } from "./agent-progress.js";
+import type {
+  LiveCoordinatorEvent,
+  LiveSessionCoordinator,
+} from "../../live-session/coordinator.js";
+import { parseThreadIdParams, parseThreadMessageParams } from "./pairing/server.js";
+import { extractMessageText, getConversationMessages } from "../session-launch-utils.js";
 
 const DEFAULT_VOICE = "sol";
 const OUTPUT_ACTIVE_LEVEL = 0.015;
 const EMPTY_STOP_MAX_RETRIES = 3;
 export const LIVE_DELEGATION_MESSAGE_TYPE = "live-delegation";
 export const LIVE_TRANSCRIPT_ENTRY_TYPE = "live-transcript";
-export const LIVE_REJECTED_DELEGATION_ENTRY_TYPE = "live-rejected-delegation";
 
 export interface LiveDelegationMessageDetails {
   delegationId: string;
   sourceTurn: number;
   transcriptRelation: "verbatim" | "synthesized" | "unknown";
-  languageAssessment: "english" | "short-ambiguous";
-  originalRequest?: string;
-  normalizedBy?: string;
-  normalizationReason?: "translation" | "verbatim-synthesis";
   fullTranscriptCharacters?: number;
   fullTranscriptDurationMs?: number;
-  fullTranscriptLanguage?: string;
-  fullTranscriptTranslatedBy?: string;
   conversationContext?: string;
   retryAttempt?: number;
 }
@@ -77,17 +76,6 @@ interface LiveDelegationExecution {
   request: string;
   details: LiveDelegationMessageDetails;
   retries: number;
-}
-
-export interface LiveRejectedDelegationEntryData {
-  delegationId: string;
-  request: string;
-  sourceTurn: number;
-  transcriptRelation: "verbatim" | "synthesized" | "unknown";
-  detectedLanguage: string;
-  reason: "normalization-failed";
-  message: string;
-  timestamp: number;
 }
 
 export interface LiveTranscriptEntryData {
@@ -121,6 +109,7 @@ export interface LiveSessionControllerOptions {
   appOpenTimeoutMs: number;
   voice?: string;
   customInstructions?: string;
+  coordinator: LiveSessionCoordinator;
 }
 
 function errorFrom(cause: unknown): Error {
@@ -174,6 +163,7 @@ export class LiveSessionController {
   readonly #appOpenTimeoutMs: number;
   readonly #voice: string;
   readonly #customInstructions: string;
+  readonly #coordinator: LiveSessionCoordinator;
   #activeVoice: string;
   #activeInstructions: string;
   #diagnosticsEnabled = false;
@@ -211,6 +201,7 @@ export class LiveSessionController {
   #delegationChain: Promise<void> = Promise.resolve();
   readonly #conversation = new LiveConversationTracker();
   readonly #agentProgress: LiveAgentProgressBuffer;
+  #unsubscribeCoordinator: (() => void) | undefined;
 
   constructor(options: LiveSessionControllerOptions) {
     this.#pi = options.pi;
@@ -222,10 +213,14 @@ export class LiveSessionController {
     const voice = options.voice?.trim();
     this.#voice = voice !== undefined && voice.length > 0 ? voice : DEFAULT_VOICE;
     this.#customInstructions = options.customInstructions?.trim() ?? "";
+    this.#coordinator = options.coordinator;
     this.#activeVoice = this.#voice;
     this.#activeInstructions = this.#customInstructions;
     this.#agentProgress = new LiveAgentProgressBuffer((progress) => {
       this.#flushAgentProgress(progress.channel, progress.text);
+    });
+    this.#unsubscribeCoordinator = this.#coordinator.subscribe((event) => {
+      this.#handleCoordinatorEvent(event);
     });
   }
 
@@ -252,6 +247,7 @@ export class LiveSessionController {
           this.#handleAppEvent(method, params);
         });
       });
+      connection.onRequest((method, params) => this.#handleAppRequest(method, params));
       connection.onClose((error, clean) => {
         if (this.#stopped) return;
         if (clean === true) void this.stop();
@@ -324,6 +320,8 @@ export class LiveSessionController {
       const answer = await control.connect(offer);
       await connection.request("webrtc.acceptAnswer", { sdp: answer });
       await this.#waitForMediaOpen();
+      this.#syncCoordinatorState();
+      this.#sendSessionSummary();
       if (this.#muted) connection.notify("audio.setMuted", { muted: true });
       this.#refreshAudioPhase();
     } catch (cause) {
@@ -504,6 +502,8 @@ export class LiveSessionController {
     this.#connection?.close();
     this.#connection = undefined;
     this.#agentProgress.clear();
+    this.#unsubscribeCoordinator?.();
+    this.#unsubscribeCoordinator = undefined;
     this.#conversation.reset();
     await this.#pairing.close();
     if (cleanupError !== undefined) {
@@ -584,6 +584,89 @@ export class LiveSessionController {
     }
   }
 
+  #handleAppRequest(method: string, params: unknown): unknown {
+    switch (method) {
+      case "threads.list":
+        return this.#coordinator.snapshot();
+      case "threads.inspect": {
+        const parsed = parseThreadIdParams(params);
+        if (parsed === undefined) throw new Error("Invalid threads.inspect parameters");
+        const inspection = this.#coordinator.inspectThread(parsed.threadId);
+        if (inspection === undefined) throw new Error(`Unknown thread: ${parsed.threadId}`);
+        return inspection;
+      }
+      case "threads.message": {
+        const parsed = parseThreadMessageParams(params);
+        if (parsed === undefined) throw new Error("Invalid threads.message parameters");
+        return this.#coordinator.messageThread(
+          parsed.threadId,
+          parsed.message,
+          parsed.delivery ?? "steer",
+          this.#context,
+        );
+      }
+      case "threads.interrupt": {
+        const parsed = parseThreadIdParams(params);
+        if (parsed === undefined) throw new Error("Invalid threads.interrupt parameters");
+        return this.#coordinator.interruptThread(parsed.threadId);
+      }
+      default:
+        throw new Error(`Unsupported request: ${method}`);
+    }
+  }
+
+  #handleCoordinatorEvent(event: LiveCoordinatorEvent): void {
+    const inspection = this.#coordinator.inspectThread(event.threadId);
+    this.#notifyApp(event.type, {
+      ...event,
+      ...(inspection === undefined ? {} : { thread: inspection.thread }),
+    });
+    if (event.type !== "thread.message" && event.type !== "thread.completed") return;
+    let message: string | undefined;
+    if (event.type === "thread.message") {
+      if (typeof event.data.message === "string") message = event.data.message;
+    } else {
+      message = inspection?.thread.finalSummary;
+    }
+    if (message === undefined || message.length === 0) return;
+    const threadPath = inspection?.thread.path ?? event.threadId;
+    const context = `<subagent-update thread="${threadPath}" type="${event.type}">\n${message}\n</subagent-update>`;
+    for (const chunk of chunkLiveContext(context)) {
+      if (this.#activeDelegationId === undefined) {
+        this.#queueSend(buildSessionContextAppend(chunk, "commentary"));
+      } else {
+        this.#queueSend(
+          buildDelegationContextAppend(this.#activeDelegationId, chunk, "commentary"),
+        );
+      }
+    }
+  }
+
+  #syncCoordinatorState(): void {
+    this.#notifyApp("threads.snapshot", this.#coordinator.snapshot());
+  }
+
+  #sendSessionSummary(): void {
+    const recent = getConversationMessages(this.#context)
+      .filter((message) => message.role === "user" || message.role === "assistant")
+      .slice(-2)
+      .map((message) => {
+        const text = extractMessageText(message.content).replaceAll(/\s+/g, " ").trim();
+        return text.length === 0 ? undefined : `${message.role}: ${text.slice(0, 600)}`;
+      })
+      .filter((line): line is string => line !== undefined);
+    const summary = [
+      "<live-session-summary>",
+      "Brief context for this newly attached voice session. Do not delegate or repeat it verbatim.",
+      ...recent,
+      this.#coordinator.buildSessionSummary(),
+      "</live-session-summary>",
+    ].join("\n");
+    for (const chunk of chunkLiveContext(summary)) {
+      this.#queueSend(buildSessionContextAppend(chunk, "commentary"));
+    }
+  }
+
   #handleLiveEvent(event: LiveServerEvent): void {
     switch (event.type) {
       case "session.started":
@@ -613,17 +696,15 @@ export class LiveSessionController {
 
   #queueDelegation(event: Extract<LiveServerEvent, { type: "delegation.created" }>): void {
     this.#delegationChain = this.#delegationChain
-      .then(async () => {
-        await this.#handleDelegation(event);
+      .then(() => {
+        this.#handleDelegation(event);
       })
       .catch((cause) => {
         if (!this.#stopped) this.#reportFailure(errorFrom(cause));
       });
   }
 
-  async #handleDelegation(
-    event: Extract<LiveServerEvent, { type: "delegation.created" }>,
-  ): Promise<void> {
+  #handleDelegation(event: Extract<LiveServerEvent, { type: "delegation.created" }>): void {
     let request = "";
     for (const content of event.item.content) {
       if (content.type === "input_text") request += `${request ? "\n" : ""}${content.text}`;
@@ -635,116 +716,29 @@ export class LiveSessionController {
     const sourceTranscript = this.#userTranscript;
     const transcriptDurationMs = this.#currentUserTranscriptDurationMs();
     const transcriptRelation = delegationTranscriptRelation(request, sourceTranscript);
-    const language = assessDelegationLanguage(request);
     appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.received", {
       delegationId: event.item.id,
       characters: request.length,
       sourceTurn: this.#userTranscriptTurn,
       transcriptRelation,
-      detectedLanguage: language.detectedLanguage,
-      englishScore: language.englishScore,
-      accepted: language.accepted,
     });
-    let agentRequest = request;
-    let normalizedBy: string | undefined;
-    const needsVerbatimSynthesis =
-      transcriptRelation === "verbatim" && language.reason === "english";
-    const needsNormalization = !language.accepted || needsVerbatimSynthesis;
-    if (needsNormalization) {
-      appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.normalizing", {
-        delegationId: event.item.id,
-        detectedLanguage: language.detectedLanguage,
-        characters: request.length,
-        reason: needsVerbatimSynthesis ? "verbatim-synthesis" : "translation",
-      });
-      try {
-        const normalized = await normalizeLiveDelegation(
-          request,
-          this.#context,
-          (name, details) => {
-            appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), name, {
-              delegationId: event.item.id,
-              ...details,
-            });
-          },
-        );
-        if (this.#stopped) return;
-        agentRequest = normalized.request;
-        normalizedBy = normalized.model;
-        appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.normalized", {
-          delegationId: event.item.id,
-          model: normalized.model,
-          durationMs: normalized.durationMs,
-          sourceCharacters: request.length,
-          normalizedCharacters: agentRequest.length,
-        });
-      } catch (cause) {
-        const error = errorFrom(cause);
-        if (this.#stopped) return;
-        this.#rejectDelegation(
-          event.item.id,
-          request,
-          transcriptRelation,
-          language.detectedLanguage,
-          error,
-        );
-        return;
-      }
-    } else {
-      appendLiveDiagnostic(
-        this.#context.sessionManager.getSessionId(),
-        "delegation.normalization-bypassed",
-        {
-          delegationId: event.item.id,
-          reason: language.reason,
-        },
-      );
-    }
-    let transcriptContext: LiveTranscriptContext | undefined;
-    try {
-      transcriptContext = await this.#resolveLongTranscriptContext(
-        event.item.id,
-        sourceTranscript,
-        transcriptDurationMs,
-      );
-      if (this.#stopped) return;
-    } catch (cause) {
-      const error = errorFrom(cause);
-      if (this.#stopped) return;
-      this.#rejectDelegation(
-        event.item.id,
-        request,
-        transcriptRelation,
-        language.detectedLanguage,
-        error,
-      );
-      return;
-    }
-    agentRequest = buildDelegationWithTranscriptContext(agentRequest, transcriptContext);
+    const transcriptContext = this.#resolveLongTranscriptContext(
+      event.item.id,
+      sourceTranscript,
+      transcriptDurationMs,
+    );
+    if (this.#stopped) return;
+    const agentRequest = buildDelegationWithTranscriptContext(request, transcriptContext);
     const details = {
       delegationId: event.item.id,
       sourceTurn: this.#userTranscriptTurn,
       transcriptRelation,
-      languageAssessment: language.accepted ? language.reason : "english",
       conversationContext,
-      ...(normalizedBy === undefined
-        ? {}
-        : {
-            originalRequest: request,
-            normalizedBy,
-            normalizationReason: needsVerbatimSynthesis
-              ? ("verbatim-synthesis" as const)
-              : ("translation" as const),
-          }),
       ...(transcriptContext === undefined
         ? {}
         : {
             fullTranscriptCharacters: transcriptContext.sourceCharacters,
             fullTranscriptDurationMs: transcriptDurationMs,
-            fullTranscriptLanguage: transcriptContext.sourceLanguage,
-            ...(transcriptContext.translatedBy === undefined
-              ? {}
-              : { fullTranscriptTranslatedBy: transcriptContext.translatedBy }),
           }),
     } satisfies LiveDelegationMessageDetails;
     this.#dispatchDelegation(event.item.id, agentRequest, details);
@@ -764,28 +758,12 @@ export class LiveSessionController {
     return undefined;
   }
 
-  async #resolveLongTranscriptContext(
+  #resolveLongTranscriptContext(
     delegationId: string,
     sourceTranscript: string,
     transcriptDurationMs: number,
-  ): Promise<LiveTranscriptContext | undefined> {
-    const transcriptContext = await prepareLongTranscriptContext(
-      sourceTranscript,
-      transcriptDurationMs,
-      async (transcript) => {
-        const translated = await translateLiveTranscript(
-          transcript,
-          this.#context,
-          (name, details) => {
-            appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), name, {
-              delegationId,
-              ...details,
-            });
-          },
-        );
-        return { text: translated.text, model: translated.model };
-      },
-    );
+  ): LiveTranscriptContext | undefined {
+    const transcriptContext = prepareLongTranscriptContext(sourceTranscript, transcriptDurationMs);
     if (transcriptContext !== undefined) {
       appendLiveDiagnostic(
         this.#context.sessionManager.getSessionId(),
@@ -795,49 +773,10 @@ export class LiveSessionController {
           sourceCharacters: transcriptContext.sourceCharacters,
           deliveredCharacters: transcriptContext.text.length,
           durationMs: transcriptDurationMs,
-          sourceLanguage: transcriptContext.sourceLanguage,
-          translatedBy: transcriptContext.translatedBy,
         },
       );
     }
     return transcriptContext;
-  }
-
-  #rejectDelegation(
-    delegationId: string,
-    request: string,
-    transcriptRelation: LiveDelegationMessageDetails["transcriptRelation"],
-    detectedLanguage: string,
-    error: Error,
-  ): void {
-    this.#conversation.settleDelegation(delegationId);
-    this.#pi.appendEntry<LiveRejectedDelegationEntryData>(LIVE_REJECTED_DELEGATION_ENTRY_TYPE, {
-      delegationId,
-      request,
-      sourceTurn: this.#userTranscriptTurn,
-      transcriptRelation,
-      detectedLanguage,
-      reason: "normalization-failed",
-      message: error.message,
-      timestamp: Date.now(),
-    });
-    appendLiveDiagnostic(
-      this.#context.sessionManager.getSessionId(),
-      "delegation.normalization-failed",
-      {
-        delegationId,
-        detectedLanguage,
-        message: error.message,
-      },
-    );
-    this.#queueSend(
-      buildDelegationContextAppend(
-        delegationId,
-        "The client could not normalize this delegation for execution. Briefly tell the user that the workspace request could not be started and ask them to try again. Do not claim that any work was performed.",
-        "commentary",
-      ),
-    );
-    this.#refreshAudioPhase();
   }
 
   #dispatchDelegation(
@@ -1037,6 +976,7 @@ export class LiveSessionController {
     if (this.#lastAgentProgress !== undefined) {
       this.#notifyApp("agent.progress", this.#lastAgentProgress);
     }
+    this.#syncCoordinatorState();
   }
 
   #notifyApp(method: string, params: unknown): void {

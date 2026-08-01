@@ -5,6 +5,8 @@ enum LiveClientEvent: Sendable {
     case phase(LivePhase)
     case transcript(String)
     case agentProgress(delegationId: String, text: String, channel: String)
+    case threadsSnapshot(ThreadsSnapshotParams)
+    case threadEvent(ThreadEventParams)
     case failure(String)
     case stopped
     case levels(input: Double, output: Double, speechActive: Bool)
@@ -38,6 +40,8 @@ final class LivePairingClient {
     private var muted = false
     private var controlEndpoint: ControlEndpoint?
     private var pairResult: PairResult?
+    private var nextRequestID = 1
+    private var pendingRequests: [String: CheckedContinuation<JSONValue, Error>] = [:]
 
     init() {
         let pair = AsyncStream.makeStream(of: LiveClientEvent.self)
@@ -108,7 +112,8 @@ final class LivePairingClient {
                     inputLevel: true,
                     outputLevel: true,
                     deviceSelection: false,
-                    sessionResume: true
+                    sessionResume: true,
+                    threadCoordination: true
                 ),
                 preferences: .init(
                     voice: voice.rawValue,
@@ -169,6 +174,38 @@ final class LivePairingClient {
                 params: DiagnosticsPreferenceParams(enabled: enabled)
             )
         }
+    }
+
+    func listThreads() async throws -> ThreadsSnapshotParams {
+        try await request("threads.list", params: EmptyParams(), as: ThreadsSnapshotParams.self)
+    }
+
+    func inspectThread(_ threadID: String) async throws -> ThreadInspectionResult {
+        try await request(
+            "threads.inspect",
+            params: ThreadIDParams(threadId: threadID),
+            as: ThreadInspectionResult.self
+        )
+    }
+
+    func messageThread(_ threadID: String, message: String, followUp: Bool = false) async throws {
+        _ = try await request(
+            "threads.message",
+            params: ThreadMessageParams(
+                threadId: threadID,
+                message: message,
+                delivery: followUp ? "followUp" : "steer"
+            ),
+            as: LiveThreadSnapshot.self
+        )
+    }
+
+    func interruptThread(_ threadID: String) async throws {
+        _ = try await request(
+            "threads.interrupt",
+            params: ThreadIDParams(threadId: threadID),
+            as: LiveThreadSnapshot.self
+        )
     }
 
     func endSession() async {
@@ -240,6 +277,18 @@ final class LivePairingClient {
     }
 
     private func handle(_ frame: RPCIncomingFrame) async throws {
+        if frame.method == nil, let id = frame.id,
+           let continuation = pendingRequests.removeValue(forKey: id.key)
+        {
+            if let error = frame.error {
+                continuation.resume(throwing: PiLiveError.protocolError(error.message))
+            } else if let result = frame.result {
+                continuation.resume(returning: result)
+            } else {
+                continuation.resume(returning: .null)
+            }
+            return
+        }
         guard let method = frame.method else { return }
         if let id = frame.id {
             do {
@@ -266,6 +315,11 @@ final class LivePairingClient {
                 text: params.text,
                 channel: params.channel
             ))
+        case "threads.snapshot":
+            emit(.threadsSnapshot(try frame.params.decode(ThreadsSnapshotParams.self)))
+        case "thread.started", "thread.status", "thread.activity", "thread.commentary",
+             "thread.message", "thread.completed":
+            emit(.threadEvent(try frame.params.decode(ThreadEventParams.self)))
         case "audio.setMuted":
             let params = try frame.params.decode(MutedParams.self)
             muted = params.muted
@@ -333,6 +387,32 @@ final class LivePairingClient {
         try await send(RPCNotification(method: method, params: params))
     }
 
+    private func request<Params: Encodable, Result: Decodable>(
+        _ method: String,
+        params: Params,
+        as resultType: Result.Type
+    ) async throws -> Result {
+        let id = String(nextRequestID)
+        nextRequestID += 1
+        let value = try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<JSONValue, Error>) in
+            pendingRequests[id] = continuation
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.send(RPCRequest(
+                        id: .string(id),
+                        method: method,
+                        params: params
+                    ))
+                } catch {
+                    self.pendingRequests.removeValue(forKey: id)?.resume(throwing: error)
+                }
+            }
+        }
+        return try value.decode(resultType)
+    }
+
     private func send<Message: Encodable>(_ message: Message) async throws {
         guard let socket else { throw PiLiveError.protocolError("Pairing socket is closed") }
         let data = try encoder.encode(message)
@@ -371,10 +451,17 @@ final class LivePairingClient {
     }
 
     private func closeControlTransport() {
+        failPendingRequests(PiLiveError.protocolError("Pairing socket is closed"))
         socket?.cancel(with: .normalClosure, reason: nil)
         socket = nil
         session?.invalidateAndCancel()
         session = nil
+    }
+
+    private func failPendingRequests(_ error: Error) {
+        let continuations = Array(pendingRequests.values)
+        pendingRequests.removeAll()
+        for continuation in continuations { continuation.resume(throwing: error) }
     }
 
     private func reconnectControlTransport() async throws {

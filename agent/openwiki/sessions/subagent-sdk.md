@@ -2,7 +2,7 @@
 
 `src/subagent-sdk/` (~40 files) is the in-process machinery the parent agent uses to spawn **child agent sessions**. The parent exposes a single `subagent` tool; on invoke, the SDK picks a backend, launches a child (either a separate `pi` process in a terminal pane, or an in-process "lite" session), relays events, persists state, optionally captures structured output, and returns the result.
 
-The parent-side glue is `src/extensions/subagent/`; the SDK itself is backend-agnostic and reusable.
+The parent-side glue is `src/extensions/subagent/`; the SDK itself is backend-agnostic and reusable. A session-scoped live coordinator consumes SDK state, child events, and explicit child-to-parent messages so parent and Live clients can inspect concurrent thread activity without scraping terminals.
 
 ## Mental model
 
@@ -75,8 +75,10 @@ When a `json_schema` is requested, the call **blocks** until the child returns s
 
 - `extension.ts` — `installChildBootstrap(pi)` (so this process can also act as a child), builds the SDK via `createSubagentSDK(pi, { adapter, buildLaunchCommand })`, registers the `subagent` tool, and re-syncs tool registration (prompt guidelines signature) on `session_start`/`before_agent_start`.
 - `tool.ts` — defines the `subagent` tool (`SubagentToolParamsSchema`) and delegates to `executeSubagentToolAction`.
-- `execution.ts` — handles `start` / `message` / `cancel` / `list` / `resume` actions; `message` auto-resumes a completed child when needed.
+- `execution.ts` — handles `start` / `list` / `inspect` / `message` / `interrupt` / `cancel`; `message` steers immediately by default and auto-resumes a completed persisted child when needed.
 - `shared.ts` — parameter validation + tool-activation scheduling.
+
+Process children use authenticated IPC and lite children use an in-process callback to expose a child-scoped `subagent` message action targeting `parent`. Explicit blockers, decisions, progress, and results steer the parent immediately by default. Routine commentary/activity flows to the coordinator without triggering parent turns.
 
 ## Gotchas
 

@@ -17,7 +17,6 @@ import {
 } from "../extensions/session-launch-utils.js";
 import { errorMessage } from "../utils/error-message.js";
 import { SubagentRuntimeEventBus } from "./events.js";
-import type { SubagentChildIpcEvent } from "./ipc.js";
 import { resolveSubagentMode, type ResolvedSubagentMode } from "./modes.js";
 import { buildSubagentTaskPrompt } from "./prompt.js";
 import { createLiteSessionResources } from "./lite-session-resources.js";
@@ -27,6 +26,8 @@ import {
   resolveLiteRuntimeModel,
 } from "./lite-runtime-ui.js";
 import { buildLiteResumePrompt } from "./lite-resume-prompt.js";
+import { buildInterruptedLiteState } from "./lite-interrupt.js";
+import { forwardLiteChildEvent } from "./lite-events.js";
 import {
   assertLiteSessionPathAccessible,
   createLiteSessionManager,
@@ -46,6 +47,7 @@ import {
   type ResumeSubagentParams,
   type ResumeSubagentResult,
   type RuntimeSubagent,
+  type InterruptSubagentParams,
   type StartSubagentParams,
   type StartSubagentResult,
   type TokenUsage,
@@ -60,6 +62,8 @@ export type LiteRuntimeOptions = {
   hooks?: SubagentRuntimeHooks;
 };
 
+const DEFAULT_LITE_RUNTIME_OPTIONS: LiteRuntimeOptions = { kind: "lite" };
+
 type LiteSessionState = {
   session: LiteAgentSession;
   sessionPath?: string;
@@ -68,7 +72,6 @@ type LiteSessionState = {
   abortController: AbortController;
 };
 
-const DEFAULT_LITE_RUNTIME_OPTIONS: LiteRuntimeOptions = { kind: "lite" };
 function toTokenUsage(stats: ReturnType<LiteAgentSession["getSessionStats"]>): TokenUsage {
   return {
     input: stats.tokens.input,
@@ -102,6 +105,7 @@ function buildCompletionStatusContent(state: RuntimeSubagent, suffix: string): s
 export class LiteRuntime {
   private states = new Map<string, RuntimeSubagent>();
   private sessions = new Map<string, LiteSessionState>();
+  private interruptedSessionIds = new Set<string>();
   private disposed = false;
   private lastCtx: ExtensionContext | undefined;
   private readonly eventBus = new SubagentRuntimeEventBus();
@@ -120,23 +124,15 @@ export class LiteRuntime {
       .map((state) => cloneRuntimeSubagent(state));
   }
 
-  onEvent(listener: Parameters<SubagentRuntimeEventBus["subscribe"]>[0]): () => void {
-    return this.eventBus.subscribe(listener);
-  }
-
-  onChildEvent(
+  readonly onEvent = (
+    listener: Parameters<SubagentRuntimeEventBus["subscribe"]>[0],
+  ): (() => void) => this.eventBus.subscribe(listener);
+  readonly onChildEvent = (
     listener: Parameters<SubagentRuntimeEventBus["subscribeChildEvent"]>[0],
-  ): () => void {
-    return this.eventBus.subscribeChildEvent(listener);
-  }
-
-  emitChangedStates(): void {
-    this.eventBus.emitChangedStates(this.listStates());
-  }
-
-  emitChildEvent(sessionId: string, event: SubagentChildIpcEvent): void {
-    this.eventBus.emitChildEvent(sessionId, event);
-  }
+  ): (() => void) => this.eventBus.subscribeChildEvent(listener);
+  readonly onParentMessage = (
+    listener: Parameters<SubagentRuntimeEventBus["subscribeParentMessage"]>[0],
+  ): (() => void) => this.eventBus.subscribeParentMessage(listener);
 
   renderWidget(ctx: ExtensionContext | undefined = this.lastCtx): void {
     this.lastCtx = renderLiteRuntimeWidget(this.hooks, ctx, this.listStates());
@@ -144,7 +140,7 @@ export class LiteRuntime {
 
   restore(ctx?: ExtensionContext): Promise<void> {
     this.renderWidget(ctx);
-    this.emitChangedStates();
+    this.eventBus.emitChangedStates(this.listStates());
     return Promise.resolve();
   }
 
@@ -196,6 +192,9 @@ export class LiteRuntime {
         structuredCapture,
         sessionManager,
         agentDir,
+        sendParentMessage: (message) => {
+          this.eventBus.emitParentMessage({ sessionId, message });
+        },
       });
     const stateWithTools = { ...state, tools: sessionTools };
     const { session } = await createAgentSession({
@@ -225,7 +224,7 @@ export class LiteRuntime {
     this.states.set(sessionId, stateWithTools);
     await this.hooks.persistState(stateWithTools);
     this.renderWidget(ctx);
-    this.emitChangedStates();
+    this.eventBus.emitChangedStates(this.listStates());
     signal?.addEventListener(
       "abort",
       () => {
@@ -283,6 +282,9 @@ export class LiteRuntime {
         structuredCapture,
         sessionManager,
         agentDir,
+        sendParentMessage: (message) => {
+          this.eventBus.emitParentMessage({ sessionId: params.sessionId, message });
+        },
       });
     const stateWithTools = { ...state, tools: sessionTools };
     const { session } = await createAgentSession({
@@ -312,7 +314,7 @@ export class LiteRuntime {
     this.states.set(params.sessionId, stateWithTools);
     await this.hooks.persistState(stateWithTools);
     this.renderWidget(ctx);
-    this.emitChangedStates();
+    this.eventBus.emitChangedStates(this.listStates());
     options.signal?.addEventListener(
       "abort",
       () => {
@@ -354,7 +356,9 @@ export class LiteRuntime {
         durationMs: 0,
       },
     });
-    if (params.delivery === "followUp") {
+    if (state.status === "idle") {
+      void this.continueSession(params.sessionId, params.message);
+    } else if (params.delivery === "followUp") {
       await live.session.followUp(params.message);
     } else {
       await live.session.steer(params.message);
@@ -377,7 +381,7 @@ export class LiteRuntime {
     });
     await this.hooks.persistState(updated);
     this.renderWidget(_ctx);
-    this.emitChangedStates();
+    this.eventBus.emitChangedStates(this.listStates());
     return { state: cloneRuntimeSubagent(updated), autoResumed: false };
   }
 
@@ -417,9 +421,27 @@ export class LiteRuntime {
     this.states.set(cancelled.sessionId, cancelled);
     await this.hooks.persistState(cancelled);
     this.renderWidget();
-    this.emitChangedStates();
+    this.eventBus.emitChangedStates(this.listStates());
     this.emitCompletionStatus(cancelled);
     return cloneRuntimeSubagent(cancelled);
+  }
+
+  async interrupt(params: InterruptSubagentParams): Promise<RuntimeSubagent> {
+    const state = this.states.get(params.sessionId);
+    const live = this.sessions.get(params.sessionId);
+    if (!state || !live || isTerminalSubagentStatus(state.status)) {
+      throw new Error(
+        `subagent interrupt failed: lite sessionId ${params.sessionId} is not running.`,
+      );
+    }
+    this.interruptedSessionIds.add(params.sessionId);
+    await live.session.abort().catch(() => {});
+    const interrupted = buildInterruptedLiteState(state, Date.now());
+    this.states.set(params.sessionId, interrupted);
+    await this.hooks.persistState(interrupted);
+    this.renderWidget();
+    this.eventBus.emitChangedStates(this.listStates());
+    return cloneRuntimeSubagent(interrupted);
   }
 
   captureOutput(sessionId: string): { text: string } {
@@ -526,7 +548,7 @@ export class LiteRuntime {
       : never,
     onUpdate?: AgentToolUpdateCallback,
   ): void {
-    this.forwardChildEvent(sessionId, event);
+    forwardLiteChildEvent(this.eventBus, sessionId, event);
     const existing = this.states.get(sessionId);
     if (!existing) {
       return;
@@ -554,59 +576,9 @@ export class LiteRuntime {
         updatedAt: Date.now(),
       });
       this.renderWidget();
-      this.emitChangedStates();
+      this.eventBus.emitChangedStates(this.listStates());
     }
   }
-  private forwardChildEvent(
-    sessionId: string,
-    event: Parameters<LiteAgentSession["subscribe"]>[0] extends (event: infer TEvent) => void
-      ? TEvent
-      : never,
-  ): void {
-    switch (event.type) {
-      case "agent_start":
-      case "agent_end":
-      case "message_start":
-      case "message_update":
-      case "message_end":
-      case "tool_execution_start":
-      case "tool_execution_update":
-      case "tool_execution_end":
-        this.emitChildEvent(sessionId, event);
-        return;
-      case "turn_start":
-        this.emitChildEvent(sessionId, {
-          type: "turn_start",
-          turnIndex: 0,
-          timestamp: Date.now(),
-        });
-        return;
-      case "turn_end":
-        this.emitChildEvent(sessionId, {
-          type: "turn_end",
-          turnIndex:
-            "turnIndex" in event && typeof event.turnIndex === "number" ? event.turnIndex : 0,
-          message: event.message,
-          toolResults: event.toolResults,
-        });
-        break;
-      case "auto_retry_end":
-      case "auto_retry_start":
-      case "agent_settled":
-      case "bash_execution_update":
-      case "compaction_end":
-      case "compaction_start":
-      case "entry_appended":
-      case "queue_update":
-      case "session_info_changed":
-      case "summarization_retry_attempt_start":
-      case "summarization_retry_finished":
-      case "summarization_retry_scheduled":
-      case "thinking_level_changed":
-        break;
-    }
-  }
-
   private async runSession(sessionId: string, prompt: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     const state = this.states.get(sessionId);
@@ -616,11 +588,13 @@ export class LiteRuntime {
 
     try {
       await this.runPromptWithStructuredRetries(sessionId, prompt, live);
+      if (this.interruptedSessionIds.delete(sessionId)) return;
       if (this.disposed || live.abortController.signal.aborted) {
         return;
       }
       await this.completeSession(sessionId, live);
     } catch (error) {
+      if (this.interruptedSessionIds.delete(sessionId)) return;
       if (this.disposed || live.abortController.signal.aborted) {
         return;
       }
@@ -636,11 +610,13 @@ export class LiteRuntime {
 
     try {
       await this.runPromptWithStructuredRetries(sessionId, prompt, live);
+      if (this.interruptedSessionIds.delete(sessionId)) return;
       if (this.disposed || live.abortController.signal.aborted) {
         return;
       }
       await this.completeSession(sessionId, live);
     } catch (error) {
+      if (this.interruptedSessionIds.delete(sessionId)) return;
       if (this.disposed || live.abortController.signal.aborted) {
         return;
       }
@@ -725,7 +701,7 @@ export class LiteRuntime {
     this.states.set(sessionId, terminal);
     await this.hooks.persistState(terminal);
     this.renderWidget();
-    this.emitChangedStates();
+    this.eventBus.emitChangedStates(this.listStates());
     this.emitCompletionStatus(terminal);
   }
 
@@ -764,7 +740,7 @@ export class LiteRuntime {
     this.states.set(sessionId, failed);
     await this.hooks.persistState(failed);
     this.renderWidget();
-    this.emitChangedStates();
+    this.eventBus.emitChangedStates(this.listStates());
     this.emitCompletionStatus(failed);
   }
 

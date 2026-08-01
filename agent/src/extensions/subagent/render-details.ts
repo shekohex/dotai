@@ -26,6 +26,12 @@ function isSubagentToolResultDetails(details: unknown): details is SubagentToolR
   if (details.action === "cancel") {
     return "state" in details;
   }
+  if (details.action === "interrupt") {
+    return "state" in details;
+  }
+  if (details.action === "inspect") {
+    return "thread" in details && "events" in details;
+  }
   if (details.action === "message") {
     return "state" in details && "message" in details;
   }

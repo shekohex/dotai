@@ -30,6 +30,7 @@ export interface MuxAdapter {
   ): Promise<void>;
   paneExists(paneId: string, backend?: string): Promise<boolean>;
   killPane(paneId: string, backend?: string): Promise<void>;
+  interruptPane?(paneId: string, backend?: string): Promise<void>;
   capturePane(paneId: string, lines?: number, backend?: string): Promise<PaneCapture>;
   dispose?(): void;
 }

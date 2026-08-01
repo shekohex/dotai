@@ -77,9 +77,12 @@ function validateToolParams(params: SubagentToolParams): void {
     }
   }
 
-  if (params.action === "cancel" && (params.sessionId?.trim().length ?? 0) === 0) {
+  if (
+    (params.action === "inspect" || params.action === "interrupt" || params.action === "cancel") &&
+    (params.sessionId?.trim().length ?? 0) === 0
+  ) {
     throw new Error(
-      "Invalid subagent cancel params: `sessionId` is required. Use `subagent` `list` or a prior subagent result to choose the full UUID v4 sessionId.",
+      `Invalid subagent ${params.action} params: \`sessionId\` is required. Use \`subagent\` \`list\` or a prior result to choose the full UUID v4 sessionId.`,
     );
   }
 }
@@ -96,7 +99,7 @@ function normalizeSubagentExecutionError(
 }
 
 function getStartGuidanceText(): string {
-  return "This is the prompt sent to the child session. The subagent will return with a summary automatically when it finishes, so usually continue doing your work that needs to be done or wait for completion instead of polling with list or checking repeatedly for the final result. Use message only to steer the work, cancel to stop it, and inspect backend terminal output only when available and needed.";
+  return "This is the prompt sent to the child session. The subagent will return with a summary automatically when it finishes. Use list or inspect for bounded proactive status updates when useful, not tight-loop completion polling. Use message to steer, interrupt to stop only the current turn, cancel to terminate, and backend terminal output only when raw terminal detail is needed.";
 }
 
 function formatStartResultText(state: RuntimeSubagent): string {
@@ -104,7 +107,7 @@ function formatStartResultText(state: RuntimeSubagent): string {
     state.persisted === false
       ? " This subagent is ephemeral (persisted: false). You can message it while running, but once it finishes it cannot be resumed. Start a new subagent for follow-up work."
       : "";
-  return `Subagent ${state.name} started and is running in the background. sessionId: ${state.sessionId}. It will return with a summary automatically when it finishes, so continue your other work and wait for its completion summary. Do not poll with list or check repeatedly for results. Use subagent message only to steer the work while running, cancel to stop it, and inspect backend terminal output only when available and needed.${ephemeralHint}`;
+  return `Subagent ${state.name} started and is running in the background. sessionId: ${state.sessionId}. It will return with a summary automatically when it finishes. Use list or inspect for bounded proactive status updates when useful; avoid tight-loop polling. Use message to steer the work while running, interrupt to stop only the current turn, or cancel to stop it and terminate the thread. Use backend terminal output only when raw detail is needed.${ephemeralHint}`;
 }
 
 function formatStructuredStartResultText(state: RuntimeSubagent): string {
@@ -148,6 +151,19 @@ function formatCancelResultText(state: RuntimeSubagent): string {
   return `Subagent ${state.name} cancelled. sessionId: ${state.sessionId}.`;
 }
 
+function formatInterruptResultText(state: RuntimeSubagent): string {
+  return `Subagent ${state.name} interrupted. Thread remains available. sessionId: ${state.sessionId}.`;
+}
+
+function formatInspectResultText(thread: {
+  name: string;
+  status: string;
+  path: string;
+  activity?: { label: string };
+}): string {
+  return `${thread.name} · ${thread.status} · ${thread.activity?.label ?? "no current activity"} · ${thread.path}`;
+}
+
 function formatListResultText(subagents: RuntimeSubagent[]): string {
   if (subagents.length === 0) {
     return "No subagents.";
@@ -156,7 +172,7 @@ function formatListResultText(subagents: RuntimeSubagent[]): string {
     `count: ${subagents.length}`,
     ...subagents.map(
       (subagent, index) =>
-        `${index + 1}. ${subagent.name} · ${subagent.status} · sessionId: ${subagent.sessionId} · ${summarizeWhitespace(subagent.task, 48)}`,
+        `${index + 1}. ${subagent.name} · ${subagent.status} · ${subagent.activity?.label ?? "no current activity"} · sessionId: ${subagent.sessionId} · ${summarizeWhitespace(subagent.task, 48)}`,
     ),
   ].join("\n");
 }
@@ -231,6 +247,8 @@ export {
   ensureParentSubagentToolActive,
   formatAutoResumedMessageResultText,
   formatCancelResultText,
+  formatInspectResultText,
+  formatInterruptResultText,
   formatListResultText,
   formatMessageResultText,
   formatScalarValue,

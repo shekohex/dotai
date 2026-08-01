@@ -26,6 +26,9 @@ function formatCollapsedCallText(args: SubagentToolParams, theme: Theme): string
   if (args.action === "cancel") {
     return `${prefix} ${action}${separator}${theme.fg("muted", shortSessionId(args.sessionId))}`;
   }
+  if (args.action === "interrupt" || args.action === "inspect") {
+    return `${prefix} ${action}${separator}${theme.fg("muted", shortSessionId(args.sessionId))}`;
+  }
 
   return `${prefix} ${action}`;
 }
@@ -68,7 +71,7 @@ function formatExpandedCallText(args: SubagentToolParams, theme: Theme): string 
     return lines.join("\n");
   }
 
-  if (args.action === "cancel") {
+  if (args.action === "cancel" || args.action === "interrupt" || args.action === "inspect") {
     lines.push(...formatField("sessionId", args.sessionId));
     return lines.join("\n");
   }
@@ -141,6 +144,16 @@ function formatExpandedResult(details: SubagentToolResultDetails | undefined): s
   }
   if (details.action === "list") {
     return formatListDetails(details.subagents);
+  }
+  if (details.action === "inspect") {
+    return [
+      ...formatField("name", details.thread.name),
+      ...formatField("status", details.thread.status),
+      ...formatField("path", details.thread.path),
+      ...formatField("activity", details.thread.activity?.label),
+      ...formatField("latestCommentary", details.thread.latestCommentary, true),
+      ...formatField("events", JSON.stringify(details.events, null, 2), true),
+    ].join("\n");
   }
 
   const resultLines = [formatSubagentStateDetails(details.state)];
@@ -237,6 +250,12 @@ function formatCollapsedResultSummary(
   }
   if (details?.action === "message") {
     return formatMessageCollapsedSummary(details, theme);
+  }
+  if (details?.action === "inspect") {
+    return [
+      theme.fg("success", details.thread.name),
+      theme.fg("muted", details.thread.status),
+    ].join(theme.fg("dim", " · "));
   }
   if (details === undefined) {
     return theme.fg("success", "ok");

@@ -4,6 +4,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { SubagentSDK } from "../../subagent-sdk/sdk.js";
+import type { LiveSessionCoordinator } from "../../live-session/coordinator.js";
 import type {
   RuntimeSubagent,
   SubagentToolParams,
@@ -12,6 +13,8 @@ import type {
 import {
   formatAutoResumedMessageResultText,
   formatCancelResultText,
+  formatInspectResultText,
+  formatInterruptResultText,
   formatListResultText,
   formatMessageResultText,
   formatStartResultText,
@@ -23,9 +26,10 @@ import {
 } from "./shared.js";
 
 const SUBAGENT_BASE_PROMPT_GUIDELINES = [
-  "Use `subagent` for delegated work. Actions: `start`, `message`, `cancel`, `list`; no read action; don't poll with `list` for final output.",
+  "Use `subagent` for delegated work. Actions: start, list, inspect, message, interrupt, cancel. Use `list` and `inspect` proactively for bounded status checks when the user needs updates or concurrent work needs coordination. Avoid tight-loop polling; terminal completion still arrives automatically.",
   "Result modes: default/text starts background and auto-sends completion status; `outputFormat: { type: 'json_schema', schema }` blocks and returns validated JSON directly; `completion:false` suppresses status.",
-  "Use `message` to steer running children or auto-resume completed persisted children. Use `persisted:false` for one-offs; ephemeral children cannot resume after exit.",
+  "Use `message` to steer running children immediately; choose `delivery: followUp` only to queue. It auto-resumes completed persisted children. Use `interrupt` to stop only the current turn while preserving the thread; use `cancel` to terminate it.",
+  "Child threads can use their own `subagent` message action with `target: parent` for explicit blockers, decisions, progress, or results. These steer the parent immediately by default. Routine activity streams automatically, so do not spam updates or expose raw chain-of-thought.",
   "Use `handoff:true` when the child needs parent-session context; it summarizes the current conversation into the initial prompt and appends the parent session path for focused `session_query` lookups. It is not raw inherited context, so still provide the exact objective and expected output.",
   "Without `handoff:true`, the child only knows the `task`, selected mode/tools, and cwd. Brief it like a smart colleague joining cold: objective, why it matters, known facts, relevant files/lines, constraints, and output shape.",
   "Use subagents for independent work or context isolation: broad searches, second opinions, verification, reviews, and parallelizable tasks. Avoid subagents for simple linear work that is faster in the main session.",
@@ -37,6 +41,7 @@ const SUBAGENT_BASE_PROMPT_GUIDELINES = [
 
 function executeSubagentToolAction(
   sdk: SubagentSDK,
+  coordinator: LiveSessionCoordinator,
   params: SubagentToolParams,
   signal: AbortSignal | undefined,
   onUpdate: AgentToolUpdateCallback | undefined,
@@ -48,10 +53,46 @@ function executeSubagentToolAction(
   if (params.action === "message") {
     return executeSubagentMessageAction(sdk, params, onUpdate, ctx);
   }
+  if (params.action === "inspect") {
+    return Promise.resolve(executeSubagentInspectAction(coordinator, params));
+  }
+  if (params.action === "interrupt") {
+    return executeSubagentInterruptAction(sdk, params);
+  }
   if (params.action === "cancel") {
     return executeSubagentCancelAction(sdk, params);
   }
-  return Promise.resolve(executeSubagentListAction(sdk, params));
+  return Promise.resolve(executeSubagentListAction(sdk, coordinator, params));
+}
+
+function executeSubagentInspectAction(
+  coordinator: LiveSessionCoordinator,
+  params: SubagentToolParams,
+): AgentToolResult<SubagentToolResultDetails> {
+  const inspection = coordinator.inspectThread(params.sessionId!);
+  if (inspection === undefined) {
+    throw new Error(`Unknown subagent sessionId: ${params.sessionId}`);
+  }
+  return {
+    content: [{ type: "text", text: formatInspectResultText(inspection.thread) }],
+    details: {
+      action: "inspect",
+      args: params,
+      thread: inspection.thread,
+      events: inspection.events,
+    } satisfies SubagentToolResultDetails,
+  };
+}
+
+async function executeSubagentInterruptAction(
+  sdk: SubagentSDK,
+  params: SubagentToolParams,
+): Promise<AgentToolResult<SubagentToolResultDetails>> {
+  const state = await sdk.interrupt({ sessionId: params.sessionId! });
+  return {
+    content: [{ type: "text", text: formatInterruptResultText(state) }],
+    details: { action: "interrupt", args: params, state } satisfies SubagentToolResultDetails,
+  };
 }
 
 async function executeSubagentStartAction(
@@ -200,12 +241,19 @@ async function executeSubagentCancelAction(
 
 function executeSubagentListAction(
   sdk: SubagentSDK,
+  coordinator: LiveSessionCoordinator,
   params: SubagentToolParams,
 ): AgentToolResult<SubagentToolResultDetails> {
   const subagents = sdk.list();
+  const threads = coordinator.listThreads().filter((thread) => thread.path !== "/root");
   return {
     content: [{ type: "text", text: formatListResultText(subagents) }],
-    details: { action: "list", args: params, subagents } satisfies SubagentToolResultDetails,
+    details: {
+      action: "list",
+      args: params,
+      subagents,
+      threads,
+    } satisfies SubagentToolResultDetails,
   };
 }
 

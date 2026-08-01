@@ -1,5 +1,3 @@
-import { assessDelegationLanguage } from "./delegation-language.js";
-
 const LONG_TRANSCRIPT_DURATION_MS = 55_000;
 const LONG_TRANSCRIPT_WORDS = 100;
 const LONG_TRANSCRIPT_CHARACTERS = 700;
@@ -16,16 +14,9 @@ export interface AcceptedLiveDelegation {
   conversationContext: string;
 }
 
-export interface TranslatedLiveTranscript {
-  text: string;
-  model: string;
-}
-
 export interface LiveTranscriptContext {
   text: string;
   sourceCharacters: number;
-  sourceLanguage: string;
-  translatedBy?: string;
 }
 
 /** Tracks bounded voice context and suppresses repeated active delegations. */
@@ -136,34 +127,21 @@ export function isLongLiveTranscript(transcript: string, durationMs: number): bo
 }
 
 /**
- * Preserves a long English transcript verbatim or translates the entire non-English transcript.
+ * Preserves a complete long transcript verbatim for coordinator context.
  *
  * @param {string} transcript Complete current spoken transcript.
  * @param {number} durationMs Approximate duration of the spoken turn.
- * @param {(transcript: string) => Promise<TranslatedLiveTranscript>} translate Full translator.
- * @returns {Promise<LiveTranscriptContext | undefined>} Complete execution context when long.
+ * @returns {LiveTranscriptContext | undefined} Complete execution context when long.
  */
-export async function prepareLongTranscriptContext(
+export function prepareLongTranscriptContext(
   transcript: string,
   durationMs: number,
-  translate: (transcript: string) => Promise<TranslatedLiveTranscript>,
-): Promise<LiveTranscriptContext | undefined> {
+): LiveTranscriptContext | undefined {
   const normalized = transcript.trim();
   if (!isLongLiveTranscript(normalized, durationMs)) return undefined;
-  const language = assessDelegationLanguage(normalized);
-  if (language.accepted) {
-    return {
-      text: normalized,
-      sourceCharacters: normalized.length,
-      sourceLanguage: language.detectedLanguage,
-    };
-  }
-  const translated = await translate(normalized);
   return {
-    text: translated.text,
+    text: normalized,
     sourceCharacters: normalized.length,
-    sourceLanguage: language.detectedLanguage,
-    translatedBy: translated.model,
   };
 }
 
@@ -179,9 +157,5 @@ export function buildDelegationWithTranscriptContext(
   transcript: LiveTranscriptContext | undefined,
 ): string {
   if (transcript === undefined) return task.trim();
-  const contextLabel =
-    transcript.translatedBy === undefined
-      ? "Complete spoken transcript"
-      : "Complete English translation of the spoken transcript";
-  return `${task.trim()}\n\n<full-voice-transcript>\n${contextLabel}. Preserve and use every relevant detail below; do not treat the concise task above as the complete context.\n\n${transcript.text}\n</full-voice-transcript>`;
+  return `${task.trim()}\n\n<full-voice-transcript>\nComplete spoken transcript in the user's original language. Preserve and use every relevant detail below; do not treat the concise task above as the complete context.\n\n${transcript.text}\n</full-voice-transcript>`;
 }

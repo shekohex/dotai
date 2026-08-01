@@ -165,7 +165,8 @@ export function applyChildToolState(
     return;
   }
   const activeTools = new Set(childState.tools);
-  activeTools.delete("subagent");
+  if (childState.ipc === undefined) activeTools.delete("subagent");
+  else activeTools.add("subagent");
   activeTools.delete("ask_user_question");
   if (isJsonSchemaOutputFormat(childState)) {
     activeTools.add(STRUCTURED_OUTPUT_TOOL_NAME);

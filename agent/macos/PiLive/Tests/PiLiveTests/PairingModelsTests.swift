@@ -65,11 +65,13 @@ final class PairingModelsTests: XCTestCase {
             inputLevel: true,
             outputLevel: true,
             deviceSelection: false,
-            sessionResume: true
+            sessionResume: true,
+            threadCoordination: true
         )
         let data = try JSONEncoder().encode(capabilities)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["sessionResume"] as? Bool, true)
+        XCTAssertEqual(object["threadCoordination"] as? Bool, true)
     }
 
     func testDecodesAgentProgressNotification() throws {
@@ -81,5 +83,16 @@ final class PairingModelsTests: XCTestCase {
         XCTAssertEqual(progress.delegationId, "d1")
         XCTAssertEqual(progress.channel, "commentary")
         XCTAssertEqual(progress.text, "Checking tests")
+    }
+
+    func testDecodesThreadSnapshotNotification() throws {
+        let data = Data(
+            #"{"jsonrpc":"2.0","method":"threads.snapshot","params":{"coordinatorId":"c1","sequence":2,"threads":[{"id":"child-1","parentId":"root","path":"/root/tests","name":"tests","task":"Run tests","status":"running","activity":{"kind":"tool","label":"npm test","toolName":"bash","startedAt":1,"updatedAt":2},"updatedAt":2}]}}"#.utf8
+        )
+        let frame = try JSONDecoder().decode(RPCIncomingFrame.self, from: data)
+        let snapshot = try frame.params.decode(ThreadsSnapshotParams.self)
+        XCTAssertEqual(snapshot.sequence, 2)
+        XCTAssertEqual(snapshot.threads.first?.path, "/root/tests")
+        XCTAssertEqual(snapshot.threads.first?.activity?.label, "npm test")
     }
 }

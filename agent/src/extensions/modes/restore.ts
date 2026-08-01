@@ -203,6 +203,12 @@ async function activateModeWithDeps(
   await deps.ensureRuntime(ctx);
   deps.syncErrorUI(ctx);
 
+  if (event.spec === undefined && deps.getModeSpec(deps.runtime.data, event.mode) !== undefined) {
+    const applied = await deps.applyMode(pi, ctx, event.mode, event.source, event.reason);
+    if (!applied) throw new Error(`Failed to activate mode "${event.mode}"`);
+    return;
+  }
+
   const previousMode = deps.runtime.activeMode;
   deps.runtime.activeMode = event.mode;
   deps.syncModeTools(pi, ctx, event.spec ?? deps.getModeSpec(deps.runtime.data, event.mode));

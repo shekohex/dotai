@@ -98,6 +98,10 @@ export class HerdrAdapter implements MuxAdapter {
     }
   }
 
+  async interruptPane(paneId: string): Promise<void> {
+    await this.client().sendInput(paneId, "", "ctrl+c", { cwd: this.cwd });
+  }
+
   async capturePane(paneId: string, lines = 120): Promise<PaneCapture> {
     return { text: await this.client().readPane(paneId, lines, { cwd: this.cwd }) };
   }

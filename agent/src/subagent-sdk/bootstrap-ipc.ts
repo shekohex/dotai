@@ -2,11 +2,15 @@ import type { ExtensionEvent, ExtensionAPI } from "@earendil-works/pi-coding-age
 import { Value } from "typebox/value";
 
 import { connectSubagentIpcClient, SubagentIpcConfigSchema } from "./ipc.js";
+import type { SubagentParentMessage } from "./parent-message.js";
 import type { ChildBootstrapState } from "./types.js";
 
-export function registerChildIpcBridge(pi: ExtensionAPI, childState: ChildBootstrapState): void {
+export function registerChildIpcBridge(
+  pi: ExtensionAPI,
+  childState: ChildBootstrapState,
+): ((message: SubagentParentMessage) => void) | undefined {
   if (!Value.Check(SubagentIpcConfigSchema, childState.ipc)) {
-    return;
+    return undefined;
   }
   const ipc = connectSubagentIpcClient({ sessionId: childState.sessionId, config: childState.ipc });
   const emit = (event: ExtensionEvent): void => {
@@ -45,4 +49,7 @@ export function registerChildIpcBridge(pi: ExtensionAPI, childState: ChildBootst
     ipc.emit(event);
     ipc.disposeAfterFlush();
   });
+  return (message) => {
+    ipc.emitParentMessage(message);
+  };
 }

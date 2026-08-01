@@ -36,10 +36,17 @@ export const SubagentActivityEntrySchema = Type.Object(
 );
 
 export const SubagentActionSchema = Type.Union(
-  [Type.Literal("start"), Type.Literal("message"), Type.Literal("cancel"), Type.Literal("list")],
+  [
+    Type.Literal("start"),
+    Type.Literal("list"),
+    Type.Literal("inspect"),
+    Type.Literal("message"),
+    Type.Literal("interrupt"),
+    Type.Literal("cancel"),
+  ],
   {
     description:
-      "The subagent action to run. `message` auto-resumes a dead child session before delivery when needed. There is no subagent read action; inspect terminal output from the parent session when available.",
+      "Action to run. `list` shows all child threads and current activity. `inspect` shows one thread's current activity plus recent coordinator events. `message` steers immediately by default or queues with delivery=followUp. `interrupt` stops the current turn while preserving the thread. `cancel` terminates it.",
   },
 );
 export const SubagentDeliverySchema = Type.Union(
@@ -233,13 +240,13 @@ export const SubagentToolParamsSchema = Type.Object({
   sessionId: Type.Optional(
     Type.String({
       description:
-        "Required for message and cancel. Use the full UUID v4 sessionId from a prior subagent result or subagent list output.",
+        "Required for inspect, message, interrupt, and cancel. Use the full UUID v4 sessionId from a prior result or subagent list output.",
     }),
   ),
   message: Type.Optional(
     Type.String({
       description:
-        "Required for message. Sends follow-up text into the child terminal, auto-resuming the child first when its terminal backend is gone. To inspect the reply, use backend terminal output when available or wait for the completion summary.",
+        "Required for message. Steers a running child immediately by default. Set delivery=followUp only to queue after its current turn. Completed persisted children auto-resume with this message as their new task. Use inspect for coordinated activity; use backend terminal output when available only for raw terminal detail.",
     }),
   ),
   delivery: Type.Optional(SubagentDeliverySchema),

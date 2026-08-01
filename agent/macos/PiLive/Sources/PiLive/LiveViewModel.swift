@@ -155,6 +155,8 @@ final class LiveViewModel {
                 agentProgress = ""
             }
             agentProgress = String((agentProgress + text).suffix(2_000))
+        case .threadsSnapshot, .threadEvent:
+            break
         case let .failure(message):
             errorMessage = message
         case .stopped:

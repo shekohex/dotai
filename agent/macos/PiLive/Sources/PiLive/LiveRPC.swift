@@ -62,6 +62,13 @@ enum RPCID: Codable, Sendable, Equatable {
         case let .number(value): try container.encode(value)
         }
     }
+
+    var key: String {
+        switch self {
+        case let .string(value): value
+        case let .number(value): String(value)
+        }
+    }
 }
 
 struct RPCIncomingFrame: Decodable, Sendable {
@@ -117,6 +124,7 @@ struct PairRequestParams: Encodable {
         let outputLevel: Bool
         let deviceSelection: Bool
         let sessionResume: Bool
+        let threadCoordination: Bool
     }
 
     struct Preferences: Encodable {
@@ -138,6 +146,49 @@ struct AgentProgressParams: Codable, Sendable {
     let delegationId: String
     let channel: String
     let text: String
+}
+struct LiveThreadActivity: Codable, Sendable, Equatable {
+    let kind: String
+    let label: String
+    let detail: String?
+    let toolName: String?
+    let startedAt: Double
+    let updatedAt: Double
+}
+struct LiveThreadSnapshot: Codable, Sendable, Equatable, Identifiable {
+    let id: String
+    let parentId: String?
+    let path: String
+    let name: String
+    let task: String
+    let status: String
+    let activity: LiveThreadActivity?
+    let latestCommentary: String?
+    let finalSummary: String?
+    let updatedAt: Double
+}
+struct ThreadsSnapshotParams: Codable, Sendable {
+    let coordinatorId: String
+    let sequence: Int
+    let threads: [LiveThreadSnapshot]
+}
+struct ThreadEventParams: Codable, Sendable {
+    let coordinatorId: String
+    let sequence: Int
+    let type: String
+    let threadId: String
+    let timestamp: Double
+    let thread: LiveThreadSnapshot?
+}
+struct ThreadInspectionResult: Codable, Sendable {
+    let thread: LiveThreadSnapshot
+    let events: [ThreadEventParams]
+}
+struct ThreadIDParams: Codable, Sendable { let threadId: String }
+struct ThreadMessageParams: Codable, Sendable {
+    let threadId: String
+    let message: String
+    let delivery: String
 }
 struct MutedParams: Codable, Sendable { let muted: Bool }
 struct WebRTCStateParams: Codable, Sendable { let state: String }

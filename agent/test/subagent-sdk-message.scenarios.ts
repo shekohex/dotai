@@ -11,8 +11,12 @@ import {
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { createSubagentSDK } from "../src/subagent-sdk/sdk.ts";
+import { connectSubagentIpcClient } from "../src/subagent-sdk/ipc.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
-import { SUBAGENT_STRUCTURED_OUTPUT_ENTRY } from "../src/subagent-sdk/types.ts";
+import {
+  SUBAGENT_STRUCTURED_OUTPUT_ENTRY,
+  type ChildBootstrapState,
+} from "../src/subagent-sdk/types.ts";
 import { createTempDir } from "./test-utils/temp-paths.ts";
 
 const TEST_TIMEOUT_MS = 15_000;
@@ -47,6 +51,7 @@ class FakeMuxAdapter implements MuxAdapter {
   }> = [];
   readonly sent: Array<{ paneId: string; text: string; submitMode?: PaneSubmitMode }> = [];
   readonly killed: string[] = [];
+  readonly interrupted: string[] = [];
   readonly existingPanes = new Set<string>();
 
   async isAvailable(): Promise<boolean> {
@@ -76,6 +81,10 @@ class FakeMuxAdapter implements MuxAdapter {
   async killPane(paneId: string): Promise<void> {
     this.killed.push(paneId);
     this.existingPanes.delete(paneId);
+  }
+
+  async interruptPane(paneId: string): Promise<void> {
+    this.interrupted.push(paneId);
   }
 
   async capturePane(): Promise<{ text: string }> {
@@ -258,6 +267,92 @@ timedTest("message auto-resume uses new message as task not original task", asyn
     await fs.rm(cwd, { recursive: true, force: true });
   }
 });
+
+timedTest("process SDK receives explicit child messages for the parent", async () => {
+  const cwd = await createTempDir("agent-subagent-parent-message-");
+  const fakePi = new FakePi();
+  const fakeMux = new FakeMuxAdapter();
+  let launchedChildState: ChildBootstrapState | undefined;
+  const sdk = createSubagentSDK(fakePi as unknown as ExtensionAPI, {
+    adapter: fakeMux,
+    buildLaunchCommand: (_state, childState) => {
+      launchedChildState = childState;
+      return "pi --session fake";
+    },
+  });
+
+  try {
+    const ctx = createFakeContext({ cwd, sessionFile: path.join(cwd, "parent.jsonl") });
+    const started = await sdk.start({ name: "worker", task: "Inspect tests" }, ctx);
+    const ipc = launchedChildState?.ipc;
+    expect(ipc).toBeDefined();
+    if (ipc === undefined) throw new Error("Missing child IPC route");
+    const child = connectSubagentIpcClient({ sessionId: started.handle.sessionId, config: ipc });
+    try {
+      const received = new Promise((resolve) => sdk.onParentMessage(resolve));
+      child.emitParentMessage({
+        kind: "blocker",
+        message: "Need credentials",
+        delivery: "steer",
+        createdAt: 10,
+      });
+
+      await expect(received).resolves.toEqual({
+        sessionId: started.handle.sessionId,
+        message: {
+          kind: "blocker",
+          message: "Need credentials",
+          delivery: "steer",
+          createdAt: 10,
+        },
+      });
+    } finally {
+      child.dispose();
+    }
+  } finally {
+    sdk.dispose();
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+timedTest(
+  "process SDK interrupts the current child turn without terminating its thread",
+  async () => {
+    const cwd = await createTempDir("agent-subagent-interrupt-");
+    const fakePi = new FakePi();
+    const fakeMux = new FakeMuxAdapter();
+    const sdk = createSubagentSDK(fakePi as unknown as ExtensionAPI, {
+      adapter: fakeMux,
+      buildLaunchCommand: () => "pi --session fake",
+    });
+
+    try {
+      const ctx = createFakeContext({ cwd, sessionFile: path.join(cwd, "parent.jsonl") });
+      const started = await sdk.start({ name: "worker", task: "Run tests" }, ctx);
+      const interrupted = await sdk.interrupt({ sessionId: started.handle.sessionId });
+
+      expect(fakeMux.interrupted).toEqual([started.handle.getState().paneId]);
+      expect(fakeMux.killed).toEqual([]);
+      expect(interrupted).toMatchObject({ status: "idle", event: "updated" });
+
+      await sdk.message(
+        {
+          sessionId: started.handle.sessionId,
+          message: "Continue with unit tests only",
+          delivery: "steer",
+        },
+        ctx,
+      );
+      expect(fakeMux.sent.at(-1)).toMatchObject({
+        text: "Continue with unit tests only",
+        submitMode: "steer",
+      });
+    } finally {
+      sdk.dispose();
+      await fs.rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("message to live subagent sends directly without resume", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;

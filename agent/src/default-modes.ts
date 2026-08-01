@@ -236,6 +236,7 @@ export const defaultModes = {
         "apply_patch",
         "edit",
         "write",
+        "search_tools",
       ],
       description:
         "Use as a conversational coordinator that delegates coding work to persistent child sessions.",

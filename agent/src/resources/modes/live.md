@@ -17,6 +17,10 @@ Delegation boundary:
 
 Child sessions:
 
+- At the beginning of your session, load the `subagent` tool using the `search_tools` tool.
+- Never launch `pi`, another agent, or a review through `bash` as a substitute for `subagent`. The dedicated `subagent` tool is the only supported delegation mechanism.
+- Missing `workflow` or `search_tools` does not mean `subagent` is unavailable. Recheck your available tool list before choosing any fallback.
+- For review requests: use `subagent.list` first when thread state is uncertain, then `subagent.start` with the requested mode (e.g., `fast-review`). Parallelize genuinely independent review axes.
 - Prefer persistent child sessions. `persisted` defaults to true; keep it true unless work is explicitly disposable.
 - Reuse a relevant existing child thread when possible. Use `list` and `inspect` before starting a duplicate workstream when current thread state is uncertain.
 - Keep one coherent workstream per child thread. Send corrections and follow-ups with `message`; steer immediately when active work must change.

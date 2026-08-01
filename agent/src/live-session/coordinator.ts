@@ -150,7 +150,7 @@ function snapshotFromState(state: RuntimeSubagent): LiveThreadSnapshot {
 }
 
 export class LiveSessionCoordinator {
-  readonly #pi: ExtensionAPI;
+  readonly #onDispose: ((coordinator: LiveSessionCoordinator) => void) | undefined;
   #coordinatorId = crypto.randomUUID();
   readonly #threads = new Map<string, LiveThreadSnapshot>();
   readonly #events = new Map<string, LiveCoordinatorEvent[]>();
@@ -159,19 +159,24 @@ export class LiveSessionCoordinator {
     string,
     { text: string; timer: ReturnType<typeof setTimeout> }
   >();
+  #parentMessageApi: Pick<ExtensionAPI, "sendMessage"> | undefined;
   #runtime: LiveSessionThreadRuntime | undefined;
   #root: LiveThreadSnapshot | undefined;
   #sequence = 0;
   #unsubscribeRuntime: Array<() => void> = [];
 
-  constructor(pi: ExtensionAPI) {
-    this.#pi = pi;
+  constructor(onDispose?: (coordinator: LiveSessionCoordinator) => void) {
+    this.#onDispose = onDispose;
   }
 
-  bindThreadRuntime(runtime: LiveSessionThreadRuntime): void {
+  bindThreadRuntime(
+    runtime: LiveSessionThreadRuntime,
+    parentMessageApi: Pick<ExtensionAPI, "sendMessage">,
+  ): void {
     for (const unsubscribe of this.#unsubscribeRuntime) unsubscribe();
     this.#unsubscribeRuntime = [];
     this.#runtime = runtime;
+    this.#parentMessageApi = parentMessageApi;
     for (const state of runtime.list()) this.#recordState(state);
     this.#unsubscribeRuntime.push(
       runtime.onState((state) => {
@@ -186,26 +191,29 @@ export class LiveSessionCoordinator {
     );
   }
 
-  bindSubagentSDK(sdk: SubagentSDK): void {
-    this.bindThreadRuntime({
-      list: () => sdk.list(),
-      async message(params, ctx) {
-        return (await sdk.message(params, ctx)).result.state;
+  bindSubagentSDK(sdk: SubagentSDK, parentMessageApi: Pick<ExtensionAPI, "sendMessage">): void {
+    this.bindThreadRuntime(
+      {
+        list: () => sdk.list(),
+        async message(params, ctx) {
+          return (await sdk.message(params, ctx)).result.state;
+        },
+        interrupt: (params) => sdk.interrupt(params),
+        onState: (listener) =>
+          sdk.onEvent((event) => {
+            listener(event.state);
+          }),
+        onChildEvent: (listener) =>
+          sdk.onAnyChildEvent((event, sessionId) => {
+            listener(sessionId, event);
+          }),
+        onParentMessage: (listener) =>
+          sdk.onParentMessage(({ sessionId, message }) => {
+            listener(sessionId, message);
+          }),
       },
-      interrupt: (params) => sdk.interrupt(params),
-      onState: (listener) =>
-        sdk.onEvent((event) => {
-          listener(event.state);
-        }),
-      onChildEvent: (listener) =>
-        sdk.onAnyChildEvent((event, sessionId) => {
-          listener(sessionId, event);
-        }),
-      onParentMessage: (listener) =>
-        sdk.onParentMessage(({ sessionId, message }) => {
-          listener(sessionId, message);
-        }),
-    });
+      parentMessageApi,
+    );
   }
 
   setRootSession(input: RootSessionInput): void {
@@ -292,6 +300,7 @@ export class LiveSessionCoordinator {
     for (const unsubscribe of this.#unsubscribeRuntime) unsubscribe();
     this.#unsubscribeRuntime = [];
     this.#runtime = undefined;
+    this.#parentMessageApi = undefined;
     for (const buffer of this.#commentaryBuffers.values()) clearTimeout(buffer.timer);
     this.#commentaryBuffers.clear();
     this.#listeners.clear();
@@ -300,6 +309,7 @@ export class LiveSessionCoordinator {
     this.#root = undefined;
     this.#sequence = 0;
     this.#coordinatorId = crypto.randomUUID();
+    this.#onDispose?.(this);
   }
 
   #recordState(state: RuntimeSubagent): void {
@@ -369,7 +379,7 @@ export class LiveSessionCoordinator {
         updatedAt: message.createdAt,
       });
     }
-    this.#pi.sendMessage(
+    this.#parentMessageApi?.sendMessage(
       {
         customType: SUBAGENT_PARENT_MESSAGE_TYPE,
         content: message.message,
@@ -411,12 +421,17 @@ export class LiveSessionCoordinator {
   }
 }
 
-const coordinatorByPi = new WeakMap<ExtensionAPI, LiveSessionCoordinator>();
+const coordinatorByEventBus = new WeakMap<ExtensionAPI["events"], LiveSessionCoordinator>();
 
 export function getLiveSessionCoordinator(pi: ExtensionAPI): LiveSessionCoordinator {
-  const existing = coordinatorByPi.get(pi);
+  const eventBus = pi.events;
+  const existing = coordinatorByEventBus.get(eventBus);
   if (existing !== undefined) return existing;
-  const coordinator = new LiveSessionCoordinator(pi);
-  coordinatorByPi.set(pi, coordinator);
+  const coordinator = new LiveSessionCoordinator((disposedCoordinator) => {
+    if (coordinatorByEventBus.get(eventBus) === disposedCoordinator) {
+      coordinatorByEventBus.delete(eventBus);
+    }
+  });
+  coordinatorByEventBus.set(eventBus, coordinator);
   return coordinator;
 }

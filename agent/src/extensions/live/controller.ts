@@ -633,11 +633,9 @@ export class LiveSessionController {
     const context = `<subagent-update thread="${threadPath}" type="${event.type}">\n${message}\n</subagent-update>`;
     for (const chunk of chunkLiveContext(context)) {
       if (this.#activeDelegationId === undefined) {
-        this.#queueSend(buildSessionContextAppend(chunk, "commentary"));
+        this.#queueSend(buildSessionContextAppend(chunk, "speakable"));
       } else {
-        this.#queueSend(
-          buildDelegationContextAppend(this.#activeDelegationId, chunk, "commentary"),
-        );
+        this.#queueSend(buildDelegationContextAppend(this.#activeDelegationId, chunk, "speakable"));
       }
     }
   }

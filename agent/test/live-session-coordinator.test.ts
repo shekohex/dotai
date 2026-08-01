@@ -1,3 +1,5 @@
+import { EventEmitter } from "node:events";
+
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -6,6 +8,7 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  getLiveSessionCoordinator,
   LiveSessionCoordinator,
   type LiveSessionThreadRuntime,
 } from "../src/live-session/coordinator.js";
@@ -86,6 +89,62 @@ class FakeThreadRuntime implements LiveSessionThreadRuntime {
 }
 
 describe("LiveSessionCoordinator", () => {
+  it("delivers parent messages through the runtime binding owner", () => {
+    const sharedSessionEvents = new EventEmitter();
+    const liveMessages: unknown[] = [];
+    const subagentMessages: unknown[] = [];
+    const liveExtensionApi = {
+      events: sharedSessionEvents,
+      sendMessage(message: unknown) {
+        liveMessages.push(message);
+      },
+    } as unknown as ExtensionAPI;
+    const subagentExtensionApi = {
+      events: sharedSessionEvents,
+      sendMessage(message: unknown) {
+        subagentMessages.push(message);
+      },
+    } as unknown as ExtensionAPI;
+    const liveCoordinator = getLiveSessionCoordinator(liveExtensionApi);
+    const subagentCoordinator = getLiveSessionCoordinator(subagentExtensionApi);
+    const runtime = new FakeThreadRuntime();
+
+    subagentCoordinator.bindThreadRuntime(runtime, subagentExtensionApi);
+    runtime.parentMessageListener?.("child-1", {
+      kind: "progress",
+      message: "Runtime binding owns delivery",
+      delivery: "steer",
+      createdAt: 2,
+    });
+
+    expect(subagentCoordinator).toBe(liveCoordinator);
+    expect(liveMessages).toEqual([]);
+    expect(subagentMessages).toEqual([
+      expect.objectContaining({
+        customType: "subagent-parent-message",
+        content: "Runtime binding owns delivery",
+      }),
+    ]);
+  });
+
+  it("evicts a disposed coordinator without evicting its replacement", () => {
+    const sharedSessionEvents = new EventEmitter();
+    const extensionApi = {
+      events: sharedSessionEvents,
+      sendMessage() {},
+    } as unknown as ExtensionAPI;
+    const firstCoordinator = getLiveSessionCoordinator(extensionApi);
+
+    expect(getLiveSessionCoordinator(extensionApi)).toBe(firstCoordinator);
+    firstCoordinator.dispose();
+
+    const replacementCoordinator = getLiveSessionCoordinator(extensionApi);
+    expect(replacementCoordinator).not.toBe(firstCoordinator);
+
+    firstCoordinator.dispose();
+    expect(getLiveSessionCoordinator(extensionApi)).toBe(replacementCoordinator);
+  });
+
   it("steers explicit child messages to parent and records ordered activity", () => {
     const sentMessages: Array<{ message: unknown; options: unknown }> = [];
     const pi = {
@@ -94,8 +153,8 @@ describe("LiveSessionCoordinator", () => {
       },
     } as ExtensionAPI;
     const runtime = new FakeThreadRuntime();
-    const coordinator = new LiveSessionCoordinator(pi);
-    coordinator.bindThreadRuntime(runtime);
+    const coordinator = new LiveSessionCoordinator();
+    coordinator.bindThreadRuntime(runtime, pi);
     coordinator.setRootSession({
       sessionId: "parent-1",
       name: "Pi",
@@ -206,9 +265,10 @@ describe("LiveSessionCoordinator", () => {
   it("batches child commentary before publishing thread updates", () => {
     vi.useFakeTimers();
     try {
-      const coordinator = new LiveSessionCoordinator({ sendMessage() {} } as ExtensionAPI);
+      const pi = { sendMessage() {} } as ExtensionAPI;
+      const coordinator = new LiveSessionCoordinator();
       const runtime = new FakeThreadRuntime();
-      coordinator.bindThreadRuntime(runtime);
+      coordinator.bindThreadRuntime(runtime, pi);
       const events: string[] = [];
       coordinator.subscribe((event) => {
         if (event.type === "thread.commentary" && typeof event.data.text === "string") {

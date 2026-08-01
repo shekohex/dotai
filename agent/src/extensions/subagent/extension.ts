@@ -53,7 +53,7 @@ function installEnabledSubagentExtension(
   });
   const sdk = createSubagentSDK(pi, { adapter, buildLaunchCommand, hooks });
   const coordinator = getLiveSessionCoordinator(pi);
-  coordinator.bindSubagentSDK(sdk);
+  coordinator.bindSubagentSDK(sdk, pi);
   const subagentTool = createSubagentToolDefinition(sdk, coordinator);
 
   pi.registerTool(subagentTool);

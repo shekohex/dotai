@@ -26,6 +26,7 @@ final class LivePairingClient {
 
     private let eventContinuation: AsyncStream<LiveClientEvent>.Continuation
     private let peer = LiveWebRTCPeer()
+    private let screenCaptureHandler: any ScreenCaptureRPCHandling
     private let tunnel = SSHTunnel()
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -43,7 +44,8 @@ final class LivePairingClient {
     private var nextRequestID = 1
     private var pendingRequests: [String: CheckedContinuation<JSONValue, Error>] = [:]
 
-    init() {
+    init(screenCaptureHandler: any ScreenCaptureRPCHandling = ScreenCaptureRPCHandler()) {
+        self.screenCaptureHandler = screenCaptureHandler
         let pair = AsyncStream.makeStream(of: LiveClientEvent.self)
         events = pair.stream
         eventContinuation = pair.continuation
@@ -113,7 +115,8 @@ final class LivePairingClient {
                     outputLevel: true,
                     deviceSelection: false,
                     sessionResume: true,
-                    threadCoordination: true
+                    threadCoordination: true,
+                    screenCapture: true
                 ),
                 preferences: .init(
                     voice: voice.rawValue,
@@ -366,6 +369,17 @@ final class LivePairingClient {
     }
 
     private func handleRequest(_ method: String, id: RPCID, params: JSONValue?) async throws {
+        if let result = try await routeScreenCaptureRequest(
+            method: method,
+            requestID: id,
+            handler: screenCaptureHandler
+        ) {
+            try await send(
+                RPCSuccess(id: id, result: result),
+                maximumBytes: maxScreenCaptureEncodedFrameBytes
+            )
+            return
+        }
         switch method {
         case "codex.createAttestation":
             try await send(RPCSuccess(id: id, result: await CodexDeviceCheck.generate()))
@@ -413,12 +427,16 @@ final class LivePairingClient {
         return try value.decode(resultType)
     }
 
-    private func send<Message: Encodable>(_ message: Message) async throws {
+    private func send<Message: Encodable>(
+        _ message: Message,
+        maximumBytes: Int = maxLiveRPCFrameBytes
+    ) async throws {
         guard let socket else { throw PiLiveError.protocolError("Pairing socket is closed") }
-        let data = try encoder.encode(message)
-        guard let string = String(data: data, encoding: .utf8) else {
-            throw PiLiveError.protocolError("Unable to encode JSON-RPC message")
-        }
+        let string = try encodeLiveRPCFrame(
+            message,
+            encoder: encoder,
+            maximumBytes: maximumBytes
+        )
         try await socket.send(.string(string))
     }
 

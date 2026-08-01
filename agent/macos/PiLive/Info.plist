@@ -24,5 +24,7 @@
   <true/>
   <key>NSMicrophoneUsageDescription</key>
   <string>Pi Live uses the microphone for realtime voice conversations.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Pi Live captures your current display only when you explicitly ask Pi to inspect it.</string>
 </dict>
 </plist>

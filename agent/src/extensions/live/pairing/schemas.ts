@@ -64,6 +64,7 @@ export const PairRequestParamsSchema = Type.Object(
         deviceSelection: Type.Boolean(),
         sessionResume: Type.Literal(true),
         threadCoordination: Type.Literal(true),
+        screenCapture: Type.Optional(Type.Boolean()),
       },
       { additionalProperties: false },
     ),
@@ -77,6 +78,20 @@ export const PairRequestParamsSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+  },
+  { additionalProperties: false },
+);
+
+export const ScreenCaptureResultSchema = Type.Object(
+  {
+    mimeType: Type.String({ minLength: 1, maxLength: 64 }),
+    data: Type.String({ minLength: 4 }),
+    width: Type.Integer({ minimum: 1, maximum: 16_384 }),
+    height: Type.Integer({ minimum: 1, maximum: 16_384 }),
+    displayId: Type.String({ minLength: 1, maxLength: 256 }),
+    timestamp: Type.Number({ minimum: 0 }),
+    byteSize: Type.Integer({ minimum: 1 }),
+    sha256: Type.String({ pattern: "^[a-f0-9]{64}$" }),
   },
   { additionalProperties: false },
 );
@@ -149,6 +164,7 @@ export type PairRequestParams = Static<typeof PairRequestParamsSchema>;
 export type ResumeRequestParams = Static<typeof ResumeRequestParamsSchema>;
 export type ThreadIdParams = Static<typeof ThreadIdParamsSchema>;
 export type ThreadMessageParams = Static<typeof ThreadMessageParamsSchema>;
+export type ScreenCaptureResult = Static<typeof ScreenCaptureResultSchema>;
 
 export type LivePairingEndpoint =
   | { type: "local"; url: string }
@@ -214,6 +230,12 @@ export function parseThreadIdParams(value: unknown): ThreadIdParams | undefined 
 export function parseThreadMessageParams(value: unknown): ThreadMessageParams | undefined {
   return Value.Check(ThreadMessageParamsSchema, value)
     ? Value.Parse(ThreadMessageParamsSchema, value)
+    : undefined;
+}
+
+export function parseScreenCaptureResult(value: unknown): ScreenCaptureResult | undefined {
+  return Value.Check(ScreenCaptureResultSchema, value)
+    ? Value.Parse(ScreenCaptureResultSchema, value)
     : undefined;
 }
 

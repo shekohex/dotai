@@ -1,9 +1,12 @@
 import {
   copyToClipboard,
+  type CustomEntry,
+  type EntryRenderOptions,
   type ExtensionAPI,
   type ExtensionContext,
   type MessageEndEvent,
   type MessageStartEvent,
+  type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text, type Component } from "@earendil-works/pi-tui";
 import {
@@ -31,6 +34,7 @@ import {
 import { getLiveSessionCoordinator } from "../../live-session/coordinator.js";
 import { MODE_ACTIVATE_EVENT } from "../modes/index.js";
 import { enforceLiveWritePolicy } from "./write-policy.js";
+import { createLookAtToolDefinition, LiveScreenCaptureSession } from "./screen-capture.js";
 
 const ANIMATION_INTERVAL_MS = 80;
 
@@ -44,6 +48,7 @@ interface LiveCommandOptions {
 interface ActiveLiveSession {
   controller: LiveSessionController;
   pairing: LivePairingServer;
+  screenCapture: LiveScreenCaptureSession;
   stop(): Promise<void>;
 }
 
@@ -127,27 +132,40 @@ function livePanel(
   };
 }
 
+function renderTranscriptEntry(
+  entry: CustomEntry<LiveTranscriptEntryData>,
+  { expanded }: EntryRenderOptions,
+  theme: Theme,
+): Component {
+  const transcript = entry.data ?? {
+    role: "assistant",
+    text: "Voice transcript unavailable",
+    turn: 0,
+    timestamp: new Date(entry.timestamp).getTime(),
+  };
+  const speaker = transcript.role === "user" ? "you" : "pi";
+  const labelText = `[live · ${speaker}]`;
+  const label = theme.fg("customMessageLabel", theme.bold(labelText));
+  if (!expanded) {
+    const body = transcript.text.replaceAll(/\s+/gu, " ").trim();
+    return new Text(`${label} ${theme.italic(theme.fg("dim", body))}`, 1, 0);
+  }
+
+  const continuationIndent = " ".repeat(labelText.length + 1);
+  const bodyLines = transcript.text.split(/\r?\n/u).map((line, index) => {
+    const prefix = index === 0 ? `${label} ` : continuationIndent;
+    return `${prefix}${theme.italic(theme.fg("dim", line))}`;
+  });
+  bodyLines.push(
+    `${continuationIndent}${theme.fg("dim", new Date(transcript.timestamp).toLocaleString())}`,
+  );
+  return new Text(bodyLines.join("\n"), 1, 0);
+}
+
 function registerTranscriptRenderer(pi: ExtensionAPI): void {
   pi.registerEntryRenderer<LiveTranscriptEntryData>(
     LIVE_TRANSCRIPT_ENTRY_TYPE,
-    (entry, { expanded }, theme) => {
-      const transcript = entry.data ?? {
-        role: "assistant",
-        text: "Voice transcript unavailable",
-        turn: 0,
-        timestamp: new Date(entry.timestamp).getTime(),
-      };
-      const box = new Box(1, 1, (line) => theme.bg("customMessageBg", line));
-      const speaker = transcript.role === "user" ? "you" : "Pi";
-      const label = theme.fg("accent", theme.bold(`[live · ${speaker}]`));
-      box.addChild(new Text(`${label} ${theme.fg("customMessageText", transcript.text)}`, 0, 0));
-      if (expanded) {
-        box.addChild(
-          new Text(theme.fg("dim", new Date(transcript.timestamp).toLocaleString()), 0, 0),
-        );
-      }
-      return box;
-    },
+    renderTranscriptEntry,
   );
 }
 
@@ -211,6 +229,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
   const coordinator = getLiveSessionCoordinator(pi);
   registerTranscriptRenderer(pi);
   registerDelegationRenderers(pi);
+  pi.registerTool(createLookAtToolDefinition(() => active?.screenCapture));
 
   pi.registerFlag("live", {
     description: "Start in live coordinator mode and launch Pi Live voice",
@@ -295,6 +314,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
         await ctx.ui.custom<void>((tui, theme, _keybindings, done) => {
           let finished = false;
           let controller: LiveSessionController;
+          const screenCapture = new LiveScreenCaptureSession(ctx.sessionManager.getSessionId());
           const finish = (error?: Error): void => {
             if (finished) return;
             finished = true;
@@ -327,6 +347,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
             voice: options.voice,
             customInstructions: settings.instructions,
             coordinator,
+            screenCapture,
             callbacks: {
               onPhase(phase) {
                 visualizer.setPhase(phase);
@@ -351,7 +372,7 @@ export default function liveExtension(pi: ExtensionAPI): void {
             await controller.stop();
             finish();
           };
-          active = { controller, pairing, stop };
+          active = { controller, pairing, screenCapture, stop };
           let frame = 0;
           const interval = setInterval(() => {
             frame += 1;
@@ -420,4 +441,4 @@ export default function liveExtension(pi: ExtensionAPI): void {
   });
 }
 
-export const _test = { parseLiveCommand };
+export const _test = { parseLiveCommand, registerTranscriptRenderer, renderTranscriptEntry };

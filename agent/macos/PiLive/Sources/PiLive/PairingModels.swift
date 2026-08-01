@@ -126,6 +126,7 @@ enum PiLiveError: LocalizedError, Sendable {
     case missingCoderToken
     case missingSSHTarget
     case microphoneDenied
+    case screenRecordingDenied
     case pairingRejected(String)
     case protocolError(String)
 
@@ -137,6 +138,7 @@ enum PiLiveError: LocalizedError, Sendable {
         case .missingCoderToken: "Save a Coder session token before using the Coder adapter."
         case .missingSSHTarget: "Enter the same SSH target used to access the workspace."
         case .microphoneDenied: "Microphone access is required for Pi Live."
+        case .screenRecordingDenied: "Screen Recording access is required to capture the display."
         case let .pairingRejected(message): "Pairing rejected: \(message)"
         case let .protocolError(message): "Pi Live protocol error: \(message)"
         }

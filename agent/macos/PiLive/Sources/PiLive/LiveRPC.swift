@@ -125,6 +125,7 @@ struct PairRequestParams: Encodable {
         let deviceSelection: Bool
         let sessionResume: Bool
         let threadCoordination: Bool
+        let screenCapture: Bool
     }
 
     struct Preferences: Encodable {
@@ -242,8 +243,37 @@ struct ResumeResult: Codable, Sendable {
     let resumed: Bool
 }
 
+struct ScreenCaptureResult: Codable, Sendable, Equatable {
+    let mimeType: String
+    let data: String
+    let width: Int
+    let height: Int
+    let displayId: String
+    let timestamp: Double
+    let byteSize: Int
+    let sha256: String
+}
+
 let maxLiveRPCFrameBytes = 512 * 1024
 let maxLiveSDPBytes = 256 * 1024
+let maxScreenCaptureImageBytes = 6 * 1024 * 1024
+let maxScreenCaptureEncodedFrameBytes = 8 * 1024 * 1024
+let targetScreenCaptureEncodedFrameBytes = maxScreenCaptureEncodedFrameBytes - 16 * 1024
+
+func encodeLiveRPCFrame<Message: Encodable>(
+    _ message: Message,
+    encoder: JSONEncoder = JSONEncoder(),
+    maximumBytes: Int = maxLiveRPCFrameBytes
+) throws -> String {
+    let data = try encoder.encode(message)
+    guard data.count <= maximumBytes else {
+        throw PiLiveError.protocolError("JSON-RPC frame is oversized")
+    }
+    guard let string = String(data: data, encoding: .utf8) else {
+        throw PiLiveError.protocolError("Unable to encode JSON-RPC message")
+    }
+    return string
+}
 
 extension Optional where Wrapped == JSONValue {
     func decode<Value: Decodable>(_ type: Value.Type, default defaultValue: Value? = nil) throws -> Value {

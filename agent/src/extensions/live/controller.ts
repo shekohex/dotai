@@ -55,6 +55,7 @@ import type {
 } from "../../live-session/coordinator.js";
 import { parseThreadIdParams, parseThreadMessageParams } from "./pairing/server.js";
 import { extractMessageText, getConversationMessages } from "../session-launch-utils.js";
+import { LiveScreenCaptureSession } from "./screen-capture.js";
 
 const DEFAULT_VOICE = "sol";
 const OUTPUT_ACTIVE_LEVEL = 0.015;
@@ -110,6 +111,7 @@ export interface LiveSessionControllerOptions {
   voice?: string;
   customInstructions?: string;
   coordinator: LiveSessionCoordinator;
+  screenCapture?: LiveScreenCaptureSession;
 }
 
 function errorFrom(cause: unknown): Error {
@@ -164,6 +166,7 @@ export class LiveSessionController {
   readonly #voice: string;
   readonly #customInstructions: string;
   readonly #coordinator: LiveSessionCoordinator;
+  readonly #screenCapture: LiveScreenCaptureSession;
   #activeVoice: string;
   #activeInstructions: string;
   #diagnosticsEnabled = false;
@@ -215,6 +218,9 @@ export class LiveSessionController {
     this.#voice = voice !== undefined && voice.length > 0 ? voice : DEFAULT_VOICE;
     this.#customInstructions = options.customInstructions?.trim() ?? "";
     this.#coordinator = options.coordinator;
+    this.#screenCapture =
+      options.screenCapture ??
+      new LiveScreenCaptureSession(options.context.sessionManager.getSessionId());
     this.#activeVoice = this.#voice;
     this.#activeInstructions = this.#customInstructions;
     this.#agentProgress = new LiveAgentProgressBuffer((progress) => {
@@ -243,6 +249,7 @@ export class LiveSessionController {
       const connection = await this.#pairing.accept();
       if (this.#stopped) return;
       this.#connection = connection;
+      this.#screenCapture.attach(connection);
       connection.onNotification((method, params) => {
         this.#guardEvent(() => {
           this.#handleAppEvent(method, params);
@@ -507,6 +514,7 @@ export class LiveSessionController {
     this.#unsubscribeCoordinator?.();
     this.#unsubscribeCoordinator = undefined;
     this.#conversation.reset();
+    await this.#screenCapture.close();
     await this.#pairing.close();
     if (cleanupError !== undefined) {
       appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "session.cleanup-warning", {

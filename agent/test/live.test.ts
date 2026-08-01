@@ -10,7 +10,7 @@ import {
 } from "../src/extensions/live/agent-response.js";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { MessageUpdateEvent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, MessageUpdateEvent } from "@earendil-works/pi-coding-agent";
 import { _test as liveExtensionTest } from "../src/extensions/live/index.js";
 import {
   LiveAgentProgressBuffer,
@@ -56,6 +56,7 @@ import {
 import { defaultModes } from "../src/default-modes.js";
 import { groupedExtensionsA } from "../src/extensions/definitions-group-a.js";
 import { enforceLiveWritePolicy } from "../src/extensions/live/write-policy.js";
+import { syncModeTools } from "../src/extensions/modes/tools.js";
 
 const servers: LivePairingServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -135,6 +136,7 @@ describe("Pi Live pairing", () => {
       preferredVoice: "maple",
       customInstructions: "Keep replies especially concise.",
       diagnosticsEnabled: true,
+      supportsScreenCapture: false,
     });
     connection.onRequest((method) => {
       if (method === "threads.list") return { threads: [{ id: "child-1" }] };
@@ -638,6 +640,23 @@ describe("Pi Live Codex protocol", () => {
     expect(defaultModes.modes.live.systemPrompt).toContain(
       "Every task and message sent to a child session MUST be concise, self-contained, plain English",
     );
+  });
+
+  it("activates look_at only when the live mode allowlist requests it", () => {
+    let activeTools = ["read"];
+    const pi = {
+      getAllTools: () => [{ name: "read" }, { name: "look_at" }],
+      getActiveTools: () => activeTools,
+      setActiveTools: (tools: string[]) => {
+        activeTools = tools;
+      },
+    } as unknown as ExtensionAPI;
+
+    syncModeTools(pi, {} as never, defaultModes.modes.live);
+    expect(activeTools).toEqual(["look_at", "read"]);
+
+    syncModeTools(pi, {} as never, defaultModes.modes.review);
+    expect(activeTools).toEqual(["read"]);
   });
 
   it("registers Live after Modes so --live starts after mode restoration", () => {

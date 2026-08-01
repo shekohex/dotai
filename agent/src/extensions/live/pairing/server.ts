@@ -23,7 +23,8 @@ const DEFAULT_PAIRING_TTL_MS = 120_000;
 const DEFAULT_HEARTBEAT_MS = 10_000;
 const DEFAULT_RECONNECT_GRACE_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 30_000;
-const MAX_SDP_BYTES = 256 * 1024;
+export const MAX_LIVE_RPC_FRAME_BYTES = 512 * 1024;
+export const MAX_SCREEN_CAPTURE_RPC_FRAME_BYTES = 8 * 1024 * 1024;
 
 export type LivePairingMode = "auto" | "local" | "coder" | "ssh" | "direct";
 
@@ -140,10 +141,16 @@ export class LiveMediaConnection {
   readonly preferredVoice: LiveVoice | undefined;
   readonly customInstructions: string | undefined;
   readonly diagnosticsEnabled: boolean | undefined;
+  readonly supportsScreenCapture: boolean;
   #socket: WebSocket | undefined;
   readonly #pending = new Map<
     string,
-    { resolve: (value: unknown) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }
+    {
+      method: string;
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+      timeout: NodeJS.Timeout;
+    }
   >();
   readonly #notificationHandlers = new Set<NotificationHandler>();
   readonly #requestHandlers = new Set<RequestHandler>();
@@ -157,11 +164,13 @@ export class LiveMediaConnection {
   constructor(
     socket: WebSocket,
     preferences: PairRequestParams["preferences"] | undefined,
+    supportsScreenCapture: boolean,
     onTransportClose: (error: Error | undefined, clean: boolean) => void,
   ) {
     this.preferredVoice = preferences?.voice;
     this.customInstructions = preferences?.instructions;
     this.diagnosticsEnabled = preferences?.diagnosticsEnabled;
+    this.supportsScreenCapture = supportsScreenCapture;
     this.#onTransportClose = onTransportClose;
     this.#bindSocket(socket);
   }
@@ -202,14 +211,31 @@ export class LiveMediaConnection {
     this.#send({ jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) });
   }
 
-  request(method: string, params?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<unknown> {
+  request(
+    method: string,
+    params?: unknown,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     if (this.open) {
-      return this.#requestOpen(method, params, timeoutMs);
+      return this.#requestOpen(method, params, timeoutMs, signal);
     }
     return Promise.reject(new Error("Pi Live app is disconnected"));
   }
 
-  #requestOpen(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
+  #requestOpen(
+    method: string,
+    params: unknown,
+    timeoutMs: number,
+    signal: AbortSignal | undefined,
+  ): Promise<unknown> {
+    if (signal?.aborted === true) {
+      return Promise.reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new DOMException("Cancelled", "AbortError"),
+      );
+    }
     const id = String(this.#nextRequestId++);
     const promise = new Promise<unknown>((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -218,10 +244,29 @@ export class LiveMediaConnection {
       }, timeoutMs);
       timeout.unref?.();
       this.#pending.set(id, {
-        resolve,
-        reject,
+        method,
+        resolve: (value) => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+        reject: (error) => {
+          signal?.removeEventListener("abort", onAbort);
+          reject(error);
+        },
         timeout,
       });
+      const onAbort = (): void => {
+        const pending = this.#pending.get(id);
+        if (pending === undefined) return;
+        this.#pending.delete(id);
+        clearTimeout(timeout);
+        reject(
+          signal?.reason instanceof Error
+            ? signal.reason
+            : new DOMException("Cancelled", "AbortError"),
+        );
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
     });
     this.#send({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) });
     return promise;
@@ -258,7 +303,11 @@ export class LiveMediaConnection {
 
   #send(value: unknown): void {
     if (!this.open) throw new Error("Pi Live app is disconnected");
-    this.#socket?.send(JSON.stringify(value));
+    const payload = JSON.stringify(value);
+    if (Buffer.byteLength(payload) > MAX_LIVE_RPC_FRAME_BYTES) {
+      throw new Error("Pi Live JSON-RPC frame is oversized");
+    }
+    this.#socket?.send(payload);
   }
 
   #bindSocket(socket: WebSocket): void {
@@ -267,7 +316,22 @@ export class LiveMediaConnection {
     let transportError: Error | undefined;
     socket.on("message", (data, isBinary) => {
       if (this.#terminated || generation !== this.#transportGeneration || isBinary) return;
-      this.#handleMessage(rawDataText(data));
+      const payload = rawDataText(data);
+      const payloadBytes = Buffer.byteLength(payload);
+      if (payloadBytes > MAX_SCREEN_CAPTURE_RPC_FRAME_BYTES) {
+        socket.close(1009, "frame too large");
+        return;
+      }
+      const message = parseJsonRpcMessage(payload);
+      if (message === undefined) {
+        if (payloadBytes > MAX_LIVE_RPC_FRAME_BYTES) socket.close(1009, "frame too large");
+        return;
+      }
+      if (payloadBytes > MAX_LIVE_RPC_FRAME_BYTES && !this.#isPendingCaptureResponse(message)) {
+        socket.close(1009, "frame too large");
+        return;
+      }
+      this.#handleMessage(message);
     });
     socket.on("error", (cause) => {
       transportError = errorFrom(cause);
@@ -280,9 +344,7 @@ export class LiveMediaConnection {
     });
   }
 
-  #handleMessage(payload: string): void {
-    const message = parseJsonRpcMessage(payload);
-    if (message === undefined) return;
+  #handleMessage(message: NonNullable<ReturnType<typeof parseJsonRpcMessage>>): void {
     if (message.kind === "notification") {
       for (const handler of this.#notificationHandlers)
         handler(message.value.method, message.value.params);
@@ -302,6 +364,11 @@ export class LiveMediaConnection {
     } else {
       pending.reject(new Error(message.value.error.message));
     }
+  }
+
+  #isPendingCaptureResponse(message: NonNullable<ReturnType<typeof parseJsonRpcMessage>>): boolean {
+    if (message.kind !== "response") return false;
+    return this.#pending.get(String(message.value.id))?.method === "screen.capture";
   }
 
   #handleRequest(id: JsonRpcId, method: string, params: unknown): void {
@@ -343,7 +410,7 @@ export class LivePairingServer {
   readonly #resumeToken = randomBytes(32).toString("base64url");
   readonly #websocketServer = new WebSocketServer({
     noServer: true,
-    maxPayload: MAX_SDP_BYTES * 2,
+    maxPayload: MAX_SCREEN_CAPTURE_RPC_FRAME_BYTES,
   });
   #server: Server | undefined;
   #descriptor: PairingDescriptor | undefined;
@@ -478,7 +545,12 @@ export class LivePairingServer {
         socket.close(1003, "text frames required");
         return;
       }
-      const message = parseJsonRpcMessage(rawDataText(data));
+      const payload = rawDataText(data);
+      if (Buffer.byteLength(payload) > MAX_LIVE_RPC_FRAME_BYTES) {
+        socket.close(1009, "frame too large");
+        return;
+      }
+      const message = parseJsonRpcMessage(payload);
       if (message === undefined || message.kind !== "request") {
         socket.send(jsonRpcError("0", -32600, "First request must be pair or resume"));
         socket.close(1008, "pair first");
@@ -534,9 +606,14 @@ export class LivePairingServer {
         },
       }),
     );
-    const connection = new LiveMediaConnection(socket, params.preferences, (error, clean) => {
-      this.#handleTransportClose(error, clean);
-    });
+    const connection = new LiveMediaConnection(
+      socket,
+      params.preferences,
+      params.capabilities.screenCapture === true,
+      (error, clean) => {
+        this.#handleTransportClose(error, clean);
+      },
+    );
     this.#connection = connection;
     this.#acceptResolve?.(connection);
     this.#startHeartbeat(connection);

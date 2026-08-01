@@ -66,12 +66,14 @@ final class PairingModelsTests: XCTestCase {
             outputLevel: true,
             deviceSelection: false,
             sessionResume: true,
-            threadCoordination: true
+            threadCoordination: true,
+            screenCapture: true
         )
         let data = try JSONEncoder().encode(capabilities)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["sessionResume"] as? Bool, true)
         XCTAssertEqual(object["threadCoordination"] as? Bool, true)
+        XCTAssertEqual(object["screenCapture"] as? Bool, true)
     }
 
     func testDecodesAgentProgressNotification() throws {

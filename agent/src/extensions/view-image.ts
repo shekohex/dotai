@@ -1,4 +1,4 @@
-import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import {
   defineTool,
   type ExtensionAPI,
@@ -22,7 +22,7 @@ type ViewImageDetails = {
   describedBy?: string;
 };
 
-function modelSupportsImages(model: Model<Api> | undefined): boolean {
+export function modelSupportsImages(model: Model<Api> | undefined): boolean {
   return model?.input.includes("image") === true;
 }
 
@@ -128,6 +128,22 @@ async function describeImage(
   throw new Error(`view_image could not describe the image: ${reason}`);
 }
 
+export async function presentImageToModel(
+  image: ImageContent,
+  directText: string,
+  signal: AbortSignal | undefined,
+  ctx: ExtensionContext,
+): Promise<{ content: Array<TextContent | ImageContent>; describedBy?: string }> {
+  if (modelSupportsImages(ctx.model)) {
+    return { content: [{ type: "text", text: directText }, image] };
+  }
+  const result = await describeImage(image, signal, ctx);
+  return {
+    content: [{ type: "text", text: result.description }],
+    describedBy: `${result.model.provider}/${result.model.id}`,
+  };
+}
+
 export function createViewImageToolDefinition() {
   return defineTool<typeof ViewImageParams, ViewImageDetails>({
     name: "view_image",
@@ -142,16 +158,15 @@ export function createViewImageToolDefinition() {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const path = params.path.startsWith("@") ? params.path.slice(1) : params.path;
       const image = await loadImage(path, signal, ctx);
-      if (modelSupportsImages(ctx.model)) {
-        return {
-          content: [{ type: "text", text: `Viewed image: ${path}` }, image],
-          details: { path },
-        };
-      }
-      const result = await describeImage(image, signal, ctx);
+      const presentation = await presentImageToModel(image, `Viewed image: ${path}`, signal, ctx);
       return {
-        content: [{ type: "text", text: result.description }],
-        details: { path, describedBy: `${result.model.provider}/${result.model.id}` },
+        content: presentation.content,
+        details: {
+          path,
+          ...(presentation.describedBy === undefined
+            ? {}
+            : { describedBy: presentation.describedBy }),
+        },
       };
     },
   });

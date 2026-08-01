@@ -90,7 +90,7 @@ export function handleRefreshError(
   }
 
   if (isActive) {
-    const text = renderUnavailableStatusText(ctx, cached, providerId);
+    const text = renderUnavailableStatusText(ctx, cached);
     if (state.lastPublishedStatusText !== text) {
       state.lastPublishedStatusText = text;
       ctx.ui.setStatus("openusage", text);
@@ -157,26 +157,22 @@ function maybeEmitThresholdAlert(
   });
 }
 
-function getMetricLabels(
-  snapshot: UsageSnapshot | undefined,
-  providerId: SupportedProviderId,
-): {
+function getMetricLabels(snapshot: UsageSnapshot | undefined): {
   session: string;
   weekly: string;
 } {
   return {
-    session: snapshot?.metricShortLabels?.session5h ?? (providerId === "google" ? "P24" : "5h"),
-    weekly: snapshot?.metricShortLabels?.weekly ?? (providerId === "google" ? "F24" : "wk"),
+    session: snapshot?.metricShortLabels?.session5h ?? "5h",
+    weekly: snapshot?.metricShortLabels?.weekly ?? "wk",
   };
 }
 
 function renderUnavailableStatusText(
   ctx: ExtensionContext,
   snapshot: UsageSnapshot | undefined,
-  providerId: SupportedProviderId,
 ): string {
   const theme = ctx.ui.theme;
-  const labels = getMetricLabels(snapshot, providerId);
+  const labels = getMetricLabels(snapshot);
   return `${theme.fg("dim", `${labels.session} `)}${theme.fg("warning", "n/a")}${theme.fg("dim", ` ${labels.weekly} `)}${theme.fg("warning", "n/a")}`;
 }
 

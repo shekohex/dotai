@@ -8,12 +8,16 @@ import { setOpenAIBetterFastEnabled } from "../src/extensions/openai-better/sett
 describe("openai better fast mode", () => {
   it("supports codex-openai and openai-codex default fast models", () => {
     expect(_test.DEFAULT_SUPPORTED_MODELS).toEqual([
+      "codex-openai/gpt-5.6-sol",
+      "codex-openai/gpt-5.6-terra",
+      "codex-openai/gpt-5.6-luna",
       "codex-openai/gpt-5.4",
       "codex-openai/gpt-5.5",
-      "codex-openai/gpt-5.4-mini",
       "openai-codex/gpt-5.4",
       "openai-codex/gpt-5.5",
-      "openai-codex/gpt-5.4-mini",
+      "openai-codex/gpt-5.6-sol",
+      "openai-codex/gpt-5.6-terra",
+      "openai-codex/gpt-5.6-luna",
     ]);
   });
 

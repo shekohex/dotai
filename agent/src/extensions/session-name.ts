@@ -8,7 +8,7 @@ const MAX_INPUT_CHARS = 500;
 const RECENT_USER_MESSAGE_COUNT = 4;
 
 const PRIMARY_PROVIDER = "openai";
-const PRIMARY_MODEL_ID = "gpt-5.4-mini";
+const PRIMARY_MODEL_ID = "gpt-5.6-luna";
 const PRIMARY_REASONING: ThinkingLevel = "medium";
 
 const FALLBACK_PROVIDER = "opencode-go";

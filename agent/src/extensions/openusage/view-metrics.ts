@@ -198,9 +198,6 @@ function providerDisplayName(providerId: SupportedProviderId): string {
   if (providerId === "zai") {
     return "Z.ai";
   }
-  if (providerId === "google") {
-    return "Google";
-  }
   return "Codex";
 }
 

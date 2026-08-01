@@ -159,7 +159,7 @@ detection plus non-Latin prose analysis before `sendMessage()`. Concise English 
 immediately, while English prose copied directly from the transcript is synthesized into a clean,
 standalone task. A non-English delegation is sent to an isolated fast
 normalizer model—not the active AgentSession—which translates and synthesizes one concise English
-execution task. The preferred fallback order is `codex-openai/gpt-5.4-mini`,
+execution task. The preferred fallback order is `codex-openai/gpt-5.6-luna`,
 `opencode-go/deepseek-v4-flash`, then `deepseek/deepseek-v4-flash`, followed by the remaining shared
 fallback models. Requests use minimal reasoning, a small output budget, no retries, and a short
 timeout. The original non-English request remains UI-only metadata and never enters AgentSession.

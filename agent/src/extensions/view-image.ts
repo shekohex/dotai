@@ -11,10 +11,7 @@ import { completeSimpleModel } from "./pi-ai-models.js";
 
 const IMAGE_DESCRIPTION_SYSTEM_PROMPT =
   "Describe the supplied image in detail. Output only the image description, with no preamble or other commentary.";
-const PREFERRED_DESCRIPTION_MODEL_KEYS = [
-  "openai-codex/gpt-5.4-mini",
-  "openai-codex/gpt-5.6-luna",
-] as const;
+const PREFERRED_DESCRIPTION_MODEL_KEYS = ["openai-codex/gpt-5.6-luna"] as const;
 
 const ViewImageParams = Type.Object({
   path: Type.String({ description: "Path to an image file, relative to the current directory" }),

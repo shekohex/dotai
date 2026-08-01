@@ -728,7 +728,6 @@
   function providerLabel(provider) {
     if (!provider) return "";
     if (provider === "openai") return "OpenAI";
-    if (provider === "google") return "Google";
     if (provider === "anthropic") return "Anthropic";
     return provider.charAt(0).toUpperCase() + provider.slice(1);
   }

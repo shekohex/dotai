@@ -396,7 +396,7 @@ describe("Pi Live Codex protocol", () => {
 
   it("prefers fast helper models and sanitizes normalized delegations", () => {
     expect(LIVE_DELEGATION_NORMALIZER_MODELS.slice(0, 3)).toEqual([
-      { provider: "codex-openai", model: "gpt-5.4-mini" },
+      { provider: "codex-openai", model: "gpt-5.6-luna" },
       { provider: "opencode-go", model: "deepseek-v4-flash" },
       { provider: "deepseek", model: "deepseek-v4-flash" },
     ]);
@@ -439,7 +439,7 @@ describe("Pi Live Codex protocol", () => {
     ].join(" ");
     const translate = vi.fn(async (source: string) => {
       expect(source).toBe(transcript);
-      return { text: completeTranslation, model: "codex-openai/gpt-5.4-mini" };
+      return { text: completeTranslation, model: "codex-openai/gpt-5.6-luna" };
     });
     const context = await prepareLongTranscriptContext(transcript, 61_000, translate);
     const request = buildDelegationWithTranscriptContext("Inspect the requested UI flow.", context);

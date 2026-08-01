@@ -293,7 +293,7 @@ function createHandoffTestProviders(summaryText: string): {
           maxTokens: 8_192,
         },
         {
-          id: "gpt-5.4-mini",
+          id: "gpt-5.6-luna",
           reasoning: true,
           input: ["text"],
           contextWindow: 128_000,
@@ -312,7 +312,7 @@ function createHandoffTestProviders(summaryText: string): {
           maxTokens: 8_192,
         },
         {
-          id: "gpt-5.4-mini",
+          id: "gpt-5.6-luna",
           reasoning: true,
           input: ["text"],
           contextWindow: 128_000,
@@ -443,7 +443,7 @@ function createModelFamilyTestProviders(): {
       provider: "family-gpt-mini",
       models: [
         {
-          id: "gpt-5.4-mini",
+          id: "gpt-5.6-luna",
           reasoning: true,
           input: ["text"],
           contextWindow: 128_000,
@@ -564,7 +564,7 @@ async function writeModelFamilyModesFile(cwd: string): Promise<void> {
         },
         quick: {
           provider: "family-gpt-mini",
-          modelId: "gpt-5.4-mini",
+          modelId: "gpt-5.6-luna",
         },
         research: {
           provider: "family-gemini",
@@ -2355,7 +2355,7 @@ timedTest(
   },
 );
 
-timedTest("LiteLLM provider registrations add the gemini provider via v1beta", () => {
+timedTest("LiteLLM provider registrations keep Gemini available for websearch", () => {
   const registrations = createLiteLLMProviderRegistrations(
     {
       healthy: true,

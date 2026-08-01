@@ -184,14 +184,6 @@ function mapCliproxyProvider(value: string): SupportedProviderId | undefined {
   if (normalized === "codex" || normalized === "openai-codex") {
     return "codex";
   }
-  if (
-    normalized === "google" ||
-    normalized === "gemini" ||
-    normalized === "gemini-cli" ||
-    normalized === "google-gemini-cli"
-  ) {
-    return "google";
-  }
   if (normalized === "zai" || normalized === "glm") {
     return "zai";
   }

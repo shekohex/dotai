@@ -128,7 +128,7 @@ export const defaultModes = {
     },
     commiter: {
       provider: "codex-openai",
-      modelId: "gpt-5.4-mini",
+      modelId: "gpt-5.6-luna",
       thinkingLevel: "low",
       color: "muted",
       tmuxTarget: "window",

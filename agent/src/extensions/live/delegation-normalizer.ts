@@ -1,11 +1,7 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
-import {
-  DEFAULT_MODEL_FALLBACKS,
-  modelForOpenAIResponses,
-  type ModelFallbackCandidate,
-} from "../model-fallbacks.js";
+import { DEFAULT_MODEL_FALLBACKS, type ModelFallbackCandidate } from "../model-fallbacks.js";
 import { completeSimpleModel } from "../pi-ai-models.js";
 import { assessDelegationLanguage } from "./delegation-language.js";
 
@@ -16,7 +12,7 @@ const TRANSCRIPT_TRANSLATION_MAX_TOKENS = 6_144;
 const TRANSCRIPT_TRANSLATION_CHUNK_CHARACTERS = 3_500;
 
 const PREFERRED_NORMALIZER_MODELS: readonly ModelFallbackCandidate[] = [
-  { provider: "codex-openai", model: "gpt-5.4-mini" },
+  { provider: "codex-openai", model: "gpt-5.6-luna" },
   { provider: "opencode-go", model: "deepseek-v4-flash" },
   { provider: "deepseek", model: "deepseek-v4-flash" },
 ];
@@ -142,7 +138,7 @@ async function translateTranscriptChunk(
       }
       onDiagnostic("delegation.transcript-translation-attempt", { model: label, index, total });
       const response = await completeSimpleModel(
-        modelForOpenAIResponses(model),
+        model,
         {
           systemPrompt: TRANSCRIPT_TRANSLATION_SYSTEM_PROMPT,
           messages: [
@@ -256,7 +252,7 @@ export async function normalizeLiveDelegation(
       const attemptStartedAt = Date.now();
       onDiagnostic("delegation.normalization-attempt", { model: label });
       const response = await completeSimpleModel(
-        modelForOpenAIResponses(model),
+        model,
         {
           systemPrompt: NORMALIZER_SYSTEM_PROMPT,
           messages: [

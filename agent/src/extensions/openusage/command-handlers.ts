@@ -110,7 +110,7 @@ async function showOpenUsageView(
   const accountsByProvider: CliproxyAccountsByProvider = await listCliproxyAccounts(ctx).catch(
     () => ({}),
   );
-  const providerIds: SupportedProviderId[] = ["codex", "google", "zai"];
+  const providerIds: SupportedProviderId[] = ["codex", "zai"];
   const activeProviderId = resolveSupportedProviderId(ctx.model?.provider, ctx.model?.id);
   await ctx.ui.custom<void>((tui, theme, _kb, done) => {
     return new OpenUsageView(

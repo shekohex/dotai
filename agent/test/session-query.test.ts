@@ -170,26 +170,26 @@ describe("session-query extension", () => {
     if (sessionPath === undefined) throw new Error("expected session file");
     const models = new Map([
       [
-        "gemini/gemini-3.1-flash-lite-preview",
+        "codex-openai/gpt-5.6-luna",
         {
-          provider: "gemini",
-          id: "gemini-3.1-flash-lite-preview",
-          api: "gemini",
-          baseUrl: "https://litellm.example.test/v1beta",
+          provider: "codex-openai",
+          id: "gpt-5.6-luna",
+          api: "openai-responses",
+          baseUrl: "https://litellm.example.test/v1",
         },
       ],
       [
-        "gemini/gemini-3.1-pro-preview",
+        "opencode-go/deepseek-v4-flash",
         {
-          provider: "gemini",
-          id: "gemini-3.1-pro-preview",
-          api: "gemini",
-          baseUrl: "https://litellm.example.test/v1beta",
+          provider: "opencode-go",
+          id: "deepseek-v4-flash",
+          api: "openai-completions",
+          baseUrl: "https://litellm.example.test/v1",
         },
       ],
     ]);
     vi.mocked(streamModel).mockImplementation((model) => {
-      const answer = model.id === "gemini-3.1-pro-preview" ? "Changed src/main.ts." : "";
+      const answer = model.provider === "opencode-go" ? "Changed src/main.ts." : "";
       return {
         async *[Symbol.asyncIterator]() {},
         result: async () => ({
@@ -219,12 +219,12 @@ describe("session-query extension", () => {
     );
 
     expect(vi.mocked(streamModel).mock.calls.map(([model]) => model.id)).toEqual([
-      "gemini-3.1-flash-lite-preview",
-      "gemini-3.1-pro-preview",
+      "gpt-5.6-luna",
+      "deepseek-v4-flash",
     ]);
     expect(vi.mocked(streamModel).mock.calls.map(([model]) => model.api)).toEqual([
       "openai-responses",
-      "openai-responses",
+      "openai-completions",
     ]);
     expect(vi.mocked(streamModel).mock.calls.map(([model]) => model.baseUrl)).toEqual([
       "https://litellm.example.test/v1",

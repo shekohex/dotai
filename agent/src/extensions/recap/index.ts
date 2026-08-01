@@ -9,11 +9,7 @@ import { stripVTControlCharacters } from "node:util";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
-import {
-  DEFAULT_MODEL_FALLBACKS,
-  modelForOpenAIResponses,
-  resolveModelFallbackAuth,
-} from "../model-fallbacks.js";
+import { DEFAULT_MODEL_FALLBACKS, resolveModelFallbackAuth } from "../model-fallbacks.js";
 import { completeModel } from "../pi-ai-models.js";
 import { getRecapSettings, type RecapSettings } from "./settings.js";
 
@@ -188,7 +184,7 @@ async function generateRecap(
 
       try {
         const response = await completeModel(
-          modelForOpenAIResponses(modelAuth.model),
+          modelAuth.model,
           {
             systemPrompt: RECAP_SYSTEM_PROMPT,
             messages: [

@@ -68,7 +68,7 @@ describe("ensureBuiltInGsdModes", () => {
     expect(built.modes["gsd-planner"]?.tmuxTarget).toBe("window");
 
     expect(built.modes["gsd-phase-researcher"]?.provider).toBe("codex-openai");
-    expect(built.modes["gsd-phase-researcher"]?.modelId).toBe("gpt-5.4-mini");
+    expect(built.modes["gsd-phase-researcher"]?.modelId).toBe("gpt-5.6-luna");
     expect(built.modes["gsd-phase-researcher"]?.tools).toEqual([
       "read",
       "grep",
@@ -96,7 +96,7 @@ describe("ensureBuiltInGsdModes", () => {
     ]);
 
     expect(built.modes["gsd-pattern-mapper"]?.provider).toBe("codex-openai");
-    expect(built.modes["gsd-pattern-mapper"]?.modelId).toBe("gpt-5.4-mini");
+    expect(built.modes["gsd-pattern-mapper"]?.modelId).toBe("gpt-5.6-luna");
     expect(built.modes["gsd-pattern-mapper"]?.tools).toEqual([
       "read",
       "grep",
@@ -107,7 +107,7 @@ describe("ensureBuiltInGsdModes", () => {
     ]);
 
     expect(built.modes["gsd-codebase-mapper"]?.provider).toBe("codex-openai");
-    expect(built.modes["gsd-codebase-mapper"]?.modelId).toBe("gpt-5.4-mini");
+    expect(built.modes["gsd-codebase-mapper"]?.modelId).toBe("gpt-5.6-luna");
     expect(built.modes["gsd-codebase-mapper"]?.tools).toEqual([
       "read",
       "grep",
@@ -120,7 +120,7 @@ describe("ensureBuiltInGsdModes", () => {
     expect(built.modes["gsd-codebase-mapper"]?.tmuxTarget).toBe("window");
 
     expect(built.modes["gsd-intel-updater"]?.provider).toBe("codex-openai");
-    expect(built.modes["gsd-intel-updater"]?.modelId).toBe("gpt-5.4-mini");
+    expect(built.modes["gsd-intel-updater"]?.modelId).toBe("gpt-5.6-luna");
     expect(built.modes["gsd-intel-updater"]?.tools).toEqual([
       "read",
       "grep",

@@ -20,5 +20,5 @@ Files involved:
 ## Task
 [Clear description of what to do next based on user's goal]`;
 
-export const CONTEXT_TRANSFER_PROVIDER = "gemini" as const;
-export const CONTEXT_TRANSFER_MODEL = "gemini-3.1-flash-lite-preview" as const;
+export const CONTEXT_TRANSFER_PROVIDER = "codex-openai" as const;
+export const CONTEXT_TRANSFER_MODEL = "gpt-5.6-luna" as const;

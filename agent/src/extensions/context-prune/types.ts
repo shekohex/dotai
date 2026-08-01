@@ -167,7 +167,7 @@ export interface ContextPruneConfig {
   showPruneStatusLine: boolean;
   /**
    * Ordered summarizer model fallback list. "default" = current active Pi model (ctx.model)
-   * "provider/model-id" = explicit model (e.g. "gemini/gemini-3.1-flash-lite-preview")
+   * "provider/model-id" = explicit model (e.g. "openai-codex/gpt-5.6-luna")
    */
   summarizerModels: string[];
   /** Thinking/reasoning level to request for summarizer calls. */
@@ -202,11 +202,7 @@ export const DEFAULT_CONFIG: ContextPruneConfig = {
     contextTreeQuery: false,
   },
   showPruneStatusLine: true,
-  summarizerModels: [
-    "gemini/gemini-3.1-flash-lite-preview",
-    "openai-codex/gpt-5.4-mini",
-    "opencode-go/deepseek-v4-flash",
-  ],
+  summarizerModels: ["openai-codex/gpt-5.6-luna", "opencode-go/deepseek-v4-flash"],
   summarizerThinking: "low",
   pruneOn: "agent-message",
   remindUnprunedCount: true,

@@ -16,7 +16,6 @@ import {
   appendCurrentModelFallback,
   DEFAULT_MODEL_FALLBACKS,
   isAbortSignalAborted,
-  modelForOpenAIResponses,
   resolveModelFallbackAuth,
   type ModelAuth,
 } from "../model-fallbacks.js";
@@ -207,7 +206,7 @@ async function runSessionQuery(
     timestamp: Date.now(),
   };
   const queryStream = streamModel(
-    modelForOpenAIResponses(modelAuth.model),
+    modelAuth.model,
     { systemPrompt: QUERY_SYSTEM_PROMPT, messages: [userMessage] },
     { apiKey: modelAuth.apiKey, headers: modelAuth.headers, signal },
   );

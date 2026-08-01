@@ -72,7 +72,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     builtInModeSpec: {
       description: "Built-in GSD codebase mapper",
       provider: "codex-openai",
-      modelId: "gpt-5.4-mini",
+      modelId: "gpt-5.6-luna",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "edit", "write", "!ask_user_question"],
       systemPromptMode: "replace",
@@ -87,7 +87,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     builtInModeSpec: {
       description: "Built-in GSD intel updater",
       provider: "codex-openai",
-      modelId: "gpt-5.4-mini",
+      modelId: "gpt-5.6-luna",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "edit", "write", "!ask_user_question"],
       systemPromptMode: "replace",
@@ -102,7 +102,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     builtInModeSpec: {
       description: "Built-in GSD phase researcher",
       provider: "codex-openai",
-      modelId: "gpt-5.4-mini",
+      modelId: "gpt-5.6-luna",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "write", "websearch", "!ask_user_question"],
       systemPromptMode: "replace",
@@ -116,7 +116,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     builtInModeSpec: {
       description: "Built-in GSD pattern mapper",
       provider: "codex-openai",
-      modelId: "gpt-5.4-mini",
+      modelId: "gpt-5.6-luna",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "write", "!ask_user_question"],
       systemPromptMode: "replace",
@@ -130,7 +130,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     builtInModeSpec: {
       description: "Built-in GSD assumptions analyzer",
       provider: "codex-openai",
-      modelId: "gpt-5.4-mini",
+      modelId: "gpt-5.6-luna",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "!ask_user_question"],
       systemPromptMode: "replace",
@@ -144,7 +144,7 @@ const registry: Record<GsdRole, GsdRoleConfig> = {
     builtInModeSpec: {
       description: "Built-in GSD project researcher",
       provider: "codex-openai",
-      modelId: "gpt-5.4-mini",
+      modelId: "gpt-5.6-luna",
       thinkingLevel: "high",
       tools: ["read", "grep", "find", "bash", "write", "websearch", "ask_user_question"],
       systemPromptMode: "replace",

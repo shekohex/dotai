@@ -28,10 +28,8 @@ async function handleDebug(
     `Cliproxy: ${cliproxyState.label}${cliproxyState.baseUrl !== undefined && cliproxyState.baseUrl.length > 0 ? ` ${cliproxyState.baseUrl}` : ""}${cliproxyState.error !== undefined && cliproxyState.error.length > 0 ? ` (${cliproxyState.error})` : ""}`,
     `Reset time format: ${state.persisted.resetTimeFormat}`,
     `Selected codex account: ${state.persisted.selectedAccounts.codex ?? "host"}`,
-    `Selected google account: ${state.persisted.selectedAccounts.google ?? "host"}`,
     `Selected zai account: ${state.persisted.selectedAccounts.zai ?? "host"}`,
     `Cliproxy codex accounts: ${(cliproxyAccounts.codex ?? []).length}`,
-    `Cliproxy google accounts: ${(cliproxyAccounts.google ?? []).length}`,
     `Cliproxy zai accounts: ${(cliproxyAccounts.zai ?? []).length}`,
     `Cached snapshot: ${snapshot ? snapshot.displayName : "none"}`,
   ];

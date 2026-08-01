@@ -33,7 +33,7 @@ const OptionInsightSchema = Type.Object(
 type ReviewedQuestion = Static<typeof ReviewedQuestionSchema>;
 type OptionInsight = Static<typeof OptionInsightSchema>;
 
-export const PREFERRED_GENERATE_MODELS = ["openai/gpt-5.4-mini", "google/gemini-2.5-flash"];
+export const PREFERRED_GENERATE_MODELS = ["openai/gpt-5.6-luna"];
 
 export const GENERATE_OPTIONS_SYSTEM_PROMPT =
   "You generate interview answer options. Return only JSON array of strings. Do not include explanations or markdown.";

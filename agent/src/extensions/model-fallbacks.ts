@@ -2,14 +2,11 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export const DEFAULT_MODEL_FALLBACKS = [
-  { provider: "codex-openai", model: "gpt-5.4-mini" },
+  { provider: "codex-openai", model: "gpt-5.6-luna" },
   { provider: "zai", model: "glm-5.2" },
   { provider: "zai-coding-plan", model: "glm-5.2" },
   { provider: "opencode-go", model: "deepseek-v4-flash" },
   { provider: "deepseek", model: "deepseek-v4-flash" },
-  { provider: "gemini", model: "gemini-3.1-flash-lite-preview" },
-  { provider: "gemini", model: "gemini-3.1-pro-preview" },
-  { provider: "gemini", model: "gemini-2.5-pro" },
 ] as const;
 
 export type ModelFallbackCandidate = {
@@ -30,18 +27,6 @@ export function modelDisplayName(candidate: ModelFallbackCandidate): string {
 
 export function modelKey(model: { provider: string; id: string }): string {
   return `${model.provider}/${model.id}`;
-}
-
-export function modelForOpenAIResponses(model: Model<Api>): Model<Api> {
-  if (model.provider !== "gemini") return model;
-
-  const baseUrl =
-    model.baseUrl
-      .replace(/\/v1beta\/?$/, "")
-      .replace(/\/v1\/?$/, "")
-      .replace(/\/+$/, "") + "/v1";
-
-  return { ...model, api: "openai-responses", baseUrl, reasoning: false };
 }
 
 export function appendCurrentModelFallback(

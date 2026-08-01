@@ -38,7 +38,7 @@ const UsageSnapshotSchema = Type.Object(
 
 const OpenUsageAlertEventSchema = Type.Object(
   {
-    providerId: Type.Union([Type.Literal("codex"), Type.Literal("google"), Type.Literal("zai")]),
+    providerId: Type.Union([Type.Literal("codex"), Type.Literal("zai")]),
     displayName: Type.String(),
     metric: Type.Union([Type.Literal("session5h"), Type.Literal("weekly")]),
     remainingPercent: Type.Number(),
@@ -51,9 +51,7 @@ const OpenUsageAlertEventSchema = Type.Object(
 
 const OpenUsageUpdatedEventSchema = Type.Object(
   {
-    providerId: Type.Optional(
-      Type.Union([Type.Literal("codex"), Type.Literal("google"), Type.Literal("zai")]),
-    ),
+    providerId: Type.Optional(Type.Union([Type.Literal("codex"), Type.Literal("zai")])),
     active: Type.Boolean(),
     snapshot: Type.Optional(UsageSnapshotSchema),
   },
@@ -62,7 +60,7 @@ const OpenUsageUpdatedEventSchema = Type.Object(
 
 const OpenUsageRefreshRequestedEventSchema = Type.Object(
   {
-    providerId: Type.Union([Type.Literal("codex"), Type.Literal("google"), Type.Literal("zai")]),
+    providerId: Type.Union([Type.Literal("codex"), Type.Literal("zai")]),
     force: Type.Boolean(),
   },
   { additionalProperties: true },

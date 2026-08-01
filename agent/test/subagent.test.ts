@@ -624,7 +624,7 @@ timedTest("resolveSubagentMode normalizes GPT-5 child tools to apply_patch", asy
       modes: {
         mapper: {
           provider: "codex-openai",
-          modelId: "gpt-5.4-mini",
+          modelId: "gpt-5.6-luna",
           tools: ["read", "bash", "edit", "write"],
         },
       },

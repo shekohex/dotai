@@ -496,30 +496,29 @@ describe("context-prune settings", () => {
 });
 
 describe("context-prune summarizer", () => {
-  test("uses OpenAI Responses API for LiteLLM Gemini models", async () => {
-    const geminiModel = createModel(
-      "gemini",
-      "gemini-3.1-flash-lite-preview",
-      "google-generative-ai",
-      "https://gateway.example/v1beta",
+  test("uses configured LiteLLM OpenAI models", async () => {
+    const codexModel = createModel(
+      "codex-openai",
+      "gpt-5.6-luna",
+      "openai-responses",
+      "https://gateway.example/v1",
     );
     const mock = streamMock();
     mock.mockReturnValue(createResponseStream("summary") as never);
 
     const result = await summarizeBatch(
       createBatch(),
-      { ...DEFAULT_CONFIG, summarizerModels: ["gemini/gemini-3.1-flash-lite-preview"] },
-      createContext([geminiModel]),
+      { ...DEFAULT_CONFIG, summarizerModels: ["codex-openai/gpt-5.6-luna"] },
+      createContext([codexModel]),
     );
 
     expect(result?.summaryText).toBe("summary");
     expect(mock).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: "gemini",
-        id: "gemini-3.1-flash-lite-preview",
+        provider: "codex-openai",
+        id: "gpt-5.6-luna",
         api: "openai-responses",
         baseUrl: "https://gateway.example/v1",
-        reasoning: false,
       }),
       expect.anything(),
       expect.anything(),
@@ -527,18 +526,14 @@ describe("context-prune summarizer", () => {
   });
 
   test("summarizer prompt preserves concrete recovery details", async () => {
-    const geminiModel = createModel(
-      "gemini",
-      "gemini-3.1-flash-lite-preview",
-      "google-generative-ai",
-    );
+    const codexModel = createModel("codex-openai", "gpt-5.6-luna", "openai-responses");
     const mock = streamMock();
     mock.mockReturnValue(createResponseStream("summary") as never);
 
     await summarizeBatch(
       createBatch(),
-      { ...DEFAULT_CONFIG, summarizerModels: ["gemini/gemini-3.1-flash-lite-preview"] },
-      createContext([geminiModel]),
+      { ...DEFAULT_CONFIG, summarizerModels: ["codex-openai/gpt-5.6-luna"] },
+      createContext([codexModel]),
     );
 
     const request = mock.mock.calls[0]?.[1];
@@ -549,15 +544,11 @@ describe("context-prune summarizer", () => {
   });
 
   test("falls back immediately on rate limit and cools down model for parallel batches", async () => {
-    const geminiModel = createModel(
-      "gemini",
-      "gemini-3.1-flash-lite-preview",
-      "google-generative-ai",
-    );
+    const codexModel = createModel("codex-openai", "gpt-5.6-luna", "openai-responses");
     const fallbackModel = createModel("opencode-go", "deepseek-v4-flash", "openai-completions");
     const mock = streamMock();
     mock.mockImplementation((model) => {
-      if (model.provider === "gemini") {
+      if (model.provider === "codex-openai") {
         throw new Error(
           '429 RESOURCE_EXHAUSTED RetryInfo retryDelay: "2.015665228s" quotaResetDelay: "2.015665228s"',
         );
@@ -569,16 +560,16 @@ describe("context-prune summarizer", () => {
       [createBatch("a".repeat(1000)), createBatch("b".repeat(1000))],
       {
         ...DEFAULT_CONFIG,
-        summarizerModels: ["gemini/gemini-3.1-flash-lite-preview", "opencode-go/deepseek-v4-flash"],
+        summarizerModels: ["codex-openai/gpt-5.6-luna", "opencode-go/deepseek-v4-flash"],
       },
-      createContext([geminiModel, fallbackModel]),
+      createContext([codexModel, fallbackModel]),
     );
 
     expect(results.map((result) => result?.summaryText)).toEqual([
       "summary from opencode-go",
       "summary from opencode-go",
     ]);
-    expect(mock.mock.calls.filter(([model]) => model.provider === "gemini")).toHaveLength(1);
+    expect(mock.mock.calls.filter(([model]) => model.provider === "codex-openai")).toHaveLength(1);
     expect(mock.mock.calls.filter(([model]) => model.provider === "opencode-go")).toHaveLength(2);
   });
 });

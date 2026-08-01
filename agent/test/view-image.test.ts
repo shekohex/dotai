@@ -10,8 +10,8 @@ import { completeSimpleModel } from "../src/extensions/pi-ai-models.js";
 vi.mock("../src/extensions/pi-ai-models.js", () => ({ completeSimpleModel: vi.fn() }));
 
 const visionModel = {
-  id: "gpt-5.4-mini",
-  name: "GPT-5.4 mini",
+  id: "gpt-5.6-luna",
+  name: "GPT-5.6 Luna",
   provider: "openai-codex",
   api: "openai-codex-responses",
   baseUrl: "https://chatgpt.com/backend-api",

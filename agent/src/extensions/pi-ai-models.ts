@@ -2,8 +2,6 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { azureOpenAIResponsesApi } from "@earendil-works/pi-ai/api/azure-openai-responses.lazy";
 import { bedrockConverseStreamApi } from "@earendil-works/pi-ai/api/bedrock-converse-stream.lazy";
-import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
-import { googleVertexApi } from "@earendil-works/pi-ai/api/google-vertex.lazy";
 import { mistralConversationsApi } from "@earendil-works/pi-ai/api/mistral-conversations.lazy";
 import { openAICodexResponsesApi } from "@earendil-works/pi-ai/api/openai-codex-responses.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
@@ -118,9 +116,8 @@ function providerStreamsForApi(api: Api): ProviderStreams {
     case "bedrock-converse-stream":
       return bedrockConverseStreamApi();
     case "google-generative-ai":
-      return googleGenerativeAIApi();
     case "google-vertex":
-      return googleVertexApi();
+      throw new Error(`Unsupported model API: ${api}`);
     case "mistral-conversations":
       return mistralConversationsApi();
     case "openai-codex-responses":

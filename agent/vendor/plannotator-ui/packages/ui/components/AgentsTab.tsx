@@ -33,7 +33,7 @@ const CODEX_MODELS: Array<{ value: string; label: string }> = [
   { value: 'gpt-5.2', label: 'GPT-5.2' },
   { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
   { value: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini' },
-  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+  { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
 ];
 
 const CODEX_REASONING: Array<{ value: string; label: string }> = [

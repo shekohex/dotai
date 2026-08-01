@@ -1429,7 +1429,7 @@ const RUNTIME_PROFILE_MAP = {
   codex: {
     opus: { model: "gpt-5.4", reasoning_effort: "xhigh" },
     sonnet: { model: "gpt-5.3-codex", reasoning_effort: "medium" },
-    haiku: { model: "gpt-5.4-mini", reasoning_effort: "medium" },
+    haiku: { model: "gpt-5.6-luna", reasoning_effort: "medium" },
   },
   gemini: {
     opus: { model: "gemini-3-pro" },

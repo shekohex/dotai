@@ -354,6 +354,86 @@ timedTest(
   },
 );
 
+timedTest("lite SDK resumes after interrupt without stale run completion", async () => {
+  const agentDir = await createTempDir("agent-subagent-lite-interrupt-dir-");
+  const cwd = await createTempDir("agent-subagent-lite-interrupt-cwd-");
+  const fakePi = new FakePi();
+  const prompts: string[] = [];
+  let rejectInterruptedPrompt: ((error: Error) => void) | undefined;
+  const fakeSession = {
+    subscribe: () => () => {},
+    prompt: (prompt: string) => {
+      prompts.push(prompt);
+      if (prompts.length > 1) return Promise.resolve();
+      return new Promise<void>((_resolve, reject) => {
+        rejectInterruptedPrompt = reject;
+      });
+    },
+    abort: () => {
+      setTimeout(() => {
+        rejectInterruptedPrompt?.(new Error("interrupted"));
+      }, 20);
+      return Promise.resolve();
+    },
+    followUp: () => Promise.resolve(),
+    steer: () => Promise.resolve(),
+    getLastAssistantText: () => "resumed successfully",
+    getSessionStats: () => ({
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    }),
+    dispose: () => {},
+  };
+  const sdk = createSubagentSDK(fakePi as unknown as ExtensionAPI, {
+    backend: {
+      kind: "lite",
+      agentDir,
+      createAgentSession: async () => ({ session: fakeSession }) as never,
+    },
+  });
+
+  try {
+    registerBuiltInModes(
+      TEST_MODE_SOURCE,
+      defineModesFile({
+        version: 1,
+        modes: {
+          reviewer: { tools: ["read"], autoExit: true },
+        },
+      }),
+    );
+    const ctx = createFakeContext({ cwd, sessionFile: path.join(cwd, "parent.jsonl") });
+    const started = await sdk.start(
+      { name: "lite-worker", task: "Run all tests", mode: "reviewer", persisted: false },
+      ctx,
+    );
+    await waitForCondition(() => prompts.length === 1);
+
+    const interrupted = await sdk.interrupt({ sessionId: started.handle.sessionId });
+    expect(interrupted.status).toBe("idle");
+    await sdk.message(
+      {
+        sessionId: started.handle.sessionId,
+        message: "Run unit tests only",
+        delivery: "steer",
+      },
+      ctx,
+    );
+
+    await waitForCondition(() => sdk.list()[0]?.status === "completed");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(prompts.at(-1)).toBe("Run unit tests only");
+    expect(sdk.list()[0]).toMatchObject({
+      status: "completed",
+      summary: "resumed successfully",
+    });
+  } finally {
+    sdk.dispose();
+    await fs.rm(agentDir, { recursive: true, force: true });
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("message to live subagent sends directly without resume", async () => {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = await createTempDir("agent-subagent-sdk-message-live-dir-");

@@ -60,6 +60,7 @@ export type LiteRuntimeOptions = {
   kind: "lite";
   agentDir?: string;
   hooks?: SubagentRuntimeHooks;
+  createAgentSession?: typeof createAgentSession;
 };
 
 const DEFAULT_LITE_RUNTIME_OPTIONS: LiteRuntimeOptions = { kind: "lite" };
@@ -105,7 +106,7 @@ function buildCompletionStatusContent(state: RuntimeSubagent, suffix: string): s
 export class LiteRuntime {
   private states = new Map<string, RuntimeSubagent>();
   private sessions = new Map<string, LiteSessionState>();
-  private interruptedSessionIds = new Set<string>();
+  private runGenerations = new Map<string, number>();
   private disposed = false;
   private lastCtx: ExtensionContext | undefined;
   private readonly eventBus = new SubagentRuntimeEventBus();
@@ -197,7 +198,7 @@ export class LiteRuntime {
         },
       });
     const stateWithTools = { ...state, tools: sessionTools };
-    const { session } = await createAgentSession({
+    const { session } = await (this.options.createAgentSession ?? createAgentSession)({
       cwd: resolved.value.cwd,
       agentDir,
       settingsManager,
@@ -287,7 +288,7 @@ export class LiteRuntime {
         },
       });
     const stateWithTools = { ...state, tools: sessionTools };
-    const { session } = await createAgentSession({
+    const { session } = await (this.options.createAgentSession ?? createAgentSession)({
       cwd: resolved.value.cwd,
       agentDir,
       settingsManager,
@@ -434,7 +435,7 @@ export class LiteRuntime {
         `subagent interrupt failed: lite sessionId ${params.sessionId} is not running.`,
       );
     }
-    this.interruptedSessionIds.add(params.sessionId);
+    this.nextRunGeneration(params.sessionId);
     await live.session.abort().catch(() => {});
     const interrupted = buildInterruptedLiteState(state, Date.now());
     this.states.set(params.sessionId, interrupted);
@@ -585,16 +586,17 @@ export class LiteRuntime {
     if (!live || !state) {
       return;
     }
+    const generation = this.nextRunGeneration(sessionId);
 
     try {
       await this.runPromptWithStructuredRetries(sessionId, prompt, live);
-      if (this.interruptedSessionIds.delete(sessionId)) return;
+      if (!this.isCurrentRunGeneration(sessionId, generation)) return;
       if (this.disposed || live.abortController.signal.aborted) {
         return;
       }
       await this.completeSession(sessionId, live);
     } catch (error) {
-      if (this.interruptedSessionIds.delete(sessionId)) return;
+      if (!this.isCurrentRunGeneration(sessionId, generation)) return;
       if (this.disposed || live.abortController.signal.aborted) {
         return;
       }
@@ -607,16 +609,17 @@ export class LiteRuntime {
     if (!live) {
       return;
     }
+    const generation = this.nextRunGeneration(sessionId);
 
     try {
       await this.runPromptWithStructuredRetries(sessionId, prompt, live);
-      if (this.interruptedSessionIds.delete(sessionId)) return;
+      if (!this.isCurrentRunGeneration(sessionId, generation)) return;
       if (this.disposed || live.abortController.signal.aborted) {
         return;
       }
       await this.completeSession(sessionId, live);
     } catch (error) {
-      if (this.interruptedSessionIds.delete(sessionId)) return;
+      if (!this.isCurrentRunGeneration(sessionId, generation)) return;
       if (this.disposed || live.abortController.signal.aborted) {
         return;
       }
@@ -760,6 +763,16 @@ export class LiteRuntime {
     });
   }
 
+  private nextRunGeneration(sessionId: string): number {
+    const generation = (this.runGenerations.get(sessionId) ?? 0) + 1;
+    this.runGenerations.set(sessionId, generation);
+    return generation;
+  }
+
+  private isCurrentRunGeneration(sessionId: string, generation: number): boolean {
+    return this.runGenerations.get(sessionId) === generation;
+  }
+
   private disposeSession(sessionId: string): void {
     const live = this.sessions.get(sessionId);
     if (!live) return;
@@ -767,5 +780,6 @@ export class LiteRuntime {
     live.unsubscribe();
     live.session.dispose();
     this.sessions.delete(sessionId);
+    this.runGenerations.delete(sessionId);
   }
 }

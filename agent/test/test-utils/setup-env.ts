@@ -62,6 +62,8 @@ if (
 
 process.env.PI_TERMINAL_TMUX_UI = "0";
 process.env.PI_HERDR_AGENT_STATE = "0";
+delete process.env.PI_SUBAGENT_CHILD_STATE;
+delete process.env.PI_SUBAGENT_CHILD_STATE_FILE;
 delete process.env.WARP_CLI_AGENT_PROTOCOL_VERSION;
 installTerminalOutputOverride(controlledTerminalOutput);
 

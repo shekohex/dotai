@@ -23,12 +23,12 @@ export const groupedExtensionsA: GroupedExtensionDefinition[] = [
   { id: "coreui", factory: coreUIExtension },
   { id: "fff", factory: fffExtension },
   { id: "glance", factory: glanceExtension },
-  { id: "live", factory: liveExtension },
   { id: "litellm", factory: litellmGatewayExtension },
   { id: "openai-better", factory: openAIBetterExtension },
   { id: "openusage", factory: openUsageExtension },
   { id: "patch", factory: patchExtension },
   { id: "websearch", factory: webSearchExtension },
   { id: "modes", factory: modesExtension },
+  { id: "live", factory: liveExtension },
   { id: "commit", factory: commitExtension },
 ];

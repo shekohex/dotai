@@ -49,7 +49,10 @@ conversational and can inspect the workspace, use shell diagnostics, manage goal
 documentation, but it never implements coding work itself. Code changes, tests, builds, and
 verification are delegated to persistent child Pi sessions. The parent reuses existing threads,
 checks their activity proactively, and sends every child task or follow-up in clear English even
-when the user speaks Arabic or another language.
+when the user speaks Arabic or another language. Direct file-write tools are runtime-limited to
+`.md` and `.mdx` files inside the workspace while live mode is active. `bash` remains available for
+useful inspection and diagnostics; its no-code-mutation boundary is prompt-governed because shell
+commands cannot be classified reliably as read-only before execution.
 
 Optional voice:
 
@@ -204,6 +207,10 @@ global shortcut powered by `sindresorhus/KeyboardShortcuts`; invoking it from an
 a valid `pi-live://pair#...` URL from the clipboard and shows Pi Live above the Dock.
 
 The native pairing protocol remains version 2 and uses Codable JSON-RPC envelopes and typed parameter/result payloads rather than `[String: Any]` dictionaries. `LivePairingClient` emits one typed `AsyncStream<LiveClientEvent>` consumed by the Observation model. It reconnects the control socket with bounded backoff without recreating the WebRTC peer. SSH local port selection uses `NWListener`, and readiness is proven by a WebSocket health check instead of a fixed startup sleep.
+
+`threadCoordination: true` is a required protocol-v2 pairing capability. This intentionally does not
+support older Pi Live builds because protocol v2 has not been deployed yet; TypeScript and Swift
+must ship together before the first v2 rollout.
 
 The control channel also carries session-scoped thread coordination. `threads.list`, `threads.inspect`, `threads.message`, and `threads.interrupt` operate on concurrent subagent threads; snapshots and ordered `thread.*` notifications replay current activity after reconnect. Swift implements typed protocol support only and does not add a thread-management UI. A newly attached voice call receives a bounded summary of recent parent conversation and delegated work.
 

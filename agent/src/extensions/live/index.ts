@@ -30,6 +30,7 @@ import {
 } from "./provider-context.js";
 import { getLiveSessionCoordinator } from "../../live-session/coordinator.js";
 import { MODE_ACTIVATE_EVENT } from "../modes/index.js";
+import { enforceLiveWritePolicy } from "./write-policy.js";
 
 const ANIMATION_INTERVAL_MS = 80;
 
@@ -206,7 +207,7 @@ function registerDelegationRenderers(pi: ExtensionAPI): void {
 // eslint-disable-next-line max-lines-per-function -- command UI and lifecycle share one active session.
 export default function liveExtension(pi: ExtensionAPI): void {
   let active: ActiveLiveSession | undefined;
-  let pendingStartupContext: ExtensionContext | undefined;
+  let liveModeActive = false;
   const coordinator = getLiveSessionCoordinator(pi);
   registerTranscriptRenderer(pi);
   registerDelegationRenderers(pi);
@@ -271,11 +272,11 @@ export default function liveExtension(pi: ExtensionAPI): void {
         ctx.ui.notify(errorFrom(cause).message, "error");
         return;
       }
-      await activateLiveMode(pi, ctx);
       if (!settings.enabled) {
         ctx.ui.notify("Pi Live is disabled in settings.json", "warning");
         return;
       }
+      await activateLiveMode(pi, ctx);
       const pairing = new LivePairingServer({
         sessionId: ctx.sessionManager.getSessionId(),
         mode: options.mode,
@@ -376,16 +377,20 @@ export default function liveExtension(pi: ExtensionAPI): void {
   pi.registerCommand("live", liveCommand);
 
   pi.on("session_start", (_event, ctx) => {
-    pendingStartupContext = pi.getFlag("live") === true ? ctx : undefined;
+    if (pi.getFlag("live") !== true) return;
+    queueMicrotask(() => {
+      void liveCommand.handler("", ctx);
+    });
   });
   pi.events.on("modes:changed", (data) => {
-    if (pendingStartupContext === undefined || !isUnknownRecord(data)) return;
-    if (data.source !== "session_start") return;
-    const context = pendingStartupContext;
-    pendingStartupContext = undefined;
-    queueMicrotask(() => {
-      void liveCommand.handler("", context);
-    });
+    liveModeActive = isUnknownRecord(data) && data.mode === "live";
+  });
+  pi.on("tool_call", (event, ctx) => {
+    if (!liveModeActive || event.type !== "tool_call") {
+      // eslint-disable-next-line unicorn/no-useless-undefined -- undefined allows tool execution.
+      return undefined;
+    }
+    return enforceLiveWritePolicy(event.toolName, event.input, ctx.cwd);
   });
 
   pi.on("message_end", (event: MessageEndEvent) => {

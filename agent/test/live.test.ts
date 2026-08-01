@@ -54,6 +54,8 @@ import {
   prepareLongTranscriptContext,
 } from "../src/extensions/live/delegation-context.js";
 import { defaultModes } from "../src/default-modes.js";
+import { groupedExtensionsA } from "../src/extensions/definitions-group-a.js";
+import { enforceLiveWritePolicy } from "../src/extensions/live/write-policy.js";
 
 const servers: LivePairingServer[] = [];
 const temporaryDirectories: string[] = [];
@@ -636,6 +638,49 @@ describe("Pi Live Codex protocol", () => {
     expect(defaultModes.modes.live.systemPrompt).toContain(
       "Every task and message sent to a child session MUST be concise, self-contained, plain English",
     );
+  });
+
+  it("registers Live after Modes so --live starts after mode restoration", () => {
+    const extensionIds = groupedExtensionsA.map((extension) => extension.id);
+    expect(extensionIds.indexOf("live")).toBeGreaterThan(extensionIds.indexOf("modes"));
+  });
+
+  it("limits live-mode direct writes to Markdown inside the workspace", () => {
+    expect(enforceLiveWritePolicy("write", { path: "docs/live.md" }, "/workspace")).toBeUndefined();
+    expect(enforceLiveWritePolicy("edit", { path: "src/live.ts" }, "/workspace")).toMatchObject({
+      block: true,
+      reason: expect.stringContaining("src/live.ts"),
+    });
+    expect(
+      enforceLiveWritePolicy(
+        "apply_patch",
+        { patchText: "*** Begin Patch\n*** Update File: docs/live.md\n*** End Patch" },
+        "/workspace",
+      ),
+    ).toBeUndefined();
+    expect(
+      enforceLiveWritePolicy(
+        "apply_patch",
+        {
+          patchText:
+            "*** Begin Patch\n*** Update File: docs/live.md\n*** Update File: src/live.ts\n*** End Patch",
+        },
+        "/workspace",
+      ),
+    ).toMatchObject({ block: true, reason: expect.stringContaining("src/live.ts") });
+    expect(
+      enforceLiveWritePolicy(
+        "apply_patch",
+        {
+          patchText:
+            "*** Begin Patch\n*** Update File: docs/live.md\n*** Move to: src/live.ts\n*** End Patch",
+        },
+        "/workspace",
+      ),
+    ).toMatchObject({ block: true, reason: expect.stringContaining("src/live.ts") });
+    expect(enforceLiveWritePolicy("write", { path: "../outside.md" }, "/workspace")).toMatchObject({
+      block: true,
+    });
   });
 
   it("delivers a long English transcript verbatim with the coding task", () => {

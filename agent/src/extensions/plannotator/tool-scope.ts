@@ -45,6 +45,10 @@ export function getApplyPatchPaths(patchText: string): string[] {
     }
     if (line.startsWith("*** Delete File: ")) {
       paths.push(line.slice("*** Delete File: ".length).trim());
+      continue;
+    }
+    if (line.startsWith("*** Move to: ")) {
+      paths.push(line.slice("*** Move to: ".length).trim());
     }
   }
   return paths;

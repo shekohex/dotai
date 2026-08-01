@@ -26,13 +26,14 @@ index ac5c157..7a53d91 100644
      "stream ended before a terminal response event",
      "http2 request did not get a response",
      // Provider-requested retry delay cap failures should flow through the outer
-@@ -68,6 +73,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -68,6 +73,10 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "retry delay",
      // Explicit retry guidance emitted mid-stream by OpenAI Responses and Bedrock
      // stream exceptions (#6019).
 +    "invalid codex sse json",
 +    "invalid codex websocket json",
 +    "error occurred while processing your request",
++    "response api in-stream error",
      "you can retry your request",
      "try your request again",
      "please retry your request",

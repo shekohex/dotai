@@ -5,6 +5,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { isRetryableAssistantError } from "../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js";
 import compactionExtension, {
   buildSummaryMessages,
   isAbortSignalAborted,
@@ -166,6 +167,29 @@ describe("compaction extension", () => {
 
   test("treats missing auto-compaction signal as not aborted", () => {
     expect(isAbortSignalAborted(undefined)).toBe(false);
+  });
+
+  test("retries LiteLLM Responses API in-stream errors", () => {
+    expect(
+      isRetryableAssistantError({
+        role: "assistant",
+        api: openAICodexModel.api,
+        provider: openAICodexModel.provider,
+        model: openAICodexModel.id,
+        content: [],
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "error",
+        errorMessage: "Error: litellm.APIError: Response API in-stream error",
+        timestamp: 1,
+      }),
+    ).toBe(true);
   });
 
   test("gates remote compaction to configured Codex providers", () => {

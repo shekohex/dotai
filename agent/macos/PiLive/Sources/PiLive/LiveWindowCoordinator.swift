@@ -7,6 +7,31 @@ struct LiveDisplayGeometry: Equatable {
     let visibleFrame: CGRect
 }
 
+@MainActor
+enum LiveWindowPresentation {
+    // Resizable windows can become key without requiring a title bar.
+    static let styleMask: NSWindow.StyleMask = [.resizable]
+
+    static func apply(to window: NSWindow) {
+        if window.styleMask != styleMask {
+            window.styleMask = styleMask
+        }
+        window.level = .floating
+        window.collectionBehavior = [
+            .canJoinAllSpaces,
+            .fullScreenAuxiliary,
+            .stationary,
+            .ignoresCycle,
+        ]
+        window.hidesOnDeactivate = false
+        window.isMovable = true
+        window.isMovableByWindowBackground = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+    }
+}
+
 enum LiveWindowPlacement {
     static func display(
         containing pointer: CGPoint,
@@ -58,9 +83,12 @@ final class LiveWindowCoordinator {
     private var screenParametersObserver: NSObjectProtocol?
 
     func attach(_ window: NSWindow) {
-        guard self.window !== window else { return }
+        guard self.window !== window else {
+            maintainWindowPresentation(window)
+            return
+        }
         self.window = window
-        configure(window)
+        maintainWindowPresentation(window)
         let display = pointerDisplay() ?? window.screen.map(displayGeometry)
         if let display {
             currentDisplay = display
@@ -72,7 +100,7 @@ final class LiveWindowCoordinator {
 
     func show() {
         guard let window else { return }
-        configure(window)
+        maintainWindowPresentation(window)
         moveToPointerDisplayIfNeeded(window)
         window.orderFrontRegardless()
     }
@@ -88,32 +116,8 @@ final class LiveWindowCoordinator {
         positionAboveDock(window, on: display)
     }
 
-    private func configure(_ window: NSWindow) {
-        // A truly borderless NSWindow does not become key by default, so it
-        // never receives Space/Escape. Keep an invisible full-size title bar
-        // to preserve key-window behavior while rendering no window chrome.
-        window.styleMask = [.titled, .fullSizeContentView]
-        window.level = .floating
-        window.collectionBehavior = [
-            .canJoinAllSpaces,
-            .fullScreenAuxiliary,
-            .stationary,
-            .ignoresCycle,
-        ]
-        window.hidesOnDeactivate = false
-        window.isMovable = true
-        window.isMovableByWindowBackground = true
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.titlebarSeparatorStyle = .none
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        // AppKit otherwise shadows the rectangular transparent window rather
-        // than the rounded Liquid Glass surface.
-        window.hasShadow = false
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
+    private func maintainWindowPresentation(_ window: NSWindow) {
+        LiveWindowPresentation.apply(to: window)
     }
 
     private func positionAboveDock(_ window: NSWindow, on display: LiveDisplayGeometry) {
@@ -129,6 +133,7 @@ final class LiveWindowCoordinator {
             [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let window = self.window, window.isVisible else { return }
+                self.maintainWindowPresentation(window)
                 self.moveToPointerDisplayIfNeeded(window)
             }
         }
@@ -163,6 +168,7 @@ final class LiveWindowCoordinator {
 
     private func handleScreenParametersChanged() {
         guard let window else { return }
+        maintainWindowPresentation(window)
         let displays = displayGeometries()
         let current = currentDisplay.flatMap { current in
             displays.first(where: { $0.id == current.id })

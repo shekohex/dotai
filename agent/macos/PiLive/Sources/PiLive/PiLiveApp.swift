@@ -35,7 +35,6 @@ struct PiLiveApp: App {
                     }
                 }
         }
-        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultSize(width: 460, height: 500)
 

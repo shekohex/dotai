@@ -3,6 +3,29 @@ import XCTest
 @testable import PiLive
 
 final class LiveWindowCoordinatorTests: XCTestCase {
+    @MainActor
+    func testRepeatedWorkspaceReconfigurationKeepsOrbStructurallyBorderlessAndKeyCapable() {
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 122, height: 122),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+
+        for _ in 0 ..< 25 {
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+
+            LiveWindowPresentation.apply(to: window)
+
+            XCTAssertEqual(window.styleMask, LiveWindowPresentation.styleMask)
+            XCTAssertFalse(window.styleMask.contains(.titled))
+            XCTAssertNil(window.standardWindowButton(.closeButton))
+            XCTAssertNil(window.standardWindowButton(.miniaturizeButton))
+            XCTAssertNil(window.standardWindowButton(.zoomButton))
+            XCTAssertTrue(window.canBecomeKey)
+        }
+    }
+
     func testSelectsDisplayForPointerAcrossNegativeOrigins() {
         let displays = [
             LiveDisplayGeometry(

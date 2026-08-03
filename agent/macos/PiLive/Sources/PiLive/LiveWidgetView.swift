@@ -2,7 +2,7 @@ import SwiftUI
 
 struct LiveWidgetView: View {
     @Bindable var model: LiveViewModel
-    let desktopPetMotion: DesktopPetMotionController
+    let windowCoordinator: LiveWindowCoordinator
     @Namespace private var orbNamespace
     @State private var escapeArmed = false
     @State private var escapeResetTask: Task<Void, Never>?
@@ -17,7 +17,7 @@ struct LiveWidgetView: View {
             if isLive {
                 CompactLiveSurface(
                     model: model,
-                    desktopPetMotion: desktopPetMotion,
+                    desktopPetMotion: windowCoordinator.desktopPetMotion,
                     orbNamespace: orbNamespace,
                     escapeArmed: escapeArmed
                 )
@@ -48,13 +48,15 @@ struct LiveWidgetView: View {
         .onChange(of: model.orbState) { _, _ in updateDesktopPetMotion() }
         .onChange(of: isLive) { _, _ in updateDesktopPetMotion() }
         .onChange(of: reduceMotion) { _, _ in updateDesktopPetMotion() }
+        .onChange(of: model.desktopRoamingEnabled) { _, _ in updateDesktopPetMotion() }
         .onDisappear {
             escapeResetTask?.cancel()
-            desktopPetMotion.update(context: DesktopPetMotionContext(
+            windowCoordinator.updateDesktopPetMotion(context: DesktopPetMotionContext(
                 semanticState: model.orbState,
                 livePhase: model.phase,
                 isCompactSurface: false,
-                reduceMotion: reduceMotion
+                reduceMotion: reduceMotion,
+                desktopRoamingEnabled: model.desktopRoamingEnabled
             ))
         }
     }
@@ -87,11 +89,12 @@ struct LiveWidgetView: View {
     }
 
     private func updateDesktopPetMotion() {
-        desktopPetMotion.update(context: DesktopPetMotionContext(
+        windowCoordinator.updateDesktopPetMotion(context: DesktopPetMotionContext(
             semanticState: model.orbState,
             livePhase: model.phase,
             isCompactSurface: isLive,
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion,
+            desktopRoamingEnabled: model.desktopRoamingEnabled
         ))
     }
 }

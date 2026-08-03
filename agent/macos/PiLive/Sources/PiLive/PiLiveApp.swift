@@ -22,7 +22,7 @@ struct PiLiveApp: App {
         model.showWindow = { [weak windowCoordinator] in windowCoordinator?.show() }
         model.hideWindow = { [weak windowCoordinator] in windowCoordinator?.hide() }
         model.contentSizeDidChange = { [weak windowCoordinator] in
-            windowCoordinator?.repositionAboveDock()
+            windowCoordinator?.contentSizeDidChange()
         }
     }
 
@@ -30,7 +30,7 @@ struct PiLiveApp: App {
         Window("Pi Live", id: "main") {
             LiveWidgetView(
                 model: model,
-                desktopPetMotion: windowCoordinator.desktopPetMotion
+                windowCoordinator: windowCoordinator
             )
                 .background {
                     LiveWindowAccessor { window in

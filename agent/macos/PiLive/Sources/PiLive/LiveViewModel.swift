@@ -12,6 +12,7 @@ final class LiveViewModel {
     var preferredTransport: PreferredTransport
     var selectedVoice: LiveVoice
     var selectedOrbID: String
+    var desktopRoamingEnabled: Bool
     var orbState: OrbVisualState = .idle
     var phase: LivePhase = .idle
     var transcript = ""
@@ -61,6 +62,7 @@ final class LiveViewModel {
         preferredTransport = preferences.transport
         selectedVoice = preferences.voice
         selectedOrbID = OrbCatalog.shared.pack(id: preferences.selectedOrbID).id
+        desktopRoamingEnabled = preferences.desktopRoamingEnabled
         customInstructions = preferences.instructions
         diagnosticsEnabled = preferences.diagnosticsEnabled
 
@@ -136,6 +138,11 @@ final class LiveViewModel {
         guard selectedOrbID != orb.id else { return }
         selectedOrbID = orb.id
         preferences.saveOrbID(orb.id)
+    }
+
+    func setDesktopRoamingEnabled(_ enabled: Bool) {
+        desktopRoamingEnabled = enabled
+        preferences.saveDesktopRoamingEnabled(enabled)
     }
 
     func saveSettings() {
@@ -241,6 +248,7 @@ final class LiveViewModel {
             transport: preferredTransport,
             voice: selectedVoice,
             selectedOrbID: selectedOrbID,
+            desktopRoamingEnabled: desktopRoamingEnabled,
             instructions: normalizedInstructions,
             diagnosticsEnabled: diagnosticsEnabled
         )

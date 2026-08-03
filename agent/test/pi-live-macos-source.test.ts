@@ -41,7 +41,10 @@ describe("Pi Live macOS UX source contracts", () => {
     const motion = source("macos/PiLive/Sources/PiLive/DesktopPetMotionController.swift");
     const compact = source("macos/PiLive/Sources/PiLive/CompactLiveSurface.swift");
     const coordinator = source("macos/PiLive/Sources/PiLive/LiveWindowCoordinator.swift");
+    const preferences = source("macos/PiLive/Sources/PiLive/LivePreferences.swift");
+    const settings = source("macos/PiLive/Sources/PiLive/LiveSettingsView.swift");
     const rpc = source("macos/PiLive/Sources/PiLive/LiveRPC.swift");
+    const pairingClient = source("macos/PiLive/Sources/PiLive/LivePairingClient.swift");
 
     expect(motion).toContain("case .resting");
     expect(motion).toContain("case .outbound");
@@ -58,7 +61,11 @@ describe("Pi Live macOS UX source contracts", () => {
     expect(coordinator).toContain("moveToPointerDisplayIfNeeded(window)");
     expect(coordinator).toContain("rebaseMotion(window: window, display: target)");
     expect(coordinator).not.toContain("guard !self.desktopPetMotion.ownsWindowPosition else");
+    expect(coordinator).not.toContain(".rightMouseDown");
+    expect(preferences).toContain('static let desktopRoamingEnabled = "desktopRoamingEnabled"');
+    expect(settings).toContain('"Move orb around desktop"');
     expect(rpc).not.toMatch(/DesktopPet|roam|mirroredHorizontally/u);
+    expect(pairingClient).not.toMatch(/desktopRoaming|DesktopPet/u);
   });
 
   it("keeps orb identity local and separate from voice wire settings", () => {

@@ -21,48 +21,55 @@ final class DesktopPetMotionControllerTests: XCTestCase {
         ))
         XCTAssertEqual(controller.phase, .resting)
 
-        let outbound = try XCTUnwrap(controller.step(
+        let outbound = try applyStep(
+            controller: controller,
             windowFrame: originFrame,
             visibleFrame: visibleFrame,
             elapsed: 1,
             now: 2.5
-        ))
+        )
         XCTAssertEqual(outbound.x, 122)
         XCTAssertEqual(outbound.y, originFrame.minY)
         XCTAssertEqual(controller.phase, .outbound)
         movementDirections.append(controller.direction)
         XCTAssertFalse(controller.presentation.mirroredHorizontally)
 
-        let edge = try XCTUnwrap(controller.step(
+        let edge = try applyStep(
+            controller: controller,
             windowFrame: CGRect(origin: outbound, size: originFrame.size),
             visibleFrame: visibleFrame,
             elapsed: 1,
             now: 3.5
-        ))
+        )
         XCTAssertEqual(edge.x, 160)
+        XCTAssertGreaterThan(edge.x, outbound.x)
         XCTAssertEqual(controller.phase, .returning)
         movementDirections.append(controller.direction)
         XCTAssertEqual(controller.direction, .right)
         XCTAssertFalse(controller.presentation.mirroredHorizontally)
 
-        let returning = try XCTUnwrap(controller.step(
+        let returning = try applyStep(
+            controller: controller,
             windowFrame: CGRect(origin: edge, size: originFrame.size),
             visibleFrame: visibleFrame,
             elapsed: 1,
             now: 4.5
-        ))
+        )
         movementDirections.append(controller.direction)
+        XCTAssertLessThan(returning.x, edge.x)
         XCTAssertEqual(controller.direction, .left)
         XCTAssertTrue(controller.presentation.mirroredHorizontally)
-        let home = try XCTUnwrap(controller.step(
+        let home = try applyStep(
+            controller: controller,
             windowFrame: CGRect(origin: returning, size: originFrame.size),
             visibleFrame: visibleFrame,
             elapsed: 1,
             now: 5.5
-        ))
+        )
         XCTAssertEqual(home.x, originFrame.minX)
         XCTAssertEqual(home.y, originFrame.minY)
         XCTAssertEqual(home, originFrame.origin)
+        XCTAssertLessThan(home.x, returning.x)
         XCTAssertEqual(controller.phase, .resting)
         XCTAssertFalse(controller.isWalking)
         movementDirections.append(controller.direction)
@@ -92,12 +99,13 @@ final class DesktopPetMotionControllerTests: XCTestCase {
         let controller = DesktopPetMotionController()
         controller.update(context: context(state: .idle))
         controller.rebase(windowFrame: originFrame, visibleFrame: visibleFrame, now: 0)
-        let movingOrigin = try XCTUnwrap(controller.step(
+        let movingOrigin = try applyStep(
+            controller: controller,
             windowFrame: originFrame,
             visibleFrame: visibleFrame,
             elapsed: 1,
             now: 2.5
-        ))
+        )
 
         controller.update(context: context(state: .talking, phase: .speaking))
         XCTAssertNil(controller.step(
@@ -221,26 +229,29 @@ final class DesktopPetMotionControllerTests: XCTestCase {
         controller.rebase(windowFrame: migratedWindow, visibleFrame: destination, now: 20)
 
         XCTAssertEqual(controller.origin, migratedOrigin)
-        let outbound = try XCTUnwrap(controller.step(
+        let outbound = try applyStep(
+            controller: controller,
             windowFrame: migratedWindow,
             visibleFrame: destination,
             elapsed: 1,
             now: 22.5
-        ))
+        )
         XCTAssertEqual(outbound.y, migratedOrigin.y)
         XCTAssertGreaterThan(outbound.x, migratedOrigin.x)
-        let edge = try XCTUnwrap(controller.step(
+        let edge = try applyStep(
+            controller: controller,
             windowFrame: CGRect(origin: outbound, size: migratedWindow.size),
             visibleFrame: destination,
             elapsed: 100,
             now: 122.5
-        ))
-        let returned = try XCTUnwrap(controller.step(
+        )
+        let returned = try applyStep(
+            controller: controller,
             windowFrame: CGRect(origin: edge, size: migratedWindow.size),
             visibleFrame: destination,
             elapsed: 100,
             now: 222.5
-        ))
+        )
         XCTAssertEqual(returned, migratedOrigin)
     }
 
@@ -248,12 +259,13 @@ final class DesktopPetMotionControllerTests: XCTestCase {
         let controller = DesktopPetMotionController()
         controller.update(context: context(state: .idle))
         controller.rebase(windowFrame: originFrame, visibleFrame: visibleFrame, now: 0)
-        let moving = try XCTUnwrap(controller.step(
+        let moving = try applyStep(
+            controller: controller,
             windowFrame: originFrame,
             visibleFrame: visibleFrame,
             elapsed: 1,
             now: 2.5
-        ))
+        )
 
         controller.update(context: DesktopPetMotionContext(
             semanticState: .syncing,
@@ -300,27 +312,30 @@ final class DesktopPetMotionControllerTests: XCTestCase {
         XCTAssertEqual(controller.presentation.visualState, .idle)
         XCTAssertFalse(controller.presentation.isMoving)
 
-        let outbound = try XCTUnwrap(controller.step(
+        let outbound = try applyStep(
+            controller: controller,
             windowFrame: originFrame,
             visibleFrame: visibleFrame,
             elapsed: 1,
             now: 2.5
-        ))
+        )
         XCTAssertEqual(controller.presentation.visualState, .working)
         XCTAssertTrue(controller.presentation.isMoving)
 
-        let edge = try XCTUnwrap(controller.step(
+        let edge = try applyStep(
+            controller: controller,
             windowFrame: CGRect(origin: outbound, size: originFrame.size),
             visibleFrame: visibleFrame,
             elapsed: 100,
             now: 102.5
-        ))
-        _ = try XCTUnwrap(controller.step(
+        )
+        _ = try applyStep(
+            controller: controller,
             windowFrame: CGRect(origin: edge, size: originFrame.size),
             visibleFrame: visibleFrame,
             elapsed: 100,
             now: 202.5
-        ))
+        )
         XCTAssertEqual(controller.presentation.visualState, .idle)
         XCTAssertFalse(controller.presentation.isMoving)
     }
@@ -330,16 +345,45 @@ final class DesktopPetMotionControllerTests: XCTestCase {
         controller.update(context: context(state: .idle))
         controller.rebase(windowFrame: originFrame, visibleFrame: visibleFrame, now: 0)
 
-        let moved = try XCTUnwrap(controller.step(
+        let moved = try applyStep(
+            controller: controller,
+            windowFrame: originFrame,
+            visibleFrame: visibleFrame,
+            elapsed: 0.125,
+            now: 2.5
+        )
+
+        XCTAssertGreaterThan(moved.x, originFrame.minX)
+        XCTAssertEqual(controller.presentation.visualState, .working)
+        XCTAssertEqual(controller.presentation.walkingFramePhase, 1)
+    }
+
+    func testRequestedMovementDoesNotChangePresentationUntilWindowActuallyMoves() throws {
+        let controller = DesktopPetMotionController(direction: .right)
+        controller.update(context: context(state: .idle))
+        controller.rebase(windowFrame: originFrame, visibleFrame: visibleFrame, now: 0)
+        let initialPresentation = controller.presentation
+
+        let requestedOrigin = try XCTUnwrap(controller.step(
             windowFrame: originFrame,
             visibleFrame: visibleFrame,
             elapsed: 0.125,
             now: 2.5
         ))
 
-        XCTAssertGreaterThan(moved.x, originFrame.minX)
-        XCTAssertEqual(controller.presentation.visualState, .working)
-        XCTAssertEqual(controller.presentation.walkingFramePhase, 1)
+        XCTAssertGreaterThan(requestedOrigin.x, originFrame.minX)
+        XCTAssertEqual(controller.presentation, initialPresentation)
+
+        controller.confirmMovement(
+            from: originFrame.origin,
+            to: originFrame.origin,
+            now: 2.5
+        )
+
+        XCTAssertFalse(controller.presentation.isMoving)
+        XCTAssertFalse(controller.presentation.mirroredHorizontally)
+        XCTAssertEqual(controller.presentation.walkingFramePhase, 0)
+        XCTAssertEqual(controller.direction, .right)
     }
 
     private func context(
@@ -351,8 +395,26 @@ final class DesktopPetMotionControllerTests: XCTestCase {
             semanticState: state,
             livePhase: phase,
             isCompactSurface: true,
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion,
+            desktopRoamingEnabled: true
         )
+    }
+
+    private func applyStep(
+        controller: DesktopPetMotionController,
+        windowFrame: CGRect,
+        visibleFrame: CGRect,
+        elapsed: TimeInterval,
+        now: TimeInterval
+    ) throws -> CGPoint {
+        let target = try XCTUnwrap(controller.step(
+            windowFrame: windowFrame,
+            visibleFrame: visibleFrame,
+            elapsed: elapsed,
+            now: now
+        ))
+        controller.confirmMovement(from: windowFrame.origin, to: target, now: now)
+        return target
     }
 }
 

@@ -225,6 +225,20 @@ struct LiveSettingsView: View {
                 }
                 .padding(.vertical, 4)
             }
+
+            Section("Movement") {
+                Toggle(
+                    "Move orb around desktop",
+                    isOn: Binding(
+                        get: { model.desktopRoamingEnabled },
+                        set: { model.setDesktopRoamingEnabled($0) }
+                    )
+                )
+                Text("When enabled, the idle call orb walks right and returns to its starting position. Reduce Motion always keeps it stationary.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

@@ -21,9 +21,24 @@ struct DesktopPetMotionContext: Equatable, Sendable {
     let livePhase: LivePhase
     let isCompactSurface: Bool
     let reduceMotion: Bool
+    let desktopRoamingEnabled: Bool
+
+    init(
+        semanticState: OrbVisualState,
+        livePhase: LivePhase,
+        isCompactSurface: Bool,
+        reduceMotion: Bool,
+        desktopRoamingEnabled: Bool = true
+    ) {
+        self.semanticState = semanticState
+        self.livePhase = livePhase
+        self.isCompactSurface = isCompactSurface
+        self.reduceMotion = reduceMotion
+        self.desktopRoamingEnabled = desktopRoamingEnabled
+    }
 
     var permitsRoaming: Bool {
-        guard isCompactSurface, !reduceMotion else { return false }
+        guard isCompactSurface, desktopRoamingEnabled, !reduceMotion else { return false }
         guard semanticState == .idle else { return false }
         return ![.pairing, .connecting, .reconnecting, .ending, .error].contains(livePhase)
     }
@@ -48,6 +63,12 @@ struct DesktopPetPresentation: Equatable, Sendable {
 @MainActor
 @Observable
 final class DesktopPetMotionController {
+    private enum PendingCompletion {
+        case none
+        case outbound
+        case returning
+    }
+
     static let speed: CGFloat = 42
     static let restDuration: TimeInterval = 2.5
     static let movementTickInterval: TimeInterval = 1.0 / 20.0
@@ -73,8 +94,11 @@ final class DesktopPetMotionController {
         semanticState: .idle,
         livePhase: .idle,
         isCompactSurface: false,
-        reduceMotion: false
+        reduceMotion: false,
+        desktopRoamingEnabled: true
     )
+    private var pendingTarget: CGPoint?
+    private var pendingCompletion = PendingCompletion.none
 
     init(direction: DesktopPetDirection = .right) {
         self.direction = direction
@@ -82,6 +106,8 @@ final class DesktopPetMotionController {
     }
 
     var ownsWindowPosition: Bool { context.permitsRoaming && hasOrigin }
+    var hasRouteOrigin: Bool { hasOrigin }
+    var permitsRoaming: Bool { context.permitsRoaming }
 
     func recommendedTickInterval(now: TimeInterval) -> TimeInterval {
         guard ownsWindowPosition, !userInteracting else { return 0.5 }
@@ -121,6 +147,8 @@ final class DesktopPetMotionController {
         restUntil = .infinity
         distanceTraveled = 0
         walkingFramePhase = 0
+        pendingTarget = nil
+        pendingCompletion = .none
         setWalking(false)
     }
 
@@ -142,9 +170,9 @@ final class DesktopPetMotionController {
         restUntil = now + Self.restDuration
         distanceTraveled = 0
         walkingFramePhase = 0
-        if origin.x >= maximumX { direction = .left }
-        if origin.x <= minimumX { direction = .right }
-        outboundDirection = direction
+        pendingTarget = nil
+        pendingCompletion = .none
+        outboundDirection = .right
         setWalking(false)
         updatePresentation()
     }
@@ -156,6 +184,8 @@ final class DesktopPetMotionController {
         now: TimeInterval
     ) -> CGPoint? {
         defer { updatePresentation() }
+        pendingTarget = nil
+        pendingCompletion = .none
         guard context.permitsRoaming, !userInteracting else {
             setWalking(false)
             return nil
@@ -170,7 +200,7 @@ final class DesktopPetMotionController {
                 return nil
             }
             phase = .outbound
-            outboundDirection = direction
+            outboundDirection = .right
         }
 
         let minimumX = visibleFrame.minX
@@ -186,34 +216,57 @@ final class DesktopPetMotionController {
             if (outboundDirection == .right && nextX >= targetX)
                 || (outboundDirection == .left && nextX <= targetX)
             {
-                phase = .returning
-                return recordMovement(
-                    to: CGPoint(x: targetX, y: origin.y),
-                    from: windowFrame.origin
-                )
+                let target = CGPoint(x: targetX, y: origin.y)
+                pendingTarget = target
+                pendingCompletion = .outbound
+                return target
             }
-            return recordMovement(
-                to: CGPoint(x: nextX, y: origin.y),
-                from: windowFrame.origin
-            )
+            let target = CGPoint(x: nextX, y: origin.y)
+            pendingTarget = target
+            return target
         case .returning:
             let returnDirection = outboundDirection.reversed
             let nextX = windowFrame.minX + returnDirection.multiplier * distance
             if (returnDirection == .left && nextX <= origin.x)
                 || (returnDirection == .right && nextX >= origin.x)
             {
-                phase = .resting
-                _ = recordMovement(to: origin, from: windowFrame.origin)
-                outboundDirection = direction
-                restUntil = now + Self.restDuration
-                setWalking(false)
+                pendingTarget = origin
+                pendingCompletion = .returning
                 return origin
             }
-            return recordMovement(
-                to: CGPoint(x: nextX, y: origin.y),
-                from: windowFrame.origin
-            )
+            let target = CGPoint(x: nextX, y: origin.y)
+            pendingTarget = target
+            return target
         }
+    }
+
+    func confirmMovement(
+        from previousOrigin: CGPoint,
+        to actualOrigin: CGPoint,
+        now: TimeInterval
+    ) {
+        let requestedTarget = pendingTarget
+        let completion = pendingCompletion
+        pendingTarget = nil
+        pendingCompletion = .none
+        guard actualOrigin != previousOrigin else {
+            setWalking(false)
+            return
+        }
+        _ = recordMovement(to: actualOrigin, from: previousOrigin)
+        guard actualOrigin == requestedTarget else { return }
+        switch completion {
+        case .outbound:
+            phase = .returning
+        case .returning where actualOrigin == origin:
+            phase = .resting
+            outboundDirection = .right
+            restUntil = now + Self.restDuration
+            setWalking(false)
+        case .none, .returning:
+            break
+        }
+        updatePresentation()
     }
 
     private func recordMovement(to target: CGPoint, from current: CGPoint) -> CGPoint {

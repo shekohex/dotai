@@ -3,6 +3,21 @@ import XCTest
 @testable import PiLive
 
 final class LivePreferencesTests: XCTestCase {
+    func testDesktopRoamingDefaultsEnabledAndPersistsLocally() throws {
+        let suiteName = "PiLiveTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = LivePreferences(defaults: defaults)
+
+        XCTAssertTrue(preferences.desktopRoamingEnabled)
+
+        preferences.saveDesktopRoamingEnabled(false)
+
+        XCTAssertFalse(preferences.desktopRoamingEnabled)
+        XCTAssertNil(defaults.string(forKey: "liveVoice"))
+        XCTAssertNil(defaults.string(forKey: "selectedOrbID"))
+    }
+
     func testOrbPersistenceIsSeparateFromVoice() throws {
         let suiteName = "PiLiveTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

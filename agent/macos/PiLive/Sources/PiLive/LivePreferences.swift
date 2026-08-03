@@ -5,6 +5,7 @@ struct LivePreferences {
         static let sshTarget = "sshTarget"
         static let transport = "preferredTransport"
         static let voice = "liveVoice"
+        static let orb = "selectedOrbID"
         static let instructions = "liveInstructions"
         static let diagnosticsEnabled = "liveDiagnosticsEnabled"
     }
@@ -22,6 +23,7 @@ struct LivePreferences {
     var voice: LiveVoice {
         LiveVoice(rawValue: defaults.string(forKey: Key.voice) ?? "sol") ?? .sol
     }
+    var selectedOrbID: String { defaults.string(forKey: Key.orb) ?? OrbCatalog.shared.defaultPack.id }
     var instructions: String { defaults.string(forKey: Key.instructions) ?? "" }
     var diagnosticsEnabled: Bool { defaults.bool(forKey: Key.diagnosticsEnabled) }
 
@@ -29,18 +31,24 @@ struct LivePreferences {
         sshTarget: String,
         transport: PreferredTransport,
         voice: LiveVoice,
+        selectedOrbID: String,
         instructions: String,
         diagnosticsEnabled: Bool
     ) {
         defaults.set(sshTarget, forKey: Key.sshTarget)
         defaults.set(transport.rawValue, forKey: Key.transport)
         defaults.set(voice.rawValue, forKey: Key.voice)
+        defaults.set(selectedOrbID, forKey: Key.orb)
         defaults.set(instructions, forKey: Key.instructions)
         defaults.set(diagnosticsEnabled, forKey: Key.diagnosticsEnabled)
     }
 
     func saveVoice(_ voice: LiveVoice) {
         defaults.set(voice.rawValue, forKey: Key.voice)
+    }
+
+    func saveOrbID(_ selectedOrbID: String) {
+        defaults.set(selectedOrbID, forKey: Key.orb)
     }
 
     func saveDiagnosticsEnabled(_ enabled: Bool) {

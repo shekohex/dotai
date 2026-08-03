@@ -11,6 +11,8 @@ final class LiveViewModel {
     var sshTarget: String
     var preferredTransport: PreferredTransport
     var selectedVoice: LiveVoice
+    var selectedOrbID: String
+    var orbState: OrbVisualState = .idle
     var phase: LivePhase = .idle
     var transcript = ""
     var agentProgress = ""
@@ -19,6 +21,7 @@ final class LiveViewModel {
     var inputLevel = 0.0
     var outputLevel = 0.0
     var speechActive = false
+    var mediaSessionActive = false
     var settingsMessage = ""
     var customInstructions: String
     var diagnosticsEnabled: Bool
@@ -37,6 +40,11 @@ final class LiveViewModel {
     @ObservationIgnored private let client: LivePairingClient
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var agentProgressDelegationId = ""
+    @ObservationIgnored private var remoteActivity: ActivitySnapshotParams?
+    @ObservationIgnored private var orbStateEnteredAt = Date()
+    @ObservationIgnored private var orbResolutionTask: Task<Void, Never>?
+
+    var selectedOrb: OrbPackManifest { OrbCatalog.shared.pack(id: selectedOrbID) }
 
     init(
         credentials: CredentialStore = CredentialStore(),
@@ -52,6 +60,7 @@ final class LiveViewModel {
         sshTarget = preferences.sshTarget
         preferredTransport = preferences.transport
         selectedVoice = preferences.voice
+        selectedOrbID = OrbCatalog.shared.pack(id: preferences.selectedOrbID).id
         customInstructions = preferences.instructions
         diagnosticsEnabled = preferences.diagnosticsEnabled
 
@@ -78,6 +87,12 @@ final class LiveViewModel {
 
     func connect() {
         errorMessage = ""
+        remoteActivity = nil
+        mediaSessionActive = false
+        inputLevel = 0
+        outputLevel = 0
+        speechActive = false
+        updateOrbState()
         persistSettings()
         do { try credentials.saveCoderToken(coderToken) }
         catch { errorMessage = error.localizedDescription; return }
@@ -94,6 +109,7 @@ final class LiveViewModel {
                 )
             } catch {
                 phase = .error
+                updateOrbState()
                 errorMessage = error.localizedDescription
             }
         }
@@ -114,6 +130,12 @@ final class LiveViewModel {
         selectedVoice = voice
         preferences.saveVoice(voice)
         client.setPreferredVoice(voice)
+    }
+
+    func selectOrb(_ orb: OrbPackManifest) {
+        guard selectedOrbID != orb.id else { return }
+        selectedOrbID = orb.id
+        preferences.saveOrbID(orb.id)
     }
 
     func saveSettings() {
@@ -149,7 +171,9 @@ final class LiveViewModel {
         switch event {
         case let .phase(newPhase):
             phase = newPhase
-            muted = newPhase == .muted
+            updateOrbState()
+        case let .muted(isMuted):
+            muted = isMuted
         case let .transcript(text):
             transcript = text
         case let .agentProgress(delegationId, text, _):
@@ -160,6 +184,10 @@ final class LiveViewModel {
             agentProgress = String((agentProgress + text).suffix(2_000))
         case .threadsSnapshot, .threadEvent:
             break
+        case let .activitySnapshot(snapshot):
+            guard snapshot.revision > (remoteActivity?.revision ?? -1) else { break }
+            remoteActivity = snapshot
+            updateOrbState()
         case let .failure(message):
             errorMessage = message
         case .stopped:
@@ -168,6 +196,10 @@ final class LiveViewModel {
             inputLevel = input
             outputLevel = output
             speechActive = active
+            updateOrbState()
+        case let .mediaSessionActive(active):
+            mediaSessionActive = active
+            updateOrbState()
         case let .voiceSetting(voice, appliesTo):
             selectedVoice = voice
             preferences.saveVoice(voice)
@@ -196,6 +228,9 @@ final class LiveViewModel {
         inputLevel = 0
         outputLevel = 0
         speechActive = false
+        mediaSessionActive = false
+        remoteActivity = nil
+        setOrbState(.idle)
         errorMessage = ""
         hideWindow()
     }
@@ -205,6 +240,7 @@ final class LiveViewModel {
             sshTarget: sshTarget,
             transport: preferredTransport,
             voice: selectedVoice,
+            selectedOrbID: selectedOrbID,
             instructions: normalizedInstructions,
             diagnosticsEnabled: diagnosticsEnabled
         )
@@ -219,5 +255,36 @@ final class LiveViewModel {
 
     private var normalizedInstructions: String {
         String(customInstructions.prefix(8_000)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func updateOrbState(now: Date = Date()) {
+        orbResolutionTask?.cancel()
+        let resolution = OrbStateResolver.resolve(
+            inputs: OrbStateInputs(
+                phase: phase,
+                muted: muted,
+                outputActive: outputLevel >= 0.012,
+                speechActive: speechActive,
+                mediaSessionActive: mediaSessionActive,
+                remoteActivity: remoteActivity
+            ),
+            currentState: orbState,
+            stateEnteredAt: orbStateEnteredAt,
+            now: now
+        )
+        setOrbState(resolution.state, now: now)
+        guard let reevaluateAt = resolution.reevaluateAt else { return }
+        orbResolutionTask = Task { @MainActor [weak self] in
+            let delay = max(0, reevaluateAt.timeIntervalSinceNow)
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self?.updateOrbState()
+        }
+    }
+
+    private func setOrbState(_ state: OrbVisualState, now: Date = Date()) {
+        guard orbState != state else { return }
+        orbState = state
+        orbStateEnteredAt = now
     }
 }

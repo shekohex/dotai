@@ -2,6 +2,8 @@ import type { MessageUpdateEvent } from "@earendil-works/pi-coding-agent";
 import { readAssistantTextPhase } from "../../utils/pi-ai-text.js";
 import type { LiveContextChannel } from "./protocol.js";
 
+export { LiveActivityTracker } from "./activity-state.js";
+
 const DEFAULT_FLUSH_MS = 200;
 
 export interface LiveAgentDelta {

@@ -514,6 +514,13 @@ describe("live child parent-message integration", () => {
       details: { delegationId: "delegation-1" },
     });
     connection.emitState("reconnecting");
+    connection.emitState("connected");
+    expect(
+      connection.notifications.filter(({ method }) => method === "activity.snapshot").at(-1),
+    ).toMatchObject({
+      method: "activity.snapshot",
+      params: { state: "checkingSubagents" },
+    });
     liveControlMessages.length = 0;
     await childTool.execute(
       "message-parent-reconnecting",

@@ -70,4 +70,20 @@ final class LiveWindowCoordinatorTests: XCTestCase {
         XCTAssertTrue(LiveWindowPlacement.shouldMove(fromDisplayID: 4, toDisplayID: 5))
         XCTAssertTrue(LiveWindowPlacement.shouldMove(fromDisplayID: nil, toDisplayID: 5))
     }
+
+    @MainActor
+    func testPresentationRemainsVisibleAcrossSpacesAndFullscreen() {
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 122, height: 122),
+            styleMask: [.resizable],
+            backing: .buffered,
+            defer: false
+        )
+
+        LiveWindowPresentation.apply(to: window)
+
+        XCTAssertTrue(window.collectionBehavior.contains(.canJoinAllSpaces))
+        XCTAssertTrue(window.collectionBehavior.contains(.fullScreenAuxiliary))
+        XCTAssertTrue(window.collectionBehavior.contains(.stationary))
+    }
 }

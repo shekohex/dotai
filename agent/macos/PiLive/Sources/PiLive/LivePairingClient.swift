@@ -2,13 +2,16 @@ import Foundation
 
 enum LiveClientEvent: Sendable {
     case phase(LivePhase)
+    case muted(Bool)
     case transcript(String)
     case agentProgress(delegationId: String, text: String, channel: String)
+    case activitySnapshot(ActivitySnapshotParams)
     case threadsSnapshot(ThreadsSnapshotParams)
     case threadEvent(ThreadEventParams)
     case failure(String)
     case stopped
     case levels(input: Double, output: Double, speechActive: Bool)
+    case mediaSessionActive(Bool)
     case voiceSetting(voice: LiveVoice, appliesTo: String)
     case instructionsSetting(appliesTo: String)
     case diagnosticsSetting(enabled: Bool, appliesTo: String)
@@ -55,10 +58,12 @@ final class LivePairingClient {
         eventContinuation = pair.continuation
 
         peer.onOpened = { [weak self] in
+            self?.emit(.mediaSessionActive(true))
             Task { try? await self?.notify("webrtc.opened", params: EmptyParams()) }
         }
         peer.onFailure = { [weak self] error in self?.fail(error) }
         peer.onState = { [weak self] state in
+            self?.emit(.mediaSessionActive(state == "connected"))
             Task { try? await self?.notify("webrtc.state", params: WebRTCStateParams(state: state)) }
         }
         peer.onLevels = { [weak self] input, output, speechActive in
@@ -154,7 +159,7 @@ final class LivePairingClient {
         muted.toggle()
         peer.setMuted(muted)
         try? await notify("audio.muted", params: MutedParams(muted: muted))
-        emit(.phase(muted ? .muted : .listening))
+        emit(.muted(muted))
     }
 
     func setPreferredVoice(_ voice: LiveVoice) {
@@ -314,7 +319,9 @@ final class LivePairingClient {
         switch method {
         case "session.phase":
             let params = try frame.params.decode(PhaseParams.self)
-            emit(.phase(LivePhase(rawValue: params.phase) ?? .connecting))
+            let phase = LivePhase(rawValue: params.phase) ?? .connecting
+            if phase == .muted { emit(.muted(true)) }
+            else { emit(.phase(phase)) }
         case "transcript.updated":
             emit(.transcript(try frame.params.decode(TranscriptParams.self).text))
         case "agent.progress":
@@ -324,6 +331,8 @@ final class LivePairingClient {
                 text: params.text,
                 channel: params.channel
             ))
+        case "activity.snapshot":
+            emit(.activitySnapshot(try frame.params.decode(ActivitySnapshotParams.self)))
         case "threads.snapshot":
             emit(.threadsSnapshot(try frame.params.decode(ThreadsSnapshotParams.self)))
         case "thread.started", "thread.status", "thread.activity", "thread.commentary",
@@ -333,6 +342,7 @@ final class LivePairingClient {
             let params = try frame.params.decode(MutedParams.self)
             muted = params.muted
             peer.setMuted(muted)
+            emit(.muted(muted))
         case "session.stop":
             ending = true
             finishStop()

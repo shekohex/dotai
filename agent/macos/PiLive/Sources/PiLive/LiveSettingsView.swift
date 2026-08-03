@@ -45,6 +45,7 @@ struct LiveSettingsView: View {
     private var selectedSettings: some View {
         switch selectedSection {
         case .general: generalSettings
+        case .orbs: orbSettings
         case .voice: voiceSettings
         case .assistant: assistantSettings
         case .connection: connectionSettings
@@ -64,7 +65,7 @@ struct LiveSettingsView: View {
             }
 
             Section("Call window") {
-                LabeledContent("While connected", value: "Floating Siri orb")
+                LabeledContent("While connected", value: "Floating animated orb")
                 LabeledContent("After hangup", value: "Hide automatically")
                 LabeledContent("Mute shortcut", value: "Space while focused")
                 LabeledContent("Mouse", value: "Click to mute · Double-click to end")
@@ -153,7 +154,9 @@ struct LiveSettingsView: View {
         Form {
             Section {
                 HStack(spacing: 18) {
-                    SettingsOrb(voice: model.selectedVoice)
+                    Image(systemName: "waveform.badge.mic")
+                        .font(.system(size: 34, weight: .medium))
+                        .foregroundStyle(model.selectedOrb.accentColor)
                         .frame(width: 82, height: 82)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(model.selectedVoice.displayName)
@@ -186,6 +189,41 @@ struct LiveSettingsView: View {
                     Label(model.settingsMessage, systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+    }
+
+    private var orbSettings: some View {
+        Form {
+            Section {
+                HStack(spacing: 18) {
+                    OrbRenderer(pack: model.selectedOrb, state: model.selectedOrb.previewState)
+                        .frame(width: 96, height: 96)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(model.selectedOrb.name)
+                            .font(.title2.weight(.semibold))
+                        Text("Stored on this Mac and independent from voice selection.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+
+            Section("Orb") {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(OrbCatalog.shared.packs) { orb in
+                        OrbSelectionButton(
+                            orb: orb,
+                            selected: model.selectedOrbID == orb.id
+                        ) {
+                            model.selectOrb(orb)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
             }
         }
         .formStyle(.grouped)
@@ -240,15 +278,15 @@ struct LiveSettingsView: View {
 
             Section("Conversation activity") {
                 LabeledContent("Turn detection", value: "Codex Live")
-                LabeledContent("Orb animation", value: "WebRTC audio telemetry")
-                Text("The orb uses smoothed media levels only for visual feedback. It does not gate or trim microphone audio.")
+                LabeledContent("Orb state", value: "Local media + Pi activity")
+                Text("Audio telemetry selects listening and talking states. Bundled sprite manifests define every animation and reduced-motion frame.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
-                Text("Pi Live uses WebRTC's real-time audio processing on the Mac. Presentation-level metering drives the interface without clipping or gating microphone audio; conversational turn detection remains with the live model.")
+                Text("Pi Live uses WebRTC's real-time audio processing on the Mac. Presentation-level metering never clips or gates microphone audio; conversational turn detection remains with the live model.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -265,6 +303,7 @@ struct LiveSettingsView: View {
 
 private enum LiveSettingsSection: String, CaseIterable, Identifiable {
     case general
+    case orbs
     case voice
     case assistant
     case connection
@@ -276,6 +315,7 @@ private enum LiveSettingsSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "General"
+        case .orbs: "Orbs"
         case .voice: "Voice"
         case .assistant: "Assistant"
         case .connection: "Connection"
@@ -287,6 +327,7 @@ private enum LiveSettingsSection: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: "gearshape"
+        case .orbs: "circle.hexagongrid.fill"
         case .voice: "waveform"
         case .assistant: "sparkles"
         case .connection: "network"
@@ -298,7 +339,8 @@ private enum LiveSettingsSection: String, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .general: "Shortcuts and call-window behavior"
-        case .voice: "Choose the sound and color of Pi"
+        case .orbs: "Choose Pi Live's local visual identity"
+        case .voice: "Choose Pi Live's spoken voice"
         case .assistant: "Conversation and workspace preferences"
         case .connection: "Transport, SSH, and Coder credentials"
         case .audio: "Microphone processing and speech activity"
@@ -446,30 +488,39 @@ private struct VoiceSelectionButton: View {
     }
 }
 
-private struct SettingsOrb: View {
-    let voice: LiveVoice
+private struct OrbSelectionButton: View {
+    let orb: OrbPackManifest
+    let selected: Bool
+    let action: () -> Void
 
     var body: some View {
-        Circle()
-            .fill(
-                AngularGradient(
-                    colors: voice.colors + Array(voice.colors.reversed()) + [voice.colors[0]],
-                    center: .center
-                )
-            )
-            .overlay(
-                Circle().fill(
-                    RadialGradient(
-                        colors: [.white.opacity(0.7), .clear],
-                        center: .topLeading,
-                        startRadius: 1,
-                        endRadius: 58
-                    )
-                )
-                .blendMode(.screen)
-            )
-            .overlay(Circle().stroke(.white.opacity(0.3), lineWidth: 0.8))
-            .shadow(color: voice.accent.opacity(0.35), radius: 16)
+        Button(action: action) {
+            VStack(spacing: 8) {
+                OrbRenderer(pack: orb, state: orb.previewState)
+                    .frame(width: 82, height: 82)
+                HStack {
+                    Text(orb.name)
+                        .fontWeight(selected ? .semibold : .regular)
+                    Spacer()
+                    if selected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(orb.accentColor)
+                    }
+                }
+            }
+            .padding(12)
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(selected ? orb.accentColor.opacity(0.12) : Color.secondary.opacity(0.055))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(selected ? orb.accentColor.opacity(0.5) : Color.secondary.opacity(0.12))
+        )
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

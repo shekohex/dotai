@@ -48,7 +48,11 @@ import {
   type LiveTranscriptContext,
 } from "./delegation-context.js";
 import { delegationTranscriptRelation } from "./delegation-language.js";
-import { LiveAgentProgressBuffer, readLiveAgentDelta } from "./agent-progress.js";
+import {
+  LiveActivityTracker,
+  LiveAgentProgressBuffer,
+  readLiveAgentDelta,
+} from "./agent-progress.js";
 import type {
   LiveCoordinatorEvent,
   LiveSessionCoordinator,
@@ -205,6 +209,7 @@ export class LiveSessionController {
   #delegationChain: Promise<void> = Promise.resolve();
   readonly #conversation = new LiveConversationTracker();
   readonly #agentProgress: LiveAgentProgressBuffer;
+  readonly #activity: LiveActivityTracker;
   #unsubscribeCoordinator: (() => void) | undefined;
 
   constructor(options: LiveSessionControllerOptions) {
@@ -226,6 +231,10 @@ export class LiveSessionController {
     this.#agentProgress = new LiveAgentProgressBuffer((progress) => {
       this.#flushAgentProgress(progress.channel, progress.text);
     });
+    this.#activity = new LiveActivityTracker((snapshot) => {
+      this.#notifyApp("activity.snapshot", snapshot);
+    });
+    this.#refreshCheckingSubagentsActivity();
     this.#unsubscribeCoordinator = this.#coordinator.subscribe((event) => {
       this.#handleCoordinatorEvent(event);
     });
@@ -380,6 +389,9 @@ export class LiveSessionController {
 
   handleMessageUpdate(event: MessageUpdateEvent): void {
     if (this.#activeDelegationId === undefined) return;
+    this.#activity.setAgentState(
+      event.assistantMessageEvent.type === "thinking_delta" ? "thinking" : "working",
+    );
     const progress = readLiveAgentDelta(event);
     if (progress !== undefined) this.#agentProgress.push(progress);
   }
@@ -418,6 +430,7 @@ export class LiveSessionController {
     this.#streamedCommentary = false;
     this.#streamedSpeakable = false;
     this.#lastAgentProgress = undefined;
+    this.#activity.setAgentState("working");
     this.#emitPhase("working");
   }
 
@@ -432,6 +445,7 @@ export class LiveSessionController {
     this.#agentProgress.flush();
     const text = this.#lastAgentResponse ? finalTextFromAssistant(this.#lastAgentResponse) : "";
     if (text.length > 0) {
+      this.#activity.setAgentState("success");
       const finalContext = this.#streamedSpeakable
         ? `${AGENT_FINAL_MESSAGE_PREFIX}The preceding streamed speakable context is the complete final answer. Present any result not already spoken, without repeating earlier progress.`
         : `${AGENT_FINAL_MESSAGE_PREFIX}${text}`;
@@ -440,6 +454,7 @@ export class LiveSessionController {
       }
       this.#delegationExecutions.delete(delegationId);
     } else {
+      this.#activity.setAgentState("failure");
       const response = this.#lastAgentResponse;
       const execution = this.#delegationExecutions.get(delegationId);
       if (
@@ -510,6 +525,7 @@ export class LiveSessionController {
     this.#connection?.close();
     this.#connection = undefined;
     this.#agentProgress.clear();
+    this.#activity.dispose();
     this.#spokenSubagentResults.clear();
     this.#unsubscribeCoordinator?.();
     this.#unsubscribeCoordinator = undefined;
@@ -631,6 +647,7 @@ export class LiveSessionController {
       ...event,
       ...(inspection === undefined ? {} : { thread: inspection.thread }),
     });
+    this.#refreshCheckingSubagentsActivity();
     if (
       event.type === "thread.started" ||
       (event.type === "thread.status" &&
@@ -670,6 +687,14 @@ export class LiveSessionController {
 
   #syncCoordinatorState(): void {
     this.#notifyApp("threads.snapshot", this.#coordinator.snapshot());
+  }
+
+  #refreshCheckingSubagentsActivity(): void {
+    this.#activity.setCheckingSubagents(
+      this.#coordinator
+        .snapshot()
+        .threads.some((thread) => thread.path !== "/root" && thread.status === "running"),
+    );
   }
 
   #sendSessionSummary(): void {
@@ -813,6 +838,7 @@ export class LiveSessionController {
     const agentWasIdle = this.#context.isIdle();
     this.#delegationExecutions.set(delegationId, { request, details, retries: 0 });
     this.#pendingDelegationIds.add(delegationId);
+    this.#activity.setAgentState("thinking");
     this.#emitPhase("working");
     appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.dispatched", {
       delegationId,
@@ -840,6 +866,7 @@ export class LiveSessionController {
     this.#lastAgentResponse = undefined;
     this.#sentCommentary.clear();
     this.#pendingDelegationIds.add(delegationId);
+    this.#activity.setAgentState("thinking");
     this.#emitPhase("working");
     appendLiveDiagnostic(this.#context.sessionManager.getSessionId(), "delegation.empty-retry", {
       delegationId,
@@ -1002,6 +1029,7 @@ export class LiveSessionController {
     if (this.#lastAgentProgress !== undefined) {
       this.#notifyApp("agent.progress", this.#lastAgentProgress);
     }
+    this.#notifyApp("activity.snapshot", this.#activity.snapshot);
     this.#syncCoordinatorState();
   }
 
@@ -1014,8 +1042,7 @@ export class LiveSessionController {
 
   #refreshAudioPhase(): void {
     if (this.#stopped) return;
-    if (this.#muted) this.#emitPhase("muted");
-    else if (this.#activeDelegationId !== undefined || this.#pendingDelegationIds.size > 0)
+    if (this.#activeDelegationId !== undefined || this.#pendingDelegationIds.size > 0)
       this.#emitPhase("working");
     else if (this.#outputLevel > OUTPUT_ACTIVE_LEVEL) this.#emitPhase("speaking");
     else if (this.#mediaOpened) this.#emitPhase("listening");
@@ -1061,6 +1088,7 @@ export class LiveSessionController {
   #reportFailure(error: Error): void {
     if (this.#terminalEmitted || this.#stopped) return;
     this.#failure = error;
+    this.#activity.setAgentState("failure");
     this.#emitPhaseSafely("error");
     this.#emitTerminal(error);
     void this.stop();

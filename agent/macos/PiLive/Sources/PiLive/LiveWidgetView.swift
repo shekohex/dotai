@@ -2,9 +2,11 @@ import SwiftUI
 
 struct LiveWidgetView: View {
     @Bindable var model: LiveViewModel
+    let desktopPetMotion: DesktopPetMotionController
     @Namespace private var orbNamespace
     @State private var escapeArmed = false
     @State private var escapeResetTask: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isLive: Bool {
         model.connected || [.listening, .working, .speaking, .muted, .ending].contains(model.phase)
@@ -15,6 +17,7 @@ struct LiveWidgetView: View {
             if isLive {
                 CompactLiveSurface(
                     model: model,
+                    desktopPetMotion: desktopPetMotion,
                     orbNamespace: orbNamespace,
                     escapeArmed: escapeArmed
                 )
@@ -39,9 +42,20 @@ struct LiveWidgetView: View {
         }
         .onChange(of: model.phase) { _, phase in
             if phase == .ending || phase == .idle { disarmEscape() }
+            updateDesktopPetMotion()
         }
+        .onAppear { updateDesktopPetMotion() }
+        .onChange(of: model.orbState) { _, _ in updateDesktopPetMotion() }
+        .onChange(of: isLive) { _, _ in updateDesktopPetMotion() }
+        .onChange(of: reduceMotion) { _, _ in updateDesktopPetMotion() }
         .onDisappear {
             escapeResetTask?.cancel()
+            desktopPetMotion.update(context: DesktopPetMotionContext(
+                semanticState: model.orbState,
+                livePhase: model.phase,
+                isCompactSurface: false,
+                reduceMotion: reduceMotion
+            ))
         }
     }
 
@@ -70,5 +84,14 @@ struct LiveWidgetView: View {
         withAnimation(.smooth(duration: 0.18)) {
             escapeArmed = false
         }
+    }
+
+    private func updateDesktopPetMotion() {
+        desktopPetMotion.update(context: DesktopPetMotionContext(
+            semanticState: model.orbState,
+            livePhase: model.phase,
+            isCompactSurface: isLive,
+            reduceMotion: reduceMotion
+        ))
     }
 }

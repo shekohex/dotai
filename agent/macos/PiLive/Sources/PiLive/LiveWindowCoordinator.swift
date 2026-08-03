@@ -77,10 +77,16 @@ enum LiveWindowPlacement {
 
 @MainActor
 final class LiveWindowCoordinator {
+    let desktopPetMotion = DesktopPetMotionController()
+
     private weak var window: NSWindow?
     private var currentDisplay: LiveDisplayGeometry?
     private var pointerMonitor: Timer?
+    private var motionTimer: Timer?
+    private var lastMotionTick: TimeInterval?
+    private var interactionMonitor: Any?
     private var screenParametersObserver: NSObjectProtocol?
+    private var activeSpaceObserver: NSObjectProtocol?
 
     func attach(_ window: NSWindow) {
         guard self.window !== window else {
@@ -88,6 +94,7 @@ final class LiveWindowCoordinator {
             return
         }
         self.window = window
+        desktopPetMotion.reset()
         maintainWindowPresentation(window)
         let display = pointerDisplay() ?? window.screen.map(displayGeometry)
         if let display {
@@ -100,12 +107,22 @@ final class LiveWindowCoordinator {
 
     func show() {
         guard let window else { return }
+        desktopPetMotion.reset()
         maintainWindowPresentation(window)
         moveToPointerDisplayIfNeeded(window)
+        if let display = currentDisplay ?? window.screen.map(displayGeometry) {
+            currentDisplay = display
+            desktopPetMotion.rebase(
+                windowFrame: window.frame,
+                visibleFrame: display.visibleFrame,
+                now: ProcessInfo.processInfo.systemUptime
+            )
+        }
         window.orderFrontRegardless()
     }
 
     func hide() {
+        desktopPetMotion.reset(direction: desktopPetMotion.direction)
         window?.orderOut(nil)
     }
 
@@ -125,6 +142,11 @@ final class LiveWindowCoordinator {
             windowSize: window.frame.size,
             visibleFrame: display.visibleFrame
         ))
+        desktopPetMotion.rebase(
+            windowFrame: window.frame,
+            visibleFrame: display.visibleFrame,
+            now: ProcessInfo.processInfo.systemUptime
+        )
     }
 
     private func startDisplayMonitoring() {
@@ -137,6 +159,15 @@ final class LiveWindowCoordinator {
                 self.moveToPointerDisplayIfNeeded(window)
             }
         }
+        scheduleMotionTick(after: 0.05)
+        interactionMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown, .rightMouseUp]
+        ) { [weak self] event in
+            MainActor.assumeIsolated {
+                self?.handleInteractionEvent(event)
+            }
+            return event
+        }
         screenParametersObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
@@ -144,6 +175,15 @@ final class LiveWindowCoordinator {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.handleScreenParametersChanged()
+            }
+        }
+        activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.handleActiveSpaceChanged()
             }
         }
     }
@@ -164,6 +204,62 @@ final class LiveWindowCoordinator {
             to: target.visibleFrame
         ))
         currentDisplay = target
+        rebaseMotion(window: window, display: target)
+    }
+
+    private func advanceDesktopPetMotion() {
+        guard let window, window.isVisible else {
+            lastMotionTick = nil
+            return
+        }
+        let display = currentDisplay ?? window.screen.map(displayGeometry)
+        guard let display else { return }
+        currentDisplay = display
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = lastMotionTick.map { min(0.1, max(0, now - $0)) } ?? 0
+        lastMotionTick = now
+        guard let origin = desktopPetMotion.step(
+            windowFrame: window.frame,
+            visibleFrame: display.visibleFrame,
+            elapsed: elapsed,
+            now: now
+        ), origin != window.frame.origin
+        else { return }
+        window.setFrameOrigin(origin)
+    }
+
+    private func scheduleMotionTick(after interval: TimeInterval) {
+        motionTimer?.invalidate()
+        motionTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) {
+            [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.advanceDesktopPetMotion()
+                self.scheduleMotionTick(after: self.desktopPetMotion.recommendedTickInterval(
+                    now: ProcessInfo.processInfo.systemUptime
+                ))
+            }
+        }
+    }
+
+    private func handleInteractionEvent(_ event: NSEvent) {
+        guard event.window === window else { return }
+        switch event.type {
+        case .leftMouseDown, .leftMouseDragged, .rightMouseDown:
+            desktopPetMotion.beginUserInteraction()
+        case .leftMouseUp, .rightMouseUp:
+            if let screen = window?.screen { currentDisplay = displayGeometry(screen) }
+            if let window, let display = currentDisplay {
+                desktopPetMotion.endUserInteraction(
+                    windowFrame: window.frame,
+                    visibleFrame: display.visibleFrame,
+                    now: ProcessInfo.processInfo.systemUptime
+                )
+            }
+            lastMotionTick = nil
+        default:
+            break
+        }
     }
 
     private func handleScreenParametersChanged() {
@@ -186,6 +282,25 @@ final class LiveWindowCoordinator {
             ))
         }
         currentDisplay = target
+        rebaseMotion(window: window, display: target)
+    }
+
+    private func handleActiveSpaceChanged() {
+        guard let window else { return }
+        maintainWindowPresentation(window)
+        moveToPointerDisplayIfNeeded(window)
+        guard let display = currentDisplay ?? window.screen.map(displayGeometry) else { return }
+        currentDisplay = display
+        rebaseMotion(window: window, display: display)
+    }
+
+    private func rebaseMotion(window: NSWindow, display: LiveDisplayGeometry) {
+        desktopPetMotion.rebase(
+            windowFrame: window.frame,
+            visibleFrame: display.visibleFrame,
+            now: ProcessInfo.processInfo.systemUptime
+        )
+        lastMotionTick = nil
     }
 
     private func pointerDisplay() -> LiveDisplayGeometry? {

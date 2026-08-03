@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "packs": [
+    {
+      "id": "miss-minutes",
+      "name": "Miss Minutes",
+      "sheet": "miss-minutes.png",
+      "columns": 8,
+      "rows": 12,
+      "accent": "FF8A2A",
+      "alphaMode": "hard",
+      "previewState": "talking",
+      "fallbackState": "idle",
+      "states": {
+        "idle": {
+          "frames": [0, 1, 2, 3, 4, 5, 6, 7],
+          "frameDurationMilliseconds": 225,
+          "looping": true,
+          "reducedMotionFrame": 3
+        },
+        "syncing": {
+          "frames": [8, 9, 10, 11, 12, 13, 14, 15],
+          "frameDurationMilliseconds": 125,
+          "looping": true,
+          "reducedMotionFrame": 11
+        },
+        "listening": {
+          "frames": [16, 17, 18, 19, 20, 20, 21, 22, 23, 23],
+          "frameDurationMilliseconds": 220,
+          "looping": true,
+          "reducedMotionFrame": 20
+        },
+        "talking": {
+          "frames": [24, 25, 26, 27, 28, 29, 30, 31],
+          "frameDurationMilliseconds": 160,
+          "looping": true,
+          "reducedMotionFrame": 27
+        },
+        "thinking": {
+          "frames": [32, 33, 34, 35, 36, 37, 38, 39],
+          "frameDurationMilliseconds": 175,
+          "looping": true,
+          "reducedMotionFrame": 35
+        },
+        "working": {
+          "frames": [40, 41, 42, 43, 44, 45, 46, 47],
+          "frameDurationMilliseconds": 125,
+          "looping": true,
+          "reducedMotionFrame": 43
+        },
+        "checkingSubagents": {
+          "frames": [48, 49, 50, 51, 52, 53, 54, 55],
+          "frameDurationMilliseconds": 140,
+          "looping": true,
+          "reducedMotionFrame": 51
+        },
+        "waiting": {
+          "frames": [56, 57, 58, 59, 60, 61, 62, 63],
+          "frameDurationMilliseconds": 300,
+          "looping": true,
+          "reducedMotionFrame": 59
+        },
+        "success": {
+          "frames": [64, 65, 66, 67, 68, 69, 70, 71],
+          "frameDurationMilliseconds": 150,
+          "looping": false,
+          "reducedMotionFrame": 71
+        },
+        "failure": {
+          "frames": [72, 73, 74, 75, 76, 77, 78, 79],
+          "frameDurationMilliseconds": 175,
+          "looping": false,
+          "reducedMotionFrame": 79
+        },
+        "muted": {
+          "frames": [80, 81, 82, 83, 84, 85, 86, 87],
+          "frameDurationMilliseconds": 375,
+          "looping": true,
+          "reducedMotionFrame": 83
+        },
+        "ending": {
+          "frames": [88, 89, 90, 91, 92, 93, 94, 95],
+          "frameDurationMilliseconds": 225,
+          "looping": false,
+          "reducedMotionFrame": 95
+        }
+      }
+    }
+  ]
+}

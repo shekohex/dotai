@@ -28,7 +28,10 @@ struct PiLiveApp: App {
 
     var body: some Scene {
         Window("Pi Live", id: "main") {
-            LiveWidgetView(model: model)
+            LiveWidgetView(
+                model: model,
+                desktopPetMotion: windowCoordinator.desktopPetMotion
+            )
                 .background {
                     LiveWindowAccessor { window in
                         windowCoordinator.attach(window)

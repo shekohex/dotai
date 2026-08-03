@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CompactLiveSurface: View {
     @Bindable var model: LiveViewModel
+    @Bindable var desktopPetMotion: DesktopPetMotionController
     let orbNamespace: Namespace.ID
     let escapeArmed: Bool
     @Environment(\.openSettings) private var openSettings
@@ -16,37 +17,28 @@ struct CompactLiveSurface: View {
                     .padding(.horizontal, 11)
                     .padding(.vertical, 7)
                     .liveGlass(
-                        tint: model.selectedVoice.accent.opacity(0.17),
+                        tint: model.selectedOrb.accentColor.opacity(0.17),
                         in: Capsule(style: .continuous)
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
             ZStack {
-                AppleIntelligenceGlow(
-                    voice: model.selectedVoice,
-                    phase: model.phase,
-                    muted: model.muted,
-                    inputLevel: model.inputLevel,
-                    outputLevel: model.outputLevel
-                )
-                .frame(width: 106, height: 106)
-                .opacity(escapeArmed ? 0.45 : 1)
-
-                VoiceOrb(
-                    voice: model.selectedVoice,
-                    phase: model.phase,
-                    muted: model.muted,
-                    inputLevel: model.inputLevel,
-                    outputLevel: model.outputLevel,
-                    speechActive: model.speechActive
+                OrbRenderer(
+                    pack: model.selectedOrb,
+                    state: desktopPetMotion.presentation.visualState,
+                    mirroredHorizontally: desktopPetMotion.presentation.mirroredHorizontally,
+                    framePhase: desktopPetMotion.presentation.isMoving
+                        ? desktopPetMotion.presentation.walkingFramePhase
+                        : nil
                 )
                 .matchedGeometryEffect(id: "live-orb", in: orbNamespace, isSource: false)
-                .frame(width: 82, height: 82)
+                .frame(width: 100, height: 100)
+                .opacity(escapeArmed ? 0.45 : 1)
 
                 if escapeArmed {
                     Circle()
-                        .stroke(model.selectedVoice.accent.opacity(0.8), lineWidth: 2)
+                        .stroke(model.selectedOrb.accentColor.opacity(0.8), lineWidth: 2)
                         .frame(width: 88, height: 88)
                         .transition(.opacity)
                 }
@@ -56,7 +48,7 @@ struct CompactLiveSurface: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 24, height: 24)
-                        .background(model.selectedVoice.accent.gradient, in: Circle())
+                        .background(model.selectedOrb.accentColor.gradient, in: Circle())
                         .overlay(Circle().stroke(.white.opacity(0.38), lineWidth: 0.7))
                         .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
                         .offset(x: 31, y: 31)

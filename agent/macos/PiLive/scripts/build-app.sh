@@ -50,6 +50,7 @@ private extension Bundle {
 PY
 fi
 
+rm -rf "$BUILD_DIR/PiLive_PiLive.bundle"
 swift build -c "$CONFIGURATION"
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Frameworks" "$APP_DIR/Contents/Resources"

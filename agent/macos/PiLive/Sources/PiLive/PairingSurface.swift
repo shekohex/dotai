@@ -8,7 +8,7 @@ struct PairingSurface: View {
 
     var body: some View {
         ZStack {
-            LiveBackdrop(voice: model.selectedVoice)
+            LiveBackdrop(accent: model.selectedOrb.accentColor)
 
             VStack(spacing: 0) {
                 header
@@ -21,7 +21,8 @@ struct PairingSurface: View {
 
     private var header: some View {
         HStack(spacing: 11) {
-            VoiceMark(voice: model.selectedVoice)
+            OrbRenderer(pack: model.selectedOrb, state: .idle, animated: false)
+                .frame(width: 30, height: 30)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Pi Live")
@@ -37,7 +38,7 @@ struct PairingSurface: View {
                 Image(systemName: "gearshape.fill")
                     .frame(width: 30, height: 30)
             }
-            .buttonStyle(.glass(.regular.tint(model.selectedVoice.accent.opacity(0.18))))
+            .buttonStyle(.glass(.regular.tint(model.selectedOrb.accentColor.opacity(0.18))))
             .buttonBorderShape(.circle)
             .help("Pi Live Settings")
             .accessibilityLabel("Pi Live Settings")
@@ -48,14 +49,7 @@ struct PairingSurface: View {
         VStack(spacing: 18) {
             Spacer(minLength: 8)
 
-            VoiceOrb(
-                voice: model.selectedVoice,
-                phase: model.phase,
-                muted: false,
-                inputLevel: 0.03,
-                outputLevel: 0,
-                speechActive: false
-            )
+            OrbRenderer(pack: model.selectedOrb, state: model.orbState)
             .matchedGeometryEffect(id: "live-orb", in: orbNamespace)
             .frame(width: 132, height: 132)
 
@@ -73,7 +67,7 @@ struct PairingSurface: View {
                 HStack(spacing: 10) {
                     Image(systemName: pairingLinkReady ? "link.circle.fill" : "link.circle")
                         .font(.title3)
-                        .foregroundStyle(pairingLinkReady ? model.selectedVoice.accent : .secondary)
+                        .foregroundStyle(pairingLinkReady ? model.selectedOrb.accentColor : .secondary)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(pairingLinkReady ? "Pairing link detected" : "Pairing link needed")
                             .font(.subheadline.weight(.semibold))
@@ -91,13 +85,16 @@ struct PairingSurface: View {
                 HStack {
                     Label(model.selectedVoice.displayName, systemImage: "waveform.badge.mic")
                     Spacer()
+                    Text(model.selectedOrb.name)
+                        .foregroundStyle(.secondary)
+                    Spacer()
                     Text(model.preferredTransport.rawValue.capitalized)
                         .foregroundStyle(.secondary)
                 }
                 .font(.subheadline)
             }
             .padding(15)
-            .liveGlass(tint: model.selectedVoice.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
+            .liveGlass(tint: model.selectedOrb.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
 
             if !model.errorMessage.isEmpty {
                 Label(model.errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -119,7 +116,7 @@ struct PairingSurface: View {
                 .frame(height: 30)
             }
             .buttonStyle(.borderedProminent)
-            .tint(model.selectedVoice.accent)
+            .tint(model.selectedOrb.accentColor)
             .disabled(!pairingLinkReady || model.phase == .pairing || model.phase == .connecting)
         }
     }

@@ -17,6 +17,7 @@ let package = Package(
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
             ],
             path: "Sources/PiLive",
+            resources: [.process("Resources")],
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("DeviceCheck"),

@@ -7,7 +7,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { isUnknownRecord } from "../../utils/unknown-value.js";
 import { parseScreenCaptureResult } from "./pairing/schemas.js";
-import { presentImageToModel } from "../view-image.js";
+import { modelSupportsImages, presentImageToModel } from "../view-image.js";
 import { renderLookAtCall, renderLookAtResult } from "./screen-capture-render.js";
 
 export const MAX_CAPTURE_IMAGE_BYTES = 6 * 1024 * 1024;
@@ -41,6 +41,14 @@ export type LiveScreenCaptureDetails = {
   pointerY?: number;
   describedBy?: string;
 };
+
+export type LiveScreenCaptureProgressDetails = {
+  phase: "capturing" | "describing";
+};
+
+export type LiveScreenCaptureToolDetails =
+  | LiveScreenCaptureDetails
+  | LiveScreenCaptureProgressDetails;
 
 type LiveScreenCaptureSessionOptions = {
   requestTimeoutMs?: number;
@@ -244,7 +252,7 @@ export class LiveScreenCaptureSession {
 }
 
 export function createLookAtToolDefinition(getSession: () => LiveScreenCaptureSession | undefined) {
-  return defineTool<typeof LookAtParams, LiveScreenCaptureDetails>({
+  return defineTool<typeof LookAtParams, LiveScreenCaptureToolDetails>({
     name: "look_at",
     label: "Look At Display",
     renderShell: "self",
@@ -256,14 +264,24 @@ export function createLookAtToolDefinition(getSession: () => LiveScreenCaptureSe
     parameters: LookAtParams,
     renderCall: renderLookAtCall,
     renderResult: renderLookAtResult,
-    async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
+    async execute(_toolCallId, _params, signal, onUpdate, ctx) {
       const session = getSession();
       if (session === undefined) {
         throw new Error("Pi Live screen capture is unavailable: no active paired Pi Live app");
       }
+      onUpdate?.({
+        content: [{ type: "text", text: "Capturing the current display." }],
+        details: { phase: "capturing" },
+      });
       const capture = await session.capture(signal);
       const { image, ...details } = capture;
       const directText = `Captured display ${details.displayId}: ${details.width}x${details.height} JPEG (${details.byteSize} bytes) at ${details.path}`;
+      if (!modelSupportsImages(ctx.model)) {
+        onUpdate?.({
+          content: [{ type: "text", text: "Describing the current display." }],
+          details: { phase: "describing" },
+        });
+      }
       const presentation = await presentImageToModel(image, directText, signal, ctx);
       return {
         content: presentation.content,

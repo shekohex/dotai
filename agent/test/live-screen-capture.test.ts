@@ -157,7 +157,7 @@ describe("look_at", () => {
         expanded: false,
       } as never,
     );
-    expect(renderText(call)).toContain("capturing current display");
+    expect(renderText(call)).toContain("capturing display");
 
     const details = {
       path: "/tmp/pi-live/capture.jpg",
@@ -189,9 +189,10 @@ describe("look_at", () => {
       } as never,
     );
     const collapsedCallText = renderText(call);
-    expect(collapsedCallText).toContain("display 42");
+    expect(collapsedCallText).toContain("viewed display 42");
     expect(collapsedCallText).toContain("2560×1440");
     expect(collapsedCallText).toContain("described by openai-codex/gpt-5.6-luna");
+    expect(collapsedCallText).toMatch(/took \d+s/u);
     expect(renderText(collapsed)).toBe("");
 
     const expanded = tool.renderResult?.(
@@ -252,7 +253,7 @@ describe("look_at", () => {
       } as never,
     );
 
-    expect(renderText(call)).toContain("look_at · error");
+    expect(renderText(call)).toContain("look at display failed");
     expect(renderText(result)).toContain(message);
   });
   it("reports unavailable when no live app is paired", async () => {
@@ -304,12 +305,13 @@ describe("look_at", () => {
     const session = createSession("session-secure");
     session.attach(connection(captureResult(), { request }));
     const tool = createLookAtToolDefinition(() => session);
+    const updates: unknown[] = [];
 
     const result = await tool.execute(
       "look-3",
       {},
       undefined,
-      undefined,
+      (update) => updates.push(update),
       createContext(visionModel),
     );
 
@@ -328,6 +330,7 @@ describe("look_at", () => {
     expect(existsSync(result.details.path)).toBe(true);
     expect(readFileSync(result.details.path)).toEqual(jpeg);
     expect(completeSimpleModel).not.toHaveBeenCalled();
+    expect(updates).toEqual([expect.objectContaining({ details: { phase: "capturing" } })]);
 
     await session.close();
     expect(existsSync(result.details.path)).toBe(false);
@@ -371,12 +374,13 @@ describe("look_at", () => {
     const session = createSession("session-text-only");
     session.attach(connection());
     const tool = createLookAtToolDefinition(() => session);
+    const updates: unknown[] = [];
 
     const result = await tool.execute(
       "look-text",
       {},
       undefined,
-      undefined,
+      (update) => updates.push(update),
       createContext(textModel),
     );
 
@@ -402,6 +406,10 @@ describe("look_at", () => {
       }),
       expect.objectContaining({ apiKey: "test-key" }),
     );
+    expect(updates).toEqual([
+      expect.objectContaining({ details: { phase: "capturing" } }),
+      expect.objectContaining({ details: { phase: "describing" } }),
+    ]);
   });
 
   it("runs end to end over authenticated pairing RPC", async () => {

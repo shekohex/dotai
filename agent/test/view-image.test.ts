@@ -76,18 +76,27 @@ describe("view_image", () => {
   test("returns image content directly to vision-capable models", async () => {
     const fixture = createImageFixture();
     const tool = createViewImageToolDefinition();
+    const updates: unknown[] = [];
 
     const result = await tool.execute(
       "view-image-1",
       { path: fixture.path },
       undefined,
-      undefined,
+      (update) => updates.push(update),
       createContext(fixture.cwd, visionModel),
     );
 
     expect(result.content).toContainEqual(
       expect.objectContaining({ type: "image", mimeType: "image/png" }),
     );
+    expect(result.details).toMatchObject({
+      path: fixture.path,
+      mimeType: "image/png",
+      byteSize: expect.any(Number),
+    });
+    expect(updates).toEqual([
+      expect.objectContaining({ details: { path: fixture.path, phase: "loading" } }),
+    ]);
     expect(completeSimpleModel).not.toHaveBeenCalled();
   });
 
@@ -108,12 +117,13 @@ describe("view_image", () => {
       timestamp: Date.now(),
     } as AssistantMessage);
     const tool = createViewImageToolDefinition();
+    const updates: unknown[] = [];
 
     const result = await tool.execute(
       "view-image-2",
       { path: fixture.path },
       undefined,
-      undefined,
+      (update) => updates.push(update),
       createContext(fixture.cwd, textModel),
     );
 
@@ -131,5 +141,15 @@ describe("view_image", () => {
       }),
       expect.objectContaining({ apiKey: "test-key" }),
     );
+    expect(result.details).toMatchObject({
+      path: fixture.path,
+      mimeType: "image/png",
+      byteSize: expect.any(Number),
+      describedBy: "openai-codex/gpt-5.6-luna",
+    });
+    expect(updates).toEqual([
+      expect.objectContaining({ details: { path: fixture.path, phase: "loading" } }),
+      expect.objectContaining({ details: { path: fixture.path, phase: "describing" } }),
+    ]);
   });
 });

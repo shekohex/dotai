@@ -23,6 +23,8 @@ import {
 } from "../src/extensions/coreui/tools.js";
 import { shortenPathForTool } from "../src/extensions/coreui/path.js";
 import { createLookAtToolDefinition } from "../src/extensions/live/screen-capture.js";
+import { createViewImageToolDefinition } from "../src/extensions/view-image.js";
+import { createSubagentParentMessageTool } from "../src/subagent-sdk/parent-message.js";
 
 type ToolResultContent = Array<{ type: string; text?: string }>;
 
@@ -95,6 +97,8 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
   const batchReadDefinition = createReadBatchPreviewDefinition(cwd);
   const subagentDefinition = getSubagentPreviewDefinition();
   const lookAtDefinition = createLookAtToolDefinition(() => undefined);
+  const viewImageDefinition = createViewImageToolDefinition();
+  const childSubagentDefinition = createSubagentParentMessageTool(() => {});
   const parentSessionPath = joinPath(
     cwd,
     ".pi/agent/sessions/parent/2026-04-11T17-45-51-124Z_parent.jsonl",
@@ -312,6 +316,86 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
 
   return [
     {
+      id: "subagent:parent-message",
+      title: "child subagent parent message preview",
+      toolName: childSubagentDefinition.name,
+      toolDefinition: childSubagentDefinition,
+      cwd,
+      args: {
+        action: "message",
+        target: "parent",
+        kind: "blocker",
+        message: "Need product decision before changing the public API",
+        delivery: "steer",
+      },
+      successResult: {
+        content: [{ type: "text", text: "Message steered parent session." }],
+        details: {
+          kind: "blocker",
+          message: "Need product decision before changing the public API",
+          delivery: "steer",
+          createdAt: Date.parse("2026-04-12T10:02:00.000Z"),
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "Parent session connection is unavailable." }],
+      },
+    },
+    {
+      id: "view_image:direct",
+      title: "view_image direct vision preview",
+      toolName: viewImageDefinition.name,
+      toolDefinition: viewImageDefinition,
+      cwd,
+      args: {
+        path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+      },
+      partialResult: {
+        content: [{ type: "text", text: "Loading image." }],
+        details: {
+          path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+          phase: "loading",
+        },
+      },
+      successResult: {
+        content: [{ type: "text", text: "RAW IMAGE PAYLOAD SHOULD NEVER RENDER" }],
+        details: {
+          path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+          mimeType: "image/png",
+          byteSize: 12_345,
+        },
+      },
+      errorResult: {
+        content: [{ type: "text", text: "view_image expected an image file: notes.txt" }],
+      },
+    },
+    {
+      id: "view_image:described",
+      title: "view_image helper-described preview",
+      toolName: viewImageDefinition.name,
+      toolDefinition: viewImageDefinition,
+      cwd,
+      args: {
+        path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+      },
+      partialResult: {
+        content: [{ type: "text", text: "Describing image." }],
+        details: {
+          path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+          phase: "describing",
+        },
+      },
+      successResult: {
+        content: [{ type: "text", text: "SENSITIVE IMAGE DESCRIPTION SHOULD NEVER RENDER" }],
+        details: {
+          path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+          mimeType: "image/png",
+          byteSize: 12_345,
+          describedBy: "openai-codex/gpt-5.6-luna",
+        },
+      },
+    },
+    {
       id: "look_at:vision",
       title: "look_at direct vision preview",
       toolName: lookAtDefinition.name,
@@ -320,6 +404,7 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       args: {},
       partialResult: {
         content: [{ type: "text", text: "Capturing the current display" }],
+        details: { phase: "capturing" },
       },
       successResult: {
         content: [{ type: "text", text: "BASE64_SHOULD_NEVER_RENDER" }],
@@ -349,6 +434,10 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       toolDefinition: lookAtDefinition,
       cwd,
       args: {},
+      partialResult: {
+        content: [{ type: "text", text: "Describing the current display" }],
+        details: { phase: "describing" },
+      },
       successResult: {
         content: [{ type: "text", text: "SENSITIVE SCREEN DESCRIPTION SHOULD NEVER RENDER" }],
         details: {

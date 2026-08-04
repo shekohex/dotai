@@ -1,31 +1,97 @@
 import { formatSize } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
+  applyLinePrefix,
   createTextComponent,
+  formatDurationHuman,
   formatToolRail,
   getTextContent,
   renderToolError,
   type CoreUIToolTheme,
 } from "../coreui/tools.js";
-import type { LiveScreenCaptureDetails } from "./screen-capture.js";
+import { formatToolStatus } from "../coreui/tools-status.js";
+import type {
+  LiveScreenCaptureDetails,
+  LiveScreenCaptureProgressDetails,
+  LiveScreenCaptureToolDetails,
+} from "./screen-capture.js";
 
 interface LookAtRenderState {
+  startedAt?: number;
+  endedAt?: number;
+  interval?: NodeJS.Timeout;
   callComponent?: Text;
+  phase?: LiveScreenCaptureProgressDetails["phase"];
 }
 
 interface LookAtRenderContext {
-  state?: LookAtRenderState;
+  state: unknown;
   lastComponent: unknown;
+  executionStarted: boolean;
   isPartial: boolean;
   isError: boolean;
+  invalidate: () => void;
 }
 
-function formatCallStatus(
-  text: string,
+function isLookAtRenderState(value: unknown): value is LookAtRenderState {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function syncRenderState(context: LookAtRenderContext): LookAtRenderState {
+  const state = isLookAtRenderState(context.state) ? context.state : {};
+  if (context.executionStarted && state.startedAt === undefined) {
+    state.startedAt = Date.now();
+    state.endedAt = undefined;
+  }
+  if (context.isPartial && state.startedAt !== undefined && state.interval === undefined) {
+    state.interval = setInterval(context.invalidate, 1000);
+    state.interval.unref?.();
+  }
+  if (!context.isPartial && state.startedAt !== undefined) {
+    state.endedAt ??= Date.now();
+    if (state.interval !== undefined) {
+      clearInterval(state.interval);
+      state.interval = undefined;
+    }
+  }
+  return state;
+}
+
+function elapsedMs(state: LookAtRenderState): number {
+  if (state.startedAt === undefined) return 0;
+  return (state.endedAt ?? Date.now()) - state.startedAt;
+}
+
+function isProgressDetails(
+  details: LiveScreenCaptureToolDetails | undefined,
+): details is LiveScreenCaptureProgressDetails {
+  return (
+    details !== undefined &&
+    "phase" in details &&
+    (details.phase === "capturing" || details.phase === "describing")
+  );
+}
+
+function isCaptureDetails(
+  details: LiveScreenCaptureToolDetails | undefined,
+): details is LiveScreenCaptureDetails {
+  return details !== undefined && "width" in details && "height" in details;
+}
+
+function formatCallText(
   theme: CoreUIToolTheme,
   context: LookAtRenderContext,
+  state: LookAtRenderState,
 ): string {
-  return `${formatToolRail(theme, context)}${text}`;
+  const status = formatToolStatus(theme, context, {
+    pending: state.phase === "describing" ? "describing display" : "capturing display",
+    success: "viewed display",
+    error: "look at display failed",
+  });
+  const elapsed = context.isPartial
+    ? `${theme.fg("dim", " · ")}${theme.fg("muted", formatDurationHuman(elapsedMs(state)))}`
+    : "";
+  return `${formatToolRail(theme, context)}${status}${elapsed}`;
 }
 
 function formatSuccessSummary(details: LiveScreenCaptureDetails, theme: CoreUIToolTheme): string {
@@ -34,8 +100,6 @@ function formatSuccessSummary(details: LiveScreenCaptureDetails, theme: CoreUITo
       ? "viewed directly"
       : `described by ${details.describedBy}`;
   return [
-    theme.bold(theme.fg("muted", "look_at")),
-    theme.fg("muted", `display ${details.displayId}`),
     theme.fg("muted", `${details.width}×${details.height}`),
     theme.fg("muted", `${formatSize(details.byteSize)} JPEG`),
     theme.fg("muted", delivery),
@@ -70,13 +134,10 @@ function renderLookAtCall(
   theme: CoreUIToolTheme,
   context: LookAtRenderContext,
 ): Text {
-  const state = context.state ?? {};
-  const status = context.isError
-    ? `${theme.bold(theme.fg("error", "look_at"))}${theme.fg("dim", " · ")}${theme.fg("error", "error")}`
-    : theme.italic(theme.fg("muted", "capturing current display…"));
+  const state = syncRenderState(context);
   const component = createTextComponent(
     state.callComponent ?? context.lastComponent,
-    formatCallStatus(status, theme, context),
+    formatCallText(theme, context, state),
   );
   state.callComponent = component;
   return component;
@@ -85,50 +146,46 @@ function renderLookAtCall(
 function renderLookAtResult(
   result: {
     content: Array<{ type: string; text?: string }>;
-    details?: LiveScreenCaptureDetails;
+    details?: LiveScreenCaptureToolDetails;
   },
   options: { expanded?: boolean; isPartial?: boolean },
   theme: CoreUIToolTheme,
   context: LookAtRenderContext,
 ): Text {
-  const state = context.state ?? {};
+  const state = syncRenderState({ ...context, isPartial: options.isPartial === true });
+  if (options.isPartial === true) {
+    if (isProgressDetails(result.details)) state.phase = result.details.phase;
+    state.callComponent?.setText(formatCallText(theme, { ...context, isPartial: true }, state));
+    return createTextComponent(context.lastComponent, "");
+  }
   if (context.isError) {
-    state.callComponent?.setText(
-      formatCallStatus(
-        `${theme.bold(theme.fg("error", "look_at"))}${theme.fg("dim", " · ")}${theme.fg("error", "error")}`,
-        theme,
-        context,
-      ),
-    );
+    state.callComponent?.setText(formatCallText(theme, context, state));
     return renderToolError(
       sanitizeErrorMessage(getTextContent(result)),
       theme,
       context.lastComponent,
     );
   }
-  if (options.isPartial === true) {
-    return createTextComponent(context.lastComponent, "");
-  }
-  if (result.details === undefined) {
+  if (!isCaptureDetails(result.details)) {
     state.callComponent?.setText(
-      formatCallStatus(
-        theme.bold(theme.fg("muted", "look_at · capture metadata unavailable")),
-        theme,
-        context,
-      ),
+      `${formatCallText(theme, context, state)}${theme.fg("dim", " · ")}${theme.fg("muted", "metadata unavailable")}`,
     );
     return createTextComponent(context.lastComponent, "");
   }
 
   state.callComponent?.setText(
-    formatCallStatus(formatSuccessSummary(result.details, theme), theme, context),
+    [
+      `${formatCallText(theme, context, state)} ${theme.fg("text", result.details.displayId)}`,
+      formatSuccessSummary(result.details, theme),
+      theme.fg("muted", `took ${formatDurationHuman(elapsedMs(state))}`),
+    ].join(theme.fg("dim", " · ")),
   );
   if (options.expanded !== true) {
     return createTextComponent(context.lastComponent, "");
   }
   return createTextComponent(
     context.lastComponent,
-    formatCallStatus(formatExpandedDetails(result.details), theme, context),
+    applyLinePrefix(formatExpandedDetails(result.details), formatToolRail(theme, context)),
   );
 }
 

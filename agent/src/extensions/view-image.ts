@@ -8,6 +8,12 @@ import { Type } from "typebox";
 import { errorMessage } from "../utils/error-message.js";
 import { readToolDefinition } from "./coreui/builtins.js";
 import { completeSimpleModel } from "./pi-ai-models.js";
+import {
+  renderViewImageCall,
+  renderViewImageResult,
+  type ViewImageRenderState,
+} from "./view-image-render.js";
+import type { ViewImageDetails } from "./view-image-types.js";
 
 const IMAGE_DESCRIPTION_SYSTEM_PROMPT =
   "Describe the supplied image in detail. Output only the image description, with no preamble or other commentary.";
@@ -16,11 +22,6 @@ const PREFERRED_DESCRIPTION_MODEL_KEYS = ["openai-codex/gpt-5.6-luna"] as const;
 const ViewImageParams = Type.Object({
   path: Type.String({ description: "Path to an image file, relative to the current directory" }),
 });
-
-type ViewImageDetails = {
-  path: string;
-  describedBy?: string;
-};
 
 export function modelSupportsImages(model: Model<Api> | undefined): boolean {
   return model?.input.includes("image") === true;
@@ -145,9 +146,10 @@ export async function presentImageToModel(
 }
 
 export function createViewImageToolDefinition() {
-  return defineTool<typeof ViewImageParams, ViewImageDetails>({
+  return defineTool<typeof ViewImageParams, ViewImageDetails, ViewImageRenderState>({
     name: "view_image",
     label: "View Image",
+    renderShell: "self",
     description:
       "View a local image file. Vision-capable models receive the image directly; text-only models receive a detailed description from a vision helper model.",
     promptSnippet: "View or inspect a local image file",
@@ -155,14 +157,28 @@ export function createViewImageToolDefinition() {
       "Use view_image for image files when visual inspection is needed, especially when the active model is text-only.",
     ],
     parameters: ViewImageParams,
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    renderCall: renderViewImageCall,
+    renderResult: renderViewImageResult,
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const path = params.path.startsWith("@") ? params.path.slice(1) : params.path;
+      onUpdate?.({
+        content: [{ type: "text", text: "Loading image." }],
+        details: { path, phase: "loading" },
+      });
       const image = await loadImage(path, signal, ctx);
+      if (!modelSupportsImages(ctx.model)) {
+        onUpdate?.({
+          content: [{ type: "text", text: "Describing image." }],
+          details: { path, phase: "describing" },
+        });
+      }
       const presentation = await presentImageToModel(image, `Viewed image: ${path}`, signal, ctx);
       return {
         content: presentation.content,
         details: {
           path,
+          mimeType: image.mimeType,
+          byteSize: Buffer.byteLength(image.data, "base64"),
           ...(presentation.describedBy === undefined
             ? {}
             : { describedBy: presentation.describedBy }),

@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import type { ExtensionEvent } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import { SubagentParentMessageSchema, type SubagentParentMessage } from "./parent-message.js";
+import { SubagentParentMessageSchema, type SubagentParentMessage } from "./parent-message-types.js";
 
 export const SubagentIpcConfigSchema = Type.Object(
   {

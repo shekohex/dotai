@@ -4,11 +4,11 @@ export type AssistantPhase = "commentary" | "final_answer";
 
 export type ResponseContentItem =
   | { type: "input_text"; text: string }
-  | { type: "input_image"; image_url: string }
+  | { type: "input_image"; detail: "auto"; image_url: string }
   | { type: "output_text"; text: string };
 
 export type ResponseItem = {
-  type: string;
+  type?: string;
   [key: string]: unknown;
 };
 
@@ -24,6 +24,7 @@ export type ResponsesRequestShape = {
   tools?: Record<string, unknown>[];
   reasoning?: ResponsesReasoningConfig;
   text?: ResponsesTextConfig;
+  serviceTier?: string;
 };
 
 export type RemoteCompactionDetails = {
@@ -32,6 +33,7 @@ export type RemoteCompactionDetails = {
   implementation?: "responses_compact_v1" | "responses_compaction_v2";
   modelKey: string;
   replacementHistory: ResponseItem[];
+  sourceProvider?: string;
   api?: string;
   model?: string;
   baseUrl?: string;
@@ -48,6 +50,9 @@ export type RemoteCompactionDetails = {
 export type RemoteCompactionSessionState = {
   compactionEntryId: string;
   modelKey: string;
+  sourceProvider?: string;
+  api?: string;
+  baseUrl?: string;
   replacementHistory: ResponseItem[];
   explicitHistory: ResponseItem[];
 };

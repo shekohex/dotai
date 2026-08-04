@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import {
+  buildSessionContext,
+  convertToLlm,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type SessionEntry,
+} from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { isRetryableAssistantError } from "../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js";
 import compactionExtension, {
@@ -13,6 +19,7 @@ import compactionExtension, {
 import {
   buildRemoteCompactionHistory,
   messageToResponseItems,
+  messagesToResponseItems,
   normalizeResponseItemsForPrompt,
 } from "../src/extensions/compaction/openai-remote-messages.js";
 import {
@@ -80,6 +87,7 @@ function createCompactionHandlerHarness(
     allTools?: ReturnType<ExtensionAPI["getAllTools"]>;
     activeTools?: string[];
     branchEntries?: SessionEntry[];
+    thinkingLevel?: ReturnType<ExtensionAPI["getThinkingLevel"]>;
   } = {},
 ): {
   handler: CompactionHandler;
@@ -95,7 +103,7 @@ function createCompactionHandlerHarness(
       registered.push(handler);
       handlers.set(event, registered);
     },
-    getThinkingLevel: () => "high",
+    getThinkingLevel: () => toolState.thinkingLevel ?? "high",
     getAllTools: () => toolState.allTools ?? [],
     getActiveTools: () => toolState.activeTools ?? [],
   } as unknown as ExtensionAPI;
@@ -113,6 +121,8 @@ function createCompactionHandlerHarness(
     sessionManager: {
       getSessionId: () => "session-123",
       getBranch: () => toolState.branchEntries ?? [],
+      getEntries: () => toolState.branchEntries ?? [],
+      getLeafId: () => toolState.branchEntries?.at(-1)?.id ?? null,
     },
     getSystemPrompt: () => "system",
   } as unknown as ExtensionContext;
@@ -300,7 +310,6 @@ describe("compaction extension", () => {
       }),
     ).toEqual([
       {
-        type: "message",
         role: "user",
         content: [{ type: "input_text", text: "Inspect the reconciliation page." }],
       },
@@ -437,7 +446,6 @@ describe("compaction extension", () => {
       );
     const input = [
       {
-        type: "message",
         role: "user",
         content: [{ type: "input_text", text: "hello" }],
       },
@@ -459,6 +467,76 @@ describe("compaction extension", () => {
     const body = JSON.parse(String(request?.body)) as { input: Array<{ type: string }> };
     expect(body.input.at(-1)).toEqual({ type: "compaction_trigger" });
     expect(body.store).toBe(false);
+  });
+
+  test("does not resurrect history before a portable compaction", async () => {
+    useTemporaryCodexHome();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          [
+            'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
+            "",
+            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+    const branchEntries = [
+      {
+        type: "message",
+        id: "old-message",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        message: { role: "user", content: "OLD_HISTORY", timestamp: 1 },
+      },
+      {
+        type: "message",
+        id: "kept-message",
+        parentId: "old-message",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        message: { role: "user", content: "KEPT_HISTORY", timestamp: 2 },
+      },
+      {
+        type: "compaction",
+        id: "portable-compaction",
+        parentId: "kept-message",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        summary: "PORTABLE_SUMMARY",
+        firstKeptEntryId: "kept-message",
+        tokensBefore: 200_000,
+      },
+      {
+        type: "message",
+        id: "current-message",
+        parentId: "portable-compaction",
+        timestamp: "2026-01-01T00:00:03.000Z",
+        message: { role: "user", content: "CURRENT_HISTORY", timestamp: 3 },
+      },
+    ] as SessionEntry[];
+    const harness = createCompactionHandlerHarness(codexOpenAIModel, { branchEntries });
+
+    await harness.handler(
+      {
+        ...manualCompactionEvent(),
+        preparation: {
+          messagesToSummarize: [],
+          turnPrefixMessages: [],
+          firstKeptEntryId: "current-message",
+          tokensBefore: 246_000,
+        },
+        branchEntries,
+      },
+      harness.ctx,
+    );
+
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body);
+    expect(body).not.toContain("OLD_HISTORY");
+    expect(body).toContain("PORTABLE_SUMMARY");
+    expect(body).toContain("KEPT_HISTORY");
+    expect(body).toContain("CURRENT_HISTORY");
   });
 
   test("truncates oversized trailing tool output before native compaction", async () => {
@@ -502,6 +580,35 @@ describe("compaction extension", () => {
     });
   });
 
+  test("retries transient native compaction failures", async () => {
+    useTemporaryCodexHome();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("temporary failure", { status: 500 }))
+      .mockResolvedValueOnce(
+        new Response(
+          [
+            'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
+            "",
+            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+
+    await callRemoteCompactionEndpoint({
+      model: codexOpenAIModel,
+      apiKey: "gateway-key",
+      tokensBefore: 1,
+      input: [{ role: "user", content: [{ type: "input_text", text: "hello" }] }],
+      tools: [],
+      retryDelayMs: 0,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   test("rejects compaction artifacts without encrypted content", () => {
     expect(() =>
       parseRemoteCompactionEvents([
@@ -509,6 +616,28 @@ describe("compaction extension", () => {
         { type: "response.completed", response: { id: "resp-1" } },
       ]),
     ).toThrow("expected exactly one compaction item, got 0");
+  });
+
+  test("canonicalizes compaction_summary output with checkpoint metadata", () => {
+    expect(
+      parseRemoteCompactionEvents([
+        {
+          type: "response.output_item.done",
+          item: {
+            type: "compaction_summary",
+            id: "cmp-1",
+            encrypted_content: "opaque",
+            internal_chat_message_metadata_passthrough: { turn_id: "turn-1" },
+          },
+        },
+        { type: "response.completed", response: { id: "resp-1" } },
+      ]).compactionItem,
+    ).toEqual({
+      type: "compaction",
+      id: "cmp-1",
+      encrypted_content: "opaque",
+      internal_chat_message_metadata_passthrough: { turn_id: "turn-1" },
+    });
   });
 
   test("does not run a fallback model after server-side compaction succeeds", async () => {
@@ -533,6 +662,9 @@ describe("compaction extension", () => {
       expect.stringContaining("without running a fallback model"),
     ]);
     expect(harness.notices.some((notice) => notice.includes("Compaction [fallback]"))).toBe(false);
+    expect((result as { compaction?: { summary?: string } }).compaction?.summary).toContain(
+      "[OpenAI native compaction checkpoint]",
+    );
     expect(result).toMatchObject({
       compaction: {
         details: {
@@ -552,6 +684,110 @@ describe("compaction extension", () => {
         },
       },
     });
+  });
+
+  test("cancels compaction when the latest native checkpoint belongs to another endpoint", async () => {
+    useTemporaryCodexHome();
+    const otherEndpointModel = {
+      ...codexOpenAIModel,
+      baseUrl: "https://other-gateway.example/v1",
+    };
+    const branchEntries = [
+      {
+        type: "compaction",
+        id: "compact-1",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        summary: "native checkpoint placeholder",
+        firstKeptEntryId: "message-1",
+        tokensBefore: 100,
+        details: {
+          remoteCompaction: {
+            version: 2,
+            provider: "openai-responses-compaction",
+            modelKey: remoteCompactionModelKey(otherEndpointModel),
+            api: otherEndpointModel.api,
+            model: otherEndpointModel.id,
+            baseUrl: otherEndpointModel.baseUrl,
+            replacementHistory: [{ type: "compaction", encrypted_content: "opaque-history" }],
+          },
+        },
+      },
+    ] as SessionEntry[];
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          [
+            'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"replacement"}}',
+            "",
+            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+    const harness = createCompactionHandlerHarness(codexOpenAIModel, { branchEntries });
+
+    const result = await harness.handler(
+      { ...manualCompactionEvent(), branchEntries },
+      harness.ctx,
+    );
+
+    expect(result).toEqual({ cancel: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(harness.notices).toContainEqual(
+      expect.stringContaining("cancelled to preserve its encrypted history"),
+    );
+  });
+
+  test("reuses a native checkpoint across models on the same provider endpoint", async () => {
+    useTemporaryCodexHome();
+    const currentModel = { ...codexOpenAIModel, id: "gpt-5.6-sol" };
+    const branchEntries = [
+      {
+        type: "compaction",
+        id: "compact-1",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        summary: "native checkpoint placeholder",
+        firstKeptEntryId: "message-1",
+        tokensBefore: 100,
+        details: {
+          remoteCompaction: {
+            version: 2,
+            provider: "openai-responses-compaction",
+            modelKey: remoteCompactionModelKey(codexOpenAIModel),
+            api: codexOpenAIModel.api,
+            model: codexOpenAIModel.id,
+            baseUrl: codexOpenAIModel.baseUrl,
+            replacementHistory: [{ type: "compaction", encrypted_content: "opaque-history" }],
+          },
+        },
+      },
+    ] as SessionEntry[];
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          [
+            'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"replacement"}}',
+            "",
+            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+    const harness = createCompactionHandlerHarness(currentModel, { branchEntries });
+
+    const result = await harness.handler(
+      { ...manualCompactionEvent(), branchEntries },
+      harness.ctx,
+    );
+
+    expect(result).not.toEqual({ cancel: true });
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain("opaque-history");
   });
 
   test("preserves dynamic provider instructions and tools during server-side compaction", async () => {
@@ -664,23 +900,21 @@ describe("compaction extension", () => {
     ]);
   });
 
-  test("starts fallback models only after server-side compaction fails", async () => {
+  test("delegates native compaction failures to Pi compaction", async () => {
     useTemporaryCodexHome();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("remote failure", { status: 500, statusText: "Server Error" }),
     );
     const harness = createCompactionHandlerHarness(codexOpenAIModel);
 
-    await harness.handler(manualCompactionEvent(), harness.ctx);
+    const result = await harness.handler(manualCompactionEvent(), harness.ctx);
 
     const serverFailureIndex = harness.notices.findIndex((notice) =>
       notice.includes("Compaction [server] failed"),
     );
-    const fallbackIndex = harness.notices.findIndex((notice) =>
-      notice.includes("Compaction: could not find"),
-    );
     expect(serverFailureIndex).toBeGreaterThanOrEqual(0);
-    expect(fallbackIndex).toBeGreaterThan(serverFailureIndex);
+    expect(result).toBeUndefined();
+    expect(harness.notices.some((notice) => notice.includes("could not find"))).toBe(false);
   });
 
   test("cancels an aborted remote compaction before Pi fallback", async () => {
@@ -700,32 +934,28 @@ describe("compaction extension", () => {
     expect(result).toEqual({ cancel: true });
   });
 
-  test("includes the previous native window when portable fallback follows a remote failure", async () => {
+  test("injects the previous native window into Pi fallback compaction", async () => {
     useTemporaryCodexHome();
     const modelKey = remoteCompactionModelKey(codexOpenAIModel);
     const nativeWindow = [{ type: "compaction", encrypted_content: "opaque-history" }];
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
-        new Response("remote failure", { status: 500, statusText: "Server Error" }),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          [
-            'data: {"type":"response.output_text.delta","delta":"Portable complete history"}',
-            "",
-            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
-            "",
-          ].join("\n"),
-          { status: 200 },
-        ),
+        new Response("context window exceeded", { status: 400, statusText: "Bad Request" }),
       );
     const harness = createCompactionHandlerHarness(codexOpenAIModel, {
       branchEntries: [
         {
+          type: "message",
+          id: "message-1",
+          parentId: null,
+          timestamp: "2025-12-31T23:59:59.000Z",
+          message: { role: "user", content: "kept context", timestamp: 1 },
+        },
+        {
           type: "compaction",
           id: "compact-1",
-          parentId: null,
+          parentId: "message-1",
           timestamp: "2026-01-01T00:00:00.000Z",
           summary: "native checkpoint placeholder",
           firstKeptEntryId: "message-1",
@@ -741,88 +971,32 @@ describe("compaction extension", () => {
         },
       ] as SessionEntry[],
     });
-    await harness.providerRequestHandler(
+    const result = await harness.handler(manualCompactionEvent(), harness.ctx);
+    const rewritten = await harness.providerRequestHandler(
       {
         payload: {
           model: codexOpenAIModel.id,
-          input: [],
-          instructions: "Base instructions\n\nDynamic fallback instructions",
+          instructions: "You are a context summarization assistant.",
+          input: [
+            { role: "developer", content: "Summarize the conversation." },
+            { role: "user", content: [{ type: "input_text", text: "<conversation />" }] },
+          ],
         },
       },
       harness.ctx,
     );
 
-    const result = await harness.handler(manualCompactionEvent(), harness.ctx);
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const continuityBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
-      input: Array<Record<string, unknown>>;
-      instructions?: string;
-      tools?: unknown[];
-    };
-    expect(continuityBody.input[0]).toEqual(nativeWindow[0]);
-    expect(continuityBody.instructions).toBe("Base instructions\n\nDynamic fallback instructions");
-    expect(continuityBody.tools).toEqual([]);
-    expect(continuityBody.input.at(-1)).toMatchObject({
-      type: "message",
-      role: "user",
-      content: [
-        {
-          type: "input_text",
-          text: expect.stringContaining("CONTEXT CHECKPOINT COMPACTION"),
-        },
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result).toBeUndefined();
+    expect(rewritten).toEqual({
+      model: codexOpenAIModel.id,
+      instructions: "You are a context summarization assistant.",
+      input: [
+        { role: "developer", content: "Summarize the conversation." },
+        nativeWindow[0],
+        { role: "user", content: [{ type: "input_text", text: "<conversation />" }] },
       ],
     });
-    expect(result).toMatchObject({
-      compaction: { summary: expect.stringContaining("Portable complete history") },
-    });
-    expect(harness.notices).toContainEqual(
-      expect.stringContaining("previous native compacted window"),
-    );
-    expect(harness.notices.some((notice) => notice.includes("could not find"))).toBe(false);
-  });
-
-  test("cancels compaction instead of silently dropping native history", async () => {
-    useTemporaryCodexHome();
-    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        new Response("remote failure", { status: 500, statusText: "Server Error" }),
-      )
-      .mockResolvedValueOnce(
-        new Response("summary failure", { status: 500, statusText: "Server Error" }),
-      );
-    const harness = createCompactionHandlerHarness(codexOpenAIModel, {
-      branchEntries: [
-        {
-          type: "compaction",
-          id: "compact-1",
-          parentId: null,
-          timestamp: "2026-01-01T00:00:00.000Z",
-          summary: "native checkpoint placeholder",
-          firstKeptEntryId: "message-1",
-          tokensBefore: 100,
-          details: {
-            remoteCompaction: {
-              version: 2,
-              provider: "openai-responses-compaction",
-              modelKey,
-              replacementHistory: [{ type: "compaction", encrypted_content: "opaque-history" }],
-            },
-          },
-        },
-      ] as SessionEntry[],
-    });
-
-    const result = await harness.handler(manualCompactionEvent(), harness.ctx);
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({ cancel: true });
-    expect(harness.notices).toContainEqual(
-      expect.stringContaining("cancelled to preserve the previous native compacted window"),
-    );
-    expect(harness.notices.some((notice) => notice.includes("could not find"))).toBe(false);
   });
 
   test("builds exact remote request shape", () => {
@@ -833,6 +1007,7 @@ describe("compaction extension", () => {
       tools: [{ type: "function", name: "read" }],
       reasoning: { effort: "high", summary: "auto" },
       text: { verbosity: "medium" },
+      serviceTier: "priority",
       sessionId: "session-123",
     });
 
@@ -846,6 +1021,7 @@ describe("compaction extension", () => {
       prompt_cache_key: "session-123",
       reasoning: { effort: "high", summary: "auto" },
       text: { verbosity: "medium" },
+      service_tier: "priority",
     });
   });
 
@@ -855,8 +1031,65 @@ describe("compaction extension", () => {
         model: codexOpenAIModel.id,
         input: [],
         reasoning: { effort: "max", summary: "auto" },
+        service_tier: "priority",
       }),
-    ).toEqual({ reasoning: { effort: "max", summary: "auto" } });
+    ).toEqual({
+      reasoning: { effort: "max", summary: "auto" },
+      serviceTier: "priority",
+    });
+  });
+
+  test("clamps unsupported GPT-5.6 minimal reasoning to low", async () => {
+    useTemporaryCodexHome();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          [
+            'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
+            "",
+            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+    const harness = createCompactionHandlerHarness(
+      { ...codexOpenAIModel, id: "gpt-5.6-sol" },
+      { thinkingLevel: "minimal" },
+    );
+
+    await harness.handler(manualCompactionEvent(), harness.ctx);
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      reasoning?: { effort?: string };
+    };
+    expect(body.reasoning?.effort).toBe("low");
+  });
+
+  test("warns that native compaction ignores custom compact guidance", async () => {
+    useTemporaryCodexHome();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        [
+          'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
+          "",
+          'data: {"type":"response.completed","response":{"id":"resp-1"}}',
+          "",
+        ].join("\n"),
+        { status: 200 },
+      ),
+    );
+    const harness = createCompactionHandlerHarness(codexOpenAIModel);
+
+    await harness.handler(
+      { ...manualCompactionEvent(), customInstructions: "Focus only on deployment." },
+      harness.ctx,
+    );
+
+    expect(harness.notices).toContainEqual(
+      expect.stringContaining("ignores custom /compact guidance"),
+    );
   });
 
   test("filters malformed persisted items without losing remote state", () => {
@@ -947,7 +1180,6 @@ describe("compaction extension", () => {
     const nativeHistory = [
       { type: "compaction", encrypted_content: "opaque" },
       {
-        type: "message",
         role: "user",
         content: [{ type: "input_text", text: "Load the subagent tool" }],
       },
@@ -1062,10 +1294,8 @@ describe("compaction extension", () => {
     });
   });
 
-  test("uses normalized replacement length when rewriting provider-only tail items", async () => {
-    const rawReplacementHistory = [
-      { type: "function_call_output", call_id: "orphan", output: "orphan" },
-    ];
+  test("preserves provider-only tail items during native replay", async () => {
+    const replacementHistory = [{ type: "compaction", encrypted_content: "opaque" }];
     const userMessage = {
       type: "message",
       role: "user",
@@ -1094,25 +1324,41 @@ describe("compaction extension", () => {
     const harness = createCompactionHandlerHarness(codexOpenAIModel, {
       branchEntries: [
         {
+          type: "message",
+          id: "pre",
+          parentId: null,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          message: { role: "user", content: "PRE_COMPACTION", timestamp: 0 },
+        },
+        {
           type: "compaction",
           id: "compact-1",
+          parentId: "pre",
+          timestamp: "2026-01-01T00:00:01.000Z",
+          summary: "native checkpoint placeholder",
+          firstKeptEntryId: "pre",
+          tokensBefore: 100,
           details: {
             remoteCompaction: {
               version: 2,
               provider: "openai-responses-compaction",
               modelKey,
-              replacementHistory: rawReplacementHistory,
+              replacementHistory,
             },
           },
         },
         {
           type: "message",
           id: "user-1",
+          parentId: "compact-1",
+          timestamp: "2026-01-01T00:00:02.000Z",
           message: { role: "user", content: "Load the subagent tool", timestamp: 1 },
         },
         {
           type: "message",
           id: "assistant-1",
+          parentId: "user-1",
+          timestamp: "2026-01-01T00:00:03.000Z",
           message: {
             role: "assistant",
             api: "openai-responses",
@@ -1134,18 +1380,232 @@ describe("compaction extension", () => {
       ] as SessionEntry[],
     });
 
-    expect(
-      await harness.providerRequestHandler(
-        {
-          payload: {
-            input: [userMessage, toolSearchCall, toolSearchOutput, assistantMessage],
+    const summaryInput = messagesToResponseItems(
+      convertToLlm(
+        buildSessionContext(harness.ctx.sessionManager.getBranch(), "assistant-1").messages,
+      ),
+    );
+    const rewritten = await harness.providerRequestHandler(
+      {
+        payload: {
+          input: [
+            ...summaryInput.slice(0, 2),
+            userMessage,
+            toolSearchCall,
+            toolSearchOutput,
+            assistantMessage,
+          ],
+        },
+      },
+      harness.ctx,
+    );
+    expect(JSON.stringify(rewritten)).toContain("opaque");
+    expect(JSON.stringify(rewritten)).toContain("load-subagent");
+  });
+
+  test("preserves current provider payload tail beyond persisted branch entries", async () => {
+    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
+    const branchEntries = [
+      {
+        type: "message",
+        id: "pre",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        message: { role: "user", content: "PRE_COMPACTION", timestamp: 1 },
+      },
+      {
+        type: "compaction",
+        id: "compact-1",
+        parentId: "pre",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        summary: "native checkpoint placeholder",
+        firstKeptEntryId: "pre",
+        tokensBefore: 100,
+        details: {
+          remoteCompaction: {
+            version: 2,
+            provider: "openai-responses-compaction",
+            modelKey,
+            api: codexOpenAIModel.api,
+            baseUrl: codexOpenAIModel.baseUrl,
+            replacementHistory: [{ type: "compaction", encrypted_content: "opaque" }],
           },
         },
-        harness.ctx,
-      ),
-    ).toEqual({
-      input: [userMessage, toolSearchCall, toolSearchOutput, assistantMessage],
-    });
+      },
+      {
+        type: "message",
+        id: "tail",
+        parentId: "compact-1",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        message: { role: "user", content: "PERSISTED_TAIL", timestamp: 2 },
+      },
+    ] as SessionEntry[];
+    const harness = createCompactionHandlerHarness(codexOpenAIModel, { branchEntries });
+    const piInput = messagesToResponseItems(
+      convertToLlm(buildSessionContext(branchEntries, "tail").messages),
+    );
+    piInput.push(
+      ...messageToResponseItems({ role: "user", content: "CURRENT_TAIL", timestamp: 3 }),
+    );
+
+    const rewritten = (await harness.providerRequestHandler(
+      { payload: { model: codexOpenAIModel.id, input: piInput, instructions: "system" } },
+      harness.ctx,
+    )) as { input: unknown[] };
+    const serialized = JSON.stringify(rewritten.input);
+
+    expect(serialized).toContain("opaque");
+    expect(serialized).toContain("PERSISTED_TAIL");
+    expect(serialized).toContain("CURRENT_TAIL");
+    expect(serialized).not.toContain("native checkpoint placeholder");
+    expect(serialized).not.toContain("PRE_COMPACTION");
+  });
+
+  test("preserves the native checkpoint across a newer portable compaction", async () => {
+    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
+    const branchEntries = [
+      {
+        type: "message",
+        id: "pre",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        message: { role: "user", content: "PRE_COMPACTION", timestamp: 1 },
+      },
+      {
+        type: "compaction",
+        id: "native-compact",
+        parentId: "pre",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        summary: "native checkpoint placeholder",
+        firstKeptEntryId: "pre",
+        tokensBefore: 100,
+        details: {
+          remoteCompaction: {
+            version: 2,
+            provider: "openai-responses-compaction",
+            modelKey,
+            api: codexOpenAIModel.api,
+            baseUrl: codexOpenAIModel.baseUrl,
+            replacementHistory: [{ type: "compaction", encrypted_content: "opaque" }],
+          },
+        },
+      },
+      {
+        type: "message",
+        id: "fallback-tail",
+        parentId: "native-compact",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        message: { role: "user", content: "FALLBACK_TAIL", timestamp: 2 },
+      },
+      {
+        type: "compaction",
+        id: "portable-compact",
+        parentId: "fallback-tail",
+        timestamp: "2026-01-01T00:00:03.000Z",
+        summary: "PORTABLE_SUMMARY",
+        firstKeptEntryId: "fallback-tail",
+        tokensBefore: 200,
+      },
+      {
+        type: "message",
+        id: "current-tail",
+        parentId: "portable-compact",
+        timestamp: "2026-01-01T00:00:04.000Z",
+        message: { role: "user", content: "CURRENT_TAIL", timestamp: 4 },
+      },
+    ] as SessionEntry[];
+    const harness = createCompactionHandlerHarness(codexOpenAIModel, { branchEntries });
+    const piInput = messagesToResponseItems(
+      convertToLlm(buildSessionContext(branchEntries, "current-tail").messages),
+    );
+
+    const rewritten = (await harness.providerRequestHandler(
+      { payload: { model: codexOpenAIModel.id, input: piInput, instructions: "system" } },
+      harness.ctx,
+    )) as { input: unknown[] };
+    const serialized = JSON.stringify(rewritten.input);
+
+    expect(serialized).toContain("opaque");
+    expect(serialized).toContain("PORTABLE_SUMMARY");
+    expect(serialized).toContain("CURRENT_TAIL");
+    expect(serialized).not.toContain("native checkpoint placeholder");
+  });
+
+  test("starts a new native checkpoint from the latest portable context", async () => {
+    useTemporaryCodexHome();
+    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
+    const branchEntries = [
+      {
+        type: "message",
+        id: "pre",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        message: { role: "user", content: "PRE_COMPACTION", timestamp: 1 },
+      },
+      {
+        type: "compaction",
+        id: "native-compact",
+        parentId: "pre",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        summary: "native checkpoint placeholder",
+        firstKeptEntryId: "pre",
+        tokensBefore: 100,
+        details: {
+          remoteCompaction: {
+            version: 2,
+            provider: "openai-responses-compaction",
+            modelKey,
+            api: codexOpenAIModel.api,
+            baseUrl: codexOpenAIModel.baseUrl,
+            replacementHistory: [{ type: "compaction", encrypted_content: "opaque" }],
+          },
+        },
+      },
+      {
+        type: "message",
+        id: "fallback-tail",
+        parentId: "native-compact",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        message: { role: "user", content: "FALLBACK_TAIL", timestamp: 2 },
+      },
+      {
+        type: "compaction",
+        id: "portable-compact",
+        parentId: "fallback-tail",
+        timestamp: "2026-01-01T00:00:03.000Z",
+        summary: "PORTABLE_SUMMARY",
+        firstKeptEntryId: "fallback-tail",
+        tokensBefore: 200,
+      },
+      {
+        type: "message",
+        id: "current-tail",
+        parentId: "portable-compact",
+        timestamp: "2026-01-01T00:00:04.000Z",
+        message: { role: "user", content: "CURRENT_TAIL", timestamp: 4 },
+      },
+    ] as SessionEntry[];
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          [
+            'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"replacement"}}',
+            "",
+            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+    const harness = createCompactionHandlerHarness(codexOpenAIModel, { branchEntries });
+
+    await harness.handler({ ...manualCompactionEvent(), branchEntries }, harness.ctx);
+
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body);
+    expect(body).toContain("PORTABLE_SUMMARY");
+    expect(body).toContain("CURRENT_TAIL");
+    expect(body).not.toContain('"encrypted_content":"opaque"');
   });
 
   test("reconstructs custom extension turns after remote compaction", () => {
@@ -1205,7 +1665,6 @@ describe("compaction extension", () => {
     expect(reconstructRemoteCompactionState(branchEntries)?.explicitHistory).toEqual([
       { type: "compaction", encrypted_content: "opaque" },
       {
-        type: "message",
         role: "user",
         content: [{ type: "input_text", text: "Subagent completed the delegated task." }],
       },
@@ -1263,7 +1722,6 @@ describe("compaction extension", () => {
     expect(reconstructRemoteCompactionState(branchEntries)?.explicitHistory).toEqual([
       { type: "compaction", encrypted_content: "opaque" },
       {
-        type: "message",
         role: "user",
         content: [{ type: "input_text", text: "DROP_USER" }],
       },

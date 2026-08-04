@@ -101,6 +101,7 @@ function contentPartToResponseItem(
   if (part.type === "text") return { type: "input_text", text: part.text };
   return {
     type: "input_image",
+    detail: "auto",
     image_url: `data:${part.mimeType};base64,${part.data}`,
   };
 }
@@ -154,11 +155,11 @@ function assistantMessageToResponseItems(message: AssistantMessage): ResponseIte
 export function messageToResponseItems(message: AgentMessage): ResponseItem[] {
   if (message.role === "user") {
     const content = userContentToResponseItems(message.content);
-    return content.length === 0 ? [] : [{ type: "message", role: "user", content }];
+    return content.length === 0 ? [] : [{ role: "user", content }];
   }
   if (message.role === "custom") {
     const content = customContentToResponseItems(message.content);
-    return content.length === 0 ? [] : [{ type: "message", role: "user", content }];
+    return content.length === 0 ? [] : [{ role: "user", content }];
   }
   if (message.role === "assistant") return assistantMessageToResponseItems(message);
   if (message.role === "toolResult") {
@@ -185,7 +186,7 @@ function responseItemCallId(item: ResponseItem): string | undefined {
   return typeof item.call_id === "string" && item.call_id.length > 0 ? item.call_id : undefined;
 }
 
-function outputTypeForCallType(type: string): string | undefined {
+function outputTypeForCallType(type: string | undefined): string | undefined {
   if (type === "function_call" || type === "local_shell_call") {
     return "function_call_output";
   }
@@ -313,10 +314,14 @@ function stripUnsupportedImages(item: ResponseItem): ResponseItem {
 }
 
 export function normalizeResponseItemsForPrompt(
-  items: ResponseItem[],
+  items: readonly unknown[],
   model: Model<Api>,
 ): ResponseItem[] {
-  const withoutGhostSnapshots = items
+  const responseItems = items.flatMap((value) => {
+    const item = asRecord(value);
+    return item === undefined ? [] : [structuredClone(item)];
+  });
+  const withoutGhostSnapshots = responseItems
     .filter((item) => item.type !== "ghost_snapshot")
     .map((item) => cloneResponseItem(item));
   const withCallOutputs = ensureCallOutputsPresent(withoutGhostSnapshots);
@@ -383,7 +388,9 @@ function isInjectedContextText(text: string): boolean {
 }
 
 function retainedRealUserMessage(item: ResponseItem): ResponseItem | undefined {
-  if (item.type !== "message" || item.role !== "user") return undefined;
+  if ((item.type !== undefined && item.type !== "message") || item.role !== "user") {
+    return undefined;
+  }
   if (typeof item.content === "string") {
     return item.content.trim().length > 0 && !isInjectedContextText(item.content)
       ? cloneResponseItem(item)

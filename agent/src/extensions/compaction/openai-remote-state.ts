@@ -79,6 +79,7 @@ const RemoteCompactionDetailsSchema = Type.Object(
     ),
     modelKey: Type.Optional(Type.String()),
     replacementHistory: Type.Array(Type.Unknown()),
+    sourceProvider: Type.Optional(Type.String()),
     api: Type.Optional(Type.String()),
     model: Type.Optional(Type.String()),
     baseUrl: Type.Optional(Type.String()),
@@ -139,6 +140,7 @@ function normalizeRemoteCompactionDetails(details: {
   implementation?: "responses_compact_v1" | "responses_compaction_v2";
   modelKey?: string;
   replacementHistory: unknown[];
+  sourceProvider?: string;
   api?: string;
   model?: string;
   baseUrl?: string;
@@ -164,6 +166,7 @@ function normalizeRemoteCompactionDetails(details: {
     implementation: isCurrent ? "responses_compaction_v2" : "responses_compact_v1",
     modelKey: details.modelKey ?? "",
     replacementHistory,
+    ...(details.sourceProvider === undefined ? {} : { sourceProvider: details.sourceProvider }),
     ...(details.api === undefined ? {} : { api: details.api }),
     ...(details.model === undefined ? {} : { model: details.model }),
     ...(details.baseUrl === undefined ? {} : { baseUrl: details.baseUrl }),
@@ -192,6 +195,7 @@ export function buildRemoteCompactionDetails(
     implementation: "responses_compaction_v2",
     modelKey: remoteCompactionModelKey(model),
     replacementHistory: result.replacementHistory,
+    sourceProvider: model.provider,
     api: model.api,
     model: model.id,
     baseUrl: model.baseUrl.trim().replace(/\/+$/u, ""),
@@ -222,9 +226,11 @@ export function reconstructRemoteCompactionState(
 
   branchEntries.forEach((entry, index) => {
     if (entry.type !== "compaction") return;
+    const details = extractRemoteCompactionDetails(entry.details);
+    if (details === undefined) return;
     latestCompactionIndex = index;
     latestCompactionEntryId = entry.id;
-    latestDetails = extractRemoteCompactionDetails(entry.details);
+    latestDetails = details;
   });
   if (latestDetails === undefined || latestCompactionIndex < 0) return undefined;
 
@@ -251,6 +257,9 @@ export function reconstructRemoteCompactionState(
   return {
     compactionEntryId: latestCompactionEntryId,
     modelKey: latestDetails.modelKey,
+    sourceProvider: latestDetails.sourceProvider ?? latestDetails.modelKey.split(":", 1)[0],
+    api: latestDetails.api,
+    baseUrl: latestDetails.baseUrl,
     replacementHistory: latestDetails.replacementHistory,
     explicitHistory: [...latestDetails.replacementHistory, ...trailingMessages],
   };
@@ -489,11 +498,13 @@ export function extractResponsesRequestShape(payload: unknown): ResponsesRequest
     ? Value.Parse(RequestReasoningSchema, record.reasoning)
     : undefined;
   const text = asRecord(record.text);
+  const serviceTier = typeof record.service_tier === "string" ? record.service_tier : undefined;
   return {
     ...(instructions === undefined ? {} : { instructions }),
     ...(tools === undefined ? {} : { tools }),
     ...(reasoning === undefined ? {} : { reasoning }),
     ...(text === undefined ? {} : { text: structuredClone(text) }),
+    ...(serviceTier === undefined ? {} : { serviceTier }),
   };
 }
 
@@ -508,12 +519,14 @@ export function thinkingLevelToResponsesReasoning(
   return undefined;
 }
 
-export function remoteCompactionSummaryText(model: Model<Api>): string {
-  let host = "OpenAI";
-  try {
-    host = new URL(model.baseUrl).hostname;
-  } catch {
-    // Keep generic provider label for malformed custom base URLs.
-  }
-  return `OpenAI remote compaction applied for ${model.provider}/${model.id} via ${host}. Pi keeps this textual summary for portability, while compatible future turns use provider-native replacement history stored in compaction details.`;
+export function remoteCompactionSummaryText(): string {
+  return [
+    "[OpenAI native compaction checkpoint]",
+    "",
+    "Codex native compaction was used for this checkpoint.",
+    "",
+    "The compaction result is encrypted by OpenAI and is not human-readable in Pi.",
+    "",
+    "Warning: do not turn Responses compaction off or switch providers mid-session; old context may be much less reliable.",
+  ].join("\n");
 }

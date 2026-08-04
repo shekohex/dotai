@@ -4,6 +4,7 @@ import { arch, homedir, platform, release } from "node:os";
 import { dirname, join } from "node:path";
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import { calculateCost } from "@earendil-works/pi-ai";
+import { convertResponsesTools } from "@earendil-works/pi-ai/api/openai-responses-shared";
 import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
@@ -23,6 +24,7 @@ import type {
 
 const REMOTE_COMPACTION_FEATURE = "remote_compaction_v2";
 const OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH = 64;
+const REMOTE_COMPACTION_MAX_RETRIES = 2;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const CodexTokenPayloadSchema = Type.Object(
@@ -46,9 +48,40 @@ const RemoteCompactionEventSchema = Type.Object(
 );
 
 const CompactionItemSchema = Type.Object(
-  { type: Type.Literal("compaction"), encrypted_content: Type.String({ minLength: 1 }) },
+  {
+    type: Type.Union([Type.Literal("compaction"), Type.Literal("compaction_summary")]),
+    id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    encrypted_content: Type.String({ minLength: 1 }),
+    internal_chat_message_metadata_passthrough: Type.Optional(
+      Type.Union([
+        Type.Object(
+          { turn_id: Type.Optional(Type.Union([Type.String(), Type.Null()])) },
+          { additionalProperties: true },
+        ),
+        Type.Null(),
+      ]),
+    ),
+  },
   { additionalProperties: true },
 );
+
+function canonicalCompactionItem(value: unknown): ResponseItem | undefined {
+  if (!Value.Check(CompactionItemSchema, value)) return undefined;
+  const item = Value.Parse(CompactionItemSchema, value);
+  if (item.encrypted_content.trim().length === 0) return undefined;
+  const metadata = item.internal_chat_message_metadata_passthrough;
+  return {
+    type: "compaction",
+    ...(typeof item.id === "string" ? { id: item.id } : {}),
+    encrypted_content: item.encrypted_content,
+    ...(metadata !== null && metadata !== undefined
+      ? {
+          internal_chat_message_metadata_passthrough:
+            typeof metadata.turn_id === "string" ? { turn_id: metadata.turn_id } : {},
+        }
+      : {}),
+  };
+}
 
 export function supportsOpenAIRemoteCompaction(model: Model<Api> | undefined): model is Model<Api> {
   if (model === undefined) return false;
@@ -181,6 +214,7 @@ export function buildRemoteCompactionHeaders(params: {
 }
 
 export function buildRemoteCompactionTools(
+  model: Model<Api>,
   allTools: ToolInfo[],
   activeToolNames: string[],
   providerTools: Record<string, unknown>[] = [],
@@ -206,16 +240,20 @@ export function buildRemoteCompactionTools(
     const providerTool = providerToolsByName.get(name);
     if (providerTool !== undefined) return [promoteRemoteCompactionTool(providerTool)];
     const tool = toolsByName.get(name);
-    return tool === undefined
-      ? []
-      : [
-          {
-            type: "function",
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-          },
-        ];
+    if (tool === undefined) return [];
+    const compat = asRecord(model.compat);
+    return convertResponsesTools([tool], {
+      strict: null,
+      supportsStrictMode:
+        typeof compat?.supportsStrictMode === "boolean" ? compat.supportsStrictMode : undefined,
+      supportsOpenAIGrammarTools:
+        typeof compat?.supportsOpenAIGrammarTools === "boolean"
+          ? compat.supportsOpenAIGrammarTools
+          : undefined,
+    }).flatMap((convertedTool) => {
+      const record = asRecord(convertedTool);
+      return record === undefined ? [] : [structuredClone(record)];
+    });
   });
   return [...activeTools, ...providerOnlyTools];
 }
@@ -233,6 +271,7 @@ export function buildRemoteCompactionRequestBody(params: {
   tools: Record<string, unknown>[];
   reasoning?: ResponsesReasoningConfig;
   text?: ResponsesTextConfig;
+  serviceTier?: string;
   sessionId?: string;
 }): Record<string, unknown> {
   const promptCacheKey =
@@ -252,6 +291,7 @@ export function buildRemoteCompactionRequestBody(params: {
     ...(promptCacheKey === undefined ? {} : { prompt_cache_key: promptCacheKey }),
     ...(params.reasoning === undefined ? {} : { reasoning: params.reasoning }),
     ...(params.text === undefined ? {} : { text: params.text }),
+    ...(params.serviceTier === undefined ? {} : { service_tier: params.serviceTier }),
   };
 }
 
@@ -301,9 +341,8 @@ export function parseRemoteCompactionEvents(events: unknown[]): {
       throw new Error(`OpenAI remote compaction failed: ${remoteFailureMessage(event.response)}`);
     }
     if (event.type === "response.output_item.done") {
-      if (!Value.Check(CompactionItemSchema, event.item)) continue;
-      const compactionItem = Value.Parse(CompactionItemSchema, event.item);
-      if (compactionItem.encrypted_content.trim().length === 0) continue;
+      const compactionItem = canonicalCompactionItem(event.item);
+      if (compactionItem === undefined) continue;
       compactionItems.push(compactionItem);
       continue;
     }
@@ -365,6 +404,8 @@ export async function callRemoteCompactionEndpoint(params: {
   tools: Record<string, unknown>[];
   reasoning?: ResponsesReasoningConfig;
   text?: ResponsesTextConfig;
+  serviceTier?: string;
+  retryDelayMs?: number;
   signal?: AbortSignal;
 }): Promise<RemoteCompactionResult> {
   if (!supportsOpenAIRemoteCompaction(params.model)) {
@@ -380,18 +421,7 @@ export async function callRemoteCompactionEndpoint(params: {
   );
   const input = shrinkResult.request.input;
 
-  const response = await fetch(remoteCompactionEndpointUrl(params.model), {
-    method: "POST",
-    headers: buildRemoteCompactionHeaders(params),
-    body: JSON.stringify(buildRemoteCompactionRequestBody({ ...params, input })),
-    signal: params.signal,
-  });
-  if (!response.ok) {
-    const responseText = await response.text().catch(() => "");
-    throw new Error(
-      `OpenAI remote compaction failed (${response.status}): ${responseText || response.statusText}`,
-    );
-  }
+  const response = await fetchRemoteCompactionWithRetries({ ...params, input });
 
   const parsed = parseRemoteCompactionEvents(parseSseData(await response.text()));
   return {
@@ -402,106 +432,71 @@ export async function callRemoteCompactionEndpoint(params: {
   };
 }
 
-function extractResponseOutputText(value: unknown): string {
-  const response = asRecord(value);
-  if (typeof response?.output_text === "string") return response.output_text;
-  if (!Array.isArray(response?.output)) return "";
-  const parts: string[] = [];
-  for (const item of response.output as unknown[]) {
-    const content = asRecord(item)?.content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content as unknown[]) {
-      const record = asRecord(part);
-      if (record?.type === "output_text" && typeof record.text === "string") {
-        parts.push(record.text);
-      }
-    }
+function shouldRetryRemoteCompaction(status: number | undefined, message: string): boolean {
+  if (status === 429) return false;
+  if (
+    /\b(?:400|401|403)\b|unauthori[sz]ed|forbidden|usage limit|quota|not included|invalid request|context window|unsupported parameter/iu.test(
+      message,
+    )
+  ) {
+    return false;
   }
-  return parts.join("");
+  return status === undefined || status >= 500;
 }
 
-function parseRemoteContinuitySummaryEvents(events: unknown[]): string {
-  let completed = false;
-  let text = "";
-  for (const value of events) {
-    const event = asRecord(value);
-    const type = readString(event?.type);
-    if (type === "error") {
-      throw new Error(
-        `OpenAI continuity summary failed: ${readString(event?.message) ?? "Unknown error"}`,
-      );
-    }
-    if (type === "response.failed") {
-      throw new Error(`OpenAI continuity summary failed: ${remoteFailureMessage(event?.response)}`);
-    }
-    if (type === "response.output_text.delta") {
-      text += readString(event?.delta) ?? "";
-      continue;
-    }
-    if (type === "response.output_text.done" && text.trim().length === 0) {
-      text = readString(event?.text) ?? "";
-      continue;
-    }
-    if (type === "response.completed") {
-      completed = true;
-      if (text.trim().length === 0) text = extractResponseOutputText(event?.response);
-    }
-  }
-  if (!completed) {
-    throw new Error("OpenAI continuity summary stream ended before response.completed.");
-  }
-  const summary = text.trim();
-  if (summary.length === 0) throw new Error("OpenAI continuity summary returned no text.");
-  return summary;
-}
-
-export async function callRemoteContinuitySummaryEndpoint(params: {
-  model: Model<Api>;
-  apiKey: string;
-  headers?: Record<string, string>;
-  sessionId?: string;
-  input: ResponseItem[];
-  instructions?: string;
-  prompt: string;
-  reasoning?: ResponsesReasoningConfig;
-  text?: ResponsesTextConfig;
-  signal?: AbortSignal;
-}): Promise<string> {
-  if (!supportsOpenAIRemoteCompaction(params.model)) {
-    throw new Error("Remote continuity summary only supports codex-openai and openai-codex.");
-  }
-  const input = [
-    ...params.input,
-    {
-      type: "message",
-      role: "user",
-      content: [{ type: "input_text", text: params.prompt }],
-    },
-  ];
-  const response = await fetch(remoteCompactionEndpointUrl(params.model), {
-    method: "POST",
-    headers: buildRemoteCompactionHeaders(params),
-    body: JSON.stringify({
-      model: params.model.id,
-      input,
-      instructions: params.instructions,
-      tools: [],
-      parallel_tool_calls: false,
-      stream: true,
-      store: false,
-      include: ["reasoning.encrypted_content"],
-      max_output_tokens: 8192,
-      ...(params.sessionId === undefined ? {} : { prompt_cache_key: params.sessionId }),
-      ...(params.reasoning === undefined ? {} : { reasoning: params.reasoning }),
-      ...(params.text === undefined ? {} : { text: params.text }),
-    }),
-    signal: params.signal,
+async function waitForRemoteCompactionRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (delayMs <= 0) return;
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = (): void => signal?.removeEventListener("abort", onAbort);
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+    const onAbort = (): void => {
+      clearTimeout(timeout);
+      cleanup();
+      reject(new DOMException("This operation was aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted === true) onAbort();
   });
-  if (!response.ok) {
-    const responseText = await response.text().catch(() => "");
-    throw new Error(
-      `OpenAI continuity summary failed (${response.status}): ${responseText || response.statusText}`,
-    );
+}
+
+async function fetchRemoteCompactionWithRetries(
+  params: Parameters<typeof callRemoteCompactionEndpoint>[0] & { input: ResponseItem[] },
+): Promise<Response> {
+  const delayMs = Math.max(0, params.retryDelayMs ?? 500);
+  let lastError: Error | undefined;
+  for (let attempt = 0; attempt <= REMOTE_COMPACTION_MAX_RETRIES; attempt += 1) {
+    try {
+      const response = await fetch(remoteCompactionEndpointUrl(params.model), {
+        method: "POST",
+        headers: buildRemoteCompactionHeaders(params),
+        body: JSON.stringify(buildRemoteCompactionRequestBody(params)),
+        signal: params.signal,
+      });
+      if (response.ok) return response;
+      const responseText = await response.text().catch(() => "");
+      const message = `OpenAI remote compaction failed (${response.status}): ${responseText || response.statusText}`;
+      if (
+        attempt >= REMOTE_COMPACTION_MAX_RETRIES ||
+        !shouldRetryRemoteCompaction(response.status, message)
+      ) {
+        throw new Error(message);
+      }
+      await waitForRemoteCompactionRetry(delayMs * 2 ** attempt, params.signal);
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      if (params.signal?.aborted === true || failure.name === "AbortError") throw failure;
+      if (
+        attempt >= REMOTE_COMPACTION_MAX_RETRIES ||
+        !shouldRetryRemoteCompaction(undefined, failure.message)
+      ) {
+        throw failure;
+      }
+      lastError = failure;
+      await waitForRemoteCompactionRetry(delayMs * 2 ** attempt, params.signal);
+    }
   }
-  return parseRemoteContinuitySummaryEvents(parseSseData(await response.text()));
+  throw lastError ?? new Error("OpenAI remote compaction failed without a transport attempt.");
 }

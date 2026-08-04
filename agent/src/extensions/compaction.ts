@@ -1,15 +1,22 @@
 import {
+  buildSessionContext,
   convertToLlm,
   serializeConversation,
   type compact,
   type ExtensionAPI,
   type ExtensionContext,
   type SessionBeforeCompactEvent,
-  type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
-import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import {
+  clampThinkingLevel,
+  type Api,
+  type Model,
+  type ModelThinkingLevel,
+} from "@earendil-works/pi-ai";
+import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { errorMessage } from "../utils/error-message.js";
+import { asRecord } from "../utils/unknown-data.js";
 import {
   DEFAULT_MODEL_FALLBACKS,
   isAbortSignalAborted,
@@ -26,28 +33,26 @@ import { getContextPruneAPI } from "./context-prune/public-api.js";
 import { completeModel } from "./pi-ai-models.js";
 import {
   messageToResponseItems,
-  messagesToResponseItems,
   normalizeResponseItemsForPrompt,
 } from "./compaction/openai-remote-messages.js";
 import {
   buildRemoteCompactionTools,
   callRemoteCompactionEndpoint,
-  callRemoteContinuitySummaryEndpoint,
   remoteCompactionEndpointUrl,
   remoteCompactionModelKey,
   supportsOpenAIRemoteCompaction,
 } from "./compaction/openai-remote-protocol.js";
+import { rewriteRemoteCompactionPayload } from "./compaction/openai-remote-replay.js";
 import {
-  applyRemoteHistoryPayload,
   buildRemoteCompactionDetails,
   extractResponsesRequestShape,
   reconstructRemoteCompactionState,
   remoteCompactionSummaryText,
-  thinkingLevelToResponsesReasoning,
 } from "./compaction/openai-remote-state.js";
 import type {
   RemoteCompactionResult,
   RemoteCompactionSessionState,
+  ResponseItem,
   ResponsesRequestShape,
   ResponsesReasoningConfig,
 } from "./compaction/openai-remote-types.js";
@@ -55,9 +60,12 @@ import type {
 type CompactionPreparation = Parameters<typeof compact>[0];
 const SUMMARY_PREFIX =
   "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:";
+const USE_PI_COMPACTION = undefined;
+const CODEX_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 
 export default function (pi: ExtensionAPI) {
   const remoteCompactionStates = new Map<string, RemoteCompactionSessionState>();
+  const pendingPiFallbackWindows = new Map<string, RemoteCompactionSessionState>();
   const requestShapes = new Map<string, ResponsesRequestShape>();
 
   const syncRemoteCompactionState = (ctx: ExtensionContext): void => {
@@ -72,11 +80,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", (_event, ctx) => {
     requestShapes.delete(ctx.sessionManager.getSessionId());
+    pendingPiFallbackWindows.delete(ctx.sessionManager.getSessionId());
     syncRemoteCompactionState(ctx);
   });
 
   pi.on("session_tree", (_event, ctx) => {
     requestShapes.delete(ctx.sessionManager.getSessionId());
+    pendingPiFallbackWindows.delete(ctx.sessionManager.getSessionId());
     syncRemoteCompactionState(ctx);
   });
   pi.on("session_compact", (_event, ctx) => {
@@ -84,15 +94,24 @@ export default function (pi: ExtensionAPI) {
   });
   pi.on("model_select", (_event, ctx) => {
     requestShapes.delete(ctx.sessionManager.getSessionId());
+    pendingPiFallbackWindows.delete(ctx.sessionManager.getSessionId());
     syncRemoteCompactionState(ctx);
   });
   pi.on("session_shutdown", () => {
     remoteCompactionStates.clear();
+    pendingPiFallbackWindows.clear();
     requestShapes.clear();
   });
 
   pi.on("session_before_compact", (event, ctx) =>
-    handleSessionBeforeCompact(event, ctx, pi, remoteCompactionStates, requestShapes),
+    handleSessionBeforeCompact(
+      event,
+      ctx,
+      pi,
+      remoteCompactionStates,
+      pendingPiFallbackWindows,
+      requestShapes,
+    ),
   );
 
   pi.on("message_end", (event, ctx) => {
@@ -110,7 +129,13 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_provider_request", (event, ctx) =>
-    rewriteRemoteCompactionRequest(event.payload, ctx, remoteCompactionStates, requestShapes),
+    rewriteRemoteCompactionRequest(
+      event.payload,
+      ctx,
+      remoteCompactionStates,
+      pendingPiFallbackWindows,
+      requestShapes,
+    ),
   );
 }
 
@@ -119,6 +144,7 @@ async function handleSessionBeforeCompact(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
   remoteCompactionStates: Map<string, RemoteCompactionSessionState>,
+  pendingPiFallbackWindows: Map<string, RemoteCompactionSessionState>,
   requestShapes: Map<string, ResponsesRequestShape>,
 ) {
   const preparation = event.preparation;
@@ -153,8 +179,30 @@ async function handleSessionBeforeCompact(
     "info",
   );
   const sessionId = ctx.sessionManager.getSessionId();
-  const remoteState = matchingRemoteState(remoteCompactionStates, sessionId, model);
+  const persistedRemoteState = remoteCompactionStates.get(sessionId);
+  const compatibleRemoteState = matchingRemoteState(remoteCompactionStates, sessionId, model);
+  const latestCompactionEntryId = ctx.sessionManager
+    .getBranch()
+    .toReversed()
+    .find((entry) => entry.type === "compaction")?.id;
+  const latestCompactionIsRemote =
+    persistedRemoteState !== undefined &&
+    persistedRemoteState.compactionEntryId === latestCompactionEntryId;
+  if (latestCompactionIsRemote && compatibleRemoteState === undefined) {
+    ctx.ui.notify(
+      "OpenAI native compaction cannot reuse the latest checkpoint with this provider or endpoint; compaction was cancelled to preserve its encrypted history.",
+      "error",
+    );
+    return { cancel: true };
+  }
+  const remoteState = latestCompactionIsRemote ? compatibleRemoteState : undefined;
   const requestShape = requestShapes.get(sessionId);
+  if (event.customInstructions !== undefined && event.customInstructions.trim().length > 0) {
+    ctx.ui.notify(
+      "Responses compaction v2 uses the active session instructions and ignores custom /compact guidance.",
+      "warning",
+    );
+  }
   let remoteResult: RemoteCompactionResult;
   try {
     remoteResult = await createRemoteCompaction({
@@ -162,7 +210,6 @@ async function handleSessionBeforeCompact(
       ctx,
       model,
       sessionId,
-      branchEntries: event.branchEntries,
       remoteState,
       requestShape,
       tokensBefore: preparation.tokensBefore,
@@ -172,43 +219,19 @@ async function handleSessionBeforeCompact(
     if (isAbortSignalAborted(signal)) {
       return { cancel: true };
     }
-    if (remoteState !== undefined) {
-      return handleRemoteContinuityFallback({
-        pi,
-        ctx,
-        model,
-        sessionId,
-        remoteState,
-        requestShape,
-        preparation,
-        sanitizedDetails: sanitizedPreparation.details,
-        customInstructions: event.customInstructions,
-        signal,
-        remoteError: error,
-      });
-    }
+    if (remoteState !== undefined) pendingPiFallbackWindows.set(sessionId, remoteState);
     ctx.ui.notify(
-      `Compaction [server] failed; starting the portable fallback. ${errorMessage(error)}`,
+      `Compaction [server] failed; Pi compaction will run.${remoteState === undefined ? "" : " Previous native compacted window will be included in Pi compaction fallback."} ${errorMessage(error)}`,
       "warning",
     );
-    const fallbackSummary = await summarizeWithFallbacks(
-      ctx,
-      allMessages,
-      preparation.previousSummary,
-      event.customInstructions,
-      signal,
-      preparation.tokensBefore,
-    );
-    return fallbackSummary === undefined
-      ? {}
-      : buildCompactionResult(fallbackSummary, preparation, sanitizedPreparation.details);
+    return USE_PI_COMPACTION;
   }
 
   ctx.ui.notify(
     `Compaction [server]: complete for ${modelLabel(model)}; native history was stored without running a fallback model.`,
     "info",
   );
-  return buildCompactionResult(remoteCompactionSummaryText(model), preparation, {
+  return buildNativeCompactionResult(remoteCompactionSummaryText(), preparation, {
     ...sanitizedPreparation.details,
     remoteCompaction: buildRemoteCompactionDetails(model, {
       replacementHistory: remoteResult.output,
@@ -222,83 +245,6 @@ async function handleSessionBeforeCompact(
       usage: remoteResult.usage,
     }),
   });
-}
-
-async function handleRemoteContinuityFallback(params: {
-  pi: ExtensionAPI;
-  ctx: ExtensionContext;
-  model: Model<Api>;
-  sessionId: string;
-  remoteState: RemoteCompactionSessionState;
-  requestShape?: ResponsesRequestShape;
-  preparation: CompactionPreparation;
-  sanitizedDetails: unknown;
-  customInstructions?: string;
-  signal?: AbortSignal;
-  remoteError: unknown;
-}) {
-  params.ctx.ui.notify(
-    `Compaction [server] failed; generating a portable summary with the previous native compacted window included. ${errorMessage(params.remoteError)}`,
-    "warning",
-  );
-  try {
-    const fallbackSummary = await summarizeRemoteCompactionContinuity(params);
-    return buildCompactionResult(fallbackSummary, params.preparation, params.sanitizedDetails);
-  } catch (fallbackError) {
-    if (isAbortSignalAborted(params.signal)) return { cancel: true };
-    params.ctx.ui.notify(
-      `Compaction [fallback] failed and was cancelled to preserve the previous native compacted window. ${errorMessage(fallbackError)}`,
-      "error",
-    );
-    return { cancel: true };
-  }
-}
-
-async function summarizeRemoteCompactionContinuity(params: {
-  pi: ExtensionAPI;
-  ctx: ExtensionContext;
-  model: Model<Api>;
-  sessionId: string;
-  remoteState: RemoteCompactionSessionState;
-  requestShape?: ResponsesRequestShape;
-  customInstructions?: string;
-  signal?: AbortSignal;
-}): Promise<string> {
-  const auth = await params.ctx.modelRegistry.getApiKeyAndHeaders(params.model);
-  if (!auth.ok) throw new Error(`Auth failed for ${params.model.id}: ${auth.error}`);
-  if (auth.apiKey === undefined || auth.apiKey.length === 0) {
-    throw new Error(`No API key available for ${params.model.id}`);
-  }
-  return callRemoteContinuitySummaryEndpoint({
-    model: params.model,
-    apiKey: auth.apiKey,
-    headers: auth.headers,
-    sessionId: params.sessionId,
-    input: normalizeResponseItemsForPrompt(params.remoteState.explicitHistory, params.model),
-    instructions: params.requestShape?.instructions ?? params.ctx.getSystemPrompt(),
-    prompt: buildContinuitySummaryPrompt(params.customInstructions),
-    reasoning:
-      params.requestShape?.reasoning ??
-      fallbackRemoteReasoning(params.model, params.pi.getThinkingLevel()),
-    text: params.requestShape?.text,
-    signal: params.signal,
-  });
-}
-
-export function buildContinuitySummaryPrompt(customInstructions: string | undefined): string {
-  const additionalInstructions =
-    customInstructions !== undefined && customInstructions.trim().length > 0
-      ? `\n\n# Additional Constraints And Instructions\n${customInstructions.trim()}`
-      : "";
-  return `You are performing a CONTEXT CHECKPOINT COMPACTION. Create a portable handoff summary of all conversation context before this message, including the provider-native compacted history.${additionalInstructions}
-
-Include:
-- Current progress and key decisions made
-- Important context, constraints, or user preferences
-- What remains to be done (clear next steps)
-- Any critical data, examples, or references needed to continue
-
-Be concise, structured, and focused on helping another LLM seamlessly continue the work. Output only the structured markdown summary.`;
 }
 
 function modelLabel(model: Model<Api> | undefined): string {
@@ -317,29 +263,45 @@ function rewriteRemoteCompactionRequest(
   payload: unknown,
   ctx: ExtensionContext,
   remoteCompactionStates: Map<string, RemoteCompactionSessionState>,
+  pendingPiFallbackWindows: Map<string, RemoteCompactionSessionState>,
   requestShapes: Map<string, ResponsesRequestShape>,
 ): Record<string, unknown> | undefined {
   let rewrittenPayload: Record<string, unknown> | undefined;
   const model = ctx.model;
   if (supportsOpenAIRemoteCompaction(model)) {
     const sessionId = ctx.sessionManager.getSessionId();
+    const pendingPiFallback = pendingPiFallbackWindows.get(sessionId);
+    if (
+      pendingPiFallback !== undefined &&
+      remoteStateMatchesModel(pendingPiFallback, model) &&
+      isPiCompactionSummarizationPayload(payload)
+    ) {
+      pendingPiFallbackWindows.delete(sessionId);
+      return injectNativeWindowIntoPiCompaction(payload, pendingPiFallback.replacementHistory);
+    }
     const requestShape = extractResponsesRequestShape(payload);
     if (requestShape !== undefined) requestShapes.set(sessionId, requestShape);
+    const persistedRemoteState = remoteCompactionStates.get(sessionId);
     const remoteState = matchingRemoteState(remoteCompactionStates, sessionId, model);
+    if (persistedRemoteState !== undefined && remoteState === undefined) {
+      throw new Error(
+        "OpenAI native compaction replay was cancelled because the latest checkpoint belongs to another provider or endpoint.",
+      );
+    }
     if (remoteState !== undefined) {
-      const normalizedReplacementHistory = normalizeResponseItemsForPrompt(
-        remoteState.replacementHistory,
+      const replay = rewriteRemoteCompactionPayload({
         model,
-      );
-      const normalizedTailHistory = normalizeResponseItemsForPrompt(
-        remoteState.explicitHistory.slice(remoteState.replacementHistory.length),
-        model,
-      );
-      rewrittenPayload = applyRemoteHistoryPayload(
         payload,
-        [...normalizedReplacementHistory, ...normalizedTailHistory],
-        normalizedReplacementHistory.length,
-      );
+        branchEntries: ctx.sessionManager.getBranch(),
+        state: remoteState,
+      });
+      if (!replay.ok) {
+        const detail = replay.mismatches?.slice(0, 3).join("; ");
+        const message = `OpenAI native compaction replay failed (${replay.reason})${detail === undefined ? "" : `: ${detail}`}; request was not sent with placeholder compaction context.`;
+        ctx.ui.notify(message, "error");
+        throw new Error(message);
+      }
+      rewrittenPayload = replay.rewrittenPayload;
     }
   }
   return rewrittenPayload;
@@ -351,7 +313,74 @@ function matchingRemoteState(
   model: Model<Api>,
 ): RemoteCompactionSessionState | undefined {
   const state = states.get(sessionId);
-  return state?.modelKey === remoteCompactionModelKey(model) ? state : undefined;
+  return state !== undefined && remoteStateMatchesModel(state, model) ? state : undefined;
+}
+
+function remoteStateMatchesModel(state: RemoteCompactionSessionState, model: Model<Api>): boolean {
+  if (
+    state.sourceProvider !== undefined &&
+    state.api !== undefined &&
+    state.baseUrl !== undefined
+  ) {
+    const normalizedStateBaseUrl = state.baseUrl.trim().replace(/\/+$/u, "");
+    const normalizedModelBaseUrl = model.baseUrl.trim().replace(/\/+$/u, "");
+    return (
+      state.sourceProvider === model.provider &&
+      state.api === model.api &&
+      normalizedStateBaseUrl === normalizedModelBaseUrl
+    );
+  }
+  return state.modelKey === remoteCompactionModelKey(model);
+}
+
+function isPiCompactionSummarizationPayload(payload: unknown): boolean {
+  const record = asRecord(payload);
+  if (record === undefined || !Array.isArray(record.input)) return false;
+  if (typeof record.instructions === "string" && /compact|summar/iu.test(record.instructions)) {
+    return true;
+  }
+  return record.input.some((value) => {
+    const item = asRecord(value);
+    if (item === undefined) return false;
+    let text = "";
+    if (typeof item.content === "string") {
+      text = item.content;
+    } else if (Array.isArray(item.content)) {
+      text = item.content
+        .flatMap((part: unknown) => {
+          const content = asRecord(part);
+          return typeof content?.text === "string" ? [content.text] : [];
+        })
+        .join("\n");
+    }
+    return (
+      ((item.role === "system" || item.role === "developer") && /compact|summar/iu.test(text)) ||
+      (item.role === "user" && /<conversation>|previous compaction summary|summary/iu.test(text))
+    );
+  });
+}
+
+function injectNativeWindowIntoPiCompaction(
+  payload: unknown,
+  nativeWindow: ResponseItem[],
+): Record<string, unknown> | undefined {
+  const record = asRecord(payload);
+  if (record === undefined || !Array.isArray(record.input)) return undefined;
+  const input: unknown[] = record.input;
+  let insertAt = 0;
+  while (insertAt < input.length) {
+    const role = asRecord(input[insertAt])?.role;
+    if (role !== "system" && role !== "developer") break;
+    insertAt += 1;
+  }
+  return {
+    ...record,
+    input: [
+      ...input.slice(0, insertAt),
+      ...nativeWindow.map((item) => structuredClone(item)),
+      ...input.slice(insertAt),
+    ],
+  };
 }
 
 function buildCompactionResult(
@@ -362,6 +391,21 @@ function buildCompactionResult(
   return {
     compaction: {
       summary: `${SUMMARY_PREFIX}\n\n${summary}`,
+      firstKeptEntryId: preparation.firstKeptEntryId,
+      tokensBefore: preparation.tokensBefore,
+      details,
+    },
+  };
+}
+
+function buildNativeCompactionResult(
+  summary: string,
+  preparation: CompactionPreparation,
+  details: unknown,
+) {
+  return {
+    compaction: {
+      summary,
       firstKeptEntryId: preparation.firstKeptEntryId,
       tokensBefore: preparation.tokensBefore,
       details,
@@ -427,7 +471,6 @@ async function createRemoteCompaction(params: {
   ctx: ExtensionContext;
   model: Model<Api>;
   sessionId: string;
-  branchEntries: SessionEntry[];
   remoteState?: RemoteCompactionSessionState;
   requestShape?: ResponsesRequestShape;
   tokensBefore: number;
@@ -438,9 +481,21 @@ async function createRemoteCompaction(params: {
   if (auth.apiKey === undefined || auth.apiKey.length === 0) {
     throw new Error(`No API key available for ${params.model.id}`);
   }
-  const branchMessages = getBranchMessages(params.branchEntries);
+  const branchMessages = buildSessionContext(
+    params.ctx.sessionManager.getEntries(),
+    params.ctx.sessionManager.getLeafId(),
+  ).messages;
   const responseItems =
-    params.remoteState?.explicitHistory ?? messagesToResponseItems(branchMessages);
+    params.remoteState?.explicitHistory ??
+    normalizeResponseItemsForPrompt(
+      convertResponsesMessages(
+        params.model,
+        { messages: convertToLlm(branchMessages) },
+        CODEX_TOOL_CALL_PROVIDERS,
+        { includeSystemPrompt: false },
+      ),
+      params.model,
+    );
   const reasoning =
     params.requestShape?.reasoning ??
     fallbackRemoteReasoning(params.model, params.pi.getThinkingLevel());
@@ -454,25 +509,58 @@ async function createRemoteCompaction(params: {
     input: normalizeResponseItemsForPrompt(responseItems, params.model),
     instructions: params.requestShape?.instructions ?? params.ctx.getSystemPrompt(),
     tools: buildRemoteCompactionTools(
+      params.model,
       params.pi.getAllTools(),
       params.pi.getActiveTools(),
       params.requestShape?.tools,
     ),
     reasoning,
     text: params.requestShape?.text,
+    serviceTier: params.requestShape?.serviceTier,
     signal: params.signal,
   });
-}
-
-function getBranchMessages(entries: readonly SessionEntry[]): AgentMessage[] {
-  return entries.flatMap((entry) => (entry.type === "message" ? [entry.message] : []));
 }
 
 function fallbackRemoteReasoning(
   model: Model<Api>,
   thinkingLevel: ThinkingLevel,
 ): ResponsesReasoningConfig | undefined {
-  return model.reasoning ? thinkingLevelToResponsesReasoning(thinkingLevel) : undefined;
+  if (!model.reasoning || thinkingLevel === "off") return undefined;
+  const clampedLevel = clampThinkingLevel(model, toModelThinkingLevel(thinkingLevel));
+  const rawEffort = model.thinkingLevelMap?.[clampedLevel] ?? clampedLevel;
+  if (typeof rawEffort !== "string") return undefined;
+  const effort = clampCodexReasoningEffort(model.id, rawEffort);
+  if (!isReasoningEffort(effort)) return undefined;
+  return { effort, summary: "auto" };
+}
+
+function toModelThinkingLevel(thinkingLevel: ThinkingLevel): ModelThinkingLevel {
+  if (thinkingLevel === "minimal") return "minimal";
+  if (thinkingLevel === "low") return "low";
+  if (thinkingLevel === "medium") return "medium";
+  if (thinkingLevel === "high") return "high";
+  if (thinkingLevel === "xhigh") return "xhigh";
+  return "off";
+}
+
+function isReasoningEffort(
+  effort: string,
+): effort is NonNullable<ResponsesReasoningConfig["effort"]> {
+  return ["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(effort);
+}
+
+function clampCodexReasoningEffort(modelId: string, effort: string): string {
+  const id = modelId.includes("/") ? (modelId.split("/").pop() ?? modelId) : modelId;
+  const gpt5MinorMatch = /^gpt-5\.(\d+)/u.exec(id);
+  const gpt5Minor = gpt5MinorMatch?.[1];
+  if (gpt5Minor !== undefined && Number.parseInt(gpt5Minor, 10) >= 2 && effort === "minimal") {
+    return "low";
+  }
+  if (id === "gpt-5.1" && effort === "xhigh") return "high";
+  if (id === "gpt-5.1-codex-mini") {
+    return effort === "high" || effort === "xhigh" ? "high" : "medium";
+  }
+  return effort;
 }
 
 function sanitizePreparationForCompaction(

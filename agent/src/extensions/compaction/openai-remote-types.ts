@@ -32,6 +32,16 @@ export type RemoteCompactionDetails = {
   implementation?: "responses_compact_v1" | "responses_compaction_v2";
   modelKey: string;
   replacementHistory: ResponseItem[];
+  api?: string;
+  model?: string;
+  baseUrl?: string;
+  compactResponseId?: string;
+  createdAt?: string;
+  requestMeta?: {
+    tokensBefore?: number;
+    previousSummaryPresent?: boolean;
+    compactedKeptWindow?: boolean;
+  };
   usage?: Usage;
 };
 
@@ -44,5 +54,7 @@ export type RemoteCompactionSessionState = {
 
 export type RemoteCompactionResult = {
   output: ResponseItem[];
+  compactResponseId: string;
+  createdAt: string;
   usage?: Usage;
 };

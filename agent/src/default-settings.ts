@@ -61,6 +61,11 @@ export const defaultSettings = {
     enabled: true,
     maxRetries: 1024,
   },
+  compaction: {
+    enabled: true,
+    reserveTokens: 27_200,
+    keepRecentTokens: 20_000,
+  },
   terminal: {
     showImages: true,
     clearOnShrink: false,

@@ -2469,6 +2469,14 @@ timedTest("LiteLLM provider registrations route codex-openai via OpenAI Response
   expect(
     codexRegistration.config.models!.every((model) => model.api === "openai-responses"),
   ).toBeTruthy();
+  expect(
+    codexRegistration.config.models!.every((model) => model.contextWindow <= 272_000),
+  ).toBeTruthy();
+  expect(
+    codexRegistration.config
+      .models!.filter((model) => model.id.startsWith("gpt-5.6-"))
+      .every((model) => model.contextWindow === 272_000),
+  ).toBeTruthy();
 });
 
 timedTest("LiteLLM provider registrations route deepseek via LiteLLM v1", () => {

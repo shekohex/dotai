@@ -21,8 +21,10 @@ import {
   callRemoteCompactionEndpoint,
   parseRemoteCompactionEvents,
   remoteCompactionEndpointUrl,
+  remoteCompactionModelKey,
   supportsOpenAIRemoteCompaction,
 } from "../src/extensions/compaction/openai-remote-protocol.js";
+import { resolveRemoteCompactionRequestBudget } from "../src/extensions/compaction/openai-remote-request-shrink.js";
 import {
   applyRemoteHistoryPayload,
   extractResponsesRequestShape,
@@ -202,6 +204,23 @@ describe("compaction extension", () => {
     expect(remoteCompactionEndpointUrl(openAICodexModel)).toBe(
       "https://chatgpt.com/backend-api/codex/responses",
     );
+    expect(remoteCompactionModelKey(codexOpenAIModel)).not.toBe(
+      remoteCompactionModelKey({ ...codexOpenAIModel, baseUrl: "https://other.example/v1" }),
+    );
+    expect(
+      resolveRemoteCompactionRequestBudget({
+        ...codexOpenAIModel,
+        id: "gpt-5.6-sol",
+        contextWindow: 272_000,
+      }),
+    ).toBe(258_400);
+    expect(
+      resolveRemoteCompactionRequestBudget({
+        ...openAICodexModel,
+        id: "gpt-5.6-sol",
+        contextWindow: 272_000,
+      }),
+    ).toBe(372_000);
   });
 
   test("builds Codex remote compaction headers", () => {
@@ -343,6 +362,62 @@ describe("compaction extension", () => {
     expect(history[1]).toEqual({ type: "compaction", encrypted_content: "opaque" });
   });
 
+  test("keeps the newest real user message whole when it exceeds retention budget", () => {
+    const text = "x".repeat(300_000);
+    const history = buildRemoteCompactionHistory(
+      [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text }],
+        },
+      ],
+      { type: "compaction", encrypted_content: "opaque" },
+    );
+
+    expect(history[0]?.content).toEqual([{ type: "input_text", text }]);
+  });
+
+  test("retains real user messages without replaying injected context", () => {
+    const userMessage = {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "Fix the compaction loop." }],
+    };
+    const history = buildRemoteCompactionHistory(
+      [
+        {
+          type: "message",
+          role: "user",
+          content: [
+            { type: "input_text", text: "# AGENTS.md instructions\ninternal\n</INSTRUCTIONS>" },
+          ],
+        },
+        userMessage,
+        {
+          type: "message",
+          role: "user",
+          content: [
+            { type: "input_text", text: "<environment_context>internal</environment_context>" },
+          ],
+        },
+        {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: '<hook_prompt hook_run_id="hook-1">internal</hook_prompt>',
+            },
+          ],
+        },
+      ],
+      { type: "compaction", encrypted_content: "opaque" },
+    );
+
+    expect(history).toEqual([userMessage, { type: "compaction", encrypted_content: "opaque" }]);
+  });
+
   test("calls Responses compaction endpoint with trailing trigger", async () => {
     useTemporaryCodexHome();
     const fetchMock = vi
@@ -352,7 +427,7 @@ describe("compaction extension", () => {
           [
             'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
             "",
-            'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}',
+            'data: {"type":"response.completed","response":{"id":"resp-1","usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}',
             "",
             "data: [DONE]",
             "",
@@ -372,6 +447,7 @@ describe("compaction extension", () => {
       model: codexOpenAIModel,
       apiKey: "gateway-key",
       sessionId: "session-123",
+      tokensBefore: 1,
       input,
       instructions: "system",
       tools: [],
@@ -385,11 +461,52 @@ describe("compaction extension", () => {
     expect(body.store).toBe(false);
   });
 
+  test("truncates oversized trailing tool output before native compaction", async () => {
+    useTemporaryCodexHome();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          [
+            'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
+            "",
+            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+
+    await callRemoteCompactionEndpoint({
+      model: { ...codexOpenAIModel, contextWindow: 1_000 },
+      apiKey: "gateway-key",
+      tokensBefore: 2_000,
+      input: [
+        { type: "function_call", call_id: "call-1", name: "read", arguments: "{}" },
+        {
+          type: "function_call_output",
+          call_id: "call-1",
+          output: "large tool output ".repeat(2_000),
+        },
+      ],
+      tools: [],
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      input: Array<Record<string, unknown>>;
+    };
+    expect(body.input[1]).toMatchObject({
+      type: "function_call_output",
+      call_id: "call-1",
+      output: "Output exceeded the available model context and was truncated",
+    });
+  });
+
   test("rejects compaction artifacts without encrypted content", () => {
     expect(() =>
       parseRemoteCompactionEvents([
         { type: "response.output_item.done", item: { type: "compaction" } },
-        { type: "response.completed", response: {} },
+        { type: "response.completed", response: { id: "resp-1" } },
       ]),
     ).toThrow("expected exactly one compaction item, got 0");
   });
@@ -401,7 +518,7 @@ describe("compaction extension", () => {
         [
           'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
           "",
-          'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}',
+          'data: {"type":"response.completed","response":{"id":"resp-1","usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}',
           "",
         ].join("\n"),
         { status: 200 },
@@ -421,6 +538,16 @@ describe("compaction extension", () => {
         details: {
           remoteCompaction: {
             provider: "openai-responses-compaction",
+            api: codexOpenAIModel.api,
+            model: codexOpenAIModel.id,
+            baseUrl: codexOpenAIModel.baseUrl,
+            compactResponseId: "resp-1",
+            createdAt: expect.any(String),
+            requestMeta: {
+              tokensBefore: 100,
+              previousSummaryPresent: false,
+              compactedKeptWindow: true,
+            },
           },
         },
       },
@@ -436,7 +563,7 @@ describe("compaction extension", () => {
           [
             'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
             "",
-            'data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}',
+            'data: {"type":"response.completed","response":{"id":"resp-1","usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}',
             "",
           ].join("\n"),
           { status: 200 },
@@ -575,7 +702,7 @@ describe("compaction extension", () => {
 
   test("includes the previous native window when portable fallback follows a remote failure", async () => {
     useTemporaryCodexHome();
-    const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
+    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
     const nativeWindow = [{ type: "compaction", encrypted_content: "opaque-history" }];
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -587,7 +714,7 @@ describe("compaction extension", () => {
           [
             'data: {"type":"response.output_text.delta","delta":"Portable complete history"}',
             "",
-            'data: {"type":"response.completed","response":{}}',
+            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
             "",
           ].join("\n"),
           { status: 200 },
@@ -657,7 +784,7 @@ describe("compaction extension", () => {
 
   test("cancels compaction instead of silently dropping native history", async () => {
     useTemporaryCodexHome();
-    const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
+    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
@@ -755,7 +882,7 @@ describe("compaction extension", () => {
   });
 
   test("reconstructs compatible post-compaction turns and rewrites payload", () => {
-    const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
+    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
     const branchEntries = [
       {
         type: "compaction",
@@ -963,7 +1090,7 @@ describe("compaction extension", () => {
       status: "completed",
       tools: [{ type: "function", name: "subagent" }],
     };
-    const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
+    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
     const harness = createCompactionHandlerHarness(codexOpenAIModel, {
       branchEntries: [
         {
@@ -1022,7 +1149,7 @@ describe("compaction extension", () => {
   });
 
   test("reconstructs custom extension turns after remote compaction", () => {
-    const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
+    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
     const branchEntries = [
       {
         type: "compaction",
@@ -1091,7 +1218,7 @@ describe("compaction extension", () => {
   });
 
   test("preserves post-compaction turns completed by another model", () => {
-    const modelKey = `codex-openai:openai-responses:${codexOpenAIModel.id}`;
+    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
     const branchEntries = [
       {
         type: "compaction",

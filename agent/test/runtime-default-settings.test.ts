@@ -84,6 +84,7 @@ describe("runtime default settings", () => {
         defaultProvider: "openai-codex",
         theme: "catppuccin-mocha",
         retry: { enabled: true, maxRetries: 1024 },
+        compaction: { enabled: true, reserveTokens: 27_200, keepRecentTokens: 20_000 },
         subagents: { enabled: false },
         live: {
           enabled: true,
@@ -114,6 +115,7 @@ describe("runtime default settings", () => {
         defaultProvider: "openai-codex",
         defaultModel: "local",
         retry: { enabled: true, maxRetries: 2 },
+        compaction: { enabled: true, reserveTokens: 27_200, keepRecentTokens: 20_000 },
       });
     } finally {
       await rm(tempDir, { recursive: true, force: true });

@@ -165,6 +165,7 @@ async function handleSessionBeforeCompact(
       branchEntries: event.branchEntries,
       remoteState,
       requestShape,
+      tokensBefore: preparation.tokensBefore,
       signal,
     });
   } catch (error) {
@@ -209,7 +210,17 @@ async function handleSessionBeforeCompact(
   );
   return buildCompactionResult(remoteCompactionSummaryText(model), preparation, {
     ...sanitizedPreparation.details,
-    remoteCompaction: buildRemoteCompactionDetails(model, remoteResult.output, remoteResult.usage),
+    remoteCompaction: buildRemoteCompactionDetails(model, {
+      replacementHistory: remoteResult.output,
+      compactResponseId: remoteResult.compactResponseId,
+      createdAt: remoteResult.createdAt,
+      requestMeta: {
+        tokensBefore: preparation.tokensBefore,
+        previousSummaryPresent: preparation.previousSummary !== undefined,
+        compactedKeptWindow: remoteState === undefined,
+      },
+      usage: remoteResult.usage,
+    }),
   });
 }
 
@@ -419,6 +430,7 @@ async function createRemoteCompaction(params: {
   branchEntries: SessionEntry[];
   remoteState?: RemoteCompactionSessionState;
   requestShape?: ResponsesRequestShape;
+  tokensBefore: number;
   signal?: AbortSignal;
 }): Promise<RemoteCompactionResult> {
   const auth = await params.ctx.modelRegistry.getApiKeyAndHeaders(params.model);
@@ -438,6 +450,7 @@ async function createRemoteCompaction(params: {
     apiKey: auth.apiKey,
     headers: auth.headers,
     sessionId: params.sessionId,
+    tokensBefore: params.tokensBefore,
     input: normalizeResponseItemsForPrompt(responseItems, params.model),
     instructions: params.requestShape?.instructions ?? params.ctx.getSystemPrompt(),
     tools: buildRemoteCompactionTools(

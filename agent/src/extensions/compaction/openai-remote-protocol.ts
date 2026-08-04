@@ -10,6 +10,10 @@ import { Value } from "typebox/value";
 import { errorMessage } from "../../utils/error-message.js";
 import { asRecord, readNumber, readString } from "../../utils/unknown-data.js";
 import { buildRemoteCompactionHistory } from "./openai-remote-messages.js";
+import {
+  resolveRemoteCompactionRequestBudget,
+  shrinkRemoteCompactionRequestForEndpoint,
+} from "./openai-remote-request-shrink.js";
 import type {
   RemoteCompactionResult,
   ResponseItem,
@@ -18,6 +22,7 @@ import type {
 } from "./openai-remote-types.js";
 
 const REMOTE_COMPACTION_FEATURE = "remote_compaction_v2";
+const OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH = 64;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const CodexTokenPayloadSchema = Type.Object(
@@ -52,7 +57,11 @@ export function supportsOpenAIRemoteCompaction(model: Model<Api> | undefined): m
 }
 
 export function remoteCompactionModelKey(model: Model<Api>): string {
-  return `${model.provider}:${model.api}:${model.id}`;
+  const fallbackBaseUrl =
+    model.provider === "openai-codex"
+      ? "https://chatgpt.com/backend-api"
+      : "https://api.openai.com/v1";
+  return `${model.provider}:${model.api}:${model.id}:${normalizeBaseUrl(model.baseUrl, fallbackBaseUrl)}`;
 }
 
 function normalizeBaseUrl(baseUrl: string, fallback: string): string {
@@ -226,6 +235,10 @@ export function buildRemoteCompactionRequestBody(params: {
   text?: ResponsesTextConfig;
   sessionId?: string;
 }): Record<string, unknown> {
+  const promptCacheKey =
+    params.sessionId === undefined
+      ? undefined
+      : Array.from(params.sessionId).slice(0, OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH).join("");
   return {
     model: params.model.id,
     input: [...params.input, { type: "compaction_trigger" }],
@@ -236,7 +249,7 @@ export function buildRemoteCompactionRequestBody(params: {
     stream: true,
     store: false,
     include: ["reasoning.encrypted_content"],
-    ...(params.sessionId === undefined ? {} : { prompt_cache_key: params.sessionId }),
+    ...(promptCacheKey === undefined ? {} : { prompt_cache_key: promptCacheKey }),
     ...(params.reasoning === undefined ? {} : { reasoning: params.reasoning }),
     ...(params.text === undefined ? {} : { text: params.text }),
   };
@@ -270,9 +283,11 @@ function remoteFailureMessage(response: unknown): string {
 
 export function parseRemoteCompactionEvents(events: unknown[]): {
   compactionItem: ResponseItem;
+  responseId: string;
   usage?: unknown;
 } {
   let completed = false;
+  let responseId: string | undefined;
   let usage: unknown;
   const compactionItems: ResponseItem[] = [];
 
@@ -294,19 +309,24 @@ export function parseRemoteCompactionEvents(events: unknown[]): {
     }
     if (event.type === "response.completed") {
       completed = true;
-      usage = asRecord(event.response)?.usage;
+      const response = asRecord(event.response);
+      responseId = readString(response?.id);
+      usage = response?.usage;
     }
   }
 
   if (!completed) {
     throw new Error("OpenAI remote compaction stream ended before response.completed.");
   }
+  if (responseId === undefined) {
+    throw new Error("OpenAI remote compaction response.completed did not include a response id.");
+  }
   if (compactionItems.length !== 1 || compactionItems[0] === undefined) {
     throw new Error(
       `OpenAI remote compaction expected exactly one compaction item, got ${compactionItems.length}.`,
     );
   }
-  return { compactionItem: compactionItems[0], usage };
+  return { compactionItem: compactionItems[0], responseId, usage };
 }
 
 function extractCacheWriteTokens(value: unknown): number {
@@ -339,6 +359,7 @@ export async function callRemoteCompactionEndpoint(params: {
   apiKey: string;
   headers?: Record<string, string>;
   sessionId?: string;
+  tokensBefore: number;
   input: ResponseItem[];
   instructions?: string;
   tools: Record<string, unknown>[];
@@ -350,10 +371,19 @@ export async function callRemoteCompactionEndpoint(params: {
     throw new Error("Remote compaction only supports codex-openai and openai-codex.");
   }
 
+  const shrinkResult = shrinkRemoteCompactionRequestForEndpoint(
+    { input: params.input, instructions: params.instructions },
+    {
+      budgetTokens: resolveRemoteCompactionRequestBudget(params.model),
+      tokensBefore: params.tokensBefore,
+    },
+  );
+  const input = shrinkResult.request.input;
+
   const response = await fetch(remoteCompactionEndpointUrl(params.model), {
     method: "POST",
     headers: buildRemoteCompactionHeaders(params),
-    body: JSON.stringify(buildRemoteCompactionRequestBody(params)),
+    body: JSON.stringify(buildRemoteCompactionRequestBody({ ...params, input })),
     signal: params.signal,
   });
   if (!response.ok) {
@@ -365,7 +395,9 @@ export async function callRemoteCompactionEndpoint(params: {
 
   const parsed = parseRemoteCompactionEvents(parseSseData(await response.text()));
   return {
-    output: buildRemoteCompactionHistory(params.input, parsed.compactionItem),
+    output: buildRemoteCompactionHistory(input, parsed.compactionItem),
+    compactResponseId: parsed.responseId,
+    createdAt: new Date().toISOString(),
     usage: extractRemoteCompactionUsage(params.model, parsed.usage),
   };
 }

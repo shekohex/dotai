@@ -79,6 +79,21 @@ const RemoteCompactionDetailsSchema = Type.Object(
     ),
     modelKey: Type.Optional(Type.String()),
     replacementHistory: Type.Array(Type.Unknown()),
+    api: Type.Optional(Type.String()),
+    model: Type.Optional(Type.String()),
+    baseUrl: Type.Optional(Type.String()),
+    compactResponseId: Type.Optional(Type.String()),
+    createdAt: Type.Optional(Type.String()),
+    requestMeta: Type.Optional(
+      Type.Object(
+        {
+          tokensBefore: Type.Optional(Type.Number()),
+          previousSummaryPresent: Type.Optional(Type.Boolean()),
+          compactedKeptWindow: Type.Optional(Type.Boolean()),
+        },
+        { additionalProperties: true },
+      ),
+    ),
     usage: Type.Optional(Type.Unknown()),
   },
   { additionalProperties: true },
@@ -124,6 +139,16 @@ function normalizeRemoteCompactionDetails(details: {
   implementation?: "responses_compact_v1" | "responses_compaction_v2";
   modelKey?: string;
   replacementHistory: unknown[];
+  api?: string;
+  model?: string;
+  baseUrl?: string;
+  compactResponseId?: string;
+  createdAt?: string;
+  requestMeta?: {
+    tokensBefore?: number;
+    previousSummaryPresent?: boolean;
+    compactedKeptWindow?: boolean;
+  };
   usage?: unknown;
 }): RemoteCompactionDetails | undefined {
   const isLegacy = details.provider === "openai-responses-compact" && details.version === 1;
@@ -139,22 +164,41 @@ function normalizeRemoteCompactionDetails(details: {
     implementation: isCurrent ? "responses_compaction_v2" : "responses_compact_v1",
     modelKey: details.modelKey ?? "",
     replacementHistory,
+    ...(details.api === undefined ? {} : { api: details.api }),
+    ...(details.model === undefined ? {} : { model: details.model }),
+    ...(details.baseUrl === undefined ? {} : { baseUrl: details.baseUrl }),
+    ...(details.compactResponseId === undefined
+      ? {}
+      : { compactResponseId: details.compactResponseId }),
+    ...(details.createdAt === undefined ? {} : { createdAt: details.createdAt }),
+    ...(details.requestMeta === undefined ? {} : { requestMeta: details.requestMeta }),
     ...(usage === undefined ? {} : { usage }),
   };
 }
 
 export function buildRemoteCompactionDetails(
   model: Model<Api>,
-  replacementHistory: ResponseItem[],
-  usage?: Usage,
+  result: {
+    replacementHistory: ResponseItem[];
+    compactResponseId: string;
+    createdAt: string;
+    requestMeta: NonNullable<RemoteCompactionDetails["requestMeta"]>;
+    usage?: Usage;
+  },
 ): RemoteCompactionDetails {
   return {
     version: 2,
     provider: "openai-responses-compaction",
     implementation: "responses_compaction_v2",
     modelKey: remoteCompactionModelKey(model),
-    replacementHistory,
-    ...(usage === undefined ? {} : { usage }),
+    replacementHistory: result.replacementHistory,
+    api: model.api,
+    model: model.id,
+    baseUrl: model.baseUrl.trim().replace(/\/+$/u, ""),
+    compactResponseId: result.compactResponseId,
+    createdAt: result.createdAt,
+    requestMeta: result.requestMeta,
+    ...(result.usage === undefined ? {} : { usage: result.usage }),
   };
 }
 

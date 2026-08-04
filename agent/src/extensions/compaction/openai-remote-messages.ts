@@ -16,7 +16,16 @@ import type { AssistantPhase, ResponseContentItem, ResponseItem } from "./openai
 
 const IMAGE_CONTENT_OMITTED_PLACEHOLDER =
   "image content omitted because you do not support image input";
-const RETAINED_MESSAGE_TOKEN_BUDGET = 20_000;
+const RETAINED_MESSAGE_TOKEN_BUDGET = 64_000;
+const CONTEXTUAL_USER_MARKERS: ReadonlyArray<readonly [string, string]> = [
+  ["# AGENTS.md instructions", "</INSTRUCTIONS>"],
+  ["<environment_context>", "</environment_context>"],
+  ["<skill>", "</skill>"],
+  ["<user_shell_command>", "</user_shell_command>"],
+  ["<turn_aborted>", "</turn_aborted>"],
+  ["<subagent_notification>", "</subagent_notification>"],
+  ["<recommended_plugins>", "</recommended_plugins>"],
+];
 
 const ReasoningSignatureSchema = Type.Object(
   {
@@ -328,52 +337,86 @@ function responseMessageText(item: ResponseItem): string {
     .join("");
 }
 
-function isRealUserMessage(item: ResponseItem): boolean {
-  if (item.type !== "message" || item.role !== "user") return false;
-  if (typeof item.content === "string") return item.content.trim().length > 0;
-  const content = parseUnknownArray(item.content);
-  return content !== undefined && content.length > 0;
+function matchesMarkedText(text: string, start: string, end: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed.slice(0, start.length).toLowerCase() === start.toLowerCase() &&
+    trimmed.slice(-end.length).toLowerCase() === end.toLowerCase()
+  );
+}
+
+function isInjectedContextText(text: string): boolean {
+  const trimmed = text.trim();
+  if (CONTEXTUAL_USER_MARKERS.some(([start, end]) => matchesMarkedText(trimmed, start, end))) {
+    return true;
+  }
+  if (
+    /^\s*<hook_prompt\s+hook_run_id=(?:"[^"]+"|'[^']+')\s*>[\s\S]*<\/hook_prompt>\s*$/u.test(
+      trimmed,
+    )
+  ) {
+    return true;
+  }
+  if (trimmed.startsWith("<external_")) {
+    const close = trimmed.indexOf(">");
+    const key = close < 0 ? "" : trimmed.slice("<external_".length, close);
+    if (key.length > 0 && trimmed.slice(close + 1).endsWith(`</external_${key}>`)) return true;
+  }
+  if (trimmed.startsWith("<goal_context>") && trimmed.endsWith("</goal_context>")) return true;
+  if (
+    /^<codex_internal_context source="[a-z][a-z0-9_]*">[\s\S]*<\/codex_internal_context>$/u.test(
+      trimmed,
+    )
+  ) {
+    return true;
+  }
+  return (
+    trimmed.startsWith(
+      "Warning: The maximum number of unified exec processes you can keep open is",
+    ) ||
+    trimmed.startsWith(
+      "Warning: Your account was flagged for potentially high-risk cyber activity",
+    ) ||
+    (trimmed.startsWith("Warning: apply_patch was requested via ") &&
+      trimmed.endsWith("Use the apply_patch tool instead of exec_command."))
+  );
+}
+
+function retainedRealUserMessage(item: ResponseItem): ResponseItem | undefined {
+  if (item.type !== "message" || item.role !== "user") return undefined;
+  if (typeof item.content === "string") {
+    return item.content.trim().length > 0 && !isInjectedContextText(item.content)
+      ? cloneResponseItem(item)
+      : undefined;
+  }
+  const content = parseUnknownArray(item.content)?.filter((value) => {
+    const part = asRecord(value);
+    return !(
+      part?.type === "input_text" &&
+      typeof part.text === "string" &&
+      isInjectedContextText(part.text)
+    );
+  });
+  return content !== undefined && content.length > 0
+    ? { ...cloneResponseItem(item), content: structuredClone(content) }
+    : undefined;
 }
 
 function approximateMessageTokens(item: ResponseItem): number {
-  return Math.max(1, Math.ceil(responseMessageText(item).length / 4));
+  return Math.max(1, Math.ceil(Buffer.byteLength(responseMessageText(item), "utf8") / 4));
 }
 
-function truncateMessageToTokenBudget(
-  item: ResponseItem,
-  maxTokens: number,
-): ResponseItem | undefined {
-  const itemContent = parseUnknownArray(item.content);
-  if (item.type !== "message" || itemContent === undefined) return cloneResponseItem(item);
-  let remainingCharacters = Math.max(0, maxTokens * 4);
-  const content = itemContent.flatMap((value) => {
-    const part = asRecord(value);
-    if (part === undefined) return [];
-    if (part.type === "input_image") return [part];
-    if (typeof part.text !== "string" || remainingCharacters === 0) {
-      return [];
-    }
-    const text = part.text.slice(0, remainingCharacters);
-    remainingCharacters -= text.length;
-    return text.length > 0 ? [{ ...part, text }] : [];
-  });
-  return content.length > 0 ? { ...cloneResponseItem(item), content } : undefined;
-}
-
-function truncateRetainedMessages(items: ResponseItem[], maxTokens: number): ResponseItem[] {
+function retainRecentMessages(items: ResponseItem[], maxTokens: number): ResponseItem[] {
   let remainingTokens = maxTokens;
   const retainedReversed: ResponseItem[] = [];
   for (const item of items.toReversed()) {
-    if (remainingTokens === 0) break;
     const tokenCount = approximateMessageTokens(item);
-    if (tokenCount <= remainingTokens) {
+    if (tokenCount <= remainingTokens || retainedReversed.length === 0) {
       retainedReversed.push(cloneResponseItem(item));
-      remainingTokens -= tokenCount;
-      continue;
+      remainingTokens = Math.max(0, remainingTokens - tokenCount);
+    } else {
+      break;
     }
-    const truncated = truncateMessageToTokenBudget(item, remainingTokens);
-    if (truncated !== undefined) retainedReversed.push(truncated);
-    remainingTokens = 0;
   }
   return retainedReversed.toReversed();
 }
@@ -385,9 +428,12 @@ export function buildRemoteCompactionHistory(
   if (compactionItem.type !== "compaction") {
     throw new Error("OpenAI remote compaction did not return a compaction item.");
   }
-  const retainedUserMessages = input.filter((item) => isRealUserMessage(item));
+  const retainedUserMessages = input.flatMap((item) => {
+    const retained = retainedRealUserMessage(item);
+    return retained === undefined ? [] : [retained];
+  });
   return [
-    ...truncateRetainedMessages(retainedUserMessages, RETAINED_MESSAGE_TOKEN_BUDGET),
+    ...retainRecentMessages(retainedUserMessages, RETAINED_MESSAGE_TOKEN_BUDGET),
     cloneResponseItem(compactionItem),
   ];
 }

@@ -35,12 +35,12 @@ export const LITELLM_API_KEY_ENV = "LITELLM_API_KEY";
 const LITELLM_READINESS_PATH = "/health/readiness";
 const ZAI_GLM_5_1_MODEL_ID = "glm-5.1";
 const ZAI_GLM_5_2_MODEL_ID = "glm-5.2";
-const CODEX_OPENAI_EXTENDED_CONTEXT_MODEL_IDS = new Set([
+const CODEX_OPENAI_272K_CONTEXT_MODEL_IDS = new Set([
   "gpt-5.6-luna",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
 ]);
-const CODEX_OPENAI_EXTENDED_CONTEXT_WINDOW = 258_000;
+const CODEX_OPENAI_CONTEXT_WINDOW = 272_000;
 
 let litellmStatePromise: Promise<LiteLLMState> | undefined;
 
@@ -228,9 +228,9 @@ function createCodexOpenAIModels(): ProviderModelConfig[] {
     reasoning: model.reasoning,
     input: [...model.input],
     cost: { ...model.cost },
-    contextWindow: CODEX_OPENAI_EXTENDED_CONTEXT_MODEL_IDS.has(model.id)
-      ? CODEX_OPENAI_EXTENDED_CONTEXT_WINDOW
-      : model.contextWindow,
+    contextWindow: CODEX_OPENAI_272K_CONTEXT_MODEL_IDS.has(model.id)
+      ? CODEX_OPENAI_CONTEXT_WINDOW
+      : Math.min(model.contextWindow, CODEX_OPENAI_CONTEXT_WINDOW),
     maxTokens: model.maxTokens,
     compat: model.compat,
     headers: model.headers,

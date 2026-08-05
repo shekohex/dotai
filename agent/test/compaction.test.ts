@@ -11,6 +11,7 @@ import {
   type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { isContextOverflow } from "../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/overflow.js";
 import { isRetryableAssistantError } from "../node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js";
 import compactionExtension, {
   buildSummaryMessages,
@@ -81,6 +82,11 @@ type ProviderRequestHandler = (
   ctx: ExtensionContext,
 ) => Promise<unknown> | unknown;
 
+type MessageEndHandler = (
+  event: { message: Parameters<typeof messageToResponseItems>[0] },
+  ctx: ExtensionContext,
+) => Promise<unknown> | unknown;
+
 function createCompactionHandlerHarness(
   model: Model<Api>,
   toolState: {
@@ -91,6 +97,7 @@ function createCompactionHandlerHarness(
   } = {},
 ): {
   handler: CompactionHandler;
+  messageEndHandler: MessageEndHandler;
   providerRequestHandler: ProviderRequestHandler;
   ctx: ExtensionContext;
   notices: string[];
@@ -134,8 +141,11 @@ function createCompactionHandlerHarness(
   if (providerRequestHandler === undefined) {
     throw new Error("Provider request handler was not registered");
   }
+  const messageEndHandler = handlers.get("message_end")?.[0];
+  if (messageEndHandler === undefined) throw new Error("Message end handler was not registered");
   return {
     handler: handler as CompactionHandler,
+    messageEndHandler: messageEndHandler as MessageEndHandler,
     providerRequestHandler: providerRequestHandler as ProviderRequestHandler,
     ctx,
     notices,
@@ -202,6 +212,37 @@ describe("compaction extension", () => {
         timestamp: 1,
       }),
     ).toBe(true);
+  });
+
+  test("normalizes LiteLLM context-window errors for overflow recovery", async () => {
+    const assistantMessage = {
+      role: "assistant",
+      api: codexOpenAIModel.api,
+      provider: codexOpenAIModel.provider,
+      model: codexOpenAIModel.id,
+      content: [],
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "error",
+      errorMessage:
+        "OpenAI API error (400): litellm.ContextWindowExceededError: Context Window exceeded for given call. Max Input Tokens=272000, Got=275037",
+      timestamp: 1,
+    } as const;
+    expect(isContextOverflow(assistantMessage, 272_000)).toBe(false);
+    const harness = createCompactionHandlerHarness(codexOpenAIModel);
+
+    const result = (await harness.messageEndHandler({ message: assistantMessage }, harness.ctx)) as
+      | { message?: typeof assistantMessage }
+      | undefined;
+
+    expect(result?.message).toBeDefined();
+    expect(isContextOverflow(result!.message!, 272_000)).toBe(true);
   });
 
   test("gates remote compaction to configured Codex providers", () => {

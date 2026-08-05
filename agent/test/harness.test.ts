@@ -2472,11 +2472,20 @@ timedTest("LiteLLM provider registrations route codex-openai via OpenAI Response
   expect(
     codexRegistration.config.models!.every((model) => model.contextWindow <= 272_000),
   ).toBeTruthy();
-  expect(
-    codexRegistration.config
-      .models!.filter((model) => model.id.startsWith("gpt-5.6-"))
-      .every((model) => model.contextWindow === 272_000),
-  ).toBeTruthy();
+  const observedSerializerOverhead = 35_000;
+  const compactionSafetyMargin = 10_000;
+  const defaultCompactionReserve = 27_200;
+  const nativeCompactionRequestBudget = 258_400;
+  for (const model of codexRegistration.config.models!.filter((model) =>
+    model.id.startsWith("gpt-5.6-"),
+  )) {
+    const requestTokensAtCompactionThreshold =
+      model.contextWindow -
+      defaultCompactionReserve +
+      observedSerializerOverhead +
+      compactionSafetyMargin;
+    expect(requestTokensAtCompactionThreshold).toBeLessThanOrEqual(nativeCompactionRequestBudget);
+  }
 });
 
 timedTest("LiteLLM provider registrations route deepseek via LiteLLM v1", () => {

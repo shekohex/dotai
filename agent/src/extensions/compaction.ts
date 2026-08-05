@@ -62,6 +62,8 @@ const SUMMARY_PREFIX =
   "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:";
 const USE_PI_COMPACTION = undefined;
 const CODEX_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
+const LITELLM_CONTEXT_OVERFLOW_PATTERN = /(?:ContextWindowExceededError|Context Window exceeded)/i;
+const STANDARD_CONTEXT_OVERFLOW_PATTERN = /context[_ ]length[_ ]exceeded/i;
 
 export default function (pi: ExtensionAPI) {
   const remoteCompactionStates = new Map<string, RemoteCompactionSessionState>();
@@ -116,16 +118,20 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("message_end", (event, ctx) => {
     const model = ctx.model;
-    if (!supportsOpenAIRemoteCompaction(model)) return;
+    if (!supportsOpenAIRemoteCompaction(model)) return {};
+    const message = normalizeLiteLLMContextOverflowMessage(event.message);
     const sessionId = ctx.sessionManager.getSessionId();
     const remoteState = matchingRemoteState(remoteCompactionStates, sessionId, model);
-    if (remoteState === undefined) return;
-    const items = messageToResponseItems(event.message);
-    if (items.length === 0) return;
-    remoteCompactionStates.set(sessionId, {
-      ...remoteState,
-      explicitHistory: [...remoteState.explicitHistory, ...items],
-    });
+    if (remoteState !== undefined) {
+      const items = messageToResponseItems(message);
+      if (items.length > 0) {
+        remoteCompactionStates.set(sessionId, {
+          ...remoteState,
+          explicitHistory: [...remoteState.explicitHistory, ...items],
+        });
+      }
+    }
+    return message === event.message ? {} : { message };
   });
 
   pi.on("before_provider_request", (event, ctx) =>
@@ -137,6 +143,25 @@ export default function (pi: ExtensionAPI) {
       requestShapes,
     ),
   );
+}
+
+function normalizeLiteLLMContextOverflowMessage(
+  message: Parameters<typeof messageToResponseItems>[0],
+): Parameters<typeof messageToResponseItems>[0] {
+  if (
+    message.role !== "assistant" ||
+    message.stopReason !== "error" ||
+    message.errorMessage === undefined ||
+    !LITELLM_CONTEXT_OVERFLOW_PATTERN.test(message.errorMessage) ||
+    STANDARD_CONTEXT_OVERFLOW_PATTERN.test(message.errorMessage)
+  ) {
+    return message;
+  }
+
+  return {
+    ...message,
+    errorMessage: `context_length_exceeded: ${message.errorMessage}`,
+  };
 }
 
 async function handleSessionBeforeCompact(

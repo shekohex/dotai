@@ -1502,6 +1502,69 @@ describe("compaction extension", () => {
     expect(serialized).not.toContain("PRE_COMPACTION");
   });
 
+  test("uses Igor lenient replay when current provider context differs from persisted entries", async () => {
+    const modelKey = remoteCompactionModelKey(codexOpenAIModel);
+    const branchEntries = [
+      {
+        type: "message",
+        id: "pre",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:00.000Z",
+        message: { role: "user", content: "PRE_COMPACTION", timestamp: 1 },
+      },
+      {
+        type: "compaction",
+        id: "compact-1",
+        parentId: "pre",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        summary: "native checkpoint placeholder",
+        firstKeptEntryId: "pre",
+        tokensBefore: 100,
+        details: {
+          remoteCompaction: {
+            version: 2,
+            provider: "openai-responses-compaction",
+            modelKey,
+            api: codexOpenAIModel.api,
+            baseUrl: codexOpenAIModel.baseUrl,
+            replacementHistory: [{ type: "compaction", encrypted_content: "opaque" }],
+          },
+        },
+      },
+      {
+        type: "message",
+        id: "tail",
+        parentId: "compact-1",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        message: { role: "user", content: "PERSISTED_TAIL", timestamp: 2 },
+      },
+    ] as SessionEntry[];
+    const harness = createCompactionHandlerHarness(codexOpenAIModel, { branchEntries });
+    const piInput = messagesToResponseItems(
+      convertToLlm(buildSessionContext(branchEntries, "tail").messages),
+    );
+    const serializedInput = JSON.stringify(piInput).replace(
+      "PERSISTED_TAIL",
+      "CURRENT_PROVIDER_TAIL",
+    );
+
+    const rewritten = (await harness.providerRequestHandler(
+      {
+        payload: {
+          model: codexOpenAIModel.id,
+          input: JSON.parse(serializedInput) as unknown,
+          instructions: "system",
+        },
+      },
+      harness.ctx,
+    )) as { input: unknown[] };
+    const serialized = JSON.stringify(rewritten.input);
+
+    expect(serialized).toContain("opaque");
+    expect(serialized).toContain("CURRENT_PROVIDER_TAIL");
+    expect(serialized).not.toContain("native checkpoint placeholder");
+  });
+
   test("preserves the native checkpoint across a newer portable compaction", async () => {
     const modelKey = remoteCompactionModelKey(codexOpenAIModel);
     const branchEntries = [

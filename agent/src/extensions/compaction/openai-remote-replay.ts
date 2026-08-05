@@ -195,61 +195,6 @@ function stripLeadingCompactionSummary(
     : input;
 }
 
-function paritySignatures(items: readonly unknown[]): string[] {
-  return items.map((value) => {
-    const item = asRecord(value);
-    if (item === undefined) return typeof value;
-    const type = typeof item.type === "string" ? item.type : "message";
-    if (type === "message") return `message:${String(item.role)}:${String(item.phase)}`;
-    if (type === "function_call") return `function_call:${String(item.name)}`;
-    return type;
-  });
-}
-
-function responseItemIdentity(item: ResponseItem): string {
-  const type = typeof item.type === "string" ? item.type : "message";
-  if (typeof item.call_id === "string") return `${type}:call:${item.call_id}`;
-  if (type === "message") {
-    const content = Array.isArray(item.content)
-      ? item.content.map((value: unknown): unknown => {
-          const part = asRecord(value);
-          if (part === undefined) return value;
-          const normalized = { ...part };
-          delete normalized.annotations;
-          return normalized;
-        })
-      : item.content;
-    return `${type}:${String(item.role)}:${String(item.phase)}:${JSON.stringify(content)}`;
-  }
-  if (type === "reasoning" && typeof item.encrypted_content === "string") {
-    return `${type}:encrypted:${item.encrypted_content}`;
-  }
-  if (typeof item.id === "string") return `${type}:id:${item.id}`;
-  return `${type}:${JSON.stringify(item)}`;
-}
-
-function alignRemoteTailToFreshInput(
-  remoteTail: ResponseItem[],
-  freshConversation: ResponseItem[],
-): number[] | undefined {
-  if (remoteTail.length === 0) return [];
-  const matches = Array.from({ length: remoteTail.length }, () => -1);
-  let freshCursor = freshConversation.length - 1;
-  for (let remoteIndex = remoteTail.length - 1; remoteIndex >= 0; remoteIndex -= 1) {
-    const identity = responseItemIdentity(remoteTail[remoteIndex]);
-    let matchedIndex = -1;
-    for (let index = freshCursor; index >= 0; index -= 1) {
-      if (responseItemIdentity(freshConversation[index]) !== identity) continue;
-      matchedIndex = index;
-      break;
-    }
-    if (matchedIndex < 0) return undefined;
-    matches[remoteIndex] = matchedIndex;
-    freshCursor = matchedIndex - 1;
-  }
-  return matches;
-}
-
 export function rewriteRemoteCompactionPayload(params: {
   model: Model<Api>;
   payload: unknown;
@@ -339,37 +284,18 @@ export function rewriteRemoteCompactionPayload(params: {
     };
   }
 
-  const matches = alignRemoteTailToFreshInput(postCompactionInput, freshConversation);
-  const firstMatch = matches?.[0];
-  if (firstMatch !== undefined) {
-    return {
-      ok: true,
-      rewrittenPayload: {
-        ...payload,
-        ...(preamble.instructions === undefined ? {} : { instructions: preamble.instructions }),
-        input: [
-          ...preamble.leadingInput,
-          ...compactedWindow,
-          ...freshConversation.slice(firstMatch),
-          ...preamble.trailingInput,
-        ],
-      },
-    };
-  }
-
-  const actual = paritySignatures(freshConversation);
-  const expected = paritySignatures([
-    ...summaryInput,
-    ...serializeMessages(params.model, collectReplayMessages(preCompactionEntries)),
-    ...postCompactionInput,
-  ]);
+  const replayConversation = stripLeadingCompactionSummary(freshConversation, summaryInput);
   return {
-    ok: false,
-    reason: "expected-pi-replay-mismatch",
-    mismatches: expected.flatMap((value, index) =>
-      actual[index] === value
-        ? []
-        : [`index ${index}: expected ${value}, got ${actual[index] ?? "<missing>"}`],
-    ),
+    ok: true,
+    rewrittenPayload: {
+      ...payload,
+      ...(preamble.instructions === undefined ? {} : { instructions: preamble.instructions }),
+      input: [
+        ...preamble.leadingInput,
+        ...compactedWindow,
+        ...replayConversation,
+        ...preamble.trailingInput,
+      ],
+    },
   };
 }

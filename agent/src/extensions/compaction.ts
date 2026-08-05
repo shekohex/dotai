@@ -322,7 +322,7 @@ function rewriteRemoteCompactionRequest(
       });
       if (!replay.ok) {
         const detail = replay.mismatches?.slice(0, 3).join("; ");
-        const message = `OpenAI native compaction replay failed (${replay.reason})${detail === undefined ? "" : `: ${detail}`}; request was not sent with placeholder compaction context.`;
+        const message = `OpenAI native compaction replay failed (${replay.reason})${detail !== undefined && detail.length > 0 ? `: ${detail}` : ""}; request was not sent with placeholder compaction context.`;
         ctx.ui.notify(message, "error");
         throw new Error(message);
       }

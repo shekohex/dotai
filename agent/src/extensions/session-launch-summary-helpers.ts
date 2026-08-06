@@ -1,4 +1,4 @@
-import type { Api, Message, Model } from "@earendil-works/pi-ai";
+import type { Api, Message, Model, ProviderHeaders } from "@earendil-works/pi-ai";
 import {
   convertToLlm,
   serializeConversation,
@@ -16,7 +16,7 @@ type SessionModel = NonNullable<ExtensionContext["model"]>;
 export type SummaryGenerationConfig = {
   model: SessionModel;
   apiKey: string;
-  headers?: Record<string, string>;
+  headers?: ProviderHeaders;
   warning?: string;
 };
 

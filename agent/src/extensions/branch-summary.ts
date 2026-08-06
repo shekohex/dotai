@@ -1,5 +1,6 @@
 import { generateBranchSummary, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../utils/error-message.js";
+import { providerHeadersToRecord } from "../utils/provider-headers.js";
 import {
   DEFAULT_MODEL_FALLBACKS,
   isAbortSignalAborted,
@@ -36,7 +37,7 @@ export default function branchSummaryExtension(pi: ExtensionAPI) {
         const result = await generateBranchSummary(preparation.entriesToSummarize, {
           model: modelAuth.model,
           apiKey: modelAuth.apiKey,
-          headers: modelAuth.headers,
+          headers: providerHeadersToRecord(modelAuth.headers),
           env: modelAuth.env,
           signal: event.signal,
           customInstructions: preparation.customInstructions,

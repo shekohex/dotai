@@ -1,4 +1,4 @@
-import type { Api, Message, Model } from "@earendil-works/pi-ai";
+import type { Api, Message, Model, ProviderHeaders } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../../utils/error-message.js";
 import { escapeXml } from "../../utils/xml.js";
@@ -53,7 +53,7 @@ export interface AiAutocompleteBackend {
 type ModelAuth = {
   model: Model<Api>;
   apiKey: string;
-  headers?: Record<string, string>;
+  headers?: ProviderHeaders;
 };
 
 export function createAiAutocompleteBackend(

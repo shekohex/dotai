@@ -32,6 +32,7 @@ import modesExtension, {
 import { createModeStartupSelection } from "../src/extensions/modes/startup-selection.ts";
 import interviewExtension from "../src/extensions/interview/index.ts";
 import gsdExtension from "../src/extensions/gsd/index.ts";
+import { groupedExtensionsC } from "../src/extensions/definitions-group-c.ts";
 import { bundledExtensionFactories } from "../src/extensions/index.ts";
 import filesExtension from "../src/extensions/files.ts";
 import executorExtension from "../src/extensions/executor/index.ts";
@@ -1056,17 +1057,9 @@ function createModeChangeCaptureExtension(
   observedEvents: CapturedModeChange[],
 ): (pi: ExtensionAPI) => void {
   return (pi) => {
-    const emit = pi.events.emit.bind(pi.events) as (eventName: string, data: unknown) => void;
-    (pi.events as { emit: (eventName: string, data: unknown) => void }).emit = (
-      eventName,
-      data,
-    ) => {
-      if (eventName === "modes:changed") {
-        observedEvents.push(data as CapturedModeChange);
-      }
-
-      emit(eventName, data);
-    };
+    pi.events.on("modes:changed", (data) => {
+      observedEvents.push(data as CapturedModeChange);
+    });
   };
 }
 
@@ -3795,6 +3788,10 @@ timedTest("subagent extension reports actionable invalid param errors", async ()
   } finally {
     session?.dispose();
   }
+});
+
+timedTest("legacy mermaid extension is not bundled", () => {
+  expect(groupedExtensionsC.some((definition) => definition.id === "mermaid")).toBe(false);
 });
 
 timedTest("mermaid command still emits a standalone preview message", async () => {

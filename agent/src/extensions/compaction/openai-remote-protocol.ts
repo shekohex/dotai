@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { arch, homedir, platform, release } from "node:os";
 import { dirname, join } from "node:path";
-import type { Api, Model, Usage } from "@earendil-works/pi-ai";
+import type { Api, Model, ProviderHeaders, Usage } from "@earendil-works/pi-ai";
 import { calculateCost } from "@earendil-works/pi-ai";
 import { convertResponsesTools } from "@earendil-works/pi-ai/api/openai-responses-shared";
 import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { errorMessage } from "../../utils/error-message.js";
+import { providerHeadersToRecord } from "../../utils/provider-headers.js";
 import { asRecord, readNumber, readString } from "../../utils/unknown-data.js";
 import { buildRemoteCompactionHistory } from "./openai-remote-messages.js";
 import {
@@ -190,16 +191,18 @@ function withRemoteCompactionFeature(headers: Record<string, string>): Record<st
 export function buildRemoteCompactionHeaders(params: {
   model: Model<Api>;
   apiKey: string;
-  headers?: Record<string, string>;
+  headers?: ProviderHeaders;
   sessionId?: string;
 }): Record<string, string> {
-  const commonHeaders = withRemoteCompactionFeature({
-    authorization: `Bearer ${params.apiKey}`,
-    ...buildCodexIdentityHeaders(params.sessionId),
-    ...params.headers,
-    accept: "text/event-stream",
-    "content-type": "application/json",
-  });
+  const commonHeaders = withRemoteCompactionFeature(
+    providerHeadersToRecord({
+      authorization: `Bearer ${params.apiKey}`,
+      ...buildCodexIdentityHeaders(params.sessionId),
+      ...params.headers,
+      accept: "text/event-stream",
+      "content-type": "application/json",
+    }) ?? {},
+  );
   if (params.model.provider === "codex-openai") return commonHeaders;
   if (params.model.provider !== "openai-codex") {
     throw new Error("Remote compaction headers are not supported for this model.");
@@ -396,7 +399,7 @@ function extractRemoteCompactionUsage(model: Model<Api>, value: unknown): Usage 
 export async function callRemoteCompactionEndpoint(params: {
   model: Model<Api>;
   apiKey: string;
-  headers?: Record<string, string>;
+  headers?: ProviderHeaders;
   sessionId?: string;
   tokensBefore: number;
   input: ResponseItem[];

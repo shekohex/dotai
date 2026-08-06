@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isStaleSessionReplacementContextError } from "../session-replacement.js";
 import { readToolState } from "../../utils/tool-state.js";
 import {
   createWorkflowStorage,
@@ -121,7 +122,16 @@ function installWorkflowStatusEmitter(
   manager: WorkflowManager,
 ): (ctx: ExtensionContext) => void {
   let currentSessionContext: { sessionId: string; cwd: string } | null = null;
+  let workflowStatusTimer: ReturnType<typeof setInterval> | undefined;
   const activeWorkflowStarts = new Map<string, number>();
+  const stopWorkflowStatusEmitter = (): void => {
+    currentSessionContext = null;
+    activeWorkflowStarts.clear();
+    if (workflowStatusTimer !== undefined) {
+      clearInterval(workflowStatusTimer);
+      workflowStatusTimer = undefined;
+    }
+  };
   const updateWorkflowStatus = (): void => {
     if (currentSessionContext === null) return;
     const activeRuns = [...activeWorkflowStarts.keys()]
@@ -130,30 +140,36 @@ function installWorkflowStatusEmitter(
         (run) =>
           run !== undefined && run.status === "running" && !isGoalWorkflowName(run.snapshot.name),
       );
-    if (activeRuns.length === 0) {
+    try {
+      if (activeRuns.length === 0) {
+        pi.events.emit(WORKFLOW_PROGRESS_EVENT, {
+          status: "clear",
+          sessionId: currentSessionContext.sessionId,
+          cwd: currentSessionContext.cwd,
+        });
+        return;
+      }
+      const run = activeRuns.at(-1);
+      if (run === undefined) return;
+      const startedAt = activeWorkflowStarts.get(run.runId) ?? run.startedAt.getTime();
+      const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
       pi.events.emit(WORKFLOW_PROGRESS_EVENT, {
-        status: "clear",
+        status: "active",
         sessionId: currentSessionContext.sessionId,
         cwd: currentSessionContext.cwd,
+        runId: run.runId,
+        workflowName: run.snapshot.name,
+        elapsedSeconds,
+        phase: run.snapshot.currentPhase,
       });
-      return;
+    } catch (error) {
+      if (!isStaleSessionReplacementContextError(error)) throw error;
+      stopWorkflowStatusEmitter();
     }
-    const run = activeRuns.at(-1);
-    if (run === undefined) return;
-    const startedAt = activeWorkflowStarts.get(run.runId) ?? run.startedAt.getTime();
-    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-    pi.events.emit(WORKFLOW_PROGRESS_EVENT, {
-      status: "active",
-      sessionId: currentSessionContext.sessionId,
-      cwd: currentSessionContext.cwd,
-      runId: run.runId,
-      workflowName: run.snapshot.name,
-      elapsedSeconds,
-      phase: run.snapshot.currentPhase,
-    });
   };
-  const workflowStatusTimer = setInterval(updateWorkflowStatus, 1_000);
+  workflowStatusTimer = setInterval(updateWorkflowStatus, 1_000);
   workflowStatusTimer.unref?.();
+  pi.on("session_shutdown", stopWorkflowStatusEmitter);
   const settleWorkflowStatus = (event: { runId?: string }): void => {
     if (event.runId !== undefined) activeWorkflowStarts.delete(event.runId);
     updateWorkflowStatus();

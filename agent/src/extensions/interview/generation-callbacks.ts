@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, ProviderHeaders } from "@earendil-works/pi-ai";
 
 import { createWrappedError, getErrorMessage, toError } from "./errors.js";
 import { isNonEmptyString } from "./guards.js";
@@ -26,7 +26,7 @@ type GenerateCallbacksContext = {
     getApiKeyAndHeaders: (model: Model<Api>) => Promise<{
       ok: boolean;
       apiKey?: string;
-      headers?: Record<string, string>;
+      headers?: ProviderHeaders;
       error?: string;
     }>;
     find: (provider: string, modelId: string) => Model<Api> | undefined;

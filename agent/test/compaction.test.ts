@@ -279,13 +279,21 @@ describe("compaction extension", () => {
     const headers = buildRemoteCompactionHeaders({
       model: openAICodexModel,
       apiKey: codexToken("account-123"),
-      headers: { "x-codex-beta-features": "existing_feature" },
+      headers: {
+        "x-codex-beta-features": "existing_feature",
+        "x-provider-header": "provider-value",
+        "x-deleted-header": null,
+        Authorization: null,
+      },
       sessionId: "session-123",
     });
 
     expect(headers["chatgpt-account-id"]).toBe("account-123");
     expect(headers["x-codex-beta-features"]).toBe("existing_feature,remote_compaction_v2");
     expect(headers["x-codex-window-id"]).toBe("session-123:0");
+    expect(headers["x-provider-header"]).toBe("provider-value");
+    expect(headers["x-deleted-header"]).toBeUndefined();
+    expect(headers.authorization).toBeUndefined();
     expect(headers.session_id).toBe("session-123");
   });
 

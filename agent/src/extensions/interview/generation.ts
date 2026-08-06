@@ -1,4 +1,4 @@
-import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model, ProviderHeaders } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
@@ -352,7 +352,7 @@ export async function completeForInterview<T>(options: {
       getApiKeyAndHeaders: (model: Model<Api>) => Promise<{
         ok: boolean;
         apiKey?: string;
-        headers?: Record<string, string>;
+        headers?: ProviderHeaders;
         error?: string;
       }>;
     };

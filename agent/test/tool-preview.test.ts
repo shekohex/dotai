@@ -1068,6 +1068,7 @@ timedTest("read SKILL.md renders as skill verb with skill name", () => {
 function createInteractiveModePreview(cwd: string) {
   const readToolDefinition = createReadToolOverrideDefinition();
   const settingsManager = {
+    getTuiMode: () => "regular",
     getShowHardwareCursor: () => false,
     getClearOnShrink: () => false,
     getEditorPaddingX: () => 1,
@@ -1093,6 +1094,9 @@ function createInteractiveModePreview(cwd: string) {
     resourceLoader: {
       getThemes: () => ({ themes: [] }),
       getSkills: () => ({ skills: [] }),
+    },
+    extensionRunner: {
+      getMarkdownTransformers: () => [],
     },
     getToolDefinition: (toolName: string) =>
       toolName === readToolDefinition.name ? readToolDefinition : undefined,

@@ -1,4 +1,6 @@
+import type { ProviderHeaders } from "@earendil-works/pi-ai";
 import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { providerHeadersToRecord } from "../../utils/provider-headers.js";
 import {
   DEFAULT_MODEL,
   DEFAULT_TIMEOUT_MS,
@@ -98,13 +100,15 @@ async function executeWebSearchRequest(
 
 function buildHeaders(
   apiKey: string,
-  authHeaders: Record<string, string> | undefined,
+  authHeaders: ProviderHeaders | undefined,
 ): Record<string, string> {
-  return {
-    ...authHeaders,
-    authorization: `Bearer ${apiKey}`,
-    "content-type": "application/json",
-  };
+  return (
+    providerHeadersToRecord({
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+      ...authHeaders,
+    }) ?? {}
+  );
 }
 
 function finalizeResponsesApiJsonText(

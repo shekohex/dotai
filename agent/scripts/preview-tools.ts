@@ -1,32 +1,34 @@
-import { Theme, initTheme } from "@earendil-works/pi-coding-agent";
-import { ProcessTerminal, Spacer, Text, TUI, setKeybindings } from "@earendil-works/pi-tui";
-import { existsSync, readdirSync, readFileSync, watch } from "node:fs";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import {
+  ProcessTerminal,
+  Spacer,
+  Text,
+  type TUI,
+  TuiMainScreen,
+  setKeybindings,
+} from "@earendil-works/pi-tui";
+import { existsSync, readdirSync, watch } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { errorMessage } from "../src/utils/error-message.js";
 import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
-import { setThemeInstance } from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import {
+  loadThemeFromPath,
+  setThemeInstance,
+  type Theme,
+} from "../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import * as previewScenariosModule from "../test/tool-preview-scenarios.ts";
 import { ToolPreviewApp } from "./preview-tools-app.js";
 import {
   isPreviewScenariosModule,
   parsePreviewState,
-  parseThemeSpec,
   type PreviewScenario,
   type PreviewScenariosModule,
   type PreviewState,
   type PreviewThemeRegistry,
 } from "./preview-tools-types.js";
 
-const THEME_BACKGROUND_KEYS = new Set([
-  "selectedBg",
-  "userMessageBg",
-  "customMessageBg",
-  "toolPendingBg",
-  "toolSuccessBg",
-  "toolErrorBg",
-]);
 const PREVIEW_STATE_PATH = resolve(".tmp/tool-preview/state.json");
 
 function parseArgs() {
@@ -55,7 +57,7 @@ function createThemeRegistry(): PreviewThemeRegistry {
         continue;
       }
       const sourcePath = join(localThemesDir, entry);
-      const theme = loadThemeFromFile(sourcePath);
+      const theme = loadThemeFromPath(sourcePath);
       if (theme.name !== undefined && theme.name.length > 0) {
         customThemes.set(theme.name, theme);
       }
@@ -146,25 +148,6 @@ function filterScenarios(previewModule: PreviewScenariosModule, query: string): 
   });
 }
 
-function loadThemeFromFile(filePath: string): Theme {
-  const spec = parseThemeSpec(JSON.parse(readFileSync(filePath, "utf8")));
-  const vars = spec.vars ?? {};
-  const fgColors: Record<string, string> = {};
-  const bgColors: Record<string, string> = {};
-  for (const [key, value] of Object.entries(spec.colors ?? {})) {
-    const resolved = vars[value] ?? value;
-    if (THEME_BACKGROUND_KEYS.has(key)) {
-      bgColors[key] = resolved;
-    } else {
-      fgColors[key] = resolved;
-    }
-  }
-  return new Theme(fgColors, bgColors, "truecolor", {
-    name: spec.name,
-    sourcePath: filePath,
-  });
-}
-
 function createPreviewRuntime(
   previewModule: PreviewScenariosModule,
   scenarios: PreviewScenario[],
@@ -172,7 +155,7 @@ function createPreviewRuntime(
   persistedState: PreviewState,
 ): { tui: TUI; app: ToolPreviewApp; shutdown: () => void } {
   setKeybindings(KeybindingsManager.create());
-  const tui = new TUI(new ProcessTerminal());
+  const tui = new TuiMainScreen(new ProcessTerminal());
   let stateWrite: Promise<void> = Promise.resolve();
   const app = new ToolPreviewApp(
     tui,

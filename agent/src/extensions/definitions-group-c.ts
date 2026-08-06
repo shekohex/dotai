@@ -6,7 +6,6 @@ import executorExtension from "./executor/index.js";
 import goalExtension from "./goal/index.js";
 import herdrAgentStateExtension from "./herdr-agent-state.js";
 import hunkExtension from "./hunk.js";
-import mermaidExtension from "./mermaid.js";
 import notifyExtension from "./notify/index.js";
 import openWikiExtension from "./openwiki/index.js";
 import piOscExtension from "./pi-osc/extension.js";
@@ -23,7 +22,6 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "agent-alerts", factory: agentAlertsExtension },
   { id: "cache-graph", factory: cacheGraphExtension },
   { id: "context-prune", factory: contextPruneExtension },
-  { id: "mermaid", factory: mermaidExtension },
   { id: "notify", factory: notifyExtension },
   { id: "openwiki", factory: openWikiExtension },
   { id: "goal", factory: goalExtension },

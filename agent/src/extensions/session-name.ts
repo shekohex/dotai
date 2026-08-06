@@ -1,4 +1,4 @@
-import type { Api, Message, Model, ThinkingLevel } from "@earendil-works/pi-ai";
+import type { Api, Message, Model, ProviderHeaders, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { completeSimpleModel } from "./pi-ai-models.js";
 
@@ -212,7 +212,7 @@ async function resolveNameModel(ctx: ExtensionContext): Promise<
   | {
       model: Model<Api>;
       apiKey: string;
-      headers?: Record<string, string>;
+      headers?: ProviderHeaders;
       reasoning: ThinkingLevel;
     }
   | undefined

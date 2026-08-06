@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, ProviderHeaders } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export const DEFAULT_MODEL_FALLBACKS = [
@@ -17,7 +17,7 @@ export type ModelFallbackCandidate = {
 export type ModelAuth = {
   model: Model<Api>;
   apiKey: string;
-  headers?: Record<string, string>;
+  headers?: ProviderHeaders;
   env?: Record<string, string>;
 };
 

@@ -16,6 +16,7 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   hasTrustRequiringProjectResources,
+  ModelRuntime,
   ProjectTrustStore,
   SessionManager,
   SettingsManager,
@@ -109,10 +110,16 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
   const playbookModel = options.initialModel ?? getBuiltinModel("openai", "gpt-4o");
 
   // Create real session with in-memory persistence
+  const modelRuntime = await ModelRuntime.create({
+    authPath: path.join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+  });
   const { session, extensionsResult } = await createAgentSession({
     cwd,
     agentDir,
     model: playbookModel,
+    modelRuntime,
     sessionManager: SessionManager.inMemory(),
     settingsManager,
     resourceLoader: loader,

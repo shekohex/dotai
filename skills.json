@@ -1,6 +1,7 @@
 {
   "enabled": [
     "babysit-pr",
+    "call-graph",
     "creating-issues",
     "creating-pull-requests",
     "codebase-design",

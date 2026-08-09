@@ -8,7 +8,7 @@ import { readToolState } from "../../utils/tool-state.js";
 import { createSessionQueryRequest, executeSessionQueryRequest } from "./execution.js";
 import { renderSessionQueryCall, renderSessionQueryResult } from "./render.js";
 import { getSessionQuerySettings } from "./settings.js";
-import { SESSION_QUERY_TOOL_NAME, setSessionQueryToolEnabled } from "./state.js";
+import { SESSION_QUERY_TOOL_NAME } from "./state.js";
 
 export const sessionQueryTool = defineTool({
   name: SESSION_QUERY_TOOL_NAME,
@@ -43,12 +43,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool(sessionQueryTool);
 
   const activateTool = (): void => {
-    setSessionQueryToolEnabled(true);
     const activeTools = new Set([...pi.getActiveTools(), SESSION_QUERY_TOOL_NAME]);
     pi.setActiveTools(Array.from(activeTools).toSorted((left, right) => left.localeCompare(right)));
   };
   const deactivateTool = (): void => {
-    setSessionQueryToolEnabled(false);
     pi.setActiveTools(
       pi.getActiveTools().filter((toolName) => toolName !== SESSION_QUERY_TOOL_NAME),
     );

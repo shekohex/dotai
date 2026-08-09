@@ -1,4 +1,8 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { saveConfig } from "./config.js";
 import { startPrunerWidget } from "./progress-widget.js";
 import { setContextPruneFooterState } from "./public-api.js";
@@ -76,15 +80,15 @@ export function pruneStatusText(config: ContextPruneConfig, stats?: SummarizerSt
 }
 
 export function setPruneStatusWidget(
-  _ctx: unknown,
+  ctx: ExtensionContext,
   config: ContextPruneConfig,
   value?: SummarizerStats | string,
 ): void {
   if (!config.showPruneStatusLine) {
-    setContextPruneFooterState(undefined);
+    setContextPruneFooterState(ctx, undefined);
     return;
   }
-  setContextPruneFooterState({
+  setContextPruneFooterState(ctx, {
     config,
     stats: typeof value === "string" ? undefined : value,
     overrideText: typeof value === "string" ? value : undefined,

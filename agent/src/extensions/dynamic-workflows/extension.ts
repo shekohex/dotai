@@ -44,12 +44,14 @@ export default function extension(pi: ExtensionAPI) {
   pi.registerTool(workflowTool);
   const setWorkflowStatusContext = installWorkflowStatusEmitter(pi, manager);
   let workflowToolEnabled = false;
+  let workflowModeState = getWorkflowModeState();
+  let workflowInputHooksInstalled = false;
   const setWorkflowToolEnabled = (enabled: boolean): void => {
     workflowToolEnabled = enabled;
     if (enabled) activateWorkflowTool(pi);
     else deactivateWorkflowTool(pi);
-    setWorkflowModeAvailability(getWorkflowModeState(), {
-      conversationEmpty: getWorkflowModeState().conversationEmpty,
+    setWorkflowModeAvailability(workflowModeState, {
+      conversationEmpty: workflowModeState.conversationEmpty,
       toolEnabled: workflowToolEnabled,
     });
   };
@@ -78,18 +80,21 @@ export default function extension(pi: ExtensionAPI) {
   registerAllSavedWorkflows(pi, cwd, storage, manager);
   // Deliver a background run's result into the conversation when it finishes.
   installResultDelivery(pi, manager);
-  installWorkflowInputHooks(pi, getWorkflowModeState(), {
-    activateWorkflowTool: () => {
-      setWorkflowToolEnabled(true);
-    },
-  });
-
   pi.on("session_start", (_event: unknown, ctx: ExtensionContext) => {
+    workflowModeState = getWorkflowModeState(ctx.sessionManager);
+    if (!workflowInputHooksInstalled) {
+      installWorkflowInputHooks(pi, workflowModeState, {
+        activateWorkflowTool: () => {
+          setWorkflowToolEnabled(true);
+        },
+      });
+      workflowInputHooksInstalled = true;
+    }
     setWorkflowStatusContext(ctx);
     const restored = readToolState(ctx.sessionManager.getBranch(), WORKFLOW_TOOL_NAME);
     const conversationEmpty = isConversationStart(ctx);
     const enabled = restored === true;
-    setWorkflowModeAvailability(getWorkflowModeState(), {
+    setWorkflowModeAvailability(workflowModeState, {
       conversationEmpty,
       toolEnabled: enabled,
     });
@@ -109,7 +114,7 @@ export default function extension(pi: ExtensionAPI) {
     const restored = readToolState(ctx.sessionManager.getBranch(), WORKFLOW_TOOL_NAME);
     const conversationEmpty = isConversationStart(ctx);
     const enabled = restored === true;
-    setWorkflowModeAvailability(getWorkflowModeState(), {
+    setWorkflowModeAvailability(workflowModeState, {
       conversationEmpty,
       toolEnabled: enabled,
     });

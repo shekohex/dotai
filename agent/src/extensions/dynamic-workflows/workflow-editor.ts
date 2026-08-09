@@ -168,10 +168,17 @@ export function createWorkflowModeState(): WorkflowModeState {
   };
 }
 
-const sharedWorkflowModeState = createWorkflowModeState();
+const workflowModeStates = new WeakMap<object, WorkflowModeState>();
+const defaultWorkflowModeState = createWorkflowModeState();
 
-export function getWorkflowModeState(): WorkflowModeState {
-  return sharedWorkflowModeState;
+export function getWorkflowModeState(owner?: object): WorkflowModeState {
+  if (owner === undefined) return defaultWorkflowModeState;
+  let state = workflowModeStates.get(owner);
+  if (state === undefined) {
+    state = createWorkflowModeState();
+    workflowModeStates.set(owner, state);
+  }
+  return state;
 }
 
 export function isWorkflowBackspace(data: string): boolean {

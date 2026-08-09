@@ -19,6 +19,7 @@ import {
   shouldDisarmWorkflowModeOnInput,
   syncWorkflowModeState,
   updateWorkflowModeAfterTextChange,
+  type WorkflowModeState,
 } from "../dynamic-workflows/workflow-editor.js";
 import {
   addVerticalPaddingLines,
@@ -82,14 +83,24 @@ export function createCorePromptEditorFactory(
     setCycleAutocompleteSuggestion?: (cycle: ((direction: 1 | -1) => void) | undefined) => void;
     setCancelAutocomplete?: (cancel: (() => void) | undefined) => void;
   },
+  workflowModeState: WorkflowModeState = getWorkflowModeState(),
 ): (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => CorePromptEditor {
   return (tui, theme, keybindings) =>
-    new CorePromptEditor(tui, theme, keybindings, getTheme, isIdle, aiAutocomplete);
+    new CorePromptEditor(
+      tui,
+      theme,
+      keybindings,
+      getTheme,
+      isIdle,
+      workflowModeState,
+      aiAutocomplete,
+    );
 }
 
 class CorePromptEditor extends CustomEditor {
   private readonly getTheme: () => Theme;
   private readonly isIdle: () => boolean;
+  private readonly workflowModeState: WorkflowModeState;
   private bufferedPaste = "";
   private receivingPaste = false;
   private currentText = "";
@@ -120,6 +131,7 @@ class CorePromptEditor extends CustomEditor {
     keybindings: KeybindingsManager,
     getTheme: () => Theme,
     isIdle: () => boolean,
+    workflowModeState: WorkflowModeState,
     aiAutocomplete?: {
       backend: AiAutocompleteBackend;
       settings: AiAutocompleteSettings;
@@ -135,6 +147,7 @@ class CorePromptEditor extends CustomEditor {
     });
     this.getTheme = getTheme;
     this.isIdle = isIdle;
+    this.workflowModeState = workflowModeState;
     this.aiAutocomplete = aiAutocomplete
       ? {
           ...aiAutocomplete,
@@ -205,7 +218,7 @@ class CorePromptEditor extends CustomEditor {
     this.cancelPendingAiAutocompleteRequest();
     this.clearAiSuggestionLog();
 
-    const workflowModeState = getWorkflowModeState();
+    const workflowModeState = this.workflowModeState;
     syncWorkflowModeState(workflowModeState, this.getText());
     if (shouldDisarmWorkflowModeOnInput(data, workflowModeState, this.getTextBeforeCursor())) {
       disarmWorkflowMode(workflowModeState);
@@ -285,7 +298,7 @@ class CorePromptEditor extends CustomEditor {
 
     this.applyInlineAiCompletionHint(lines, width, paddingX);
 
-    const workflowModeState = getWorkflowModeState();
+    const workflowModeState = this.workflowModeState;
     syncWorkflowModeState(workflowModeState, this.getText());
     this.reconcileWorkflowAnimation(workflowModeState.active);
 
@@ -322,7 +335,7 @@ class CorePromptEditor extends CustomEditor {
   private reconcileWorkflowAnimation(active: boolean): void {
     if (active && this.focused && this.workflowAnimationTimer === undefined) {
       this.workflowAnimationTimer = setInterval(() => {
-        const state = getWorkflowModeState();
+        const state = this.workflowModeState;
         state.tick = nextWorkflowAnimationTick(state.tick);
         this.tui.requestRender();
       }, 90);

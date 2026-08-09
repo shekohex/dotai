@@ -40,20 +40,31 @@ type SubagentDashboardCoordinator = {
   slots: Map<symbol, SubagentRuntimeUiSlot>;
 };
 
-const subagentDashboardCoordinator: SubagentDashboardCoordinator = {
-  expanded: false,
-  slots: new Map<symbol, SubagentRuntimeUiSlot>(),
-};
+const coordinatorsByApi = new WeakMap<ExtensionAPI, SubagentDashboardCoordinator>();
+const coordinators = new Set<SubagentDashboardCoordinator>();
+
+function getSubagentDashboardCoordinator(pi: ExtensionAPI): SubagentDashboardCoordinator {
+  let coordinator = coordinatorsByApi.get(pi);
+  if (coordinator === undefined) {
+    coordinator = { expanded: false, slots: new Map() };
+    coordinatorsByApi.set(pi, coordinator);
+    coordinators.add(coordinator);
+  }
+  return coordinator;
+}
 
 export function resetSubagentDashboardCoordinatorForTests(): void {
-  for (const slot of subagentDashboardCoordinator.slots.values()) {
-    for (const timer of slot.expiryTimers.values()) {
-      clearTimeout(timer);
+  for (const coordinator of coordinators) {
+    for (const slot of coordinator.slots.values()) {
+      for (const timer of slot.expiryTimers.values()) {
+        clearTimeout(timer);
+      }
     }
+    coordinator.expanded = false;
+    coordinator.registeredControlApi = undefined;
+    coordinator.slots.clear();
   }
-  subagentDashboardCoordinator.expanded = false;
-  subagentDashboardCoordinator.registeredControlApi = undefined;
-  subagentDashboardCoordinator.slots.clear();
+  coordinators.clear();
 }
 
 export type SubagentRuntimeHooks = {
@@ -72,6 +83,7 @@ export type SubagentRuntimeHooks = {
 export type DefaultSubagentRuntimeHooksOptions = {
   title?: string;
   terminalRetentionMs?: number;
+  registerControls?: boolean;
   toolControl?: {
     getDefaultEnabled?(): boolean;
     isEnabled(): boolean;
@@ -105,17 +117,15 @@ function hasSubagentRuntimeControlApi(
 
 function registerSubagentRuntimeControls(
   pi: ExtensionAPI,
+  coordinator: SubagentDashboardCoordinator,
   controls: SubagentRuntimeUiControls,
   toolControl?: DefaultSubagentRuntimeHooksOptions["toolControl"],
 ): void {
-  if (
-    !hasSubagentRuntimeControlApi(pi) ||
-    subagentDashboardCoordinator.registeredControlApi !== undefined
-  ) {
+  if (!hasSubagentRuntimeControlApi(pi) || coordinator.registeredControlApi !== undefined) {
     return;
   }
 
-  subagentDashboardCoordinator.registeredControlApi = pi;
+  coordinator.registeredControlApi = pi;
 
   pi.registerCommand("subagents", {
     description: "Enable or disable subagent tool, or control live subagent dashboard",
@@ -155,7 +165,7 @@ function registerSubagentRuntimeControls(
       } else {
         controls.toggle();
       }
-      renderCoordinatedWidget(ctx);
+      renderCoordinatedWidget(coordinator, ctx);
     },
   });
 
@@ -163,7 +173,7 @@ function registerSubagentRuntimeControls(
     description: "Toggle subagent dashboard",
     handler(ctx) {
       controls.toggle();
-      renderCoordinatedWidget(ctx);
+      renderCoordinatedWidget(coordinator, ctx);
     },
   });
 }
@@ -185,15 +195,19 @@ function createRuntimeUiSlot(options: DefaultSubagentRuntimeHooksOptions): Subag
   };
 }
 
-function getScopedSlots(ctx: ExtensionContext): SubagentRuntimeUiSlot[] {
+function getScopedSlots(
+  coordinator: SubagentDashboardCoordinator,
+  ctx: ExtensionContext,
+): SubagentRuntimeUiSlot[] {
   const scopeKey = getScopeKey(ctx);
-  return getScopedSlotsByScopeKey(scopeKey);
+  return getScopedSlotsByScopeKey(coordinator, scopeKey);
 }
 
-function getScopedSlotsByScopeKey(scopeKey: string): SubagentRuntimeUiSlot[] {
-  return Array.from(subagentDashboardCoordinator.slots.values()).filter(
-    (slot) => slot.scopeKey === scopeKey,
-  );
+function getScopedSlotsByScopeKey(
+  coordinator: SubagentDashboardCoordinator,
+  scopeKey: string,
+): SubagentRuntimeUiSlot[] {
+  return Array.from(coordinator.slots.values()).filter((slot) => slot.scopeKey === scopeKey);
 }
 
 function getDashboardTitle(slots: SubagentRuntimeUiSlot[]): string {
@@ -201,8 +215,11 @@ function getDashboardTitle(slots: SubagentRuntimeUiSlot[]): string {
   return titles.length === 1 ? (titles[0] ?? "Subagents") : "Subagents";
 }
 
-function getScopedSubagents(ctx: ExtensionContext): RuntimeSubagent[] {
-  return getScopedSubagentsFromSlots(getScopedSlots(ctx));
+function getScopedSubagents(
+  coordinator: SubagentDashboardCoordinator,
+  ctx: ExtensionContext,
+): RuntimeSubagent[] {
+  return getScopedSubagentsFromSlots(getScopedSlots(coordinator, ctx));
 }
 
 function getScopedSubagentsFromSlots(slots: SubagentRuntimeUiSlot[]): RuntimeSubagent[] {
@@ -223,8 +240,11 @@ function getScopedSubagentsFromSlots(slots: SubagentRuntimeUiSlot[]): RuntimeSub
     .toSorted((left, right) => left.startedAt - right.startedAt);
 }
 
-function clearContextReferences(ctx: ExtensionContext): void {
-  for (const slot of subagentDashboardCoordinator.slots.values()) {
+function clearContextReferences(
+  coordinator: SubagentDashboardCoordinator,
+  ctx: ExtensionContext,
+): void {
+  for (const slot of coordinator.slots.values()) {
     if (slot.ctx !== ctx) {
       continue;
     }
@@ -233,14 +253,17 @@ function clearContextReferences(ctx: ExtensionContext): void {
   }
 }
 
-function renderCoordinatedWidget(ctx: ExtensionContext | undefined): void {
+function renderCoordinatedWidget(
+  coordinator: SubagentDashboardCoordinator,
+  ctx: ExtensionContext | undefined,
+): void {
   try {
     if (ctx === undefined || !ctx.hasUI) {
       return;
     }
 
     const scopeKey = getScopeKey(ctx);
-    const scopedSlots = getScopedSlotsByScopeKey(scopeKey);
+    const scopedSlots = getScopedSlotsByScopeKey(coordinator, scopeKey);
     const visibleSubagents = getScopedSubagentsFromSlots(scopedSlots);
 
     ctx.ui.setWidget(
@@ -250,7 +273,7 @@ function renderCoordinatedWidget(ctx: ExtensionContext | undefined): void {
         : createSubagentDashboardWidget({
             subagents: visibleSubagents,
             title: getDashboardTitle(scopedSlots),
-            mode: subagentDashboardCoordinator.expanded ? "expanded" : "compact",
+            mode: coordinator.expanded ? "expanded" : "compact",
             maxRows: 4,
           }),
       { placement: "aboveEditor" },
@@ -260,18 +283,26 @@ function renderCoordinatedWidget(ctx: ExtensionContext | undefined): void {
       throw error;
     }
     if (ctx !== undefined) {
-      clearContextReferences(ctx);
+      clearContextReferences(coordinator, ctx);
     }
   }
 }
 
-function ensureSlotRegistered(slotId: symbol, slot: SubagentRuntimeUiSlot): void {
-  if (!subagentDashboardCoordinator.slots.has(slotId)) {
-    subagentDashboardCoordinator.slots.set(slotId, slot);
+function ensureSlotRegistered(
+  coordinator: SubagentDashboardCoordinator,
+  slotId: symbol,
+  slot: SubagentRuntimeUiSlot,
+): void {
+  if (!coordinator.slots.has(slotId)) {
+    coordinator.slots.set(slotId, slot);
   }
 }
 
-function scheduleTerminalExpiry(slot: SubagentRuntimeUiSlot, sessionId: string): void {
+function scheduleTerminalExpiry(
+  coordinator: SubagentDashboardCoordinator,
+  slot: SubagentRuntimeUiSlot,
+  sessionId: string,
+): void {
   const existingTimer = slot.expiryTimers.get(sessionId);
   if (existingTimer) {
     clearTimeout(existingTimer);
@@ -280,13 +311,17 @@ function scheduleTerminalExpiry(slot: SubagentRuntimeUiSlot, sessionId: string):
   const timer = setTimeout(() => {
     slot.expiryTimers.delete(sessionId);
     slot.retainedTerminalSubagents.delete(sessionId);
-    renderCoordinatedWidget(slot.ctx);
+    renderCoordinatedWidget(coordinator, slot.ctx);
   }, slot.terminalRetentionMs);
   timer.unref?.();
   slot.expiryTimers.set(sessionId, timer);
 }
 
-function retainTerminalState(slot: SubagentRuntimeUiSlot, state: SubagentStateEntry): void {
+function retainTerminalState(
+  coordinator: SubagentDashboardCoordinator,
+  slot: SubagentRuntimeUiSlot,
+  state: SubagentStateEntry,
+): void {
   const runtimeState = toRuntimeSubagent(state);
   if (!isTerminalSubagentStatus(runtimeState.status)) {
     slot.retainedTerminalSubagents.delete(runtimeState.sessionId);
@@ -299,17 +334,20 @@ function retainTerminalState(slot: SubagentRuntimeUiSlot, state: SubagentStateEn
   }
 
   slot.retainedTerminalSubagents.set(runtimeState.sessionId, runtimeState);
-  scheduleTerminalExpiry(slot, runtimeState.sessionId);
-  renderCoordinatedWidget(slot.ctx);
+  scheduleTerminalExpiry(coordinator, slot, runtimeState.sessionId);
+  renderCoordinatedWidget(coordinator, slot.ctx);
 }
 
-async function showCoordinatedFullscreen(ctx: ExtensionContext): Promise<void> {
+async function showCoordinatedFullscreen(
+  coordinator: SubagentDashboardCoordinator,
+  ctx: ExtensionContext,
+): Promise<void> {
   try {
     if (!ctx.hasUI) {
       return;
     }
 
-    const scopedSlots = getScopedSlots(ctx);
+    const scopedSlots = getScopedSlots(coordinator, ctx);
     const visibleSubagents = getScopedSubagentsFromSlots(scopedSlots);
     if (visibleSubagents.length === 0) {
       ctx.ui.notify("No subagents to show", "info");
@@ -320,8 +358,8 @@ async function showCoordinatedFullscreen(ctx: ExtensionContext): Promise<void> {
       (tui, theme, _keybindings, done) =>
         createSubagentFullscreenComponent({
           subagents: visibleSubagents,
-          getSubagents: () => getScopedSubagents(ctx),
-          getTitle: () => getDashboardTitle(getScopedSlots(ctx)),
+          getSubagents: () => getScopedSubagents(coordinator, ctx),
+          getTitle: () => getDashboardTitle(getScopedSlots(coordinator, ctx)),
           title: getDashboardTitle(scopedSlots),
           done,
         })(tui, theme),
@@ -338,7 +376,7 @@ async function showCoordinatedFullscreen(ctx: ExtensionContext): Promise<void> {
     if (!isStaleSessionReplacementContextError(error)) {
       throw error;
     }
-    clearContextReferences(ctx);
+    clearContextReferences(coordinator, ctx);
   }
 }
 
@@ -346,9 +384,10 @@ export function createDefaultSubagentRuntimeHooks(
   pi: ExtensionAPI,
   options: DefaultSubagentRuntimeHooksOptions = {},
 ): SubagentRuntimeHooks {
+  const coordinator = getSubagentDashboardCoordinator(pi);
   const slotId = Symbol("subagent-runtime-ui-slot");
   const slot = createRuntimeUiSlot(options);
-  subagentDashboardCoordinator.slots.set(slotId, slot);
+  coordinator.slots.set(slotId, slot);
 
   const renderMergedWidget = (ctx: ExtensionContext | undefined): void => {
     if (ctx === undefined) {
@@ -358,38 +397,41 @@ export function createDefaultSubagentRuntimeHooks(
       if (!ctx.hasUI) {
         return;
       }
-      ensureSlotRegistered(slotId, slot);
+      ensureSlotRegistered(coordinator, slotId, slot);
       slot.scopeKey = getScopeKey(ctx);
       slot.ctx = ctx;
-      renderCoordinatedWidget(ctx);
+      renderCoordinatedWidget(coordinator, ctx);
     } catch (error) {
       if (!isStaleSessionReplacementContextError(error)) {
         throw error;
       }
-      clearContextReferences(ctx);
+      clearContextReferences(coordinator, ctx);
     }
   };
 
-  registerSubagentRuntimeControls(
-    pi,
-    {
-      toggle() {
-        subagentDashboardCoordinator.expanded = !subagentDashboardCoordinator.expanded;
+  if (options.registerControls === true) {
+    registerSubagentRuntimeControls(
+      pi,
+      coordinator,
+      {
+        toggle() {
+          coordinator.expanded = !coordinator.expanded;
+        },
+        setExpanded(nextExpanded) {
+          coordinator.expanded = nextExpanded;
+        },
+        showFullscreen: (ctx) => showCoordinatedFullscreen(coordinator, ctx),
       },
-      setExpanded(nextExpanded) {
-        subagentDashboardCoordinator.expanded = nextExpanded;
-      },
-      showFullscreen: showCoordinatedFullscreen,
-    },
-    options.toolControl,
-  );
+      options.toolControl,
+    );
+  }
 
   const dispose = (): void => {
     clearSlotTimers(slot);
-    subagentDashboardCoordinator.slots.delete(slotId);
+    coordinator.slots.delete(slotId);
     slot.subagents = [];
     slot.retainedTerminalSubagents.clear();
-    renderCoordinatedWidget(slot.ctx);
+    renderCoordinatedWidget(coordinator, slot.ctx);
     slot.ctx = undefined;
     slot.scopeKey = undefined;
   };
@@ -397,9 +439,9 @@ export function createDefaultSubagentRuntimeHooks(
   return {
     persistState(state) {
       try {
-        ensureSlotRegistered(slotId, slot);
+        ensureSlotRegistered(coordinator, slotId, slot);
         pi.appendEntry(SUBAGENT_STATE_ENTRY, serializeSubagentStateEntry(state));
-        retainTerminalState(slot, state);
+        retainTerminalState(coordinator, slot, state);
       } catch (error) {
         if (!isStaleSessionReplacementContextError(error)) {
           throw error;

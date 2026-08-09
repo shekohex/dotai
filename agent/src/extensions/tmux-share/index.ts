@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { getShareState, formatStatusMessage } from "./state.js";
+import { formatStatusMessage } from "./state.js";
 import { startTmuxShare, type TmuxShareHandle } from "./server.js";
 import { getTmuxSessionInfo } from "./terminal.js";
 
@@ -45,14 +45,14 @@ export default function tmuxShareExtension(pi: ExtensionAPI): void {
 
       if (action === "on") {
         if (handle) {
-          const state = getShareState();
-          if (state) {
-            ctx.ui.notify(formatStatusMessage(state), "info");
-          } else {
+          const state = handle.state;
+          if (state === undefined) {
             ctx.ui.notify(
               "Tmux Share: already running but state lost, run /tmux-share off first",
               "warning",
             );
+          } else {
+            ctx.ui.notify(formatStatusMessage(state), "info");
           }
           return;
         }
@@ -83,7 +83,7 @@ export default function tmuxShareExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      const state = getShareState();
+      const state = handle?.state;
       if (!state) {
         ctx.ui.notify("Tmux Share: stopped", "info");
         return;

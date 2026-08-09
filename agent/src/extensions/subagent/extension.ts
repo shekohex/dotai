@@ -15,7 +15,7 @@ import {
   type CreateSubagentExtensionOptions,
 } from "./shared.js";
 import { createSubagentToolDefinition, registerSubagentRuntimeEvents } from "./tool.js";
-import { isSubagentToolEnabled, setSubagentToolEnabled, SUBAGENT_TOOL_NAME } from "./state.js";
+import { SUBAGENT_TOOL_NAME } from "./state.js";
 import { getSubagentsSettings } from "./settings.js";
 import { getLiveSessionCoordinator } from "../../live-session/coordinator.js";
 
@@ -23,9 +23,11 @@ function installEnabledSubagentExtension(
   pi: ExtensionAPI,
   resolvedOptions: CreateSubagentExtensionOptions,
 ): void {
+  let toolEnabled = false;
+  const isToolEnabled = (): boolean => toolEnabled;
   const adapter = resolvedOptions.adapterFactory?.(pi) ?? createDefaultMuxAdapter(pi);
   const setEnabled = (enabled: boolean, options?: { persist?: boolean }): void => {
-    setSubagentToolEnabled(enabled);
+    toolEnabled = enabled;
     const activeTools = new Set(pi.getActiveTools());
     if (enabled) activeTools.add(SUBAGENT_TOOL_NAME);
     else activeTools.delete(SUBAGENT_TOOL_NAME);
@@ -41,11 +43,12 @@ function installEnabledSubagentExtension(
     );
   };
   const hooks = createDefaultSubagentRuntimeHooks(pi, {
+    registerControls: true,
     toolControl: {
       getDefaultEnabled() {
         return getSubagentsSettings().enabled;
       },
-      isEnabled: isSubagentToolEnabled,
+      isEnabled: isToolEnabled,
       setEnabled(enabled) {
         setEnabled(enabled, { persist: true });
       },
@@ -60,11 +63,15 @@ function installEnabledSubagentExtension(
   registerSubagentRuntimeEvents(
     pi,
     sdk,
-    ensureParentSubagentToolActive,
-    scheduleParentSubagentToolActivation,
+    (extensionApi) => {
+      ensureParentSubagentToolActive(extensionApi, toolEnabled);
+    },
+    (extensionApi) => {
+      scheduleParentSubagentToolActivation(extensionApi, toolEnabled);
+    },
     isChildSession,
     readChildState,
-    isSubagentToolEnabled,
+    isToolEnabled,
     restoreToolState,
     coordinator,
   );

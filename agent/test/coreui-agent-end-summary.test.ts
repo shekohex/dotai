@@ -10,6 +10,7 @@ function createNotifyContext(): { messages: string[]; ctx: never } {
   return {
     messages,
     ctx: {
+      sessionManager: {},
       ui: {
         notify(message: string) {
           messages.push(message);
@@ -32,8 +33,8 @@ const stats = {
 
 describe("agent end summary", () => {
   test("includes TPS without stale prune stats", () => {
-    clearContextPruneLastResult();
     const { messages, ctx } = createNotifyContext();
+    clearContextPruneLastResult(ctx);
     notifyAgentEndSummary(
       ctx,
       { input: 10, output: 20, cacheRead: 5, cacheWrite: 2, totalTokens: 37 },
@@ -52,7 +53,8 @@ describe("agent end summary", () => {
   });
 
   test("includes latest prune result next to TPS", () => {
-    setContextPruneLastResult({
+    const { messages, ctx } = createNotifyContext();
+    setContextPruneLastResult(ctx, {
       ok: true,
       reason: "flushed",
       batchCount: 2,
@@ -60,7 +62,6 @@ describe("agent end summary", () => {
       rawCharCount: 1_500,
       summaryCharCount: 300,
     });
-    const { messages, ctx } = createNotifyContext();
     notifyAgentEndSummary(
       ctx,
       { input: 10, output: 20, cacheRead: 5, cacheWrite: 2, totalTokens: 37 },
@@ -71,12 +72,12 @@ describe("agent end summary", () => {
     );
     expect(messages[0]).toContain("󰓅 17.6/14.8/10.5");
     expect(messages[0]).toContain("󰩫 4t/2b");
-    clearContextPruneLastResult();
+    clearContextPruneLastResult(ctx);
   });
 
   test("omits cache write when zero", () => {
-    clearContextPruneLastResult();
     const { messages, ctx } = createNotifyContext();
+    clearContextPruneLastResult(ctx);
     notifyAgentEndSummary(
       ctx,
       { input: 10, output: 20, cacheRead: 5, cacheWrite: 0, totalTokens: 37 },

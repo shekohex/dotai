@@ -1,6 +1,6 @@
 # OpenWiki quickstart
 
-`@shekohex/agent` is a TypeScript wrapper around [`@earendil-works/pi-coding-agent`](https://github.com/earendil-works/pi) (currently `0.80.6`). It keeps the upstream `pi` command, the `.pi` project folder, and the `~/.pi` user config unchanged, then layers on team defaults: a bundled model/provider setup (LiteLLM gateway + several providers), ~48 extensions, themes, system prompts, skills, dynamic workflows, a self-update path, and a couple of alternative ways to drive a session (subagents, remote TCP mode).
+`@shekohex/agent` is a TypeScript wrapper around [`@earendil-works/pi-coding-agent`](https://github.com/earendil-works/pi) (currently `0.84.1`). It keeps the upstream `pi` command, the `.pi` project folder, and the `~/.pi` user config unchanged, then layers on team defaults: a bundled model/provider setup (LiteLLM gateway + several providers), ~48 extensions, themes, system prompts, skills, dynamic workflows, a self-update path, and alternative ways to drive a session (subagents, remote TCP mode, and ACP stdio).
 
 The package is published to GitHub Packages and installs a single `pi` binary.
 
@@ -25,6 +25,7 @@ The package is published to GitHub Packages and installs a single `pi` binary.
 | `src/extensions/`                                 | ~48 bundled extensions, registered in three groups + subagent. See [Extensions catalog](./extensions/catalog.md).       |
 | `src/subagent-sdk/`                               | In-process machinery for spawning child agent sessions. See [Subagent SDK](./sessions/subagent-sdk.md).                 |
 | `src/remote/`                                     | TCP JSONL remote control mode. See [Remote mode](./sessions/remote.md).                                                 |
+| `src/acp/`                                        | Stable ACP v1 and gated ACP v2 stdio agent mode. See [ACP agent mode](./sessions/acp.md).                               |
 | `src/conductor/`                                  | `pi conductor` command surface — GitHub-Projects-driven run orchestration. See [Pi Conductor](./conductor/overview.md). |
 | `src/update/`                                     | `pi update` self-update from GitHub Packages. See [Build & update](./operations/build-and-update.md).                   |
 | `src/resources/`                                  | Bundled prompts, themes, skills, workflows, and the GSD system. See [Resources](./resources/overview.md).               |
@@ -40,13 +41,14 @@ The package is published to GitHub Packages and installs a single `pi` binary.
 
 `src/cli.ts` runs, in order:
 
-1. `installBundledResourcePaths()` — patches the upstream resource loader so bundled skills/prompts/themes are discovered.
-2. `handleWrapperUpdateCommand({ args })` — intercepts `pi update`; exits if handled.
-3. `resolveCwd()` — expands `~`/`$VAR` in the launch cwd before upstream reads it.
-4. `isRemoteMode(args)` — if `pi --mode remote`, run the TCP server and exit.
-5. `args[0] === "conductor"` — if `pi conductor …`, run the conductor command router (`runConductorCommand`) and exit. See [Pi Conductor](./conductor/overview.md).
-6. `ensureRuntimeDefaultSettings()` — merge any missing default keys into `~/.pi/agent/settings.json`.
-7. `main(args, { extensionFactories: bundledExtensionFactories })` — hand off to upstream pi with all bundled extensions.
+1. `parseAcpCommand(args)` — if `pi acp` or `--mode acp`, run protocol-only ACP stdio before normal bootstrap.
+2. `installBundledResourcePaths()` — patches the upstream resource loader so bundled skills/prompts/themes are discovered.
+3. `handleWrapperUpdateCommand({ args })` — intercepts `pi update`; exits if handled.
+4. `resolveCwd()` — expands `~`/`$VAR` in the launch cwd before upstream reads it.
+5. `isRemoteMode(args)` — if `pi --mode remote`, run the TCP server and exit.
+6. `args[0] === "conductor"` — if `pi conductor …`, run the conductor command router (`runConductorCommand`) and exit. See [Pi Conductor](./conductor/overview.md).
+7. `ensureRuntimeDefaultSettings()` — merge any missing default keys into `~/.pi/agent/settings.json`.
+8. `main(args, { extensionFactories: bundledExtensionFactories })` — hand off to upstream pi with all bundled extensions.
 
 Full detail in [Architecture overview](./architecture/overview.md).
 
@@ -62,6 +64,8 @@ npm run typecheck && npm run lint && npm run format:check   # quality gates
 
 `pi --mode remote --host 127.0.0.1 --port 0 --token <secret>` exposes the session over TCP — see [Remote mode](./sessions/remote.md) and `REMOTE.md`.
 
+`pi acp` exposes the complete bundled agent over stable ACP v1 stdio. `pi acp --experimental-acp-v2` enables v2 negotiation while retaining v1 downgrade. See [ACP agent mode](./sessions/acp.md).
+
 ## Documentation map
 
 - [Architecture overview](./architecture/overview.md) — boot sequence, extension system, mode system, settings, bundled-resource injection.
@@ -70,6 +74,7 @@ npm run typecheck && npm run lint && npm run format:check   # quality gates
 - [Providers & models](./providers/overview.md) — LiteLLM gateway, provider roster, fallbacks, fast/image, usage tracking, auth.
 - [Subagent SDK](./sessions/subagent-sdk.md) — mux backends, lite vs process runtime, IPC, structured output.
 - [Remote mode](./sessions/remote.md) — TCP JSONL control protocol.
+- [ACP agent mode](./sessions/acp.md) — Zed setup, capabilities, lifecycle, MCP, files, and v2 gate.
 - [Resources](./resources/overview.md) — system prompts, themes, skills, workflows, GSD, web UIs.
 - [Build & update](./operations/build-and-update.md) — build pipeline, postinstall, patches, self-update.
 - [Testing](./operations/testing.md) — vitest layout, harness, custom oxlint rules.

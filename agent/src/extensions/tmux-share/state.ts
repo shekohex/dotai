@@ -17,30 +17,12 @@ export interface ShareState {
   coderPublicUrl: string | null;
 }
 
-let activeState: ShareState | null = null;
-
-export function setShareState(state: ShareState): void {
-  activeState = state;
+export function incrementConnectionCount(state: ShareState): void {
+  state.connectionCount += 1;
 }
 
-export function getShareState(): ShareState | null {
-  return activeState;
-}
-
-export function clearShareState(): void {
-  activeState = null;
-}
-
-export function incrementConnectionCount(): void {
-  if (activeState) {
-    activeState.connectionCount += 1;
-  }
-}
-
-export function decrementConnectionCount(): void {
-  if (activeState) {
-    activeState.connectionCount = Math.max(0, activeState.connectionCount - 1);
-  }
+export function decrementConnectionCount(state: ShareState): void {
+  state.connectionCount = Math.max(0, state.connectionCount - 1);
 }
 
 function getLanIp(): string {

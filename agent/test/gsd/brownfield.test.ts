@@ -8,7 +8,6 @@ import { readPlanningSnapshot } from "../../src/extensions/gsd/state/read.js";
 import { readRoadmapPhases } from "../../src/extensions/gsd/state/roadmap.js";
 import { computeStats, computeStructuredStats } from "../../src/extensions/gsd/state/stats.js";
 import { detectExistingPlanning } from "../../src/extensions/gsd/state/detect.js";
-import { rememberGsdCwd } from "../../src/extensions/gsd/state/cwd.js";
 import { createTempDirSync } from "../test-utils/temp-paths.ts";
 
 const fixtures = join(import.meta.dirname, "fixtures");
@@ -53,10 +52,8 @@ must_haves: []
 # Plan
 `,
     );
-    rememberGsdCwd(root);
-
-    expect(() => getGsdArgumentCompletions("")).not.toThrow();
-    expect(getGsdArgumentCompletions("")?.some((item) => item.value === "next")).toBe(true);
+    expect(() => getGsdArgumentCompletions("", root)).not.toThrow();
+    expect(getGsdArgumentCompletions("", root)?.some((item) => item.value === "next")).toBe(true);
     expect(computeLocalHealthSummary(root).issues).toContainEqual(
       expect.objectContaining({
         code: "WLOCAL_FRONTMATTER",
@@ -87,10 +84,10 @@ status: Ready
 State body
 `,
     );
-    rememberGsdCwd(root);
-
-    expect(() => getGsdArgumentCompletions("")).not.toThrow();
-    expect(getGsdArgumentCompletions("")?.some((item) => item.value === "progress")).toBe(true);
+    expect(() => getGsdArgumentCompletions("", root)).not.toThrow();
+    expect(getGsdArgumentCompletions("", root)?.some((item) => item.value === "progress")).toBe(
+      true,
+    );
     expect(computeLocalHealthSummary(root).issues).toContainEqual(
       expect.objectContaining({
         code: "WLOCAL_FRONTMATTER",

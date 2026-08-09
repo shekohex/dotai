@@ -3,7 +3,6 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fuzzyFilter, type AutocompleteItem } from "@earendil-works/pi-tui";
 import type { GsdSubcommand } from "./commands.js";
-import { getLastKnownGsdCwd } from "./state/cwd.js";
 import {
   getGsdDebugSuggestions,
   getGsdMilestoneSuggestions,
@@ -115,8 +114,11 @@ function filterItems(items: AutocompleteItem[], query: string): AutocompleteItem
   return filtered.length > 0 ? filtered : null;
 }
 
-function getPhaseItems(prefixBase = "", flagPrefix?: "--phase="): AutocompleteItem[] {
-  const cwd = getLastKnownGsdCwd();
+function getPhaseItems(
+  cwd: string | undefined,
+  prefixBase = "",
+  flagPrefix?: "--phase=",
+): AutocompleteItem[] {
   if (cwd === undefined) {
     return [];
   }
@@ -138,8 +140,7 @@ function getFlagItems(subcommand: GsdSubcommand, prefixBase = ""): AutocompleteI
   }));
 }
 
-function getMapCodebaseModeItems(prefixBase: string): AutocompleteItem[] {
-  const cwd = getLastKnownGsdCwd();
+function getMapCodebaseModeItems(cwd: string | undefined, prefixBase: string): AutocompleteItem[] {
   const skipAvailable = cwd !== undefined && hasReusableCodebaseBaseline(cwd);
   return [
     {
@@ -501,15 +502,16 @@ function getWaveItems(prefixBase: string, inline = false): AutocompleteItem[] {
 }
 
 function getPhaseAwareCompletions(args: {
+  cwd: string | undefined;
   subcommand: GsdSubcommand;
   tokens: string[];
   token: string;
   trailingSpace: boolean;
 }): AutocompleteItem[] | null {
-  const { subcommand, tokens, token, trailingSpace } = args;
+  const { cwd, subcommand, tokens, token, trailingSpace } = args;
 
   const phaseItems = phaseAwareSubcommands.includes(subcommand)
-    ? getPhaseItems(`${subcommand} `)
+    ? getPhaseItems(cwd, `${subcommand} `)
     : [];
   if (phaseItems.length === 0) {
     return null;
@@ -517,7 +519,7 @@ function getPhaseAwareCompletions(args: {
 
   const previousToken = trailingSpace ? tokens.at(-1) : tokens.at(-2);
   if (previousToken === "--phase") {
-    return filterItems(getPhaseItems(`${subcommand} --phase `), token);
+    return filterItems(getPhaseItems(cwd, `${subcommand} --phase `), token);
   }
   if (subcommand === "execute-phase" && previousToken === "--wave") {
     return filterItems(getWaveItems(`${subcommand} --wave `), token);
@@ -532,6 +534,7 @@ function getPhaseAwareCompletions(args: {
 }
 
 function getProgressNextCompletions(
+  cwd: string | undefined,
   tokens: string[],
   token: string,
   trailingSpace: boolean,
@@ -541,14 +544,14 @@ function getProgressNextCompletions(
   }
   const previousToken = trailingSpace ? tokens.at(-1) : tokens.at(-2);
   if (previousToken === "--phase") {
-    return filterItems(getPhaseItems("progress --next --phase "), token);
+    return filterItems(getPhaseItems(cwd, "progress --next --phase "), token);
   }
   const progressPrefix = "progress --next ";
   if (trailingSpace) {
-    return [...getPhaseItems(progressPrefix), ...getFlagItems("next", progressPrefix)];
+    return [...getPhaseItems(cwd, progressPrefix), ...getFlagItems("next", progressPrefix)];
   }
   if (!token.startsWith("-")) {
-    return filterItems(getPhaseItems(progressPrefix), token);
+    return filterItems(getPhaseItems(cwd, progressPrefix), token);
   }
   return null;
 }
@@ -601,11 +604,12 @@ function getMilestoneCompletions(
 }
 
 function getMapCodebaseCompletions(
+  cwd: string | undefined,
   tokens: string[],
   token: string,
   trailingSpace: boolean,
 ): AutocompleteItem[] | null {
-  const modeItems = getMapCodebaseModeItems("map-codebase ");
+  const modeItems = getMapCodebaseModeItems(cwd, "map-codebase ");
   const fastModeItems = getMapCodebaseFastModeItems("map-codebase --fast ");
   const fastFlagItems = getMapCodebaseFastFlagItems("map-codebase ");
   const queryFlagItems = getMapCodebaseQueryFlagItems("map-codebase ");
@@ -652,16 +656,18 @@ function getMapCodebaseCompletions(
   return null;
 }
 
-export function getGsdArgumentCompletions(prefix: string): AutocompleteItem[] | null {
+export function getGsdArgumentCompletions(prefix: string, cwd?: string): AutocompleteItem[] | null {
   try {
-    return getGsdArgumentCompletionsUnsafe(prefix);
+    return getGsdArgumentCompletionsUnsafe(prefix, cwd);
   } catch {
     return getFallbackArgumentCompletions(prefix, ".planning warning: run /gsd health");
   }
 }
 
-function getGsdArgumentCompletionsUnsafe(prefix: string): AutocompleteItem[] | null {
-  const cwd = getLastKnownGsdCwd();
+function getGsdArgumentCompletionsUnsafe(
+  prefix: string,
+  cwd: string | undefined,
+): AutocompleteItem[] | null {
   const items = subcommands.map((item) => {
     const hint = cwd === undefined ? undefined : getGsdSubcommandHint(cwd, item.value);
     return {
@@ -704,11 +710,11 @@ function getGsdArgumentCompletionsUnsafe(prefix: string): AutocompleteItem[] | n
   }
 
   if (subcommand === "map-codebase") {
-    return getMapCodebaseCompletions(tokens, token, trailingSpace);
+    return getMapCodebaseCompletions(cwd, tokens, token, trailingSpace);
   }
 
   if (subcommand === "progress") {
-    const progressNextCompletions = getProgressNextCompletions(tokens, token, trailingSpace);
+    const progressNextCompletions = getProgressNextCompletions(cwd, tokens, token, trailingSpace);
     if (progressNextCompletions !== null) {
       return progressNextCompletions;
     }
@@ -719,9 +725,9 @@ function getGsdArgumentCompletionsUnsafe(prefix: string): AutocompleteItem[] | n
       return null;
     }
     if (subcommand === "progress" && tokens.includes("--next")) {
-      return filterItems(getPhaseItems("progress --next ", "--phase="), token);
+      return filterItems(getPhaseItems(cwd, "progress --next ", "--phase="), token);
     }
-    return filterItems(getPhaseItems(`${subcommand} `, "--phase="), token);
+    return filterItems(getPhaseItems(cwd, `${subcommand} `, "--phase="), token);
   }
 
   if (token.startsWith("--wave=")) {
@@ -736,6 +742,7 @@ function getGsdArgumentCompletionsUnsafe(prefix: string): AutocompleteItem[] | n
   }
 
   const phaseAwareCompletions = getPhaseAwareCompletions({
+    cwd,
     subcommand,
     tokens,
     token,

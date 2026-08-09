@@ -3,7 +3,6 @@ import { buildGsdSystemContext } from "./context.js";
 import { registerGsdCommands } from "./commands.js";
 import { syncBuiltInGsdModes } from "./modes.js";
 import { getGsdSettings } from "./settings.js";
-import { rememberGsdCwd } from "./state/cwd.js";
 import { detectExistingPlanning } from "./state/detect.js";
 import { disposeGsdSubagentSdkForSession } from "./subagents.js";
 import { registerGsdMessageRenderers } from "./ui/messages.js";
@@ -16,6 +15,7 @@ function isGsdEnabled(pi: ExtensionAPI, cwd: string): boolean {
 }
 
 export default function gsdExtension(pi: ExtensionAPI): void {
+  let sessionCwd: string | undefined;
   pi.registerFlag(GSD_FLAG, {
     description: "Enable GSD extension behavior for this session",
     type: "boolean",
@@ -24,7 +24,7 @@ export default function gsdExtension(pi: ExtensionAPI): void {
   syncBuiltInGsdModes(true);
   registerGsdMessageRenderers(pi);
   pi.on("session_start", async (event, ctx) => {
-    rememberGsdCwd(ctx.cwd);
+    sessionCwd = ctx.cwd;
     syncBuiltInGsdModes(true);
     if (!isGsdEnabled(pi, ctx.cwd)) {
       return;
@@ -40,7 +40,7 @@ export default function gsdExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("before_agent_start", (event, ctx) => {
-    rememberGsdCwd(ctx.cwd);
+    sessionCwd = ctx.cwd;
     let systemPrompt: string | undefined;
     if (isGsdEnabled(pi, ctx.cwd)) {
       const planningContext = buildGsdSystemContext(ctx.cwd);
@@ -55,5 +55,11 @@ export default function gsdExtension(pi: ExtensionAPI): void {
     disposeGsdSubagentSdkForSession(ctx);
   });
 
-  registerGsdCommands(pi);
+  registerGsdCommands(
+    pi,
+    () => sessionCwd,
+    (cwd) => {
+      sessionCwd = cwd;
+    },
+  );
 }

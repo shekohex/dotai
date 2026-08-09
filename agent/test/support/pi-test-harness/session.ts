@@ -133,6 +133,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
     origModelRegistry.getApiKey = async () => "test-key";
     origModelRegistry.getApiKeyForProvider = async () => "test-key";
   }
+  (session.modelRuntime as any).hasConfiguredAuth = () => true;
 
   // Check for extension load errors
   if (extensionsResult.errors.length > 0) {

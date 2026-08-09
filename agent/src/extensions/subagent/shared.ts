@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { MuxAdapter } from "../../subagent-sdk/mux.js";
 import type { RuntimeSubagent, SubagentToolParams, TSchemaBase } from "../../subagent-sdk/types.js";
-import { isSubagentToolEnabled, SUBAGENT_TOOL_NAME } from "./state.js";
+import { SUBAGENT_TOOL_NAME } from "./state.js";
 
 type CreateSubagentExtensionOptions = {
   adapterFactory?: (pi: ExtensionAPI) => MuxAdapter;
@@ -28,16 +28,16 @@ type SubagentStartValue = {
 const SUBAGENT_STREAM_PREVIEW_LINE_LIMIT = 5;
 const SUBAGENT_STREAM_PREVIEW_WIDTH = 96;
 
-function ensureParentSubagentToolActive(pi: ExtensionAPI): void {
-  if (!isSubagentToolEnabled()) return;
+function ensureParentSubagentToolActive(pi: ExtensionAPI, enabled = true): void {
+  if (!enabled) return;
   const activeTools = new Set([...pi.getActiveTools(), SUBAGENT_TOOL_NAME]);
   pi.setActiveTools(Array.from(activeTools).toSorted((left, right) => left.localeCompare(right)));
 }
 
-function scheduleParentSubagentToolActivation(pi: ExtensionAPI): void {
+function scheduleParentSubagentToolActivation(pi: ExtensionAPI, enabled = true): void {
   const activate = () => {
     try {
-      ensureParentSubagentToolActive(pi);
+      ensureParentSubagentToolActive(pi, enabled);
     } catch {}
   };
   queueMicrotask(activate);

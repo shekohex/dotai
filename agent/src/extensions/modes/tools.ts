@@ -2,13 +2,8 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { ModeSpec } from "../../mode-utils.js";
 import { getContextPruneAPI } from "../context-prune/public-api.js";
 import { CONTEXT_PRUNE_TOOL_NAME, CONTEXT_TREE_QUERY_TOOL_NAME } from "../context-prune/types.js";
-import { getWorkflowModeState, WORKFLOW_TOOL_NAME } from "../dynamic-workflows/workflow-editor.js";
-import { GOAL_TOOL_NAME, isGoalToolEnabled } from "../goal/state.js";
-import { getOpenAIBetterSettings } from "../openai-better/settings.js";
 import { normalizeToolNamesForModel, shouldUsePatch } from "../patch.js";
-import { isSessionQueryToolEnabled, SESSION_QUERY_TOOL_NAME } from "../session-query/state.js";
 import { DEFERRED_TOOL_NAMES } from "../search-tools.js";
-import { isSubagentToolEnabled, SUBAGENT_TOOL_NAME } from "../subagent/state.js";
 import { readChildState } from "../../subagent-sdk/launch.js";
 
 const STRUCTURED_OUTPUT_TOOL_NAME = "StructuredOutput";
@@ -63,10 +58,10 @@ function getDefaultToolNames(
   preserveActiveDeferredTools: boolean,
 ): string[] {
   const tools = new Set(availableToolNames);
-  const activeToolNames = preserveActiveDeferredTools ? new Set(pi.getActiveTools()) : new Set();
+  const activeToolNames = new Set(pi.getActiveTools());
 
   for (const toolName of DEFERRED_TOOL_NAMES) {
-    if (!activeToolNames.has(toolName) && !isDeferredToolDefaultEnabled(toolName)) {
+    if (!preserveActiveDeferredTools || !activeToolNames.has(toolName)) {
       tools.delete(toolName);
     }
   }
@@ -82,15 +77,6 @@ function getDefaultToolNames(
   }
 
   return Array.from(tools).toSorted(compareToolNames);
-}
-
-function isDeferredToolDefaultEnabled(toolName: string): boolean {
-  if (toolName === WORKFLOW_TOOL_NAME) return getWorkflowModeState().toolEnabled;
-  if (toolName === GOAL_TOOL_NAME) return isGoalToolEnabled();
-  if (toolName === SESSION_QUERY_TOOL_NAME) return isSessionQueryToolEnabled();
-  if (toolName === SUBAGENT_TOOL_NAME) return isSubagentToolEnabled();
-  if (toolName === "generate_image") return getOpenAIBetterSettings().image.enabled;
-  return false;
 }
 
 function resolveModeToolNames(

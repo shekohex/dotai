@@ -50,39 +50,55 @@ interface ContextPruneRuntime {
   onPrune(callback: (result: FlushResult) => void): () => void;
 }
 
-let runtime: ContextPruneRuntime | null = null;
-let footerState: ContextPruneFooterState | undefined;
-let lastResult: FlushResult | undefined;
+const runtimes = new WeakMap<object, ContextPruneRuntime>();
+const footerStates = new WeakMap<object, ContextPruneFooterState>();
+const lastResults = new WeakMap<object, FlushResult>();
 
-export function setContextPruneRuntime(nextRuntime: ContextPruneRuntime): void {
-  runtime = nextRuntime;
+export function setContextPruneRuntime(
+  ctx: ExtensionContext,
+  nextRuntime: ContextPruneRuntime,
+): void {
+  runtimes.set(ctx.sessionManager, nextRuntime);
 }
 
-export function setContextPruneFooterState(nextState: ContextPruneFooterState | undefined): void {
-  footerState = nextState;
+export function clearContextPruneRuntime(ctx: ExtensionContext): void {
+  runtimes.delete(ctx.sessionManager);
+  footerStates.delete(ctx.sessionManager);
+  lastResults.delete(ctx.sessionManager);
 }
 
-export function getContextPruneFooterState(): ContextPruneFooterState | undefined {
-  return footerState;
+export function setContextPruneFooterState(
+  ctx: ExtensionContext,
+  nextState: ContextPruneFooterState | undefined,
+): void {
+  if (nextState === undefined) footerStates.delete(ctx.sessionManager);
+  else footerStates.set(ctx.sessionManager, nextState);
 }
 
-export function setContextPruneLastResult(result: FlushResult): void {
-  lastResult = result;
+export function getContextPruneFooterState(
+  ctx: ExtensionContext,
+): ContextPruneFooterState | undefined {
+  return footerStates.get(ctx.sessionManager);
 }
 
-export function clearContextPruneLastResult(): void {
-  lastResult = undefined;
+export function setContextPruneLastResult(ctx: ExtensionContext, result: FlushResult): void {
+  lastResults.set(ctx.sessionManager, result);
 }
 
-export function getContextPruneLastResult(): FlushResult | undefined {
-  return lastResult;
+export function clearContextPruneLastResult(ctx: ExtensionContext): void {
+  lastResults.delete(ctx.sessionManager);
 }
 
-export function getContextPruneAPI(_ctx?: ExtensionContext): ContextPruneAPI | null {
-  const currentRuntime = runtime;
-  if (currentRuntime === null || _ctx === undefined) {
+export function getContextPruneLastResult(ctx: ExtensionContext): FlushResult | undefined {
+  return lastResults.get(ctx.sessionManager);
+}
+
+export function getContextPruneAPI(ctx?: ExtensionContext): ContextPruneAPI | null {
+  if (ctx === undefined) {
     return null;
   }
+  const currentRuntime = runtimes.get(ctx.sessionManager);
+  if (currentRuntime === undefined) return null;
   return {
     get enabled() {
       return currentRuntime.getConfig().enabled;
@@ -96,7 +112,7 @@ export function getContextPruneAPI(_ctx?: ExtensionContext): ContextPruneAPI | n
     cancel: (reason) => {
       currentRuntime.cancel(reason);
     },
-    flush: (options) => currentRuntime.flush(_ctx, options),
+    flush: (options) => currentRuntime.flush(ctx, options),
     pendingBatchCount: () => currentRuntime.pendingBatchCount(),
     getIndexer: () => currentRuntime.getIndexer(),
     onPrune: (callback) => currentRuntime.onPrune(callback),

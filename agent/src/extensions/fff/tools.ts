@@ -11,21 +11,25 @@ import { buildQuery } from "./query.js";
 // Cursor store — simple bounded Map for pagination cursors
 // ---------------------------------------------------------------------------
 
-const cursorCache = new Map<string, GrepCursor>();
-let cursorCounter = 0;
+interface SearchCursorStore {
+  grep: Map<string, GrepCursor>;
+  grepCounter: number;
+  find: Map<string, FindCursor>;
+  findCounter: number;
+}
 
-function storeCursor(cursor: GrepCursor): string {
-  const id = `fff_c${++cursorCounter}`;
-  cursorCache.set(id, cursor);
-  if (cursorCache.size > 200) {
-    const first = cursorCache.keys().next().value;
-    if (first !== undefined) cursorCache.delete(first);
+function storeCursor(store: SearchCursorStore, cursor: GrepCursor): string {
+  const id = `fff_c${++store.grepCounter}`;
+  store.grep.set(id, cursor);
+  if (store.grep.size > 200) {
+    const first = store.grep.keys().next().value;
+    if (first !== undefined) store.grep.delete(first);
   }
   return id;
 }
 
-function getCursor(id: string): GrepCursor | undefined {
-  return cursorCache.get(id);
+function getCursor(store: SearchCursorStore, id: string): GrepCursor | undefined {
+  return store.grep.get(id);
 }
 
 // Find pagination uses a page-index cursor: native `fileSearch` takes
@@ -38,21 +42,18 @@ interface FindCursor {
   nextPageIndex: number;
 }
 
-const findCursorCache = new Map<string, FindCursor>();
-let findCursorCounter = 0;
-
-function storeFindCursor(cursor: FindCursor): string {
-  const id = `${++findCursorCounter}`;
-  findCursorCache.set(id, cursor);
-  if (findCursorCache.size > 200) {
-    const first = findCursorCache.keys().next().value;
-    if (first !== undefined) findCursorCache.delete(first);
+function storeFindCursor(store: SearchCursorStore, cursor: FindCursor): string {
+  const id = `${++store.findCounter}`;
+  store.find.set(id, cursor);
+  if (store.find.size > 200) {
+    const first = store.find.keys().next().value;
+    if (first !== undefined) store.find.delete(first);
   }
   return id;
 }
 
-function getFindCursor(id: string): FindCursor | undefined {
-  return findCursorCache.get(id);
+function getFindCursor(store: SearchCursorStore, id: string): FindCursor | undefined {
+  return store.find.get(id);
 }
 
 function buildToolQuery(input: {
@@ -137,7 +138,11 @@ const findSchema = Type.Object({
   cursor: Type.Optional(Type.String({ description: "Pagination cursor from previous result" })),
 });
 
-function registerGrepTool(pi: ExtensionAPI, runtime: FffToolRuntime): void {
+function registerGrepTool(
+  pi: ExtensionAPI,
+  runtime: FffToolRuntime,
+  cursorStore: SearchCursorStore,
+): void {
   pi.registerTool({
     name: TOOL_NAMES.grep,
     label: TOOL_NAMES.grep,
@@ -215,7 +220,7 @@ function registerGrepTool(pi: ExtensionAPI, runtime: FffToolRuntime): void {
         maxMatchesPerFile: Math.min(effectiveLimit, 50),
         cursor:
           (params.cursor !== undefined && params.cursor.length > 0
-            ? getCursor(params.cursor)
+            ? getCursor(cursorStore, params.cursor)
             : null) ?? null,
         beforeContext: params.context ?? 0,
         afterContext: params.context ?? 0,
@@ -255,7 +260,7 @@ function registerGrepTool(pi: ExtensionAPI, runtime: FffToolRuntime): void {
         notices.push(`Invalid regex: ${result.regexFallbackError}, used literal match`);
       }
       if (result.nextCursor !== undefined && result.nextCursor !== null) {
-        notices.push(`Continue with cursor="${storeCursor(result.nextCursor)}"`);
+        notices.push(`Continue with cursor="${storeCursor(cursorStore, result.nextCursor)}"`);
       }
 
       if (notices.length > 0) output += `\n\n[${notices.join(". ")}]`;
@@ -283,7 +288,11 @@ function registerGrepTool(pi: ExtensionAPI, runtime: FffToolRuntime): void {
   });
 }
 
-function registerFindTool(pi: ExtensionAPI, runtime: FffToolRuntime): void {
+function registerFindTool(
+  pi: ExtensionAPI,
+  runtime: FffToolRuntime,
+  cursorStore: SearchCursorStore,
+): void {
   pi.registerTool({
     name: TOOL_NAMES.find,
     label: TOOL_NAMES.find,
@@ -310,7 +319,7 @@ function registerFindTool(pi: ExtensionAPI, runtime: FffToolRuntime): void {
       // the agent can't accidentally mix patterns across pages.
       const resumed =
         params.cursor !== undefined && params.cursor.length > 0
-          ? getFindCursor(params.cursor)
+          ? getFindCursor(cursorStore, params.cursor)
           : undefined;
       const effectiveLimit = resumed
         ? resumed.pageSize
@@ -351,7 +360,7 @@ function registerFindTool(pi: ExtensionAPI, runtime: FffToolRuntime): void {
 
       if (!formatted.weak && hasMore) {
         const remaining = result.totalMatched - shownSoFar;
-        const cursorId = storeFindCursor({
+        const cursorId = storeFindCursor(cursorStore, {
           query,
           pattern,
           pageSize: effectiveLimit,
@@ -388,6 +397,12 @@ function registerFindTool(pi: ExtensionAPI, runtime: FffToolRuntime): void {
 }
 
 export function registerSearchTools(pi: ExtensionAPI, runtime: FffToolRuntime): void {
-  registerGrepTool(pi, runtime);
-  registerFindTool(pi, runtime);
+  const cursorStore: SearchCursorStore = {
+    grep: new Map(),
+    grepCounter: 0,
+    find: new Map(),
+    findCounter: 0,
+  };
+  registerGrepTool(pi, runtime, cursorStore);
+  registerFindTool(pi, runtime, cursorStore);
 }

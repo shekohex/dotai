@@ -31,7 +31,7 @@ export function notifyAgentEndSummary(
   if (openUsageStatus !== undefined && openUsageStatus.length > 0) {
     parts.push(openUsageStatus);
   }
-  const pruneSummary = formatPruneSummary();
+  const pruneSummary = formatPruneSummary(ctx);
   if (pruneSummary !== undefined) {
     parts.push(pruneSummary);
   }
@@ -71,8 +71,8 @@ function formatCacheUsage(usage: UsageSummary): string {
   return `${read}${write}`;
 }
 
-function formatPruneSummary(): string | undefined {
-  const result = getContextPruneLastResult();
+function formatPruneSummary(ctx: ExtensionContext): string | undefined {
+  const result = getContextPruneLastResult(ctx);
   if (result === undefined || !result.ok) {
     return undefined;
   }

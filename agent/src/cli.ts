@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { main, parseArgs } from "@earendil-works/pi-coding-agent";
+import { parseAcpCommand } from "./acp/command.js";
+import { runAcpServer } from "./acp/server.js";
 import { runConductorCommand } from "./conductor/command.js";
 import { installBundledResourcePaths } from "./extensions/bundled-resources.js";
 import { createBundledExtensionFactories } from "./extensions/index.js";
@@ -9,10 +11,22 @@ import { isRemoteMode, parseRemoteModeArgs, runRemoteMode } from "./remote/mode.
 import { ensureRuntimeDefaultSettings } from "./runtime-default-settings.js";
 import { handleWrapperUpdateCommand } from "./update/command.js";
 import { resolveCwd } from "./utils/cwd.js";
+import { errorMessage } from "./utils/error-message.js";
 
 process.title = "pi";
 
 const args = process.argv.slice(2);
+
+try {
+  const acpOptions = parseAcpCommand(args);
+  if (acpOptions !== undefined) {
+    await runAcpServer(acpOptions);
+    process.exit(0);
+  }
+} catch (error) {
+  process.stderr.write(`${errorMessage(error)}\n`);
+  process.exit(1);
+}
 
 installBundledResourcePaths();
 if (await handleWrapperUpdateCommand({ args })) {

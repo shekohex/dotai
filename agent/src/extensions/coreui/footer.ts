@@ -273,7 +273,7 @@ function colorThinkingLevel(theme: Theme, level: ThinkingLevel): string {
 function buildUsageStatus(theme: Theme, ctx: ExtensionContext, totalCost: number): string {
   const contextAndCost = formatContextAndCost(theme, ctx, totalCost);
   const parts = [contextAndCost];
-  const pruneState = getContextPruneFooterState();
+  const pruneState = getContextPruneFooterState(ctx);
 
   if (pruneState !== undefined) {
     parts.push(formatContextPruneStatus(theme, pruneState));

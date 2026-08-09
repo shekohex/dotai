@@ -84,26 +84,28 @@ export type ModeChangedEvent = {
   cwd: string;
 };
 
-const runtime: ModeRuntime = {
-  data: { version: 1, currentMode: undefined, modes: {} },
-  activeMode: undefined,
-  applying: false,
-  needsResyncAfterApply: false,
-  toolsInitialized: false,
-  sessionModelOverrides: new Map(),
-  internalModelChangeDepth: 0,
-  error: undefined,
-  lastReportedError: undefined,
-  lastStatusText: undefined,
-};
-const failoverRuntime = createModeFailoverRuntime();
-failoverRuntime.withInternalModelChange = withInternalModelChange;
-
 const MODE_ERROR_WIDGET_KEY = "mode-config-error";
 
 export { toModeFlagName };
 
-function getModeAutocompleteEntries(): Array<{ modeName: string; description?: string }> {
+function createModeRuntime(): ModeRuntime {
+  return {
+    data: { version: 1, currentMode: undefined, modes: {} },
+    activeMode: undefined,
+    applying: false,
+    needsResyncAfterApply: false,
+    toolsInitialized: false,
+    sessionModelOverrides: new Map(),
+    internalModelChangeDepth: 0,
+    error: undefined,
+    lastReportedError: undefined,
+    lastStatusText: undefined,
+  };
+}
+
+function getModeAutocompleteEntries(
+  runtime: ModeRuntime,
+): Array<{ modeName: string; description?: string }> {
   return orderedModeNames(runtime.data).map((modeName) => ({
     modeName,
     description: describeModeAutocomplete(
@@ -121,10 +123,13 @@ function getModelAutocompleteEntries(ctx: ExtensionContext): Array<{
   return getAvailableModels(ctx).map((model) => ({ provider: model.provider, modelId: model.id }));
 }
 
-function getModeArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
+function getModeArgumentCompletions(
+  runtime: ModeRuntime,
+  argumentPrefix: string,
+): AutocompleteItem[] | null {
   return getModeCommandCompletions(
     argumentPrefix,
-    getModeAutocompleteEntries(),
+    getModeAutocompleteEntries(runtime),
     runtime.lastContext === undefined ? [] : getModelAutocompleteEntries(runtime.lastContext),
   );
 }
@@ -146,14 +151,14 @@ function notifyModeSwitch(
   );
 }
 
-function withInternalModelChange<T>(action: () => Promise<T>): Promise<T> {
+function withInternalModelChange<T>(runtime: ModeRuntime, action: () => Promise<T>): Promise<T> {
   runtime.internalModelChangeDepth += 1;
   return action().finally(() => {
     runtime.internalModelChangeDepth -= 1;
   });
 }
 
-function getEffectiveModeSpec(modeName: string): ModeSpec | undefined {
+function getEffectiveModeSpec(runtime: ModeRuntime, modeName: string): ModeSpec | undefined {
   const spec = getModeSpec(runtime.data, modeName);
   const override = runtime.sessionModelOverrides.get(modeName);
   if (spec === undefined || override === undefined) return spec;
@@ -204,12 +209,14 @@ async function chooseOverrideModel(
 }
 
 async function applyModeOverride(
+  runtime: ModeRuntime,
+  applyMode: ReturnType<typeof createModeApplyActions>["applyMode"],
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   modeName: string,
   modelQuery: string | undefined,
 ): Promise<boolean> {
-  if (!(await ensureModesReady(ctx))) return false;
+  if (!(await ensureModesReady(runtime, ctx))) return false;
   const spec = getModeSpec(runtime.data, modeName);
   if (spec === undefined) {
     ctx.ui.notify(`Unknown mode "${modeName}"`, "warning");
@@ -229,6 +236,8 @@ async function applyModeOverride(
 }
 
 function applyModeCommand(
+  runtime: ModeRuntime,
+  applyMode: ReturnType<typeof createModeApplyActions>["applyMode"],
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   modeName: string,
@@ -239,7 +248,11 @@ function applyModeCommand(
   return applyMode(pi, ctx, modeName, "command");
 }
 
-function setStatus(ctx: ExtensionContext, modeName: string | undefined): void {
+function setStatus(
+  runtime: ModeRuntime,
+  ctx: ExtensionContext,
+  modeName: string | undefined,
+): void {
   if (!ctx.hasUI) return;
   const text = ctx.ui.theme.fg(
     hasText(modeName) ? "accent" : "warning",
@@ -261,6 +274,7 @@ function emitModeChanged(
 }
 
 function appendModeState(
+  runtime: ModeRuntime,
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   activeMode: string | undefined,
@@ -329,7 +343,7 @@ function readModeOverrideEntry(value: unknown):
   };
 }
 
-function restoreSessionModeOverrides(ctx: ExtensionContext): void {
+function restoreSessionModeOverrides(runtime: ModeRuntime, ctx: ExtensionContext): void {
   runtime.sessionModelOverrides.clear();
   for (const entry of ctx.sessionManager.getEntries()) {
     if (entry.type !== "custom" || entry.customType !== MODE_MODEL_OVERRIDE_ENTRY) continue;
@@ -343,19 +357,20 @@ function restoreSessionModeOverrides(ctx: ExtensionContext): void {
   }
 }
 
-async function ensureRuntime(ctx: ExtensionContext): Promise<void> {
+async function ensureRuntime(runtime: ModeRuntime, ctx: ExtensionContext): Promise<void> {
   await ensureRuntimeState(runtime, ctx, { hasText, getModeSpec });
 }
 
-function syncErrorUI(ctx: ExtensionContext): void {
+function syncErrorUI(runtime: ModeRuntime, ctx: ExtensionContext): void {
   syncErrorUIState(runtime, ctx, MODE_ERROR_WIDGET_KEY, hasText);
 }
 
-function notifyConfigError(ctx: ExtensionContext): void {
+function notifyConfigError(runtime: ModeRuntime, ctx: ExtensionContext): void {
   notifyConfigErrorState(runtime, ctx, hasText);
 }
 
 function syncRuntimeModeTools(
+  runtime: ModeRuntime,
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   spec: ModeSpec | undefined,
@@ -366,58 +381,79 @@ function syncRuntimeModeTools(
   runtime.toolsInitialized = true;
 }
 
-const modeApplyActions = createModeApplyActions({
-  runtime,
-  ensureRuntime,
-  syncErrorUI,
-  ensureModesReady,
-  getModeSpec: (_data, modeName) => getEffectiveModeSpec(modeName),
-  inferActiveMode,
-  currentSelection,
-  selectionSatisfiesMode,
-  hasText,
-  hasModelSelection,
-  syncModeTools: syncRuntimeModeTools,
-  setStatus,
-  emitModeChanged,
-  appendModeState,
-  notifyModeSwitch,
-});
-
-const { syncFromSelection, applyMode, applySelection } = modeApplyActions;
-
-function ensureModesReady(ctx: ExtensionContext): Promise<boolean> {
+function ensureModesReady(runtime: ModeRuntime, ctx: ExtensionContext): Promise<boolean> {
   return ensureModesReadyRuntime(runtime, ctx, {
     ensureRuntime: () => {
-      return ensureRuntime(ctx);
+      return ensureRuntime(runtime, ctx);
     },
     syncErrorUI: () => {
-      syncErrorUI(ctx);
+      syncErrorUI(runtime, ctx);
     },
     notifyConfigError: () => {
-      notifyConfigError(ctx);
+      notifyConfigError(runtime, ctx);
     },
     hasText,
   });
 }
 
-function registerModesExtension(pi: ExtensionAPI, startupSelection: ModeStartupSelection): void {
+function registerModesExtension(
+  pi: ExtensionAPI,
+  startupSelection: ModeStartupSelection,
+  runtime: ModeRuntime,
+): void {
+  const failoverRuntime = createModeFailoverRuntime();
+  failoverRuntime.withInternalModelChange = (action) => withInternalModelChange(runtime, action);
+  const { syncFromSelection, applyMode, applySelection } = createModeApplyActions({
+    runtime,
+    ensureRuntime: (ctx) => ensureRuntime(runtime, ctx),
+    syncErrorUI: (ctx) => {
+      syncErrorUI(runtime, ctx);
+    },
+    ensureModesReady: (ctx) => ensureModesReady(runtime, ctx),
+    getModeSpec: (_data, modeName) => getEffectiveModeSpec(runtime, modeName),
+    inferActiveMode,
+    currentSelection,
+    selectionSatisfiesMode,
+    hasText,
+    hasModelSelection,
+    syncModeTools: (extensionApi, ctx, spec) => {
+      syncRuntimeModeTools(runtime, extensionApi, ctx, spec);
+    },
+    setStatus: (ctx, modeName) => {
+      setStatus(runtime, ctx, modeName);
+    },
+    emitModeChanged,
+    appendModeState: (extensionApi, ctx, modeName) => {
+      appendModeState(runtime, extensionApi, ctx, modeName);
+    },
+    notifyModeSwitch,
+  });
   const registeredModeFlags = new Map<string, string>();
   const { showModePicker, cycleMode, restoreMode, activateMode } = createModeActionHandlers({
     runtime,
     modeStateEntry: MODE_STATE_ENTRY,
-    ensureRuntime,
-    syncErrorUI,
-    notifyConfigError,
+    ensureRuntime: (ctx) => ensureRuntime(runtime, ctx),
+    syncErrorUI: (ctx) => {
+      syncErrorUI(runtime, ctx);
+    },
+    notifyConfigError: (ctx) => {
+      notifyConfigError(runtime, ctx);
+    },
     hasText,
     describeModeSpec,
     orderedModeNames,
     getModeSpec,
     applyMode,
     syncFromSelection,
-    syncModeTools: syncRuntimeModeTools,
-    setStatus,
-    appendModeState,
+    syncModeTools: (extensionApi, ctx, spec) => {
+      syncRuntimeModeTools(runtime, extensionApi, ctx, spec);
+    },
+    setStatus: (ctx, modeName) => {
+      setStatus(runtime, ctx, modeName);
+    },
+    appendModeState: (extensionApi, ctx, modeName) => {
+      appendModeState(runtime, extensionApi, ctx, modeName);
+    },
     emitModeChanged,
     applyStartupModelOverride: (modeName, ctx) => {
       if (!startupSelection.hasExplicitModel || ctx.model === undefined) return;
@@ -436,31 +472,15 @@ function registerModesExtension(pi: ExtensionAPI, startupSelection: ModeStartupS
     registerModeFlags(pi, registeredModeFlags, { orderedModeNames, describeModeSpec, hasText });
   });
   registerModeCommand(pi, {
-    getModeArgumentCompletions,
+    getModeArgumentCompletions: (prefix) => getModeArgumentCompletions(runtime, prefix),
     showModePicker,
-    applyMode: applyModeCommand,
-    applyModeOverride,
+    applyMode: (extensionApi, ctx, modeName) =>
+      applyModeCommand(runtime, applyMode, extensionApi, ctx, modeName),
+    applyModeOverride: (extensionApi, ctx, modeName, modelQuery) =>
+      applyModeOverride(runtime, applyMode, extensionApi, ctx, modeName, modelQuery),
   });
   registerModeShortcuts(pi, { showModePicker, cycleMode });
-  pi.on("before_agent_start", (event) => {
-    const activeMode = runtime.activeMode;
-    const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(activeMode);
-    const systemPrompt = applyModeSystemPrompt(event.systemPrompt, spec);
-    return systemPrompt === undefined ? undefined : { systemPrompt };
-  });
-  pi.on("before_agent_start", async (_event, ctx) => {
-    runtime.lastContext = ctx;
-    const activeMode = runtime.activeMode;
-    const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(activeMode);
-    await restorePrimaryModelForMode(pi, ctx, failoverRuntime, activeMode, spec);
-  });
-  pi.on("message_end", async (event, ctx) => {
-    runtime.lastContext = ctx;
-    if (event.message.role !== "assistant") return;
-    const activeMode = runtime.activeMode;
-    const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(activeMode);
-    await handleModeAssistantMessageEnd(pi, ctx, failoverRuntime, activeMode, spec, event.message);
-  });
+  registerModeAgentHandlers(pi, runtime, failoverRuntime);
   registerModeLifecycleHandlers(pi, {
     resetRuntimeState: () => {
       runtime.activeMode = undefined;
@@ -470,7 +490,7 @@ function registerModesExtension(pi: ExtensionAPI, startupSelection: ModeStartupS
     },
     restoreMode: async (extensionApi, ctx) => {
       runtime.lastContext = ctx;
-      restoreSessionModeOverrides(ctx);
+      restoreSessionModeOverrides(runtime, ctx);
       await restoreMode(extensionApi, ctx);
     },
     isApplying: () => runtime.applying,
@@ -482,9 +502,13 @@ function registerModesExtension(pi: ExtensionAPI, startupSelection: ModeStartupS
       runtime.needsResyncAfterApply = true;
     },
     syncFromSelection,
-    appendModeState,
+    appendModeState: (extensionApi, ctx, modeName) => {
+      appendModeState(runtime, extensionApi, ctx, modeName);
+    },
     getActiveMode: () => runtime.activeMode,
-    setStatus,
+    setStatus: (ctx, modeName) => {
+      setStatus(runtime, ctx, modeName);
+    },
   });
   const unregisterModeEventHandlers = registerModeEventHandlers(pi, {
     modeActivateEvent: MODE_ACTIVATE_EVENT,
@@ -501,11 +525,37 @@ function registerModesExtension(pi: ExtensionAPI, startupSelection: ModeStartupS
   });
 }
 
+function registerModeAgentHandlers(
+  pi: ExtensionAPI,
+  runtime: ModeRuntime,
+  failoverRuntime: ReturnType<typeof createModeFailoverRuntime>,
+): void {
+  pi.on("before_agent_start", (event) => {
+    const activeMode = runtime.activeMode;
+    const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(runtime, activeMode);
+    const systemPrompt = applyModeSystemPrompt(event.systemPrompt, spec);
+    return systemPrompt === undefined ? undefined : { systemPrompt };
+  });
+  pi.on("before_agent_start", async (_event, ctx) => {
+    runtime.lastContext = ctx;
+    const activeMode = runtime.activeMode;
+    const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(runtime, activeMode);
+    await restorePrimaryModelForMode(pi, ctx, failoverRuntime, activeMode, spec);
+  });
+  pi.on("message_end", async (event, ctx) => {
+    runtime.lastContext = ctx;
+    if (event.message.role !== "assistant") return;
+    const activeMode = runtime.activeMode;
+    const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(runtime, activeMode);
+    await handleModeAssistantMessageEnd(pi, ctx, failoverRuntime, activeMode, spec, event.message);
+  });
+}
+
 const defaultModeStartupSelection: ModeStartupSelection = { hasExplicitModel: false };
 
 export function createModesExtension(startupSelection: ModeStartupSelection): ExtensionFactory {
   return (pi) => {
-    registerModesExtension(pi, startupSelection);
+    registerModesExtension(pi, startupSelection, createModeRuntime());
   };
 }
 

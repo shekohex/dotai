@@ -59,206 +59,209 @@ export function createReviewExtension(extensionOptions?: CreateReviewExtensionOp
   const resolvedOptions = extensionOptions ?? { enabled: true };
 
   return (pi: ExtensionAPI) => {
-    reviewExtension(resolvedOptions, pi);
+    if (resolvedOptions.enabled !== false) {
+      new ReviewExtensionRuntime(resolvedOptions, pi).register();
+    }
   };
 }
 
-let resolvedOptions: CreateReviewExtensionOptions = { enabled: true };
-let pi: ExtensionAPI;
-let sdk: ReturnType<typeof createReviewSubagentSdk>;
-let stopSdkEvents: (() => void) | undefined;
+class ReviewExtensionRuntime {
+  private readonly runtime: ReviewRuntimeState = {
+    ctx: undefined,
+    active: false,
+    subagentSessionId: undefined,
+    targetLabel: undefined,
+    branchAnchorId: undefined,
+    checkoutToRestore: undefined,
+    customInstructions: undefined,
+    completionNotifiedSessionId: undefined,
+    commandActions: undefined,
+  };
+  private sdk: ReturnType<typeof createReviewSubagentSdk>;
+  private stopSdkEvents: (() => void) | undefined;
 
-const runtime: ReviewRuntimeState = {
-  ctx: undefined,
-  active: false,
-  subagentSessionId: undefined,
-  targetLabel: undefined,
-  branchAnchorId: undefined,
-  checkoutToRestore: undefined,
-  customInstructions: undefined,
-  completionNotifiedSessionId: undefined,
-  commandActions: undefined,
-};
-
-function initializeReviewRuntime(
-  nextResolvedOptions: CreateReviewExtensionOptions,
-  nextPi: ExtensionAPI,
-): void {
-  resolvedOptions = nextResolvedOptions;
-  pi = nextPi;
-  sdk = createReviewSubagentSdk(nextResolvedOptions, nextPi);
-  stopSdkEvents = undefined;
-}
-
-function generateReviewHandoff(input: {
-  ctx: ExtensionCommandContext;
-  goal: string;
-  messages: ReturnType<typeof getConversationMessages>;
-}): Promise<SummaryGenerationResult> {
-  if (resolvedOptions.handoffGenerator) {
-    return resolvedOptions.handoffGenerator(input);
+  constructor(
+    private readonly options: CreateReviewExtensionOptions,
+    private readonly pi: ExtensionAPI,
+  ) {
+    this.sdk = createReviewSubagentSdk(options, pi);
   }
 
-  if (input.ctx.hasUI) {
-    return generateContextTransferSummaryWithLoader(
-      input.ctx,
-      input.goal,
-      input.messages,
-      "Generating review handoff...",
-    );
+  register(): void {
+    this.attachSdkEvents();
+    const executeReview = createReviewExecutor({
+      pi: this.pi,
+      runtime: this.runtime,
+      getSdk: () => this.sdk,
+      generateReviewHandoff: (input) => this.generateReviewHandoff(input),
+      restoreCheckoutAfterFailedStart: (ctx, checkout) =>
+        this.restoreCheckoutAfterFailedStart(ctx, checkout),
+      buildReviewTaskPrompt,
+      clearReviewState: (ctx) => {
+        this.clearReviewState(ctx);
+      },
+      persistReviewState: (state) => {
+        this.persistReviewState(state);
+      },
+      formatErrorMessage,
+    });
+    registerReviewHandlers({
+      pi: this.pi,
+      getRuntimeActive: () => this.runtime.active,
+      getCustomInstructions: () => this.runtime.customInstructions,
+      setCustomInstructions: (instructions) => {
+        this.setReviewCustomInstructions(instructions);
+      },
+      applyAllReviewState: (ctx) => this.applyAllReviewState(ctx),
+      shutdownRuntime: () => {
+        this.shutdown();
+      },
+      resolvePullRequestTarget: createPullRequestTargetResolver(this.pi),
+      executeReview,
+    });
   }
 
-  return generateContextTransferSummary(input.ctx, input.goal, input.messages);
-}
-
-async function restoreCheckoutAfterFailedStart(
-  ctx: ExtensionContext,
-  checkoutToRestore: ReviewCheckoutTarget | undefined,
-): Promise<void> {
-  const restoreResult = await restoreCheckoutTarget(pi, checkoutToRestore);
-  if (!restoreResult.success) {
-    ctx.ui.notify(`Failed to restore checkout: ${restoreResult.error}`, "error");
-  }
-}
-
-async function finalizeReview(
-  ctx: ExtensionContext,
-  status: "completed" | "failed" | "cancelled",
-  summary?: string,
-): Promise<void> {
-  await finalizeReviewRun({
-    ctx,
-    status,
-    summary,
-    runtime,
-    clearReviewState,
-    restoreCheckoutTarget: (checkoutToRestore) => restoreCheckoutTarget(pi, checkoutToRestore),
-    offerCompletionActions: (completionCtx, completionSummary, branchAnchorId) =>
-      offerCompletionActions(completionCtx, completionSummary, branchAnchorId, {
-        options: resolvedOptions,
-        getCommandActions: () => runtime.commandActions,
-        launchHandoffSession: ({ ctx: handoffCtx, newSession, goal }) =>
-          launchHandoffSession({
-            pi,
-            ctx: handoffCtx,
-            newSession,
-            goal,
-          }),
-        copyTextToClipboard,
-        sendAddressPrompt: (prompt) => {
-          pi.sendUserMessage(prompt, { deliverAs: "followUp" });
-        },
-      }),
-  });
-}
-
-function attachSdkEvents(): void {
-  stopSdkEvents?.();
-  stopSdkEvents = subscribeReviewSdkEvents({
-    runtime,
-    sdk,
-    isTerminalReviewStatus,
-    finalizeReview: (eventCtx, eventStatus, eventSummary) =>
-      finalizeReview(eventCtx, eventStatus, eventSummary),
-  });
-}
-
-function resetSdk(): void {
-  stopSdkEvents?.();
-  stopSdkEvents = undefined;
-  sdk.dispose();
-  initializeReviewRuntime(resolvedOptions, pi);
-  attachSdkEvents();
-}
-
-function persistReviewSettings(): void {
-  persistReviewSettingsWithRuntime(runtime, (state) => {
-    pi.appendEntry(REVIEW_SETTINGS_TYPE, state);
-  });
-}
-
-function setReviewCustomInstructions(instructions: string | undefined): void {
-  setReviewCustomInstructionsWithRuntime(runtime, instructions, persistReviewSettings);
-}
-
-async function applyAllReviewState(ctx: ExtensionContext): Promise<void> {
-  await applyAllReviewStateWithDeps(ctx, {
-    runtime,
-    sdk,
-    getReviewSettings,
-    getReviewState,
-    isReviewStateActiveOnBranch,
-    resetSdk,
-    readChildState,
-    isChildSession,
-    isTerminalReviewStatus,
-    onTerminalState: (terminalCtx, state) => {
-      if (!isTerminalReviewStatus(state.status)) {
-        return;
-      }
-      void finalizeReview(terminalCtx, state.status, state.summary);
-    },
-    persistReviewState,
-  });
-}
-
-function persistReviewState(state: ReviewSessionState): void {
-  pi.appendEntry(REVIEW_STATE_TYPE, state);
-}
-
-function clearReviewState(ctx: ExtensionContext): void {
-  clearReviewStateWithDeps(ctx, {
-    runtime,
-    sdk,
-    getReviewSettings,
-    getReviewState,
-    isReviewStateActiveOnBranch,
-    resetSdk,
-    readChildState,
-    isChildSession,
-    isTerminalReviewStatus,
-    onTerminalState: () => {},
-    persistReviewState,
-  });
-}
-
-function reviewExtension(
-  nextResolvedOptions: CreateReviewExtensionOptions,
-  nextPi: ExtensionAPI,
-): void {
-  if (nextResolvedOptions.enabled === false) {
-    return;
+  private generateReviewHandoff(input: {
+    ctx: ExtensionCommandContext;
+    goal: string;
+    messages: ReturnType<typeof getConversationMessages>;
+  }): Promise<SummaryGenerationResult> {
+    if (this.options.handoffGenerator) {
+      return this.options.handoffGenerator(input);
+    }
+    if (input.ctx.hasUI) {
+      return generateContextTransferSummaryWithLoader(
+        input.ctx,
+        input.goal,
+        input.messages,
+        "Generating review handoff...",
+      );
+    }
+    return generateContextTransferSummary(input.ctx, input.goal, input.messages);
   }
 
-  initializeReviewRuntime(nextResolvedOptions, nextPi);
-  attachSdkEvents();
-  const resolvePullRequestTarget = createPullRequestTargetResolver(pi);
-  const executeReview = createReviewExecutor({
-    pi,
-    runtime,
-    getSdk: () => sdk,
-    generateReviewHandoff,
-    restoreCheckoutAfterFailedStart,
-    buildReviewTaskPrompt,
-    clearReviewState,
-    persistReviewState,
-    formatErrorMessage,
-  });
-  registerReviewHandlers({
-    pi,
-    getRuntimeActive: () => runtime.active,
-    getCustomInstructions: () => runtime.customInstructions,
-    setCustomInstructions: setReviewCustomInstructions,
-    applyAllReviewState,
-    shutdownRuntime: () => {
-      runtime.ctx = undefined;
-      runtime.commandActions = undefined;
-      stopSdkEvents?.();
-      sdk.dispose();
-    },
-    resolvePullRequestTarget,
-    executeReview,
-  });
+  private async restoreCheckoutAfterFailedStart(
+    ctx: ExtensionContext,
+    checkoutToRestore: ReviewCheckoutTarget | undefined,
+  ): Promise<void> {
+    const result = await restoreCheckoutTarget(this.pi, checkoutToRestore);
+    if (!result.success) {
+      ctx.ui.notify(`Failed to restore checkout: ${result.error}`, "error");
+    }
+  }
+
+  private async finalizeReview(
+    ctx: ExtensionContext,
+    status: "completed" | "failed" | "cancelled",
+    summary?: string,
+  ): Promise<void> {
+    await finalizeReviewRun({
+      ctx,
+      status,
+      summary,
+      runtime: this.runtime,
+      clearReviewState: (clearContext) => {
+        this.clearReviewState(clearContext);
+      },
+      restoreCheckoutTarget: (checkout) => restoreCheckoutTarget(this.pi, checkout),
+      offerCompletionActions: (completionCtx, completionSummary, branchAnchorId) =>
+        offerCompletionActions(completionCtx, completionSummary, branchAnchorId, {
+          options: this.options,
+          getCommandActions: () => this.runtime.commandActions,
+          launchHandoffSession: ({ ctx: handoffCtx, newSession, goal }) =>
+            launchHandoffSession({ pi: this.pi, ctx: handoffCtx, newSession, goal }),
+          copyTextToClipboard,
+          sendAddressPrompt: (prompt) => {
+            this.pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+          },
+        }),
+    });
+  }
+
+  private attachSdkEvents(): void {
+    this.stopSdkEvents?.();
+    this.stopSdkEvents = subscribeReviewSdkEvents({
+      runtime: this.runtime,
+      sdk: this.sdk,
+      isTerminalReviewStatus,
+      finalizeReview: (ctx, status, summary) => this.finalizeReview(ctx, status, summary),
+    });
+  }
+
+  private resetSdk(): void {
+    this.stopSdkEvents?.();
+    this.sdk.dispose();
+    this.sdk = createReviewSubagentSdk(this.options, this.pi);
+    this.attachSdkEvents();
+  }
+
+  private persistReviewSettings(): void {
+    persistReviewSettingsWithRuntime(this.runtime, (state) => {
+      this.pi.appendEntry(REVIEW_SETTINGS_TYPE, state);
+    });
+  }
+
+  private setReviewCustomInstructions(instructions: string | undefined): void {
+    setReviewCustomInstructionsWithRuntime(this.runtime, instructions, () => {
+      this.persistReviewSettings();
+    });
+  }
+
+  private async applyAllReviewState(ctx: ExtensionContext): Promise<void> {
+    await applyAllReviewStateWithDeps(ctx, {
+      runtime: this.runtime,
+      sdk: this.sdk,
+      getReviewSettings,
+      getReviewState,
+      isReviewStateActiveOnBranch,
+      resetSdk: () => {
+        this.resetSdk();
+      },
+      readChildState,
+      isChildSession,
+      isTerminalReviewStatus,
+      onTerminalState: (terminalCtx, state) => {
+        if (isTerminalReviewStatus(state.status)) {
+          void this.finalizeReview(terminalCtx, state.status, state.summary);
+        }
+      },
+      persistReviewState: (state) => {
+        this.persistReviewState(state);
+      },
+    });
+  }
+
+  private persistReviewState(state: ReviewSessionState): void {
+    this.pi.appendEntry(REVIEW_STATE_TYPE, state);
+  }
+
+  private clearReviewState(ctx: ExtensionContext): void {
+    clearReviewStateWithDeps(ctx, {
+      runtime: this.runtime,
+      sdk: this.sdk,
+      getReviewSettings,
+      getReviewState,
+      isReviewStateActiveOnBranch,
+      resetSdk: () => {
+        this.resetSdk();
+      },
+      readChildState,
+      isChildSession,
+      isTerminalReviewStatus,
+      onTerminalState: () => {},
+      persistReviewState: (state) => {
+        this.persistReviewState(state);
+      },
+    });
+  }
+
+  private shutdown(): void {
+    this.runtime.ctx = undefined;
+    this.runtime.commandActions = undefined;
+    this.stopSdkEvents?.();
+    this.stopSdkEvents = undefined;
+    this.sdk.dispose();
+  }
 }
 
 export default createReviewExtension();

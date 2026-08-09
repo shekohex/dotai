@@ -33,7 +33,6 @@ import {
   reconstructGoal,
   sendVisibleGoalMessage,
   setEntry,
-  setGoalToolEnabled,
   updateGoalStatus,
 } from "./state.js";
 import { registerGoalTools } from "./tools.js";
@@ -146,7 +145,6 @@ class GoalRuntime {
 
   private enableTool(): void {
     this.toolEnabled = true;
-    setGoalToolEnabled(true);
     const activeTools = new Set([...this.pi.getActiveTools(), GOAL_TOOL_NAME]);
     this.pi.setActiveTools(
       Array.from(activeTools).toSorted((left, right) => left.localeCompare(right)),
@@ -155,7 +153,6 @@ class GoalRuntime {
 
   private disableTool(): void {
     this.toolEnabled = false;
-    setGoalToolEnabled(false);
     this.pi.setActiveTools(
       this.pi.getActiveTools().filter((toolName) => toolName !== GOAL_TOOL_NAME),
     );
@@ -341,7 +338,6 @@ class GoalRuntime {
 
     if (nextGoal.status === "complete") {
       this.toolEnabled = false;
-      setGoalToolEnabled(false);
     } else {
       this.enableTool();
     }

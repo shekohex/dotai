@@ -14,6 +14,7 @@ import {
 } from "./guards.js";
 import { ToolCallIndexer } from "./indexer.js";
 import {
+  clearContextPruneRuntime,
   setContextPruneLastResult,
   setContextPruneFooterState,
   setContextPruneRuntime,
@@ -68,6 +69,7 @@ interface RuntimeState {
   pruneCallbacks: Set<(result: FlushResult) => void>;
   currentAbortController: AbortController | undefined;
   isFlushing: boolean;
+  lastContext: ExtensionContext | undefined;
 }
 
 interface FlushContext {
@@ -124,6 +126,7 @@ function createRuntimeState(): RuntimeState {
     pruneCallbacks: new Set(),
     currentAbortController: undefined,
     isFlushing: false,
+    lastContext: undefined,
   };
 }
 
@@ -132,7 +135,7 @@ function registerPublicApi(
   state: RuntimeState,
   flushPending: (ctx: ExtensionContext, options?: FlushOptions) => Promise<FlushResult>,
 ): void {
-  setContextPruneRuntime({
+  const runtime: Parameters<typeof setContextPruneRuntime>[1] = {
     getConfig: () => state.currentConfig.value,
     updateConfig: (patch) => {
       updateRuntimeConfig(pi, state, patch);
@@ -149,6 +152,14 @@ function registerPublicApi(
         state.pruneCallbacks.delete(callback);
       };
     },
+  };
+  pi.on("session_start", (_event, ctx) => {
+    state.lastContext = ctx;
+    setContextPruneRuntime(ctx, runtime);
+  });
+  pi.on("session_shutdown", (_event, ctx) => {
+    clearContextPruneRuntime(ctx);
+    state.lastContext = undefined;
   });
 }
 
@@ -163,7 +174,8 @@ function updateRuntimeConfig(
     tools: { ...state.currentConfig.value.tools, ...patch.tools },
   };
   syncToolActivation(pi, state);
-  setContextPruneFooterState({
+  if (state.lastContext === undefined) return;
+  setContextPruneFooterState(state.lastContext, {
     config: state.currentConfig.value,
     stats: state.stats.getStats(),
     pendingBatchCount: state.pendingBatches.length,
@@ -446,7 +458,7 @@ async function flushCapturedBatches(
     }
     persistFrontier(pi, state, flushContext, options, sessionAppender);
     const result = flushResult(flushContext);
-    setContextPruneLastResult(result);
+    setContextPruneLastResult(ctx, result);
     notifyPruneCallbacks(state, result);
     return result;
   } finally {

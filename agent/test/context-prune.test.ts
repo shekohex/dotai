@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
+  clearContextPruneRuntime,
   getContextPruneAPI,
   setContextPruneRuntime,
   type FlushResult,
@@ -146,6 +147,20 @@ function renderText(component: Text): string {
 }
 
 describe("context-prune public API", () => {
+  test("keeps runtimes isolated by extension context", () => {
+    const firstContext = { sessionManager: {} } as ExtensionContext;
+    const secondContext = { sessionManager: {} } as ExtensionContext;
+    setContextPruneRuntime(firstContext, createContextPruneRuntime(true));
+    setContextPruneRuntime(secondContext, createContextPruneRuntime(false));
+
+    expect(getContextPruneAPI(firstContext)?.enabled).toBe(true);
+    expect(getContextPruneAPI(secondContext)?.enabled).toBe(false);
+
+    clearContextPruneRuntime(firstContext);
+    expect(getContextPruneAPI(firstContext)).toBeNull();
+    expect(getContextPruneAPI(secondContext)?.enabled).toBe(false);
+  });
+
   test("flush proxy and prune callbacks work", async () => {
     const callbacks = new Set<(result: FlushResult) => void>();
     const result: FlushResult = {
@@ -156,7 +171,8 @@ describe("context-prune public API", () => {
       rawCharCount: 100,
       summaryCharCount: 20,
     };
-    setContextPruneRuntime({
+    const ctx = { sessionManager: {} } as ExtensionContext;
+    setContextPruneRuntime(ctx, {
       getConfig: () => ({ ...DEFAULT_CONFIG, enabled: true }),
       updateConfig() {},
       async flush() {
@@ -171,7 +187,7 @@ describe("context-prune public API", () => {
         };
       },
     });
-    const api = getContextPruneAPI({} as never);
+    const api = getContextPruneAPI(ctx);
     expect(api?.enabled).toBe(true);
     api?.updateConfig({ enabled: false });
     const seen: FlushResult[] = [];
@@ -181,6 +197,18 @@ describe("context-prune public API", () => {
     unsubscribe?.();
   });
 });
+
+function createContextPruneRuntime(enabled: boolean) {
+  return {
+    getConfig: () => ({ ...DEFAULT_CONFIG, enabled }),
+    updateConfig() {},
+    cancel() {},
+    flush: async () => ({ ok: false as const, reason: "not-run" }),
+    pendingBatchCount: () => 0,
+    getIndexer: () => ({}) as never,
+    onPrune: () => () => {},
+  };
+}
 
 describe("context-prune settings", () => {
   test("defaults hide both context prune tools", () => {
@@ -362,7 +390,9 @@ describe("context-prune settings", () => {
       await handler({}, ctx);
     }
 
-    syncModeTools(fakePi as never, ctx, undefined);
+    const { syncModeTools: syncReloadedModeTools } =
+      await import("../src/extensions/modes/tools.js");
+    syncReloadedModeTools(fakePi as never, ctx, undefined);
 
     expect(activeTools).toEqual(["read"]);
     delete process.env.PI_CODING_AGENT_DIR;
@@ -392,7 +422,7 @@ describe("context-prune settings", () => {
       conversationEmpty: true,
       toolEnabled: true,
     });
-    let activeTools = ["read"];
+    let activeTools = ["read", "workflow"];
     const fakePi = {
       getActiveTools: () => activeTools,
       getAllTools: () => [{ name: "read" }, { name: "workflow" }],
@@ -587,6 +617,7 @@ describe("context-prune cancellation", () => {
     expect(() =>
       safeSetPruneStatusWidget(
         {
+          sessionManager: {},
           ui: {
             setStatus() {
               throw new Error("This extension ctx is stale after session replacement or reload.");

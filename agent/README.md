@@ -37,6 +37,32 @@ With a prompt:
 npm run pi -- -p "hello"
 ```
 
+## ACP agent mode
+
+`pi acp` runs the bundled Pi agent as a protocol-only ACP stdio process. Configure Zed custom agents with command `pi` and args `["acp"]`.
+
+```json
+{
+  "command": "pi",
+  "args": ["acp"]
+}
+```
+
+Stable ACP v1 supports persisted session lifecycle, streaming text/thought/tool updates, live commands, skills and prompt templates, model/mode/thinking configuration, image prompts/results, form elicitation, stdio MCP servers, and client-backed direct read/write/edit plus terminal execution when advertised by the client. Pi uses locally configured provider credentials and advertises no ACP authentication methods.
+
+Experimental ACP v2 remains opt-in:
+
+```json
+{
+  "command": "pi",
+  "args": ["acp", "--experimental-acp-v2"]
+}
+```
+
+Without that flag, v2 clients negotiate down to stable v1. Audio, HTTP/SSE MCP, and additional workspace directories are not advertised. Shell execution is powerful and not sandboxed to workspace roots. Direct v1 client-file synchronization applies to read/write/edit; search and custom mutators still use local files.
+
+See [ACP agent mode](./openwiki/sessions/acp.md) for capability matrix, lifecycle, limits, and troubleshooting.
+
 ## Remote mode (TCP control)
 
 `pi --mode remote` exposes a pi agent session over a TCP socket using the same JSON line protocol as `pi --mode rpc`, letting other applications control pi over an SSH port-forward instead of stdio. No subprocess, no patch-package — the session runs in-process via the pi SDK. Supports multiple concurrent controllers with ping/pong heartbeat for dead-connection detection.

@@ -6,10 +6,8 @@ import { WebSocket, WebSocketServer } from "ws";
 import { createTmuxWatcher, getTmuxSessionInfo, type TmuxSessionInfo } from "./terminal.js";
 import {
   buildShareUrls,
-  clearShareState,
   decrementConnectionCount,
   incrementConnectionCount,
-  setShareState,
   type ShareState,
 } from "./state.js";
 
@@ -111,8 +109,6 @@ export async function startTmuxShare(options: {
     connectionCount: 0,
     ...urls,
   };
-  setShareState(state);
-
   let watcher = createTmuxWatcher(
     sessionInfo,
     (data) => {
@@ -139,10 +135,10 @@ export async function startTmuxShare(options: {
         });
 
         ws.on("close", () => {
-          decrementConnectionCount();
+          decrementConnectionCount(state);
         });
 
-        incrementConnectionCount();
+        incrementConnectionCount(state);
         ws.send(
           JSON.stringify({
             type: "init",
@@ -198,7 +194,6 @@ export async function startTmuxShare(options: {
     wss.close();
     server.close();
     await serverTeardown;
-    clearShareState();
   };
 
   return { server, wss, state, close };

@@ -176,8 +176,8 @@ describe("subagent ui", () => {
         shortcuts.set(shortcut, options);
       },
     });
-    const firstHooks = createDefaultSubagentRuntimeHooks(pi as never);
-    const secondHooks = createDefaultSubagentRuntimeHooks(pi as never);
+    const firstHooks = createDefaultSubagentRuntimeHooks(pi as never, { registerControls: true });
+    const secondHooks = createDefaultSubagentRuntimeHooks(pi as never, { registerControls: true });
     const ctx = createCtx("subagent-ui-multi", widgets);
 
     firstHooks.renderWidget(ctx as never, [
@@ -242,6 +242,7 @@ describe("subagent ui", () => {
           shortcuts.set(shortcut, options);
         },
       }) as never,
+      { registerControls: true },
     );
     createDefaultSubagentRuntimeHooks(
       createPi({
@@ -249,13 +250,14 @@ describe("subagent ui", () => {
           duplicateCommands.set(name, options);
         },
       }) as never,
+      { registerControls: true },
     );
 
     expect(commands.get("subagents")?.description).toBe(
       "Enable or disable subagent tool, or control live subagent dashboard",
     );
     expect(shortcuts.get("ctrl+alt+u")?.description).toBe("Toggle subagent dashboard");
-    expect(duplicateCommands.size).toBe(0);
+    expect(duplicateCommands.size).toBe(1);
   });
 
   it("dashboard command renders only current session scope", async () => {
@@ -270,8 +272,12 @@ describe("subagent ui", () => {
         commands.set(name, options);
       },
     });
-    const sessionAHooks = createDefaultSubagentRuntimeHooks(pi as never);
-    const sessionBHooks = createDefaultSubagentRuntimeHooks(pi as never);
+    const sessionAHooks = createDefaultSubagentRuntimeHooks(pi as never, {
+      registerControls: true,
+    });
+    const sessionBHooks = createDefaultSubagentRuntimeHooks(pi as never, {
+      registerControls: true,
+    });
     const sessionACtx = createCtx("session-a", sessionAWidgets);
     const sessionBCtx = createCtx("session-b", sessionBWidgets);
 

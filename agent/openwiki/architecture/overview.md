@@ -6,16 +6,22 @@ How `@shekohex/agent` boots, wires its extensions, resolves modes, and manages s
 
 `src/cli.ts` is the entry point (`bin/pi.js` shim → compiled `dist/cli.js`). It runs:
 
-1. **Install bundled resource paths** — `installBundledResourcePaths()` (`src/extensions/bundled-resources.ts`) monkeypatches `DefaultResourceLoader.prototype.reload` so the upstream loader also scans `src/resources/` for skills, prompt templates, and themes. See [Resources](../resources/overview.md).
-2. **Update intercept** — `handleWrapperUpdateCommand({ args })` (`src/update/command.ts`). If the user ran `pi update`, it performs the GitHub Packages self-update and exits. See [Build & update](../operations/build-and-update.md#self-update).
-3. **Resolve cwd** — `resolveCwd(process.cwd())` (`src/utils/cwd.ts`) expands `~` and `$VAR`. Upstream's `normalizePath` only expands `~`, so this catches `$HOME`/`$VAR` before upstream treats them as relative paths and produces corrupt session dirs.
-4. **Remote mode** — `isRemoteMode(args)` (`src/remote/mode.ts`). If `--mode remote` is present, `runRemoteMode()` starts the TCP server and the process exits when done. See [Remote mode](../sessions/remote.md).
-5. **Conductor** — `args[0] === "conductor"` (`src/conductor/command.ts` `runConductorCommand`). If `pi conductor …`, it seeds settings, runs the conductor command router, and exits. Conductor is a separate CLI surface, not an extension. See [Pi Conductor](../conductor/overview.md).
-6. **Seed/merge settings** — `ensureRuntimeDefaultSettings()` (`src/runtime-default-settings.ts`), skipped for `--help`/`--version`.
-7. **Hand off** — `main(args, { extensionFactories: bundledExtensionFactories })`. Upstream pi starts its interactive loop with every bundled extension registered.
+1. **ACP intercept** — `parseAcpCommand(args)` handles `pi acp`, `--mode acp`, and experimental v2 before upstream parsing or any banner-producing bootstrap. See [ACP agent mode](../sessions/acp.md).
+2. **Install bundled resource paths** — `installBundledResourcePaths()` (`src/extensions/bundled-resources.ts`) monkeypatches `DefaultResourceLoader.prototype.reload` so the upstream loader also scans `src/resources/` for skills, prompt templates, and themes. See [Resources](../resources/overview.md).
+3. **Update intercept** — `handleWrapperUpdateCommand({ args })` (`src/update/command.ts`). If the user ran `pi update`, it performs the GitHub Packages self-update and exits. See [Build & update](../operations/build-and-update.md#self-update).
+4. **Resolve cwd** — `resolveCwd(process.cwd())` (`src/utils/cwd.ts`) expands `~` and `$VAR`. Upstream's `normalizePath` only expands `~`, so this catches `$HOME`/`$VAR` before upstream treats them as relative paths and produces corrupt session dirs.
+5. **Remote mode** — `isRemoteMode(args)` (`src/remote/mode.ts`). If `--mode remote` is present, `runRemoteMode()` starts the TCP server and the process exits when done. See [Remote mode](../sessions/remote.md).
+6. **Conductor** — `args[0] === "conductor"` (`src/conductor/command.ts` `runConductorCommand`). If `pi conductor …`, it seeds settings, runs the conductor command router, and exits. Conductor is a separate CLI surface, not an extension. See [Pi Conductor](../conductor/overview.md).
+7. **Seed/merge settings** — `ensureRuntimeDefaultSettings()` (`src/runtime-default-settings.ts`), skipped for `--help`/`--version`.
+8. **Hand off** — `main(args, { extensionFactories: bundledExtensionFactories })`. Upstream pi starts its interactive loop with every bundled extension registered.
 
 ```ts
 // src/cli.ts (abridged)
+const acpOptions = parseAcpCommand(args);
+if (acpOptions !== undefined) {
+  await runAcpServer(acpOptions);
+  process.exit(0);
+}
 installBundledResourcePaths();
 if (await handleWrapperUpdateCommand({ args })) process.exit(process.exitCode ?? 0);
 const resolvedCwd = resolveCwd(process.cwd());
@@ -32,6 +38,12 @@ if (args[0] === "conductor") {
 if (shouldEnsureRuntimeDefaultSettings(args)) await ensureRuntimeDefaultSettings();
 await main(args, { extensionFactories: bundledExtensionFactories });
 ```
+
+## ACP deep module
+
+`src/acp/server.ts` owns protocol-only stdio and official SDK version routing. Stable `src/acp/v1/agent.ts` and experimental `src/acp/v2/agent.ts` translate wire requests and updates into one `AcpAgentCore`. Core and production session store own exact persisted-session lookup, prompt ownership, cancellation, replay, commands, config, content, client bridges, MCP lifecycle, and cleanup.
+
+`src/headless/session.ts` is shared by ACP and remote mode. Every call creates fresh bundled extension factory instances and binds them in upstream `rpc` extension mode. Session-keyed state prevents concurrent ACP sessions from sharing mutable mode, review, context-prune, workflow, GSD autocomplete, tmux-share, or subagent dashboard state.
 
 ## Extension system
 

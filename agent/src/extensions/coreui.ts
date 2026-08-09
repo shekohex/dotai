@@ -12,6 +12,7 @@ import {
   parseWorkflowProgressEvent,
   WORKFLOW_PROGRESS_EVENT,
 } from "./dynamic-workflows/status-events.js";
+import { getWorkflowModeState } from "./dynamic-workflows/workflow-editor.js";
 import { clearContextPruneLastResult, getContextPruneAPI } from "./context-prune/public-api.js";
 import { OPENAI_BETTER_UPDATED_EVENT } from "./openai-better/types.js";
 import {
@@ -158,6 +159,7 @@ function registerSessionStartHandler(input: {
               setCycleAutocompleteSuggestion: input.setCycleAutocompleteSuggestion,
               setCancelAutocomplete: input.setCancelAutocomplete,
             },
+            getWorkflowModeState(ctx.sessionManager),
           ),
         );
         registerGitHubReferenceAutocomplete(input.pi, ctx);
@@ -460,8 +462,8 @@ function createCoreUIBindings(pi: ExtensionAPI): {
     getRequestRender: () => requestRender,
   });
 
-  pi.on("agent_start", () => {
-    clearContextPruneLastResult();
+  pi.on("agent_start", (_event, ctx) => {
+    clearContextPruneLastResult(ctx);
   });
 
   pi.on("session_start", (_event, ctx) => {

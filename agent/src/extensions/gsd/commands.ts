@@ -5,7 +5,6 @@ import { gsdHandlers } from "./handlers.js";
 import { getGsdSettings, saveGsdSettings } from "./settings.js";
 import { syncBuiltInGsdModes } from "./modes.js";
 import { showGsdHelp } from "./help.js";
-import { rememberGsdCwd } from "./state/cwd.js";
 import { showGsdDashboard } from "./ui.js";
 
 const GSD_FLAG = "gsd";
@@ -51,12 +50,16 @@ function getUnexpectedArgument(args: string): string | undefined {
     .filter((token) => token.length > 0)[1];
 }
 
-export function registerGsdCommands(pi: ExtensionAPI): void {
+export function registerGsdCommands(
+  pi: ExtensionAPI,
+  getCwd: () => string | undefined,
+  setCwd: (cwd: string) => void,
+): void {
   pi.registerCommand("gsd", {
     description: "Get Shit Done: /gsd [subcommand]",
-    getArgumentCompletions: (prefix) => getGsdArgumentCompletions(prefix),
+    getArgumentCompletions: (prefix) => getGsdArgumentCompletions(prefix, getCwd()),
     handler: async (args, ctx) => {
-      rememberGsdCwd(ctx.cwd);
+      setCwd(ctx.cwd);
       const subcommand = parseSubcommand(args);
       const requestedSubcommand = getRequestedSubcommand(args);
       const unexpectedArgument = getUnexpectedArgument(args);

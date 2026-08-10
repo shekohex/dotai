@@ -10,8 +10,6 @@ export const ERROR_NO_QUESTIONS = "Error: At least one question is required";
 export const ERROR_TOO_MANY_QUESTIONS = `Error: At most ${MAX_QUESTIONS} questions are allowed per invocation`;
 export const ERROR_DUPLICATE_QUESTION = "Error: Question text must be unique within an invocation";
 export const ERROR_TOO_FEW_OPTIONS = `Error: Each question requires at least ${MIN_OPTIONS} options`;
-export const ERROR_SCREENSHOT_REQUEST_OPTIONS =
-  "Error: screenshotRequest questions must be separate free-text questions with options: [] and no multiSelect. Do not combine screenshotRequest with choice options.";
 export const ERROR_RESERVED_LABEL = `Error: Option label is reserved (${RESERVED_LABELS.join(", ")})`;
 export const ERROR_DUPLICATE_OPTION_LABEL = "Error: Option labels must be unique within a question";
 
@@ -54,16 +52,6 @@ export function validateQuestionnaire(typed: QuestionParams): ValidationResult {
   }
 
   for (const q of typed.questions) {
-    if (q.screenshotRequest !== undefined && (q.options.length > 0 || q.multiSelect === true)) {
-      return {
-        ok: false,
-        error: "invalid_screenshot_request",
-        message: ERROR_SCREENSHOT_REQUEST_OPTIONS,
-      };
-    }
-    if (q.screenshotRequest !== undefined) {
-      continue;
-    }
     if (q.options.length < MIN_OPTIONS) {
       return {
         ok: false,

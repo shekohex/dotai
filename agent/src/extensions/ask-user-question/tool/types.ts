@@ -39,57 +39,52 @@ export const RESERVED_LABELS = [
 ] as const;
 export type ReservedLabel = (typeof RESERVED_LABELS)[number];
 
-export const OptionSchema = Type.Object({
-  label: Type.String({
-    maxLength: MAX_LABEL_LENGTH,
-    description: `MAX ${MAX_LABEL_LENGTH} CHARACTERS — hard limit, requests over the limit are rejected. The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.`,
-  }),
-  description: Type.String({
-    description:
-      "Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.",
-  }),
-  preview: Type.Optional(
-    Type.String({
-      description:
-        "Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format.",
-    }),
-  ),
-});
-
-export const ScreenshotRequestSchema = Type.Object(
+export const OptionSchema = Type.Object(
   {
-    prompt: Type.String({
-      description:
-        "Short instruction telling the user what screenshot/image to upload through Glance. Use only on a separate free-text question with options: []. The user will paste uploaded file path(s) in the normal answer text.",
+    label: Type.String({
+      maxLength: MAX_LABEL_LENGTH,
+      description: `MAX ${MAX_LABEL_LENGTH} CHARACTERS — hard limit, requests over the limit are rejected. The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.`,
     }),
+    description: Type.String({
+      description:
+        "Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.",
+    }),
+    preview: Type.Optional(
+      Type.String({
+        description:
+          "Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
 
-export const QuestionSchema = Type.Object({
-  question: Type.String({
-    description:
-      'The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"',
-  }),
-  header: Type.String({
-    maxLength: MAX_HEADER_LENGTH,
-    description: `MAX ${MAX_HEADER_LENGTH} CHARACTERS — hard limit, requests over the limit are rejected. Very short chip/tag shown next to the question. Examples: "Auth method", "Library", "Approach".`,
-  }),
-  options: Type.Array(OptionSchema, {
-    minItems: 0,
-    maxItems: MAX_OPTIONS,
-    description:
-      "The available choices for this question. Normal choice questions must have 2-4 options. Screenshot/image upload questions must be a separate question with screenshotRequest and exactly options: [] so the user gets a free-text path input only. Never combine screenshotRequest with choice options. Each option should be a distinct, mutually exclusive choice (unless multiSelect is enabled). The 'Type something.' row is appended automatically — do NOT author it.",
-  }),
-  multiSelect: Type.Optional(
-    Type.Boolean({
-      default: false,
+export const QuestionSchema = Type.Object(
+  {
+    question: Type.String({
       description:
-        "Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.",
+        'The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"',
     }),
-  ),
-  screenshotRequest: Type.Optional(ScreenshotRequestSchema),
-});
+    header: Type.String({
+      maxLength: MAX_HEADER_LENGTH,
+      description: `MAX ${MAX_HEADER_LENGTH} CHARACTERS — hard limit, requests over the limit are rejected. Very short chip/tag shown next to the question. Examples: "Auth method", "Library", "Approach".`,
+    }),
+    options: Type.Array(OptionSchema, {
+      minItems: MIN_OPTIONS,
+      maxItems: MAX_OPTIONS,
+      description:
+        "The available choices for this question. Each question must have 2-4 distinct choices (mutually exclusive unless multiSelect is enabled). The 'Type something.' row is appended automatically — do NOT author it.",
+    }),
+    multiSelect: Type.Optional(
+      Type.Boolean({
+        default: false,
+        description:
+          "Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.",
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
 
 export const QuestionsSchema = Type.Array(QuestionSchema, {
   minItems: 1,
@@ -139,7 +134,6 @@ export type QuestionnaireError =
   | "too_many_questions"
   | "duplicate_question"
   | "duplicate_option_label"
-  | "invalid_screenshot_request"
   | "reserved_label";
 
 export interface QuestionnaireResult {

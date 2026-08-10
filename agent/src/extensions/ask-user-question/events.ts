@@ -14,7 +14,6 @@ export interface AskUserQuestionEventBase {
   sessionId?: string;
   cwd: string;
   questions: ReadonlyArray<AskUserQuestionEventQuestion>;
-  glanceUploadUrl?: string;
 }
 
 export interface AskUserQuestionPromptEventPayload extends AskUserQuestionEventBase {
@@ -39,7 +38,6 @@ export interface AskUserQuestionEventQuestion {
   header: string;
   // True when user can pick multiple authored options.
   multiSelect: boolean;
-  screenshotPrompt?: string;
   options: ReadonlyArray<AskUserQuestionOption>;
 }
 
@@ -66,7 +64,6 @@ const AskUserQuestionEventQuestionSchema = Type.Object(
     question: Type.String(),
     header: Type.String(),
     multiSelect: Type.Boolean(),
-    screenshotPrompt: Type.Optional(Type.String()),
     options: Type.Array(AskUserQuestionOptionEventSchema),
   },
   { additionalProperties: false },
@@ -78,7 +75,6 @@ const AskUserQuestionEventSchema = Type.Object(
     toolCallId: Type.String(),
     sessionId: Type.Optional(Type.String()),
     cwd: Type.String(),
-    glanceUploadUrl: Type.Optional(Type.String()),
     questions: Type.Array(AskUserQuestionEventQuestionSchema),
     answers: Type.Optional(Type.Array(Type.Unknown())),
     error: Type.Optional(Type.String()),

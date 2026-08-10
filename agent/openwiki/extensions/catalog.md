@@ -69,13 +69,13 @@ This page lists every extension with a one-line purpose and its key source files
 
 ## Interaction & context
 
-| ID                  | Purpose                                                                                                     | Key files                                                                                   |
-| ------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `ask-user-question` | Structured multi-step questionnaires in the TUI (single/multi-select, text, screenshots) with keyboard nav. | `src/extensions/ask-user-question/` (`index.ts`, `ask-user-question.ts`, `state/`, `view/`) |
-| `references`        | Repository/dashboard/wizard for cross-session references.                                                   | `src/extensions/references/` (`index.ts`, `repository.ts`, `dashboard.ts`, `wizard.ts`)     |
-| `prompt-stash`      | Stash/browse saved prompts (browser UI).                                                                    | `src/extensions/prompt-stash/` (`index.ts`, `browser.ts`, `storage.ts`)                     |
-| `agents-md`         | Loads `AGENTS.md` project instructions into the system prompt.                                              | `src/extensions/agents-md.ts`                                                               |
-| `project-trust`     | Project trust/directory allowlisting.                                                                       | `src/extensions/project-trust.ts`                                                           |
+| ID                  | Purpose                                                                                                         | Key files                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `ask-user-question` | Structured multi-step questionnaires in the TUI (single/multi-select, custom text, previews) with keyboard nav. | `src/extensions/ask-user-question/` (`index.ts`, `ask-user-question.ts`, `state/`, `view/`) |
+| `references`        | Repository/dashboard/wizard for cross-session references.                                                       | `src/extensions/references/` (`index.ts`, `repository.ts`, `dashboard.ts`, `wizard.ts`)     |
+| `prompt-stash`      | Stash/browse saved prompts (browser UI).                                                                        | `src/extensions/prompt-stash/` (`index.ts`, `browser.ts`, `storage.ts`)                     |
+| `agents-md`         | Loads `AGENTS.md` project instructions into the system prompt.                                                  | `src/extensions/agents-md.ts`                                                               |
+| `project-trust`     | Project trust/directory allowlisting.                                                                           | `src/extensions/project-trust.ts`                                                           |
 
 ## Integrations & external surfaces
 

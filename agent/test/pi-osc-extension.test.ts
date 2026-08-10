@@ -844,13 +844,11 @@ test("ask user question lifecycle emits OSC question events", () => {
     toolCallId: "tool-question",
     sessionId: "session-1",
     cwd: "/workspace",
-    glanceUploadUrl: "https://glance.example/upload",
     questions: [
       {
         question: "Which path should we take?",
         header: "Path",
         multiSelect: false,
-        screenshotPrompt: "Upload current app state",
         options: [
           { label: "Fast", description: "Ship quickly", hasPreview: false },
           { label: "Safe", description: "Reduce risk", hasPreview: true },
@@ -885,8 +883,6 @@ test("ask user question lifecycle emits OSC question events", () => {
     questionCount: 1,
     title: "Question for you",
     body: "Which path should we take?",
-    requiresScreenshot: true,
-    glanceUploadUrl: "https://glance.example/upload",
   });
 });
 

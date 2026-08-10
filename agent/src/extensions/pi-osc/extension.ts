@@ -56,9 +56,6 @@ const questionEventBody = (event: AskUserQuestionEventPayload): string => {
   return firstQuestion ?? "Agent needs input.";
 };
 
-const questionEventRequiresScreenshot = (event: AskUserQuestionEventPayload): boolean =>
-  event.questions.some((question) => question.screenshotPrompt !== undefined);
-
 const questionOscState = (
   event: AskUserQuestionEventPayload,
 ): "prompted" | "answered" | "cancelled" => {
@@ -206,7 +203,6 @@ type PiOscEmit = (eventName: PiOscV1Event, ctx: ExtensionContext, data: PiOscV1P
 
 const emitQuestionOscEvent = (event: AskUserQuestionEventPayload, seq: number): void => {
   const questionCount = event.questions.length;
-  const requiresScreenshot = questionEventRequiresScreenshot(event);
   writePiOscSequence(
     createPiOscSequence("agent.question", {
       id: piOscRuntime.randomId(),
@@ -221,10 +217,6 @@ const emitQuestionOscEvent = (event: AskUserQuestionEventPayload, seq: number): 
         questionCount,
         title: boundedText(questionEventTitle(questionCount), 128),
         body: boundedText(questionEventBody(event), 512),
-        ...(requiresScreenshot ? { requiresScreenshot: true } : {}),
-        ...(event.glanceUploadUrl === undefined
-          ? {}
-          : { glanceUploadUrl: boundedText(event.glanceUploadUrl, 2048) }),
       },
     }),
   );

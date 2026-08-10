@@ -1,22 +1,35 @@
 import { expect, test } from "vitest";
-import { buildItemsForQuestion } from "../src/extensions/ask-user-question/ask-user-question.js";
+import { Value } from "typebox/value";
 import { validateQuestionnaire } from "../src/extensions/ask-user-question/tool/validate-questionnaire.js";
+import {
+  MIN_OPTIONS,
+  QuestionParamsSchema,
+} from "../src/extensions/ask-user-question/tool/types.js";
 
-test("screenshot request questions render as free-text only", () => {
-  const question = {
-    question: "Upload a screenshot of the broken screen?",
-    header: "Screenshot",
-    options: [],
-    screenshotRequest: { prompt: "Upload the broken screen" },
-  };
-
-  expect(validateQuestionnaire({ questions: [question] })).toEqual({ ok: true });
-  expect(buildItemsForQuestion(question).map((item) => item.kind)).toEqual(["other"]);
-});
-
-test("screenshot request questions reject authored options", () => {
+test("normal choice questions are accepted without screenshot fields", () => {
   expect(
     validateQuestionnaire({
+      questions: [
+        {
+          question: "Which path should we take?",
+          header: "Path",
+          options: [
+            { label: "Fast", description: "Ship quickly" },
+            { label: "Safe", description: "Reduce risk" },
+          ],
+        },
+      ],
+    }),
+  ).toEqual({ ok: true });
+});
+
+test("question schema does not expose or accept screenshot requests", () => {
+  const questionSchema = QuestionParamsSchema.properties.questions.items;
+
+  expect(questionSchema.properties).not.toHaveProperty("screenshotRequest");
+  expect(questionSchema.properties.options.minItems).toBe(MIN_OPTIONS);
+  expect(
+    Value.Check(QuestionParamsSchema, {
       questions: [
         {
           question: "Upload a screenshot?",
@@ -29,9 +42,5 @@ test("screenshot request questions reject authored options", () => {
         },
       ],
     }),
-  ).toMatchObject({
-    ok: false,
-    error: "invalid_screenshot_request",
-    message: expect.stringContaining("Do not combine screenshotRequest with choice options"),
-  });
+  ).toBe(false);
 });

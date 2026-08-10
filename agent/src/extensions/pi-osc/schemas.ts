@@ -81,8 +81,6 @@ export const PiOscAgentQuestionPayloadSchema = Type.Object(
     questionCount: Type.Integer({ minimum: 0 }),
     title: BoundedString(128),
     body: BoundedString(512),
-    requiresScreenshot: Type.Optional(Type.Boolean()),
-    glanceUploadUrl: Type.Optional(BoundedString(2048)),
   },
   { additionalProperties: false },
 );

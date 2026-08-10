@@ -1,12 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import {
-  ensureGlanceDaemon,
-  startGlanceHeartbeat,
-  type GlanceHeartbeatHandle,
-} from "../glance/daemon.js";
-import { getGlancePaths } from "../glance/paths.js";
-import {
   ASK_USER_QUESTION_ANSWERED_EVENT,
   ASK_USER_QUESTION_CANCELLED_EVENT,
   ASK_USER_QUESTION_PROMPT_EVENT,
@@ -34,20 +28,15 @@ function buildAskUserQuestionEventBase(
   toolCallId: string,
   params: QuestionParams,
   ctx: { cwd: string; sessionManager?: { getSessionId?: () => string | undefined } },
-  glanceUploadUrl?: string,
 ): Omit<AskUserQuestionEventBase, "type"> {
   return {
     toolCallId,
     sessionId: ctx.sessionManager?.getSessionId?.(),
     cwd: ctx.cwd,
-    ...(glanceUploadUrl === undefined ? {} : { glanceUploadUrl }),
     questions: params.questions.map((q) => ({
       question: q.question,
       header: q.header,
       multiSelect: q.multiSelect ?? false,
-      ...(q.screenshotRequest === undefined
-        ? {}
-        : { screenshotPrompt: q.screenshotRequest.prompt }),
       options: q.options.map((o) => ({
         label: o.label,
         description: o.description,
@@ -58,35 +47,6 @@ function buildAskUserQuestionEventBase(
 }
 
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
-
-const hasScreenshotRequest = (params: QuestionParams): boolean =>
-  params.questions.some((question) => question.screenshotRequest !== undefined);
-
-const joinGlanceUrl = (baseUrl: string, path: string): string => {
-  const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL(path, normalizedBaseUrl).toString();
-};
-
-const createScreenshotQuestionText = (
-  question: QuestionData,
-  glanceUploadUrl: string | undefined,
-): string => {
-  if (question.screenshotRequest === undefined) return question.question;
-  if (glanceUploadUrl === undefined) {
-    return `${question.question}\n\nScreenshot requested: ${question.screenshotRequest.prompt}. Glance upload URL is unavailable; paste screenshot path(s) if you already have them.`;
-  }
-  return `${question.question}\n\nScreenshot requested: ${question.screenshotRequest.prompt}. Upload via ${glanceUploadUrl}, then paste returned file path(s) in your answer.`;
-};
-
-const withScreenshotQuestionText = (
-  params: QuestionParams,
-  glanceUploadUrl: string | undefined,
-): QuestionParams => ({
-  questions: params.questions.map((question) => ({
-    ...question,
-    question: createScreenshotQuestionText(question, glanceUploadUrl),
-  })),
-});
 
 const MULTI_SELECT_INSTRUCTIONS =
   "Enter one or more option labels, separated by commas or new lines.";
@@ -216,21 +176,12 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
   "Reserve ask_user_question for decisions where the user's answer changes what you do next. Do not use it for choices with conventional defaults or facts you can verify yourself; pick the obvious default, mention it, and proceed.",
   'Before asking, do brief read-only investigation when possible so the question is specific. "I found X and Y; which should I use?" is better than "what should I use?".',
   'Do not ask approval-style questions like "should I proceed?" unless the next action is risky, irreversible, outward-facing, or genuinely blocked on user consent.',
-  `Each normal choice question MUST have ${MIN_OPTIONS}-${MAX_OPTIONS} options. Screenshot/image requests MUST be their own separate question with screenshotRequest and exactly options: [] so the user gets only a free-text path input. Do NOT combine screenshotRequest with choice options. If you need choices and a screenshot, ask two questions in the same invocation: one normal options question, one screenshotRequest question with options: []. Every option requires a concise label (1-5 words) and a description explaining what the choice means or its trade-offs.`,
+  `Each question MUST have ${MIN_OPTIONS}-${MAX_OPTIONS} options. Every option requires a concise label (1-5 words) and a description explaining what the choice means or its trade-offs.`,
   `Set multiSelect: true when multiple answers are valid; this suppresses the "Type something." row. Provide an options[].preview markdown string when an option benefits from richer side-by-side context (mockups, code snippets, diagrams, configs) — single-select only. NOTE: any non-empty preview on a single-select question ALSO suppresses the "Type something." row (no room in the side-by-side layout); "Chat about this" remains the escape hatch. If you recommend a specific option, make it the first option and append "(Recommended)" to its label.`,
-  "Set question.screenshotRequest with options: [] when the answer requires a screenshot/image from the user. This question is free-text only; do not provide options or multiSelect. Glance starts automatically, the UI shows the upload URL, and the user pastes returned file path(s) in the normal answer text.",
   "Do not stack multiple ask_user_question calls back-to-back — group all clarifying questions into one invocation.",
 ];
 
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
-  const glancePaths = getGlancePaths();
-  let glanceHeartbeat: GlanceHeartbeatHandle | undefined;
-
-  pi.on("session_shutdown", async () => {
-    await glanceHeartbeat?.stop();
-    glanceHeartbeat = undefined;
-  });
-
   pi.registerTool({
     name: "ask_user_question",
     label: "Ask User Question",
@@ -244,7 +195,6 @@ Usage notes:
 - Users will always be able to type a custom answer ("Type something." row is appended automatically to every single-select question) or pick "Chat about this" to abandon the questionnaire and continue in free-form conversation. Do NOT author "Other" / "Type something." / "Chat about this" labels yourself — duplicates are rejected at runtime.
 - Use multiSelect: true to allow multiple answers to be selected for a question. The "Type something." row is suppressed on multi-select questions, and is ALSO suppressed on single-select questions where any option carries a \`preview\` (the side-by-side layout has no room for inline custom text — "Chat about this" remains as the free-form escape hatch).
 - If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label.
-- Use screenshotRequest: { prompt } only on a separate free-text question with options: [] when the user needs to upload a screenshot/image. Glance starts automatically and the question UI shows the upload URL. The user uploads there and pastes returned local file path(s) in the normal answer text. Never combine screenshotRequest with choice options or multiSelect. If you need both a decision and a screenshot, ask two questions in the same call.
 
 Preview feature:
 Use the optional \`preview\` field on options when presenting concrete artifacts that users need to visually compare:
@@ -286,30 +236,22 @@ ${DEFAULT_PROMPT_GUIDELINES.join("\n")}`,
         };
       }
 
-      let glanceUploadUrl: string | undefined;
-      if (hasScreenshotRequest(typed)) {
-        glanceHeartbeat ??= await startGlanceHeartbeat({ paths: glancePaths, cwd: ctx.cwd });
-        const status = await ensureGlanceDaemon({ paths: glancePaths });
-        glanceUploadUrl = joinGlanceUrl(status.publicBaseUrl ?? status.baseUrl, "upload");
-      }
-
-      const displayParams = withScreenshotQuestionText(typed, glanceUploadUrl);
-      const eventBase = buildAskUserQuestionEventBase(toolCallId, typed, ctx, glanceUploadUrl);
+      const eventBase = buildAskUserQuestionEventBase(toolCallId, typed, ctx);
       pi.events.emit(ASK_USER_QUESTION_PROMPT_EVENT, { type: "prompt", ...eventBase });
 
-      const itemsByTab: WrappingSelectItem[][] = displayParams.questions.map((q) =>
+      const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) =>
         buildItemsForQuestion(q),
       );
 
       const result =
         ctx.mode === "rpc"
-          ? await runRpcQuestionnaire(displayParams, ctx)
+          ? await runRpcQuestionnaire(typed, ctx)
           : await ctx.ui.custom<QuestionnaireResult>(
               (tui, theme, _kb, done) => {
                 const session = new QuestionnaireSession({
                   tui,
                   theme,
-                  params: displayParams,
+                  params: typed,
                   itemsByTab,
                   done,
                 });

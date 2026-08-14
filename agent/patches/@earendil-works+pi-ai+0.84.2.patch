@@ -1,8 +1,8 @@
-diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-index ac5c157..16e9904 100644
---- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-+++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-@@ -43,6 +43,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+diff --git a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
+index 65c7c9e..bb1ad3f 100644
+--- a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
++++ b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
+@@ -44,6 +44,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "connection.?lost",
      "other side closed",
      "fetch failed",
@@ -12,7 +12,7 @@ index ac5c157..16e9904 100644
      "getaddrinfo",
      "ENOTFOUND",
      "EAI_AGAIN",
-@@ -56,11 +59,13 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -57,11 +60,13 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      // WebSocket transports can report close/error text instead of HTTP/fetch text.
      "websocket.?closed",
      "websocket.?error",
@@ -26,14 +26,13 @@ index ac5c157..16e9904 100644
      "stream ended before a terminal response event",
      "http2 request did not get a response",
      // Provider-requested retry delay cap failures should flow through the outer
-@@ -68,6 +73,10 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -69,6 +74,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "retry delay",
      // Explicit retry guidance emitted mid-stream by OpenAI Responses and Bedrock
      // stream exceptions (#6019).
 +    "invalid codex sse json",
 +    "invalid codex websocket json",
 +    "error occurred while processing your request",
-+    "response api in-stream error",
      "you can retry your request",
      "try your request again",
      "please retry your request",

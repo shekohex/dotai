@@ -55,7 +55,7 @@ export const defaultSettings = {
   collapseChangelog: true,
   enableInstallTelemetry: false,
   lastChangelogVersion: packageJson.version,
-  theme: "catppuccin-mocha",
+  theme: "catppuccin-latte/catppuccin-mocha",
   showCacheMissNotices: true,
   retry: {
     enabled: true,

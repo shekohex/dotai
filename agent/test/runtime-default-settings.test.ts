@@ -82,7 +82,7 @@ describe("runtime default settings", () => {
 
       expect(JSON.parse(await readFile(settingsPath, "utf8"))).toMatchObject({
         defaultProvider: "openai-codex",
-        theme: "catppuccin-mocha",
+        theme: "catppuccin-latte/catppuccin-mocha",
         retry: { enabled: true, maxRetries: 1024 },
         compaction: { enabled: true, reserveTokens: 27_200, keepRecentTokens: 20_000 },
         subagents: { enabled: false },

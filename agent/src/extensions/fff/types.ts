@@ -1,5 +1,5 @@
 import type { Text } from "@earendil-works/pi-tui";
-import type { FileFinder } from "@ff-labs/fff-node";
+import type { FileFinderApi } from "@ff-labs/fff-node";
 
 export interface SearchToolDetails {
   totalMatched?: number;
@@ -26,6 +26,11 @@ export type SearchRenderContext = {
 };
 
 export type FffToolRuntime = {
-  ensureFinder: (cwd: string) => Promise<FileFinder>;
+  ensureFinder: (cwd: string) => Promise<FileFinderApi>;
   getActiveCwd: () => string;
+  resolveFinderForPath: (
+    path: string | undefined,
+    pattern: string,
+    exclude: string | string[] | undefined,
+  ) => Promise<{ finder: FileFinderApi; query: string; root: string } | null>;
 };

@@ -61,7 +61,7 @@
     "@earendil-works/pi-ai": "^0.84.2",
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@earendil-works/pi-tui": "^0.84.2",
-    "@ff-labs/fff-node": "^0.9.4",
+    "@ff-labs/fff-node": "^0.10.3",
     "@honcho-ai/sdk": "^2.2.0",
     "@joplin/turndown-plugin-gfm": "^1.0.64",
     "@mendable/firecrawl-js": "^4.18.0",

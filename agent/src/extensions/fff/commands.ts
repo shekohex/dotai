@@ -1,14 +1,14 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { FileFinder } from "@ff-labs/fff-node";
+import type { FileFinderApi } from "@ff-labs/fff-node";
 
-type FinderGetter = () => FileFinder | null;
+type FinderGetter = () => FileFinderApi | null;
 
 const FFF_COMMAND_ITEMS = [
   { value: "health", label: "health", description: "Show FFF status" },
   { value: "rescan", label: "rescan", description: "Trigger FFF to rescan files" },
 ] as const;
 
-function showFffHealth(finder: FileFinder, ctx: ExtensionCommandContext): void {
+function showFffHealth(finder: FileFinderApi, ctx: ExtensionCommandContext): void {
   const health = finder.healthCheck();
   if (!health.ok) {
     ctx.ui.notify(`Health check failed: ${health.error}`, "error");
@@ -34,7 +34,7 @@ function showFffHealth(finder: FileFinder, ctx: ExtensionCommandContext): void {
   ctx.ui.notify(lines.join("\n"), "info");
 }
 
-function rescanFff(finder: FileFinder, ctx: ExtensionCommandContext): void {
+function rescanFff(finder: FileFinderApi, ctx: ExtensionCommandContext): void {
   const result = finder.scanFiles();
   if (!result.ok) {
     ctx.ui.notify(`Rescan failed: ${result.error}`, "error");

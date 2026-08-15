@@ -5,6 +5,9 @@ export const MENTION_MAX_RESULTS = 20;
 export const STREAMING_PREVIEW_LINES = 5;
 export const TOOL_OUTPUT_LINE_LIMIT = 80;
 export const FIND_WEAK_SAMPLE_SIZE = 5;
+export const GREP_PAGE_SIZE_MAX = 50;
+export const GREP_CONTEXT_MAX = 20;
+export const GREP_TIME_BUDGET_MS = 10_000;
 
 export const TOOL_NAMES = {
   grep: "grep",

@@ -1,7 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { GrepCursor, GrepMode } from "@ff-labs/fff-node";
+import type { FileFinderApi, GrepCursor, GrepMode, GrepResult } from "@ff-labs/fff-node";
 import { Type } from "typebox";
-import { DEFAULT_FIND_LIMIT, DEFAULT_GREP_LIMIT, TOOL_NAMES } from "./constants.js";
+import {
+  DEFAULT_FIND_LIMIT,
+  DEFAULT_GREP_LIMIT,
+  GREP_CONTEXT_MAX,
+  GREP_PAGE_SIZE_MAX,
+  GREP_TIME_BUDGET_MS,
+  TOOL_NAMES,
+} from "./constants.js";
 import { formatFindOutput, formatGrepOutput } from "./format.js";
 import { nowMs, renderSearchCall, renderSearchResult } from "./render.js";
 import type { FffToolRuntime } from "./types.js";
@@ -12,15 +19,22 @@ import { buildQuery } from "./query.js";
 // ---------------------------------------------------------------------------
 
 interface SearchCursorStore {
-  grep: Map<string, GrepCursor>;
+  grep: Map<string, GrepCursorRecord>;
   grepCounter: number;
   find: Map<string, FindCursor>;
   findCounter: number;
 }
 
-function storeCursor(store: SearchCursorStore, cursor: GrepCursor): string {
+interface GrepCursorRecord {
+  cursor: GrepCursor;
+  path?: string;
+  pattern: string;
+  exclude?: string | string[];
+}
+
+function storeCursor(store: SearchCursorStore, record: GrepCursorRecord): string {
   const id = `fff_c${++store.grepCounter}`;
-  store.grep.set(id, cursor);
+  store.grep.set(id, record);
   if (store.grep.size > 200) {
     const first = store.grep.keys().next().value;
     if (first !== undefined) store.grep.delete(first);
@@ -28,8 +42,15 @@ function storeCursor(store: SearchCursorStore, cursor: GrepCursor): string {
   return id;
 }
 
-function getCursor(store: SearchCursorStore, id: string): GrepCursor | undefined {
+function getCursor(store: SearchCursorStore, id: string): GrepCursorRecord | undefined {
   return store.grep.get(id);
+}
+
+function getCursorRecord(
+  store: SearchCursorStore,
+  cursorId: string | undefined,
+): GrepCursorRecord | undefined {
+  return cursorId === undefined || cursorId.length === 0 ? undefined : getCursor(store, cursorId);
 }
 
 // Find pagination uses a page-index cursor: native `fileSearch` takes
@@ -40,6 +61,8 @@ interface FindCursor {
   pattern: string;
   pageSize: number;
   nextPageIndex: number;
+  path?: string;
+  exclude?: string | string[];
 }
 
 function storeFindCursor(store: SearchCursorStore, cursor: FindCursor): string {
@@ -54,6 +77,57 @@ function storeFindCursor(store: SearchCursorStore, cursor: FindCursor): string {
 
 function getFindCursor(store: SearchCursorStore, id: string): FindCursor | undefined {
   return store.find.get(id);
+}
+
+function clampContext(context: number | undefined): number {
+  if (context === undefined || context < 0) return 0;
+  return Math.min(Math.floor(context), GREP_CONTEXT_MAX);
+}
+
+function runFuzzyFallback(input: {
+  finder: FileFinderApi;
+  pattern: string;
+  path: string | undefined;
+  query: string;
+  smartCase: boolean;
+  pageSize: number;
+}): GrepResult | null {
+  const lastSegment = input.path?.split(/[\\/]/).pop() ?? "";
+  const pathTargetsFile = /\.[a-zA-Z][a-zA-Z0-9]{0,9}$/.test(lastSegment);
+  const fuzzy = input.finder.grep(pathTargetsFile ? input.pattern : input.query, {
+    mode: "fuzzy",
+    smartCase: input.smartCase,
+    maxMatchesPerFile: input.pageSize,
+    pageSize: input.pageSize,
+    cursor: null,
+    beforeContext: 0,
+    afterContext: 0,
+    classifyDefinitions: true,
+    timeBudgetMs: GREP_TIME_BUDGET_MS,
+  });
+  return fuzzy.ok && fuzzy.value.items.length > 0 ? fuzzy.value : null;
+}
+
+function isWildcardOnlyPattern(pattern: string, hasRegexSyntax: boolean): boolean {
+  return (
+    hasRegexSyntax &&
+    /^(?:[.^$]*(?:[.][*+?]|\*|\+)[.^$]*|[.^$\s]*|\.\*\??|\.\*[+?]?|\.\+\??|\.|\*|\?)$/.test(
+      pattern.trim(),
+    )
+  );
+}
+
+function detectGrepMode(pattern: string): { hasRegexSyntax: boolean; mode: GrepMode } {
+  const hasRegexSyntax = pattern !== pattern.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let mode: GrepMode = hasRegexSyntax ? "regex" : "plain";
+  if (mode === "regex") {
+    try {
+      new RegExp(pattern).test("");
+    } catch {
+      mode = "plain";
+    }
+  }
+  return { hasRegexSyntax, mode };
 }
 
 function buildToolQuery(input: {
@@ -87,7 +161,7 @@ const grepSchema = Type.Object({
   path: Type.Optional(
     Type.String({
       description:
-        "Repo-relative path constraint. Directory prefix (src/ or src/foo/), bare filename with extension (main.rs), or glob (*.ts, src/**/*.cc, {src,lib}/**). Applied to the full repo-relative path.",
+        "Path constraint. Directory prefix (src/ or src/foo/), bare filename with extension (main.rs), or glob (*.ts, src/**/*.cc, {src,lib}/**). Absolute, ~/, and ../ paths outside the workspace use a separate index.",
     }),
   ),
   exclude: Type.Optional(
@@ -102,7 +176,11 @@ const grepSchema = Type.Object({
         "Force case-sensitive matching. Default uses smart-case (case-insensitive when pattern is all lowercase).",
     }),
   ),
-  context: Type.Optional(Type.Number({ description: "Context lines before+after each match" })),
+  context: Type.Optional(
+    Type.Number({
+      description: `Context lines before+after each match (0-${GREP_CONTEXT_MAX})`,
+    }),
+  ),
   limit: Type.Optional(
     Type.Number({
       description: `Max matches (default ${DEFAULT_GREP_LIMIT})`,
@@ -121,7 +199,7 @@ const findSchema = Type.Object({
   path: Type.Optional(
     Type.String({
       description:
-        "Repo-relative path constraint. Directory prefix (src/ or src/foo/), bare filename with extension (main.rs), or glob (*.ts, src/**/*.cc, {src,lib}/**). Applied to the full repo-relative path.",
+        "Path constraint. Directory prefix (src/ or src/foo/), bare filename with extension (main.rs), or glob (*.ts, src/**/*.cc, {src,lib}/**). Absolute, ~/, and ../ paths outside the workspace use a separate index.",
     }),
   ),
   exclude: Type.Optional(
@@ -160,39 +238,28 @@ function registerGrepTool(
     async execute(_toolCallId, params, signal) {
       if (signal?.aborted === true) throw new Error("Operation aborted");
       const startedAt = nowMs();
+      const cursorRecord = getCursorRecord(cursorStore, params.cursor);
 
-      const f = await runtime.ensureFinder(runtime.getActiveCwd());
+      const resolved = await runtime.resolveFinderForPath(
+        cursorRecord?.path ?? params.path,
+        cursorRecord?.pattern ?? params.pattern,
+        cursorRecord?.exclude ?? params.exclude,
+      );
+      const f = resolved?.finder ?? (await runtime.ensureFinder(runtime.getActiveCwd()));
       const effectiveLimit = Math.max(1, params.limit ?? DEFAULT_GREP_LIMIT);
-      const query = buildToolQuery({
-        tool: "grep",
-        path: params.path,
-        pattern: params.pattern,
-        exclude: params.exclude,
-        cwd: runtime.getActiveCwd(),
-      });
-      // Auto-detect: regex if the pattern has regex metacharacters AND parses
-      // as a valid regex, otherwise plain literal. The fuzzy fallback below
-      // only kicks in for plain mode — regex queries are intentional.
-      const hasRegexSyntax =
-        params.pattern !== params.pattern.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      let mode: GrepMode = hasRegexSyntax ? "regex" : "plain";
-      if (mode === "regex") {
-        try {
-          new RegExp(params.pattern).test("");
-        } catch {
-          mode = "plain";
-        }
-      }
+      const pageSize = Math.min(effectiveLimit, GREP_PAGE_SIZE_MAX);
+      const query =
+        resolved?.query ??
+        buildToolQuery({
+          tool: "grep",
+          path: params.path,
+          pattern: params.pattern,
+          exclude: params.exclude,
+          cwd: runtime.getActiveCwd(),
+        });
+      const { hasRegexSyntax, mode } = detectGrepMode(params.pattern);
 
-      // Guard: the agent keeps calling grep with '.*' or similar wildcard-only regex
-      // to try to read a whole file. That's not what grep is for — return a terse error
-      // steering them to a real pattern, preventing dozens of wasted retries.
-      const p = params.pattern.trim();
-      const isWildcardOnly =
-        hasRegexSyntax &&
-        /^(?:[.^$]*(?:[.][*+?]|\*|\+)[.^$]*|[.^$\s]*|\.\*\??|\.\*[+?]?|\.\+\??|\.|\*|\?)$/.test(p);
-
-      if (isWildcardOnly) {
+      if (isWildcardOnlyPattern(params.pattern, hasRegexSyntax)) {
         return {
           content: [
             {
@@ -210,21 +277,18 @@ function registerGrepTool(
         };
       }
 
-      // caseSensitive override flips smartCase off; omitting it keeps smart-case
-      // (case-insensitive when pattern is all lowercase).
       const smartCase = params.caseSensitive !== true;
 
       const grepResult = f.grep(query, {
         mode,
         smartCase,
-        maxMatchesPerFile: Math.min(effectiveLimit, 50),
-        cursor:
-          (params.cursor !== undefined && params.cursor.length > 0
-            ? getCursor(cursorStore, params.cursor)
-            : null) ?? null,
-        beforeContext: params.context ?? 0,
-        afterContext: params.context ?? 0,
+        maxMatchesPerFile: pageSize,
+        pageSize,
+        cursor: cursorRecord?.cursor ?? null,
+        beforeContext: clampContext(params.context),
+        afterContext: clampContext(params.context),
         classifyDefinitions: true,
+        timeBudgetMs: GREP_TIME_BUDGET_MS,
       });
 
       if (!grepResult.ok) throw new Error(grepResult.error);
@@ -232,25 +296,24 @@ function registerGrepTool(
       let result = grepResult.value;
       let fuzzyNotice: string | null = null;
 
-      // automatic fuzzy fallback allows to broad the queries and find different cases
       if (
         result.items.length === 0 &&
+        (result.nextCursor === undefined || result.nextCursor === null) &&
         (params.cursor === undefined || params.cursor.length === 0) &&
         mode !== "regex"
       ) {
-        const fuzzy = f.grep(params.pattern, {
-          mode: "fuzzy",
+        const fuzzy = runFuzzyFallback({
+          finder: f,
+          pattern: params.pattern,
+          path: params.path,
+          query,
           smartCase,
-          maxMatchesPerFile: Math.min(effectiveLimit, 50),
-          cursor: null,
-          beforeContext: 0,
-          afterContext: 0,
-          classifyDefinitions: true,
+          pageSize,
         });
 
-        if (fuzzy.ok && fuzzy.value.items.length > 0) {
+        if (fuzzy !== null) {
           fuzzyNotice = `0 exact matches. Maybe you meant this?`;
-          result = fuzzy.value;
+          result = fuzzy;
         }
       }
 
@@ -260,7 +323,14 @@ function registerGrepTool(
         notices.push(`Invalid regex: ${result.regexFallbackError}, used literal match`);
       }
       if (result.nextCursor !== undefined && result.nextCursor !== null) {
-        notices.push(`Continue with cursor="${storeCursor(cursorStore, result.nextCursor)}"`);
+        notices.push(
+          `Continue with cursor="${storeCursor(cursorStore, {
+            cursor: result.nextCursor,
+            path: cursorRecord?.path ?? params.path,
+            pattern: cursorRecord?.pattern ?? params.pattern,
+            exclude: cursorRecord?.exclude ?? params.exclude,
+          })}"`,
+        );
       }
 
       if (notices.length > 0) output += `\n\n[${notices.join(". ")}]`;
@@ -313,26 +383,31 @@ function registerFindTool(
       if (signal?.aborted === true) throw new Error("Operation aborted");
       const startedAt = nowMs();
 
-      const f = await runtime.ensureFinder(runtime.getActiveCwd());
-
       // Resume from a prior cursor if supplied — cursor owns query+pageSize so
       // the agent can't accidentally mix patterns across pages.
       const resumed =
         params.cursor !== undefined && params.cursor.length > 0
           ? getFindCursor(cursorStore, params.cursor)
           : undefined;
+      const resolved = await runtime.resolveFinderForPath(
+        resumed?.path ?? params.path,
+        resumed?.pattern ?? params.pattern,
+        resumed?.exclude ?? params.exclude,
+      );
+      const f = resolved?.finder ?? (await runtime.ensureFinder(runtime.getActiveCwd()));
       const effectiveLimit = resumed
         ? resumed.pageSize
         : Math.max(1, params.limit ?? DEFAULT_FIND_LIMIT);
       const query = resumed
         ? resumed.query
-        : buildToolQuery({
+        : (resolved?.query ??
+          buildToolQuery({
             tool: "find",
             path: params.path,
             pattern: params.pattern,
             exclude: params.exclude,
             cwd: runtime.getActiveCwd(),
-          });
+          }));
       const pattern = resumed ? resumed.pattern : params.pattern;
       const pageIndex = resumed?.nextPageIndex ?? 0;
 
@@ -365,6 +440,8 @@ function registerFindTool(
           pattern,
           pageSize: effectiveLimit,
           nextPageIndex: pageIndex + 1,
+          path: resumed?.path ?? params.path,
+          exclude: resumed?.exclude ?? params.exclude,
         });
         notices.push(
           `${remaining} more match${remaining === 1 ? "" : "es"} available. cursor="${cursorId}" to continue`,

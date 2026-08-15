@@ -76,12 +76,13 @@ export function registerAutocompleteProvider(
   runtime: FffToolRuntime,
   ctx: {
     ui: {
-      addAutocompleteProvider: (
+      addAutocompleteProvider?: (
         factory: (current: AutocompleteProvider) => AutocompleteProvider,
       ) => void;
     };
   },
 ): void {
+  if (typeof ctx.ui.addAutocompleteProvider !== "function") return;
   ctx.ui.addAutocompleteProvider((current) => {
     const mentionProvider = createFffMentionProvider((query, signal) =>
       getMentionItems(runtime, query, signal),

@@ -71,6 +71,16 @@ export const defaultModes = {
       description:
         "Use for normal coding tasks: implementation, fixes, refactors, tests, and verification.",
     },
+
+    "fast-build": {
+      provider: "codex-openai",
+      modelId: "gpt-5.6-luna",
+      thinkingLevel: "high",
+      color: "warning",
+      tmuxTarget: "window",
+      tools: ["*"],
+      description: "Like build mode, but faster",
+    },
     deep: {
       provider: "codex-openai",
       modelId: "gpt-5.6-sol",

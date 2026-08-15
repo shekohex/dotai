@@ -9,6 +9,11 @@ import {
   streamLiteLLMOpenAIResponses,
 } from "../src/extensions/litellm/openai-responses.js";
 import { createLiteLLMProviderRegistrations } from "../src/extensions/litellm.js";
+import {
+  clearSessionFastMode,
+  isSessionFastModeActive,
+  setSessionFastModeActive,
+} from "../src/extensions/openai-better/fast-routing.js";
 import { isUnknownRecord, parseUnknownJson } from "../src/utils/unknown-value.js";
 
 function responseEvents(responseId: string, messageId: string, model: string, text: string) {
@@ -98,6 +103,67 @@ describe("LiteLLM OpenAI Responses provider", () => {
         "gpt-5.6 luna",
       ),
     ).toBe("ws://127.0.0.1:4000/v1/responses?route=codex&model=gpt-5.6+luna");
+  });
+
+  it("carries fast mode into LiteLLM request metadata and priority pricing", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const server = createServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk: string) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        requestBody = JSON.parse(body) as Record<string, unknown>;
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        for (const event of responseEvents(
+          "resp_fast_sse",
+          "msg_fast_sse",
+          "gpt-5.6-sol",
+          "fast answer",
+        )) {
+          const responseEvent =
+            event.type === "response.completed"
+              ? { ...event, response: { ...event.response, service_tier: "default" } }
+              : event;
+          response.write(`data: ${JSON.stringify(responseEvent)}\n\n`);
+        }
+        response.end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (address === null || typeof address === "string") throw new Error("Expected TCP address");
+    const builtin = getBuiltinModels("openai-codex").find(
+      (candidate) => candidate.id === "gpt-5.6-sol",
+    );
+    if (builtin === undefined) throw new Error("Missing gpt-5.6-sol model");
+    const model: Model<"openai-responses"> = {
+      ...builtin,
+      provider: "codex-openai",
+      api: "openai-responses",
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    };
+    const sessionId = "litellm-fast-sse-test";
+    setSessionFastModeActive(sessionId, true);
+    expect(isSessionFastModeActive(sessionId)).toBe(true);
+
+    try {
+      const message = await streamLiteLLMOpenAIResponses(
+        model,
+        { messages: [{ role: "user", content: "hello" }] },
+        { apiKey: "TEST_KEY", transport: "sse", sessionId },
+      ).result();
+      const baseCost = (10 * model.cost.input + 3 * model.cost.output) / 1_000_000;
+
+      expect(requestBody).toMatchObject({ service_tier: "priority" });
+      expect(message.usage.cost.total).toBeCloseTo(baseCost * 2, 10);
+    } finally {
+      clearSessionFastMode(sessionId);
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error === undefined ? resolve() : reject(error))),
+      );
+    }
   });
 
   it("builds a previous-response delta when context extends the cached turn", () => {
@@ -271,7 +337,7 @@ describe("LiteLLM OpenAI Responses provider", () => {
           apiKey: "TEST_KEY",
           transport: "auto",
           sessionId: "litellm-websocket-test",
-          headers: { originator: "codex_cli_rs" },
+          headers: { originator: "pi" },
         },
       ).result();
 
@@ -292,7 +358,7 @@ describe("LiteLLM OpenAI Responses provider", () => {
           url: "/v1/responses?model=gpt-5.6-sol",
         },
         {
-          originator: "codex_cli_rs",
+          originator: "pi",
           routingHint: undefined,
           url: "/v1/responses?model=gpt-5.6-sol",
         },

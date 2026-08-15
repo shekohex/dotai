@@ -49,6 +49,7 @@ import {
   reconstructRemoteCompactionState,
   remoteCompactionSummaryText,
 } from "./compaction/openai-remote-state.js";
+import { isSessionFastModeActive } from "./openai-better/fast-routing.js";
 import type {
   RemoteCompactionResult,
   RemoteCompactionSessionState,
@@ -524,6 +525,11 @@ async function createRemoteCompaction(params: {
   const reasoning =
     params.requestShape?.reasoning ??
     fallbackRemoteReasoning(params.model, params.pi.getThinkingLevel());
+  const fastModeActive = isSessionFastModeActive(params.sessionId);
+  const previousServiceTier = params.requestShape?.serviceTier;
+  let serviceTier = previousServiceTier;
+  if (fastModeActive) serviceTier = "priority";
+  else if (serviceTier === "priority") serviceTier = undefined;
 
   return callRemoteCompactionEndpoint({
     model: params.model,
@@ -541,7 +547,8 @@ async function createRemoteCompaction(params: {
     ),
     reasoning,
     text: params.requestShape?.text,
-    serviceTier: params.requestShape?.serviceTier,
+    serviceTier,
+    fastModeActive,
     signal: params.signal,
   });
 }

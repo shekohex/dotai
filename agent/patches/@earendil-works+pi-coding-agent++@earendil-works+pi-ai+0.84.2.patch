@@ -1,3 +1,81 @@
+diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
+index c9fe5d1..336be8f 100644
+--- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
++++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
+@@ -173,6 +173,9 @@ export const stream = (model, context, options) => {
+             if (nextBody !== undefined) {
+                 body = nextBody;
+             }
++            const responseOptions = body.service_tier === undefined
++                ? options
++                : { ...options, serviceTier: body.service_tier };
+             const websocketRequestId = codexSessionId || uuidv7();
+             const sseHeaders = buildSSEHeaders(model.headers, options?.headers, accountId, apiKey, codexSessionId);
+             const websocketHeaders = buildWebSocketHeaders(model.headers, options?.headers, accountId, apiKey, websocketRequestId);
+@@ -198,7 +201,7 @@ export const stream = (model, context, options) => {
+                                 startEmitted = true;
+                                 stream.push({ type: "start", partial: output });
+                             }
+-                        }, httpTimeoutMs, websocketConnectTimeoutMs, cacheSessionId, accountId, grammarToolInputProperties, options);
++                        }, httpTimeoutMs, websocketConnectTimeoutMs, cacheSessionId, accountId, grammarToolInputProperties, responseOptions);
+                         if (options?.signal?.aborted) {
+                             throw new Error("Request was aborted");
+                         }
+@@ -327,7 +330,7 @@ export const stream = (model, context, options) => {
+                 startEmitted = true;
+                 stream.push({ type: "start", partial: output });
+             }
+-            await processStream(response, output, stream, model, grammarToolInputProperties, options);
++            await processStream(response, output, stream, model, grammarToolInputProperties, responseOptions);
+             if (options?.signal?.aborted) {
+                 throw new Error("Request was aborted");
+             }
+@@ -1265,7 +1268,8 @@ function buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token)
+     }
+     headers.set("Authorization", `Bearer ${token}`);
+     headers.set("chatgpt-account-id", accountId);
+-    headers.set("originator", "pi");
++    if (!headers.has("originator"))
++        headers.set("originator", "pi");
+     headers.set("User-Agent", getPiUserAgent());
+     return headers;
+ }
+diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
+index 1023156..2da4fab 100644
+--- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
++++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
+@@ -117,6 +117,7 @@ export const stream = (model, context, options) => {
+             await processResponsesStream(openaiStream, output, stream, model, {
+                 serviceTier: options?.serviceTier,
+                 grammarToolInputProperties,
++                resolveServiceTier: resolveRequestedServiceTier,
+                 applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
+             });
+             if (options?.signal?.aborted) {
+@@ -270,6 +271,11 @@ function getServiceTierCostMultiplier(model, serviceTier) {
+             return 1;
+     }
+ }
++function resolveRequestedServiceTier(responseServiceTier, requestServiceTier) {
++    if (responseServiceTier === "default" && (requestServiceTier === "flex" || requestServiceTier === "priority"))
++        return requestServiceTier;
++    return responseServiceTier ?? requestServiceTier;
++}
+ function applyServiceTierPricing(usage, serviceTier, model) {
+     const multiplier = getServiceTierCostMultiplier(model, serviceTier);
+     if (multiplier === 1)
+diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
+index a21c935..5d14c8c 100644
+--- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
++++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
+@@ -13,6 +13,7 @@ export function buildBaseOptions(model, context, options, apiKey) {
+         : undefined;
+     return {
+         temperature: options?.temperature,
++        serviceTier: options?.serviceTier,
+         samplingParams,
+         maxTokens: clampMaxTokensToContext(model, context, options?.maxTokens ?? model.maxTokens),
+         signal: options?.signal,
 diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
 index 65c7c9e..8b1302f 100644
 --- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js

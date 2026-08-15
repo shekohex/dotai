@@ -14,6 +14,7 @@ import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-respo
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { parseUnknownJson } from "../../utils/unknown-value.js";
+import { isSessionFastModeActive } from "../openai-better/fast-routing.js";
 import {
   buildCachedRequestBody,
   closeLiteLLMWebSocketSessions,
@@ -178,15 +179,18 @@ export function streamLiteLLMOpenAIResponses(
     throw new Error(`LiteLLM Responses stream does not support API ${model.api}`);
   }
   const responsesModel = model;
-  if ((options?.transport ?? "auto") === "sse") {
-    return streamOpenAIResponses(responsesModel, context, options);
+  const effectiveOptions = isSessionFastModeActive(options?.sessionId)
+    ? { ...options, serviceTier: "priority" as const }
+    : options;
+  if ((effectiveOptions?.transport ?? "auto") === "sse") {
+    return streamOpenAIResponses(responsesModel, context, effectiveOptions);
   }
 
   let operation: LiteLLMWebSocketOperation | undefined;
   const diagnostics: ReturnType<typeof createAssistantMessageDiagnostic>[] = [];
   const fetch = createWebSocketFetch({
     model: responsesModel,
-    options,
+    options: effectiveOptions,
     onOperation(nextOperation) {
       operation = nextOperation;
     },
@@ -194,7 +198,7 @@ export function streamLiteLLMOpenAIResponses(
       diagnostics.push(diagnostic);
     },
   });
-  const inner = streamOpenAIResponses(responsesModel, context, { ...options, fetch });
+  const inner = streamOpenAIResponses(responsesModel, context, { ...effectiveOptions, fetch });
   const outer = createAssistantMessageEventStream();
 
   void (async () => {

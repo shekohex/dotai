@@ -34,6 +34,10 @@ import {
 } from "../src/extensions/compaction/openai-remote-protocol.js";
 import { resolveRemoteCompactionRequestBudget } from "../src/extensions/compaction/openai-remote-request-shrink.js";
 import {
+  clearSessionFastMode,
+  setSessionFastModeActive,
+} from "../src/extensions/openai-better/fast-routing.js";
+import {
   applyRemoteHistoryPayload,
   extractResponsesRequestShape,
   extractRemoteCompactionDetails,
@@ -55,6 +59,7 @@ const temporaryDirectories: string[] = [];
 
 afterEach(() => {
   vi.restoreAllMocks();
+  clearSessionFastMode();
   delete process.env.CODEX_HOME;
   for (const path of temporaryDirectories.splice(0)) rmSync(path, { recursive: true });
 });
@@ -297,6 +302,32 @@ describe("compaction extension", () => {
     expect(headers.session_id).toBe("session-123");
   });
 
+  test("uses fast routing identity for Codex remote compaction only while active", () => {
+    useTemporaryCodexHome();
+    const fastHeaders = buildRemoteCompactionHeaders({
+      model: codexOpenAIModel,
+      apiKey: "gateway-key",
+      headers: { originator: "pi" },
+      sessionId: "session-123",
+      fastModeActive: true,
+    });
+    const normalHeaders = buildRemoteCompactionHeaders({
+      model: codexOpenAIModel,
+      apiKey: "gateway-key",
+      headers: {
+        originator: "codex_cli_rs",
+        "x-codex-routing-hint": "model=gpt-5.6-sol;tier=priority",
+      },
+      sessionId: "session-123",
+      fastModeActive: false,
+    });
+
+    expect(fastHeaders.originator).toBe("codex_cli_rs");
+    expect(fastHeaders["x-codex-routing-hint"]).toBe(`model=${codexOpenAIModel.id};tier=priority`);
+    expect(normalHeaders.originator).toBe("pi");
+    expect(normalHeaders["x-codex-routing-hint"]).toBeUndefined();
+  });
+
   test("converts assistant reasoning and tool calls to Responses items", () => {
     const items = messageToResponseItems({
       role: "assistant",
@@ -516,6 +547,71 @@ describe("compaction extension", () => {
     const body = JSON.parse(String(request?.body)) as { input: Array<{ type: string }> };
     expect(body.input.at(-1)).toEqual({ type: "compaction_trigger" });
     expect(body.store).toBe(false);
+  });
+
+  test("applies current fast mode to native compaction", async () => {
+    useTemporaryCodexHome();
+    setSessionFastModeActive("session-123", true);
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          [
+            'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
+            "",
+            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+    const harness = createCompactionHandlerHarness(codexOpenAIModel);
+
+    await harness.handler(manualCompactionEvent(), harness.ctx);
+
+    const request = fetchMock.mock.calls[0]?.[1];
+    const body = JSON.parse(String(request?.body)) as Record<string, unknown>;
+    const headers = new Headers(request?.headers);
+    expect(body.service_tier).toBe("priority");
+    expect(headers.get("originator")).toBe("codex_cli_rs");
+    expect(headers.get("x-codex-routing-hint")).toBe(`model=${codexOpenAIModel.id};tier=priority`);
+  });
+
+  test("drops stale fast routing from native compaction after fast mode is disabled", async () => {
+    useTemporaryCodexHome();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          [
+            'data: {"type":"response.output_item.done","item":{"type":"compaction","encrypted_content":"opaque"}}',
+            "",
+            'data: {"type":"response.completed","response":{"id":"resp-1"}}',
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+      );
+    const harness = createCompactionHandlerHarness(codexOpenAIModel);
+    await harness.providerRequestHandler(
+      {
+        payload: {
+          model: codexOpenAIModel.id,
+          input: [],
+          service_tier: "priority",
+        },
+      },
+      harness.ctx,
+    );
+
+    await harness.handler(manualCompactionEvent(), harness.ctx);
+
+    const request = fetchMock.mock.calls[0]?.[1];
+    const body = JSON.parse(String(request?.body)) as Record<string, unknown>;
+    const headers = new Headers(request?.headers);
+    expect(body.service_tier).toBeUndefined();
+    expect(headers.get("originator")).toBe("pi");
+    expect(headers.get("x-codex-routing-hint")).toBeNull();
   });
 
   test("does not resurrect history before a portable compaction", async () => {

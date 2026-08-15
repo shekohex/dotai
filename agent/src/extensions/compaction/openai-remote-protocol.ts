@@ -11,6 +11,7 @@ import { Value } from "typebox/value";
 import { errorMessage } from "../../utils/error-message.js";
 import { providerHeadersToRecord } from "../../utils/provider-headers.js";
 import { asRecord, readNumber, readString } from "../../utils/unknown-data.js";
+import { applyCodexFastHeaders } from "../openai-better/fast-routing.js";
 import { buildRemoteCompactionHistory } from "./openai-remote-messages.js";
 import {
   resolveRemoteCompactionRequestBudget,
@@ -193,6 +194,7 @@ export function buildRemoteCompactionHeaders(params: {
   apiKey: string;
   headers?: ProviderHeaders;
   sessionId?: string;
+  fastModeActive?: boolean;
 }): Record<string, string> {
   const commonHeaders = withRemoteCompactionFeature(
     providerHeadersToRecord({
@@ -203,6 +205,7 @@ export function buildRemoteCompactionHeaders(params: {
       "content-type": "application/json",
     }) ?? {},
   );
+  applyCodexFastHeaders(commonHeaders, params.model.id, params.fastModeActive === true);
   if (params.model.provider === "codex-openai") return commonHeaders;
   if (params.model.provider !== "openai-codex") {
     throw new Error("Remote compaction headers are not supported for this model.");
@@ -210,7 +213,6 @@ export function buildRemoteCompactionHeaders(params: {
   return {
     ...commonHeaders,
     "chatgpt-account-id": extractCodexAccountId(params.apiKey),
-    originator: "pi",
     "user-agent": `@shekohex/agent (${platform()} ${release()}; ${arch()})`,
     "OpenAI-Beta": "responses=experimental",
   };
@@ -408,6 +410,7 @@ export async function callRemoteCompactionEndpoint(params: {
   reasoning?: ResponsesReasoningConfig;
   text?: ResponsesTextConfig;
   serviceTier?: string;
+  fastModeActive?: boolean;
   retryDelayMs?: number;
   signal?: AbortSignal;
 }): Promise<RemoteCompactionResult> {

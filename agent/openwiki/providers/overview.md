@@ -2,7 +2,7 @@
 
 How the wrapper resolves which model/provider serves a request. This sits on top of upstream pi-ai's builtin providers and adds a gateway selector, synthesized providers, fallback chains, a usage tracker, and an OpenAI fast/image extension.
 
-The default model is `openai-codex` / `gpt-5.5` (`src/default-settings.ts`), but at runtime the **active mode** (`src/default-modes.ts`) usually decides the provider+model — e.g. `build` → `codex-openai/gpt-5.6-terra`, `cheap-review` → `zai/glm-5.2`, `rush` → `opencode-go/deepseek-v4-flash`. See [Architecture → Mode system](../architecture/overview.md#mode-system).
+The default model is `openai-codex` / `gpt-5.6-sol` (`src/default-settings.ts`), but at runtime the **active mode** (`src/default-modes.ts`) usually decides the provider+model — e.g. `build` → `codex-openai/gpt-5.6-sol`, `cheap-review` → `zai/glm-5.3`, `rush` → `opencode-go/deepseek-v4-flash`. See [Architecture → Mode system](../architecture/overview.md#mode-system).
 
 An explicit `--model` takes precedence over the active mode's primary model for the current Pi process. It keeps the mode's thinking level, tools, system prompt, and fallback chain, and is not persisted as a mode-model override. `--provider` participates only when paired with `--model`, per upstream Pi CLI parsing.
 
@@ -15,6 +15,7 @@ An explicit `--model` takes precedence over the active mode's primary model for 
   - `codex-openai` — `openai-responses` API, models copied from `getBuiltinModels("openai-codex")` (with `gpt-5.6-luna`/`sol`/`terra` overridden to a 372k context window), key from `AuthStorage("litellm")` or `$LITELLM_API_KEY`.
   - `zai-coding-plan`, `deepseek` — proxied through the gateway, litellm key.
   - `gemini` — retained only for the `websearch` grounding tool, proxied to `<gateway>/v1beta` via `google-generative-ai`.
+- **Responses WebSocket transport** — the gateway `codex-openai` registration routes `openai-responses` streaming through a custom `streamSimple` (`src/extensions/litellm/openai-responses.ts` + `responses-websocket.ts`): request URLs are rewritten `http(s)://` → `ws(s)://?model=…`, connections are reused per session, and `previous_response_id` continuation sends input deltas instead of the full context. Connection-limit errors retry once on a fresh connection; any other WebSocket failure emits a `provider_transport_failure` diagnostic and flips the session to plain SSE fallback. The top-level `transport` setting controls it — `"sse"` forces SSE passthrough, `"auto"` (default) uses WebSocket; proxy env (`http_proxy`/`https_proxy`/`no_proxy`) is honored when dialing (`responses-websocket-proxy.ts`).
 - `zai` is **never proxied** — it always uses its native `https://api.z.ai/api/coding/paas/v4` URL with `$ZAI_API_KEY`.
 - `opencode-go` is **never touched** by this extension — it always uses the upstream builtin with `$OPENCODE_API_KEY`.
 
@@ -56,7 +57,7 @@ The `modes` extension applies the active mode's model and, on provider errors, w
 
 `src/extensions/openai-better/` adds two opt-in features:
 
-- **`/fast`** — injects `service_tier: "priority"` into the request payload on `before_provider_request`, only for supported Codex models (`gpt-5.4`, `gpt-5.5`, `gpt-5.6-luna` and their `openai-codex/` aliases). Toggle persisted at `settings.json#openaiBetter.fast.enabled`; auto-enables on `model_select` to a supported model.
+- **`/fast`** — injects `service_tier: "priority"` into the request payload on `before_provider_request`, only for supported Codex models (`gpt-5.4`, `gpt-5.5`, and the `gpt-5.6` family, under both the `codex-openai/` and `openai-codex/` prefixes). For every `codex-openai` request it also rewrites headers on `before_provider_headers`: `originator: codex_cli_rs` always, plus `x-codex-routing-hint: model=<id>;tier=priority` while fast is active. Toggle persisted at `settings.json#openaiBetter.fast.enabled`; auto-enables on `model_select` to a supported model.
 - **`/imagen` + `image_generation` tool** — image generation routed **exclusively through the LiteLLM gateway** (depends on `litellm.ts` for credentials/base URL). Supports action (auto/diffusion/edit), output format (png/jpeg/webp), and save modes (none/project/global/custom), with base64 image rendering.
 
 Settings shape (`openaiBetter`): `{ fast: { persistState, enabled, supportedModels[] }, image: { enabled, defaultModel, defaultSave, outputFormat, timeoutMs } }`.

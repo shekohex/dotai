@@ -19,7 +19,7 @@ Reusable templates injected into agent prompts: `concise.md`, `deslop.md`, `conf
 
 ## themes/ — bundled themes
 
-`catppuccin-mocha.json` (the default theme — `default-settings.ts#theme`) and `catppuccin-latte.json`. Loaded via `discoverThemePaths()`.
+`catppuccin-latte.json` and `catppuccin-mocha.json`; the default `theme` is the light/dark pair `catppuccin-latte/catppuccin-mocha` (`default-settings.ts#theme`). Loaded via `discoverThemePaths()`.
 
 ## skills/ — bundled SKILL.md skills
 

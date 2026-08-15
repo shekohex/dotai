@@ -1,3 +1,4 @@
+import type { ProviderHeaders } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { registerOpenAIImage, _imageTest } from "./image.js";
 import {
@@ -13,6 +14,9 @@ const COMMAND = "fast";
 const FLAG = "fast";
 const SERVICE_TIER = "priority";
 const LEGACY_FAST_SERVICE_TIER = "fast";
+const CODEX_OPENAI_PROVIDER = "codex-openai";
+const CODEX_ORIGINATOR = "codex_cli_rs";
+const CODEX_ROUTING_HINT_HEADER = "x-codex-routing-hint";
 
 function currentModelKey(ctx: ExtensionContext): string {
   return ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none";
@@ -60,6 +64,27 @@ function applyFastServiceTier(payload: Record<string, unknown>): Record<string, 
       : { ...payload, service_tier: normalizedServiceTier };
   }
   return { ...payload, service_tier: SERVICE_TIER };
+}
+
+function deleteHeader(headers: ProviderHeaders, name: string): void {
+  const normalizedName = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === normalizedName) delete headers[key];
+  }
+}
+
+function applyCodexOpenAIHeaders(
+  headers: ProviderHeaders,
+  modelId: string,
+  fastModeActive: boolean,
+): ProviderHeaders {
+  deleteHeader(headers, "originator");
+  deleteHeader(headers, CODEX_ROUTING_HINT_HEADER);
+  headers.originator = CODEX_ORIGINATOR;
+  if (fastModeActive) {
+    headers[CODEX_ROUTING_HINT_HEADER] = `model=${modelId};tier=${SERVICE_TIER}`;
+  }
+  return headers;
 }
 
 export default function betterOpenAI(pi: ExtensionAPI): void {
@@ -168,6 +193,13 @@ export default function betterOpenAI(pi: ExtensionAPI): void {
         : undefined;
     return nextPayload;
   });
+
+  pi.on("before_provider_headers", (event, ctx) => {
+    if (ctx.model?.provider !== CODEX_OPENAI_PROVIDER) return;
+    const currentSettings = settings();
+    const shouldApplyFastMode = active && supportsFast(ctx, currentSettings.fast.supportedModels);
+    applyCodexOpenAIHeaders(event.headers, ctx.model.id, shouldApplyFastMode);
+  });
 }
 
 export const _test = {
@@ -177,6 +209,7 @@ export const _test = {
   SERVICE_TIER,
   LEGACY_FAST_SERVICE_TIER,
   applyFastServiceTier,
+  applyCodexOpenAIHeaders,
   normalizeFastServiceTier,
   parseModelKey: parseSupportedModelKey,
   supportsFast,

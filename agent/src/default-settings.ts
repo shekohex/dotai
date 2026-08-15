@@ -49,7 +49,7 @@ export const defaultSettings = {
   defaultModel: "gpt-5.5",
   hideThinkingBlock: true,
   defaultThinkingLevel: "low",
-  transport: "sse",
+  transport: "auto",
   quietStartup: true,
   editorPaddingX: 0,
   collapseChangelog: true,

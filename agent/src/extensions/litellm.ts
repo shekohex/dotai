@@ -2,6 +2,7 @@ import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../utils/error-message.js";
 import { resolveStoredApiKey } from "../utils/stored-credential.js";
+import { streamLiteLLMOpenAIResponses } from "./litellm/openai-responses.js";
 
 type LiteLLMCandidate = {
   label: string;
@@ -71,6 +72,7 @@ export function createLiteLLMProviderRegistrations(
         baseUrl: state.baseUrl,
         apiKey,
         api: "openai-responses",
+        streamSimple: streamLiteLLMOpenAIResponses,
         models: createCodexOpenAIModels(),
       },
     },

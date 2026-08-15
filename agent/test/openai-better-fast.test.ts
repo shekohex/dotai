@@ -48,6 +48,22 @@ describe("openai better fast mode", () => {
     });
   });
 
+  it("always identifies LiteLLM Codex and adds routing only in fast mode", () => {
+    expect(_test.applyCodexOpenAIHeaders({ Originator: "pi" }, "gpt-5.6-sol", false)).toEqual({
+      originator: "codex_cli_rs",
+    });
+    expect(
+      _test.applyCodexOpenAIHeaders(
+        { originator: "pi", "X-Codex-Routing-Hint": "stale" },
+        "gpt-5.6-luna",
+        true,
+      ),
+    ).toEqual({
+      originator: "codex_cli_rs",
+      "x-codex-routing-hint": "model=gpt-5.6-luna;tier=priority",
+    });
+  });
+
   it("persists fast enabled while preserving existing settings", () => {
     const previousRuntime = process.env.PI_CODING_AGENT_DIR;
     const runtime = mkdtempSync(join(tmpdir(), "agent-openai-better-fast-"));

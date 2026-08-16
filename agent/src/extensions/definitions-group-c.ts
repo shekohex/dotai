@@ -16,6 +16,7 @@ import terminalTmuxUiExtension from "./terminal-tmux-ui.js";
 import tmuxShareExtension from "./tmux-share/index.js";
 import viewImageExtension from "./view-image.js";
 import warpExtension from "./warp/index.js";
+import zedraExtension from "./zedra/index.js";
 import type { GroupedExtensionDefinition } from "./definitions.js";
 
 export const groupedExtensionsC: GroupedExtensionDefinition[] = [
@@ -35,6 +36,7 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "herdr-agent-state", factory: herdrAgentStateExtension },
   { id: "hunk", factory: hunkExtension },
   { id: "warp", factory: warpExtension },
+  { id: "zedra", factory: zedraExtension },
   { id: "executor", factory: executorExtension },
   { id: "tmux-share", factory: tmuxShareExtension },
 ];

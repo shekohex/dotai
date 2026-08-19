@@ -1,4 +1,5 @@
-import type { ExtensionFactory, InlineExtension } from "@earendil-works/pi-coding-agent";
+import { basename } from "node:path";
+import type { Args, ExtensionFactory, InlineExtension } from "@earendil-works/pi-coding-agent";
 import {
   groupedExtensionsA,
   groupedExtensionsB,
@@ -46,15 +47,32 @@ export const bundledExtensionFactories: InlineExtension[] = bundledExtensionDefi
 
 export function createBundledExtensionFactories(options: {
   modeStartupSelection?: ModeStartupSelection;
+  parsedArgs?: Pick<Args, "extensions" | "mode">;
 }): InlineExtension[] {
   const modeStartupSelection = options.modeStartupSelection;
-  if (modeStartupSelection?.hasExplicitModel !== true) {
+  const omitSubagent = shouldOmitBundledSubagent(options.parsedArgs);
+  if (modeStartupSelection?.hasExplicitModel !== true && !omitSubagent) {
     return bundledExtensionFactories;
   }
 
-  return bundledExtensionDefinitions.map((definition) => {
-    const factory =
-      definition.id === "modes" ? createModesExtension(modeStartupSelection) : definition.factory;
-    return { name: definition.id, factory };
-  });
+  return bundledExtensionDefinitions
+    .filter((definition) => !omitSubagent || definition.id !== "subagent")
+    .map((definition) => {
+      const factory =
+        definition.id === "modes" && modeStartupSelection?.hasExplicitModel === true
+          ? createModesExtension(modeStartupSelection)
+          : definition.factory;
+      return { name: definition.id, factory };
+    });
+}
+
+function shouldOmitBundledSubagent(
+  parsedArgs: Pick<Args, "extensions" | "mode"> | undefined,
+): boolean {
+  return (
+    parsedArgs?.mode === "rpc" &&
+    parsedArgs.extensions?.some(
+      (extensionPath) => basename(extensionPath) === "pi-t3-subagent-extension.ts",
+    ) === true
+  );
 }

@@ -63,9 +63,10 @@ if (shouldEnsureRuntimeDefaultSettings(args)) {
   await ensureRuntimeDefaultSettings();
 }
 
-const modeStartupSelection = createModeStartupSelection(parseArgs(args));
+const parsedArgs = parseArgs(args);
+const modeStartupSelection = createModeStartupSelection(parsedArgs);
 await main(args, {
-  extensionFactories: createBundledExtensionFactories({ modeStartupSelection }),
+  extensionFactories: createBundledExtensionFactories({ modeStartupSelection, parsedArgs }),
 });
 
 function shouldEnsureRuntimeDefaultSettings(cliArgs: string[]): boolean {

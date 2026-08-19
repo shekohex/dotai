@@ -64,6 +64,8 @@ const CUSTOM_MODE_LABEL = "custom";
 type ModeRuntime = {
   data: ModesFile;
   activeMode: string | undefined;
+  selectionOwnership: ModeSelectionOwnership | undefined;
+  ownedSelection: ModeSelection | undefined;
   applying: boolean;
   needsResyncAfterApply: boolean;
   sessionModelOverrides: Map<string, ModeModelCandidate>;
@@ -73,6 +75,14 @@ type ModeRuntime = {
   lastReportedError?: string;
   lastStatusText?: string;
   toolsInitialized: boolean;
+};
+
+type ModeSelectionOwnership = "restored" | "external-rpc" | "explicit-mode" | "failover";
+
+type ModeSelection = {
+  provider?: string;
+  modelId?: string;
+  thinkingLevel: string;
 };
 
 export type ModeChangedEvent = {
@@ -92,6 +102,8 @@ function createModeRuntime(): ModeRuntime {
   return {
     data: { version: 1, currentMode: undefined, modes: {} },
     activeMode: undefined,
+    selectionOwnership: undefined,
+    ownedSelection: undefined,
     applying: false,
     needsResyncAfterApply: false,
     toolsInitialized: false,
@@ -156,6 +168,46 @@ function withInternalModelChange<T>(runtime: ModeRuntime, action: () => Promise<
   return action().finally(() => {
     runtime.internalModelChangeDepth -= 1;
   });
+}
+
+function selectionsMatch(left: ModeSelection | undefined, right: ModeSelection): boolean {
+  return (
+    left !== undefined &&
+    left.provider === right.provider &&
+    left.modelId === right.modelId &&
+    left.thinkingLevel === right.thinkingLevel
+  );
+}
+
+function recordSelectionOwnership(
+  runtime: ModeRuntime,
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  ownership: ModeSelectionOwnership,
+): void {
+  runtime.selectionOwnership = ownership;
+  runtime.ownedSelection = currentSelection(ctx, pi);
+}
+
+function modeApplyOwnership(
+  source: ModeChangedEvent["source"],
+  reason: ModeChangedEvent["reason"],
+): ModeSelectionOwnership {
+  return source === "session_start" || reason === "restore" ? "restored" : "explicit-mode";
+}
+
+function shouldRestorePrimarySelection(
+  runtime: ModeRuntime,
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+): boolean {
+  if (ctx.mode !== "rpc") return true;
+  const selection = currentSelection(ctx, pi);
+  if (!selectionsMatch(runtime.ownedSelection, selection)) {
+    runtime.selectionOwnership = "external-rpc";
+    runtime.ownedSelection = selection;
+  }
+  return runtime.selectionOwnership !== "external-rpc";
 }
 
 function getEffectiveModeSpec(runtime: ModeRuntime, modeName: string): ModeSpec | undefined {
@@ -396,6 +448,67 @@ function ensureModesReady(runtime: ModeRuntime, ctx: ExtensionContext): Promise<
   });
 }
 
+function createModeLifecycleDeps(
+  runtime: ModeRuntime,
+  restoreMode: ReturnType<typeof createModeActionHandlers>["restoreMode"],
+  syncFromSelection: ReturnType<typeof createModeApplyActions>["syncFromSelection"],
+): Parameters<typeof registerModeLifecycleHandlers>[1] {
+  return {
+    resetRuntimeState: () => {
+      runtime.activeMode = undefined;
+      runtime.selectionOwnership = undefined;
+      runtime.ownedSelection = undefined;
+      runtime.toolsInitialized = false;
+      runtime.sessionModelOverrides.clear();
+      runtime.lastContext = undefined;
+    },
+    restoreMode: async (extensionApi, ctx) => {
+      runtime.lastContext = ctx;
+      restoreSessionModeOverrides(runtime, ctx);
+      await restoreMode(extensionApi, ctx);
+    },
+    isApplying: () => runtime.applying,
+    isInternalModelChange: () => runtime.internalModelChangeDepth > 0,
+    clearActiveMode: () => {
+      runtime.activeMode = undefined;
+    },
+    recordExternalRpcSelection: (extensionApi, ctx) => {
+      recordSelectionOwnership(runtime, extensionApi, ctx, "external-rpc");
+    },
+    markNeedsResyncAfterApply: () => {
+      runtime.needsResyncAfterApply = true;
+    },
+    syncFromSelection,
+    appendModeState: (extensionApi, ctx, modeName) => {
+      appendModeState(runtime, extensionApi, ctx, modeName);
+    },
+    getActiveMode: () => runtime.activeMode,
+    setStatus: (ctx, modeName) => {
+      setStatus(runtime, ctx, modeName);
+    },
+  };
+}
+
+function createOwnedModeApply(
+  runtime: ModeRuntime,
+  modeApplyActions: ReturnType<typeof createModeApplyActions>,
+): typeof modeApplyActions.applyMode {
+  return async (extensionApi, ctx, modeName, source, reason = "apply", options = {}) => {
+    const applied = await modeApplyActions.applyMode(
+      extensionApi,
+      ctx,
+      modeName,
+      source,
+      reason,
+      options,
+    );
+    if (applied) {
+      recordSelectionOwnership(runtime, extensionApi, ctx, modeApplyOwnership(source, reason));
+    }
+    return applied;
+  };
+}
+
 function registerModesExtension(
   pi: ExtensionAPI,
   startupSelection: ModeStartupSelection,
@@ -403,7 +516,7 @@ function registerModesExtension(
 ): void {
   const failoverRuntime = createModeFailoverRuntime();
   failoverRuntime.withInternalModelChange = (action) => withInternalModelChange(runtime, action);
-  const { syncFromSelection, applyMode, applySelection } = createModeApplyActions({
+  const modeApplyActions = createModeApplyActions({
     runtime,
     ensureRuntime: (ctx) => ensureRuntime(runtime, ctx),
     syncErrorUI: (ctx) => {
@@ -428,6 +541,8 @@ function registerModesExtension(
     },
     notifyModeSwitch,
   });
+  const { syncFromSelection, applySelection } = modeApplyActions;
+  const applyMode = createOwnedModeApply(runtime, modeApplyActions);
   const registeredModeFlags = new Map<string, string>();
   const { showModePicker, cycleMode, restoreMode, activateMode } = createModeActionHandlers({
     runtime,
@@ -481,40 +596,23 @@ function registerModesExtension(
   });
   registerModeShortcuts(pi, { showModePicker, cycleMode });
   registerModeAgentHandlers(pi, runtime, failoverRuntime);
-  registerModeLifecycleHandlers(pi, {
-    resetRuntimeState: () => {
-      runtime.activeMode = undefined;
-      runtime.toolsInitialized = false;
-      runtime.sessionModelOverrides.clear();
-      runtime.lastContext = undefined;
-    },
-    restoreMode: async (extensionApi, ctx) => {
-      runtime.lastContext = ctx;
-      restoreSessionModeOverrides(runtime, ctx);
-      await restoreMode(extensionApi, ctx);
-    },
-    isApplying: () => runtime.applying,
-    isInternalModelChange: () => runtime.internalModelChangeDepth > 0,
-    clearActiveMode: () => {
-      runtime.activeMode = undefined;
-    },
-    markNeedsResyncAfterApply: () => {
-      runtime.needsResyncAfterApply = true;
-    },
-    syncFromSelection,
-    appendModeState: (extensionApi, ctx, modeName) => {
-      appendModeState(runtime, extensionApi, ctx, modeName);
-    },
-    getActiveMode: () => runtime.activeMode,
-    setStatus: (ctx, modeName) => {
-      setStatus(runtime, ctx, modeName);
-    },
-  });
+  registerModeLifecycleHandlers(
+    pi,
+    createModeLifecycleDeps(runtime, restoreMode, syncFromSelection),
+  );
   const unregisterModeEventHandlers = registerModeEventHandlers(pi, {
     modeActivateEvent: MODE_ACTIVATE_EVENT,
     modeSelectionApplyEvent: MODE_SELECTION_APPLY_EVENT,
     parseModeActivateEvent,
-    activateMode,
+    activateMode: async (extensionApi, ctx, event) => {
+      await activateMode(extensionApi, ctx, event);
+      recordSelectionOwnership(
+        runtime,
+        extensionApi,
+        ctx,
+        modeApplyOwnership(event.source, event.reason),
+      );
+    },
     parseModeSelectionApplyEvent,
     applySelection,
   });
@@ -540,14 +638,22 @@ function registerModeAgentHandlers(
     runtime.lastContext = ctx;
     const activeMode = runtime.activeMode;
     const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(runtime, activeMode);
+    if (!shouldRestorePrimarySelection(runtime, pi, ctx)) return;
     await restorePrimaryModelForMode(pi, ctx, failoverRuntime, activeMode, spec);
+    if (runtime.selectionOwnership !== undefined) {
+      recordSelectionOwnership(runtime, pi, ctx, runtime.selectionOwnership);
+    }
   });
   pi.on("message_end", async (event, ctx) => {
     runtime.lastContext = ctx;
     if (event.message.role !== "assistant") return;
     const activeMode = runtime.activeMode;
     const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(runtime, activeMode);
+    const selectionBeforeFailover = currentSelection(ctx, pi);
     await handleModeAssistantMessageEnd(pi, ctx, failoverRuntime, activeMode, spec, event.message);
+    if (!selectionsMatch(selectionBeforeFailover, currentSelection(ctx, pi))) {
+      recordSelectionOwnership(runtime, pi, ctx, "failover");
+    }
   });
 }
 

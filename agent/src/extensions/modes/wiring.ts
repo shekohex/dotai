@@ -112,6 +112,7 @@ export function registerModeLifecycleHandlers(
     isApplying: () => boolean;
     isInternalModelChange: () => boolean;
     clearActiveMode: () => void;
+    recordExternalRpcSelection: (pi: ExtensionAPI, ctx: ExtensionContext) => void;
     markNeedsResyncAfterApply: () => void;
     syncFromSelection: (
       pi: ExtensionAPI,
@@ -138,6 +139,11 @@ export function registerModeLifecycleHandlers(
     }
     if (deps.isApplying()) {
       deps.markNeedsResyncAfterApply();
+      return;
+    }
+    if (ctx.mode === "rpc") {
+      await deps.syncFromSelection(pi, ctx, "model_select");
+      deps.recordExternalRpcSelection(pi, ctx);
       return;
     }
     deps.clearActiveMode();

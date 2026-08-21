@@ -93,6 +93,42 @@ timedTest("inline extension name patch forwards reload options", async () => {
   }
 });
 
+timedTest("bundled MCP adapter exposes stable command identity", async () => {
+  const cwd = await createTempDir("agent-mcp-adapter-identity-");
+  const mcpAdapterDefinition = getBundledExtensionDefinitions().find(
+    (definition) => definition.id === "pi-mcp-adapter",
+  );
+  if (mcpAdapterDefinition === undefined) {
+    throw new Error("Expected bundled MCP adapter");
+  }
+
+  try {
+    const loader = new DefaultResourceLoader({
+      cwd,
+      agentDir: cwd,
+      extensionFactories: [
+        { name: mcpAdapterDefinition.id, factory: mcpAdapterDefinition.factory },
+      ],
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+    });
+
+    await loader.reload();
+
+    const extension = loader.getExtensions().extensions[0];
+    if (extension === undefined) {
+      throw new Error("Expected loaded MCP adapter");
+    }
+    const mcpCommand = extension.commands.get("mcp");
+
+    expect(extension.path).toBe("<inline:pi-mcp-adapter>");
+    expect(mcpCommand?.sourceInfo.path).toBe("<inline:pi-mcp-adapter>");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 timedTest("bundled Herdr reporter suppresses managed Pi integration", async () => {
   const cwd = await createTempDir("agent-herdr-integration-conflict-");
   const managedIntegrationPath = join(cwd, "herdr-agent-state.ts");

@@ -20,6 +20,10 @@ describe("bundled extension selection", () => {
     expect(selectBundledExtensionNames([])).toContain("subagent");
   });
 
+  test("includes pi-mcp-adapter by default", () => {
+    expect(selectBundledExtensionNames([])).toContain("pi-mcp-adapter");
+  });
+
   test("omits bundled subagent for T3 replacement in RPC mode", () => {
     expect(
       selectBundledExtensionNames([

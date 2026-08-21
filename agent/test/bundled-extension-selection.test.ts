@@ -24,6 +24,10 @@ describe("bundled extension selection", () => {
     expect(selectBundledExtensionNames([])).toContain("pi-mcp-adapter");
   });
 
+  test("does not load the retired custom Executor extension", () => {
+    expect(selectBundledExtensionNames([])).not.toContain("executor");
+  });
+
   test("omits bundled subagent for T3 replacement in RPC mode", () => {
     expect(
       selectBundledExtensionNames([

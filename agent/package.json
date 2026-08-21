@@ -30,7 +30,7 @@
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.pi-mcp-adapter.json",
     "lint": "oxlint -f stylish",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt .",
@@ -49,7 +49,7 @@
     "patch:deps": "patch-package",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "test:executor": "vitest run ./test/executor.test.ts",
+    "test:executor": "vitest run ./test/executor-mcp.test.ts",
     "test:keys": "vitest run ./test/pi-tui-keys.test.ts",
     "test:tool-preview": "vitest run ./test/tool-preview.test.ts",
     "test:harness": "vitest run ./test/harness.test.ts ./test/review.test.ts ./test/coreui-editor.test.ts ./test/coreui-builtins.test.ts",

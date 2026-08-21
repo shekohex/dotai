@@ -3047,11 +3047,11 @@ timedTest("agents-md extension ignores bundled skill reads outside the session c
   let session: TestSession | undefined;
 
   try {
-    const executorSkillPath = discoverSkillPaths().find((skillPath) =>
-      skillPath.endsWith("/executor/SKILL.md"),
+    const runAppSkillPath = discoverSkillPaths().find((skillPath) =>
+      skillPath.endsWith("/run-app/SKILL.md"),
     );
 
-    expect(executorSkillPath).toBeTruthy();
+    expect(runAppSkillPath).toBeTruthy();
 
     session = await createTestSession({
       cwd,
@@ -3060,10 +3060,7 @@ timedTest("agents-md extension ignores bundled skill reads outside the session c
     patchHarnessAgent(session);
 
     await session.run(
-      when("Read bundled executor skill", [
-        calls("read", { path: executorSkillPath }),
-        says("done"),
-      ]),
+      when("Read bundled run-app skill", [calls("read", { path: runAppSkillPath }), says("done")]),
     );
 
     const readResult = session.events.all
@@ -3079,7 +3076,7 @@ timedTest("agents-md extension ignores bundled skill reads outside the session c
       )
       .join("\n");
 
-    expect(readResult).toMatch(/name: executor/);
+    expect(readResult).toMatch(/name: run-app/);
     expect(readResult).not.toMatch(/Loaded subdirectory context from/);
 
     const notifications = session.events.uiCallsFor("notify").map((call) => call.args[0]);

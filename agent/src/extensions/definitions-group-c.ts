@@ -2,7 +2,6 @@ import agentAlertsExtension from "./agent-alerts/index.js";
 import askUserQuestionExtension from "./ask-user-question/index.js";
 import cacheGraphExtension from "./cache-graph/index.js";
 import contextPruneExtension from "./context-prune/index.js";
-import executorExtension from "./executor/index.js";
 import goalExtension from "./goal/index.js";
 import herdrAgentStateExtension from "./herdr-agent-state.js";
 import hunkExtension from "./hunk.js";
@@ -37,6 +36,5 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "hunk", factory: hunkExtension },
   { id: "warp", factory: warpExtension },
   { id: "zedra", factory: zedraExtension },
-  { id: "executor", factory: executorExtension },
   { id: "tmux-share", factory: tmuxShareExtension },
 ];

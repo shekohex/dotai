@@ -23,7 +23,7 @@ Tests run on Vitest. The suite mixes unit tests, a TUI/tool-rendering "harness",
 | `npm run test:tool-preview` | `vitest run ./test/tool-preview.test.ts` — the tool-preview harness.       |
 | `npm run test:harness`      | `vitest run` over `harness`, `review`, `coreui-editor`, `coreui-builtins`. |
 | `npm run test:subagent`     | `commit`, `subagent`, `subagent-sdk`.                                      |
-| `npm run test:executor`     | `./test/executor.test.ts`.                                                 |
+| `npm run test:executor`     | `./test/executor-mcp.test.ts`.                                             |
 | `npm run test:keys`         | `./test/pi-tui-keys.test.ts`.                                              |
 
 ## Test categories
@@ -34,7 +34,7 @@ The `test/` directory mirrors the extension surface:
 - `test/gsd/` — lifecycle, state/schema, orchestration, modes, drift, health, planning, UAT, verify-work, roadmap, brownfield, legacy-planning, golden-planning.
 - `test/coreui/` — background-bash (ui/messages/herdr-backend/backend), github-pull-request, plus top-level `coreui-*.test.ts` (editor, builtins, skill/github-reference-autocomplete, agent-end-summary).
 - `test/support/pi-test-harness/` — the shared harness: `mock-pi`, `mock-ui`, `mock-tools`, `sandbox`, `session`, `events`, `diagnostics`, `playbook`, `utils`, `types`.
-- Top-level: `executor`, `harness`, `review`, `tool-preview`, `commit`, `subagent`, `subagent-sdk`, `subagent-launch`, `subagent-sdk-spawn.scenarios`, `pi-tui-keys`, `pi-osc-extension`, `bundled-skills`, `inline-extension-names`, `notify-*`, `terminal-notify`, `session-name`, `review-helpers.scenarios`, `conductor` (config, expression, command parsing, store), plus `update/` (version, command, package-manager).
+- Top-level: `executor-mcp`, `harness`, `review`, `tool-preview`, `commit`, `subagent`, `subagent-sdk`, `subagent-launch`, `subagent-sdk-spawn.scenarios`, `pi-tui-keys`, `pi-osc-extension`, `bundled-skills`, `inline-extension-names`, `notify-*`, `terminal-notify`, `session-name`, `review-helpers.scenarios`, `conductor` (config, expression, command parsing, store), plus `update/` (version, command, package-manager).
 
 `*.scenarios.ts` files are shared scenario fixtures (not run directly). The harness alias `@support/pi-test-harness` is how tests import the mock infrastructure.
 

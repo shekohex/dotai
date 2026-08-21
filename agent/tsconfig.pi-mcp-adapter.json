@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "noImplicitAny": false,
+    "rootDir": "."
+  },
+  "include": ["type-tests/pi-mcp-adapter-contract.ts"]
+}

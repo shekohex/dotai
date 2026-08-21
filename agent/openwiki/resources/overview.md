@@ -29,7 +29,6 @@ Each is a directory with a `SKILL.md` (and optional resources), discovered by `d
 | ---------------------- | ------------------------------------------------------------------ |
 | `creating-goals/`      | `references/PROMPT_GUIDE_GPT5_5.md`, `scripts/draft-goal.{sh,ps1}` |
 | `dynamic-workflows/`   | `references/API.md`, `references/PATTERNS.md`                      |
-| `executor/`            | —                                                                  |
 | `herdr/`               | —                                                                  |
 | `run-app/`             | `examples/{cli,electron,library,playwright,server,tui}.md`         |
 | `run-skill-generator/` | `template.md`                                                      |

@@ -1,5 +1,0 @@
-:80 {
-  reverse_proxy 127.0.0.1:{$EXECUTOR_PORT} {
-    header_up Host localhost
-  }
-}

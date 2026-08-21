@@ -54,6 +54,12 @@ describe("bundled skills", () => {
     expect(skillPath).toBeUndefined();
   });
 
+  it("does not include retired Executor skill", () => {
+    const skillPath = discoverSkillPaths().find((path) => path.endsWith("/executor/SKILL.md"));
+
+    expect(skillPath).toBeUndefined();
+  });
+
   it("documents Herdr IDs as opaque stable handles", () => {
     const skillPath = discoverSkillPaths().find((path) => path.endsWith("/herdr/SKILL.md"));
     expect(skillPath).toBeDefined();

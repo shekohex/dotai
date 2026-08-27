@@ -36,6 +36,8 @@ export const LITELLM_API_KEY_ENV = "LITELLM_API_KEY";
 const LITELLM_READINESS_PATH = "/health/readiness";
 const ZAI_GLM_5_1_MODEL_ID = "glm-5.1";
 const ZAI_GLM_5_2_MODEL_ID = "glm-5.2";
+const ZAI_GLM_5_3_MODEL_ID = "glm-5.3";
+const ZAI_GLM_5_3_FLASH_MODEL_ID = "glm-5.3-flash";
 // Pi's context count excludes provider instructions and tool schemas serialized by LiteLLM.
 const CODEX_OPENAI_CONTEXT_WINDOW = 240_000;
 
@@ -193,27 +195,58 @@ function createZaiModels(): ProviderModelConfig[] {
     maxTokens: model.maxTokens,
     compat: model.compat,
     headers: model.headers,
-    thinkingLevelMap: model.thinkingLevelMap,
+    thinkingLevelMap:
+      model.id === ZAI_GLM_5_3_MODEL_ID ? { high: "high", max: "max" } : model.thinkingLevelMap,
   }));
   const glm51 = models.find((model) => model.id === ZAI_GLM_5_1_MODEL_ID);
-  if (glm51 === undefined || models.some((model) => model.id === ZAI_GLM_5_2_MODEL_ID)) {
-    return models;
+  let augmentedModels = models;
+  if (glm51 !== undefined && !models.some((model) => model.id === ZAI_GLM_5_2_MODEL_ID)) {
+    augmentedModels = [
+      ...models,
+      {
+        ...glm51,
+        id: ZAI_GLM_5_2_MODEL_ID,
+        name: "GLM-5.2",
+        contextWindow: 1_000_000,
+        thinkingLevelMap: {
+          low: "high",
+          medium: "high",
+          high: "high",
+          xhigh: "max",
+          max: "max",
+        },
+      },
+    ];
+  }
+
+  const glm53 = augmentedModels.find((model) => model.id === ZAI_GLM_5_3_MODEL_ID);
+  if (
+    glm53 === undefined ||
+    augmentedModels.some((model) => model.id === ZAI_GLM_5_3_FLASH_MODEL_ID)
+  ) {
+    return augmentedModels;
   }
 
   return [
-    ...models,
+    ...augmentedModels,
     {
-      ...glm51,
-      id: ZAI_GLM_5_2_MODEL_ID,
-      name: "GLM-5.2",
-      contextWindow: 1_000_000,
+      ...glm53,
+      id: ZAI_GLM_5_3_FLASH_MODEL_ID,
+      name: "GLM-5.3 Flash",
+      reasoning: true,
       thinkingLevelMap: {
-        low: "high",
-        medium: "high",
         high: "high",
-        xhigh: "max",
         max: "max",
       },
+      input: ["text", "image"],
+      cost: {
+        input: 0.15,
+        output: 0.5,
+        cacheRead: 0.03,
+        cacheWrite: 0,
+      },
+      contextWindow: 1_000_000,
+      maxTokens: 131_072,
     },
   ];
 }

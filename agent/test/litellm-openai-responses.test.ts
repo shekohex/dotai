@@ -83,6 +83,34 @@ describe("LiteLLM OpenAI Responses provider", () => {
     expect(registration?.config.streamSimple).toBe(streamLiteLLMOpenAIResponses);
   });
 
+  it("registers GLM-5.3 Flash with image support and supplied pricing", () => {
+    const registrations = createLiteLLMProviderRegistrations(
+      {
+        healthy: true,
+        label: "test",
+        baseUrl: "https://litellm.example.test/v1",
+      },
+      "TEST_KEY",
+    );
+    const zaiRegistration = registrations.find((candidate) => candidate.provider === "zai");
+    const glm53Model = zaiRegistration?.config.models?.find((model) => model.id === "glm-5.3");
+    const flashModel = zaiRegistration?.config.models?.find(
+      (model) => model.id === "glm-5.3-flash",
+    );
+
+    expect(glm53Model?.thinkingLevelMap).toEqual({ high: "high", max: "max" });
+    expect(flashModel).toMatchObject({
+      id: "glm-5.3-flash",
+      name: "GLM-5.3 Flash",
+      reasoning: true,
+      input: ["text", "image"],
+      cost: { input: 0.15, output: 0.5, cacheRead: 0.03, cacheWrite: 0 },
+      contextWindow: 1_000_000,
+      maxTokens: 131_072,
+    });
+    expect(flashModel?.thinkingLevelMap).toEqual({ high: "high", max: "max" });
+  });
+
   it("uses cached WebSockets by default", () => {
     expect(defaultSettings.transport).toBe("auto");
   });

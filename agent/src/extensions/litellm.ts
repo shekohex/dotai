@@ -37,7 +37,6 @@ const LITELLM_READINESS_PATH = "/health/readiness";
 const ZAI_GLM_5_1_MODEL_ID = "glm-5.1";
 const ZAI_GLM_5_2_MODEL_ID = "glm-5.2";
 const ZAI_GLM_5_3_MODEL_ID = "glm-5.3";
-const ZAI_GLM_5_3_FLASH_MODEL_ID = "glm-5.3-flash";
 // Pi's context count excludes provider instructions and tool schemas serialized by LiteLLM.
 const CODEX_OPENAI_CONTEXT_WINDOW = 240_000;
 
@@ -219,36 +218,7 @@ function createZaiModels(): ProviderModelConfig[] {
     ];
   }
 
-  const glm53 = augmentedModels.find((model) => model.id === ZAI_GLM_5_3_MODEL_ID);
-  if (
-    glm53 === undefined ||
-    augmentedModels.some((model) => model.id === ZAI_GLM_5_3_FLASH_MODEL_ID)
-  ) {
-    return augmentedModels;
-  }
-
-  return [
-    ...augmentedModels,
-    {
-      ...glm53,
-      id: ZAI_GLM_5_3_FLASH_MODEL_ID,
-      name: "GLM-5.3 Flash",
-      reasoning: true,
-      thinkingLevelMap: {
-        high: "high",
-        max: "max",
-      },
-      input: ["text", "image"],
-      cost: {
-        input: 0.15,
-        output: 0.5,
-        cacheRead: 0.03,
-        cacheWrite: 0,
-      },
-      contextWindow: 1_000_000,
-      maxTokens: 131_072,
-    },
-  ];
+  return augmentedModels;
 }
 
 function createCodexOpenAIModels(): ProviderModelConfig[] {

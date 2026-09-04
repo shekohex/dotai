@@ -48,6 +48,8 @@ export function createCommandHandler(ctx: CommandHandlerContext): CommandHandler
       case "abort":
         await session.abort();
         return ok(id, "abort");
+      case "clear_queue":
+        return ok(id, "clear_queue", session.clearQueue());
       case "new_session":
         return ok(id, "new_session", { cancelled: true });
       case "get_state":

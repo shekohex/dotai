@@ -101,14 +101,22 @@ describe("LiteLLM OpenAI Responses provider", () => {
     expect(glm53Model?.thinkingLevelMap).toEqual({ high: "high", max: "max" });
     expect(flashModel).toMatchObject({
       id: "glm-5.3-flash",
-      name: "GLM-5.3 Flash",
+      name: "GLM-5.3-Flash",
       reasoning: true,
       input: ["text", "image"],
-      cost: { input: 0.15, output: 0.5, cacheRead: 0.03, cacheWrite: 0 },
+      cost: { input: 0.075, output: 0.25, cacheRead: 0.015, cacheWrite: 0 },
       contextWindow: 1_000_000,
       maxTokens: 131_072,
     });
-    expect(flashModel?.thinkingLevelMap).toEqual({ high: "high", max: "max" });
+    expect(flashModel?.thinkingLevelMap).toEqual({
+      off: null,
+      minimal: null,
+      low: "low",
+      medium: null,
+      high: "high",
+      xhigh: null,
+      max: "max",
+    });
   });
 
   it("uses cached WebSockets by default", () => {

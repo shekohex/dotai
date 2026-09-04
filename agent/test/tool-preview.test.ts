@@ -1081,6 +1081,15 @@ function createInteractiveModePreview(cwd: string) {
     getCodeBlockIndent: () => 2,
     getOutputPad: () => 0,
     getShowCacheMissNotices: () => false,
+    getTerminalCapabilityOverrides: () => ({}),
+    getFullscreenCopyOnSelect: () => true,
+    getFullscreenExitOutput: () => "transcript",
+    getFullscreenScrollbar: () => "auto",
+    getTransport: () => "auto",
+    getShowTerminalProgress: () => false,
+    getTreeFilterMode: () => "default",
+    getDoubleEscapeAction: () => "tree",
+    getMermaidRenderingMode: () => "streaming",
   };
   const sessionManager = {
     getCwd: () => cwd,

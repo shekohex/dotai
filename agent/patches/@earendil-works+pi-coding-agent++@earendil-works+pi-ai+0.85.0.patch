@@ -1,7 +1,7 @@
-diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
-index 2a8aca4..706d3c9 100644
---- a/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
-+++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
+diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
+index bf979d4..0b0223b 100644
+--- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
++++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
 @@ -173,6 +173,9 @@ export const stream = (model, context, options) => {
              if (nextBody !== undefined) {
                  body = nextBody;
@@ -30,7 +30,7 @@ index 2a8aca4..706d3c9 100644
              if (options?.signal?.aborted) {
                  throw new Error("Request was aborted");
              }
-@@ -1268,7 +1271,8 @@ function buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token)
+@@ -1271,7 +1274,8 @@ function buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token)
      }
      headers.set("Authorization", `Bearer ${token}`);
      headers.set("chatgpt-account-id", accountId);
@@ -40,11 +40,11 @@ index 2a8aca4..706d3c9 100644
      headers.set("User-Agent", getPiUserAgent());
      return headers;
  }
-diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
-index 0fb7e8b..0d80381 100644
---- a/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
-+++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
-@@ -118,6 +118,7 @@ export const stream = (model, context, options) => {
+diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
+index 2605022..e2bf040 100644
+--- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
++++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
+@@ -119,6 +119,7 @@ export const stream = (model, context, options) => {
              await processResponsesStream(openaiStream, output, stream, model, {
                  serviceTier: options?.serviceTier,
                  grammarToolInputProperties,
@@ -52,7 +52,7 @@ index 0fb7e8b..0d80381 100644
                  applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
              });
              if (options?.signal?.aborted) {
-@@ -274,6 +275,11 @@ function getServiceTierCostMultiplier(model, serviceTier) {
+@@ -275,6 +276,11 @@ function getServiceTierCostMultiplier(model, serviceTier) {
              return 1;
      }
  }
@@ -64,10 +64,10 @@ index 0fb7e8b..0d80381 100644
  function applyServiceTierPricing(usage, serviceTier, model) {
      const multiplier = getServiceTierCostMultiplier(model, serviceTier);
      if (multiplier === 1)
-diff --git a/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js b/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
+diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
 index 216a45f..f81f025 100644
---- a/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
-+++ b/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
+--- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
++++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
 @@ -13,6 +13,7 @@ export function buildBaseOptions(model, context, options, apiKey) {
          : undefined;
      return {
@@ -76,10 +76,10 @@ index 216a45f..f81f025 100644
          samplingParams,
          maxTokens: clampMaxTokensToContext(model, context, options?.maxTokens ?? model.maxTokens),
          signal: options?.signal,
-diff --git a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-index 65c7c9e..e2e501d 100644
---- a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-+++ b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
+diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
+index ce8c4cb..589ba67 100644
+--- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
++++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
 @@ -44,6 +44,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "connection.?lost",
      "other side closed",
@@ -104,13 +104,14 @@ index 65c7c9e..e2e501d 100644
      "stream ended before a terminal response event",
      "http2 request did not get a response",
      // Provider-requested retry delay cap failures should flow through the outer
-@@ -69,6 +74,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -69,6 +74,10 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "retry delay",
      // Explicit retry guidance emitted mid-stream by OpenAI Responses and Bedrock
      // stream exceptions (#6019).
 +    "invalid codex sse json",
 +    "invalid codex websocket json",
 +    "error occurred while processing your request",
++    "response api in-stream error",
      "you can retry your request",
      "try your request again",
      "please retry your request",

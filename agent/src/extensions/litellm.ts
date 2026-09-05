@@ -1,4 +1,5 @@
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
+import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "../utils/error-message.js";
 import { resolveStoredApiKey } from "../utils/stored-credential.js";
@@ -74,7 +75,7 @@ export function createLiteLLMProviderRegistrations(
         apiKey,
         api: "openai-responses",
         streamSimple: streamLiteLLMOpenAIResponses,
-        models: createCodexOpenAIModels(),
+        models: createCodexOpenAIModels(state),
       },
     },
     {
@@ -83,7 +84,7 @@ export function createLiteLLMProviderRegistrations(
         baseUrl: ZAI_BASE_URL,
         apiKey: ZAI_API_KEY_ENV,
         api: "openai-completions",
-        models: createZaiModels(),
+        models: createZaiModels(state),
       },
     },
     {
@@ -92,7 +93,7 @@ export function createLiteLLMProviderRegistrations(
         baseUrl: state.baseUrl,
         apiKey,
         api: "openai-completions",
-        models: createZaiModels(),
+        models: createZaiModels(state),
       },
     },
     {
@@ -101,7 +102,7 @@ export function createLiteLLMProviderRegistrations(
         baseUrl: state.baseUrl,
         apiKey,
         api: "openai-completions",
-        models: createDeepSeekModels(),
+        models: createDeepSeekModels(state),
       },
     },
   ];
@@ -113,7 +114,7 @@ export function createLiteLLMProviderRegistrations(
         baseUrl: `${state.origin}/v1beta`,
         apiKey,
         api: "google-generative-ai",
-        models: createGeminiModels(),
+        models: createGeminiModels(state),
       },
     });
   }
@@ -182,7 +183,7 @@ async function probeLiteLLMCandidate(candidate: LiteLLMCandidate): Promise<{
   }
 }
 
-function createZaiModels(): ProviderModelConfig[] {
+function createZaiModels(_state: LiteLLMState): ProviderModelConfig[] {
   const models = getBuiltinModels(ZAI_PROVIDER).map((model) => ({
     id: model.id,
     name: model.name,
@@ -221,23 +222,75 @@ function createZaiModels(): ProviderModelConfig[] {
   return augmentedModels;
 }
 
-function createCodexOpenAIModels(): ProviderModelConfig[] {
-  return getBuiltinModels("openai-codex").map((model) => ({
-    id: model.id,
-    name: model.name,
+function createCodexOpenAIModels(state: LiteLLMState): ProviderModelConfig[] {
+  const augmentedModels = getBuiltinModels("openai-codex").map(
+    (model) =>
+      ({
+        id: model.id,
+        name: model.name,
+        api: "openai-responses",
+        reasoning: model.reasoning,
+        input: [...model.input],
+        cost: { ...model.cost },
+        contextWindow: Math.min(model.contextWindow, CODEX_OPENAI_CONTEXT_WINDOW),
+        maxTokens: model.maxTokens,
+        compat: model.compat,
+        headers: model.headers,
+        thinkingLevelMap: model.thinkingLevelMap,
+        provider: "codex-openai",
+        baseUrl: state.baseUrl!,
+      }) satisfies Model<"openai-responses">,
+  );
+
+  const sol = augmentedModels.find((m) => m.id === "gpt-5.6-sol");
+  const astra = {
+    id: "gpt-6-astra",
+    name: "GPT-6 Astra",
     api: "openai-responses",
-    reasoning: model.reasoning,
-    input: [...model.input],
-    cost: { ...model.cost },
-    contextWindow: Math.min(model.contextWindow, CODEX_OPENAI_CONTEXT_WINDOW),
-    maxTokens: model.maxTokens,
-    compat: model.compat,
-    headers: model.headers,
-    thinkingLevelMap: model.thinkingLevelMap,
-  }));
+    provider: "codex-openai",
+    baseUrl: state.baseUrl!,
+    reasoning: true,
+    input: ["text", "image"],
+    cost: {
+      input: 10,
+      output: 50,
+      cacheRead: 1,
+      cacheWrite: 12.5,
+      tiers: [
+        {
+          inputTokensAbove: 272000,
+          input: 20,
+          output: 75,
+          cacheRead: 2,
+          cacheWrite: 25,
+        },
+      ],
+    },
+    contextWindow: Math.min(272000, CODEX_OPENAI_CONTEXT_WINDOW),
+    maxTokens: 128000,
+    headers: sol?.headers,
+    thinkingLevelMap: {
+      off: null,
+      minimal: "low",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+      max: "max",
+    },
+    compat: {
+      supportsOpenAIGrammarTools: true,
+      supportsAdditionalTools: true,
+      supportsToolSearch: true,
+    },
+  } satisfies Model<"openai-responses">;
+
+  augmentedModels.push(astra);
+
+  return augmentedModels;
 }
 
-function createDeepSeekModels(): ProviderModelConfig[] {
+function createDeepSeekModels(_state: LiteLLMState): ProviderModelConfig[] {
   return getBuiltinModels("deepseek").map((model) => ({
     id: model.id,
     name: model.name,
@@ -253,7 +306,7 @@ function createDeepSeekModels(): ProviderModelConfig[] {
   }));
 }
 
-function createGeminiModels(): ProviderModelConfig[] {
+function createGeminiModels(_state: LiteLLMState): ProviderModelConfig[] {
   return getBuiltinModels("google").map((model) => ({
     id: model.id,
     name: model.name,

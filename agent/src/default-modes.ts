@@ -46,7 +46,7 @@ export const defaultModes = {
     },
     openwiki: {
       provider: "zai",
-      modelId: "glm-5.3",
+      modelId: "glm-5.3-flash",
       thinkingLevel: "max",
       color: "success",
       tmuxTarget: "window",
@@ -81,16 +81,18 @@ export const defaultModes = {
       tools: ["*"],
       description: "Like build mode, but faster",
     },
+
     deep: {
       provider: "codex-openai",
-      modelId: "gpt-5.6-sol",
-      thinkingLevel: "xhigh",
+      modelId: "gpt-6-astra",
+      thinkingLevel: "medium",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
       description:
-        "Use for build-style work that needs deeper reasoning, higher cost, and more correct code.",
+        "Use for build-style SOTA work that needs deeper reasoning, higher cost, and more correct code.",
     },
+
     review: {
       provider: "codex-openai",
       modelId: "gpt-5.6-sol",
@@ -169,7 +171,7 @@ export const defaultModes = {
     },
     painter: {
       provider: "zai",
-      modelId: "glm-5.3",
+      modelId: "glm-5.3-flash",
       thinkingLevel: "max",
       color: "bashMode",
       tmuxTarget: "window",
@@ -203,7 +205,7 @@ export const defaultModes = {
     },
     websearch: {
       provider: "zai",
-      modelId: "glm-5.3",
+      modelId: "glm-5.3-flash",
       thinkingLevel: "max",
       color: "muted",
       tmuxTarget: "window",

@@ -416,93 +416,97 @@ describe("look_at", () => {
 
   // Real loopback WS roundtrip with a 2MB frame; starved of CPU on CI runners it
   // exceeds any sane timeout, so it only runs outside CI.
-  it.skipIf(process.env.CI)("runs end to end over authenticated pairing RPC", async () => {
-    const highResolutionJpeg = paddedJpeg(2 * 1024 * 1024);
-    const server = new LivePairingServer({
-      sessionId: "session-e2e",
-      mode: "local",
-      heartbeatMs: 60_000,
-    });
-    servers.push(server);
-    const descriptor = await server.start();
-    const { payload, secret } = decodePairingUri(descriptor.uri);
-    const endpoint = payload.endpoints.find((candidate) => candidate.type === "local");
-    if (endpoint?.type !== "local") throw new Error("Missing local endpoint");
-    const accepted = server.accept();
-    const socket = new WebSocket(endpoint.url);
-    await new Promise<void>((resolveOpen, rejectOpen) => {
-      socket.once("open", resolveOpen);
-      socket.once("error", rejectOpen);
-    });
-    socket.send(
-      JSON.stringify({
-        jsonrpc: "2.0",
-        id: "pair",
-        method: "pair",
-        params: {
-          protocolVersion: LIVE_PAIRING_PROTOCOL_VERSION,
-          secret,
-          client: { name: "test", platform: "macOS", appVersion: "0.1.0" },
-          capabilities: {
-            webrtc: true,
-            inputLevel: false,
-            outputLevel: false,
-            deviceSelection: false,
-            sessionResume: true,
-            threadCoordination: true,
-            screenCapture: true,
-          },
-        },
-      }),
-    );
-    await new Promise<void>((resolvePair) => socket.once("message", () => resolvePair()));
-    const captureSession = createSession("session-e2e");
-    captureSession.attach(await accepted);
-    const tool = createLookAtToolDefinition(() => captureSession);
-    const requestReceived = new Promise<void>((resolveRequest, rejectRequest) => {
-      socket.once("message", (frame) => {
-        try {
-          const request = JSON.parse(frame.toString()) as {
-            id: string;
-            method: string;
-            params: Record<string, never>;
-          };
-          expect(request).toMatchObject({ method: "screen.capture", params: {} });
-          socket.send(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: request.id,
-              result: captureResult({
-                data: highResolutionJpeg.toString("base64"),
-                byteSize: highResolutionJpeg.byteLength,
-                sha256: createHash("sha256").update(highResolutionJpeg).digest("hex"),
-              }),
-            }),
-          );
-          resolveRequest();
-        } catch (error) {
-          rejectRequest(error);
-        }
+  it.skipIf(process.env.CI)(
+    "runs end to end over authenticated pairing RPC",
+    async () => {
+      const highResolutionJpeg = paddedJpeg(2 * 1024 * 1024);
+      const server = new LivePairingServer({
+        sessionId: "session-e2e",
+        mode: "local",
+        heartbeatMs: 60_000,
       });
-    });
+      servers.push(server);
+      const descriptor = await server.start();
+      const { payload, secret } = decodePairingUri(descriptor.uri);
+      const endpoint = payload.endpoints.find((candidate) => candidate.type === "local");
+      if (endpoint?.type !== "local") throw new Error("Missing local endpoint");
+      const accepted = server.accept();
+      const socket = new WebSocket(endpoint.url);
+      await new Promise<void>((resolveOpen, rejectOpen) => {
+        socket.once("open", resolveOpen);
+        socket.once("error", rejectOpen);
+      });
+      socket.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: "pair",
+          method: "pair",
+          params: {
+            protocolVersion: LIVE_PAIRING_PROTOCOL_VERSION,
+            secret,
+            client: { name: "test", platform: "macOS", appVersion: "0.1.0" },
+            capabilities: {
+              webrtc: true,
+              inputLevel: false,
+              outputLevel: false,
+              deviceSelection: false,
+              sessionResume: true,
+              threadCoordination: true,
+              screenCapture: true,
+            },
+          },
+        }),
+      );
+      await new Promise<void>((resolvePair) => socket.once("message", () => resolvePair()));
+      const captureSession = createSession("session-e2e");
+      captureSession.attach(await accepted);
+      const tool = createLookAtToolDefinition(() => captureSession);
+      const requestReceived = new Promise<void>((resolveRequest, rejectRequest) => {
+        socket.once("message", (frame) => {
+          try {
+            const request = JSON.parse(frame.toString()) as {
+              id: string;
+              method: string;
+              params: Record<string, never>;
+            };
+            expect(request).toMatchObject({ method: "screen.capture", params: {} });
+            socket.send(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: request.id,
+                result: captureResult({
+                  data: highResolutionJpeg.toString("base64"),
+                  byteSize: highResolutionJpeg.byteLength,
+                  sha256: createHash("sha256").update(highResolutionJpeg).digest("hex"),
+                }),
+              }),
+            );
+            resolveRequest();
+          } catch (error) {
+            rejectRequest(error);
+          }
+        });
+      });
 
-    const result = await tool.execute(
-      "look-e2e",
-      {},
-      undefined,
-      undefined,
-      createContext(visionModel),
-    );
-    await requestReceived;
+      const result = await tool.execute(
+        "look-e2e",
+        {},
+        undefined,
+        undefined,
+        createContext(visionModel),
+      );
+      await requestReceived;
 
-    expect(result.content).toContainEqual(
-      expect.objectContaining({ type: "image", mimeType: "image/jpeg" }),
-    );
-    expect(existsSync(result.details.path)).toBe(true);
-    expect(result.details.byteSize).toBe(highResolutionJpeg.byteLength);
-    expect(readFileSync(result.details.path)).toEqual(highResolutionJpeg);
-    socket.close(1000, "done");
-  }, 15_000);
+      expect(result.content).toContainEqual(
+        expect.objectContaining({ type: "image", mimeType: "image/jpeg" }),
+      );
+      expect(existsSync(result.details.path)).toBe(true);
+      expect(result.details.byteSize).toBe(highResolutionJpeg.byteLength);
+      expect(readFileSync(result.details.path)).toEqual(highResolutionJpeg);
+      socket.close(1000, "done");
+    },
+    15_000,
+  );
 
   it.each([
     ["malformed Base64", { data: "not base64%%" }, "invalid Base64"],

@@ -223,7 +223,7 @@ function createZaiModels(_state: LiteLLMState): ProviderModelConfig[] {
 }
 
 function createCodexOpenAIModels(state: LiteLLMState): ProviderModelConfig[] {
-  const augmentedModels = getBuiltinModels("openai-codex").map(
+  return getBuiltinModels("openai-codex").map(
     (model) =>
       ({
         id: model.id,
@@ -241,53 +241,6 @@ function createCodexOpenAIModels(state: LiteLLMState): ProviderModelConfig[] {
         baseUrl: state.baseUrl!,
       }) satisfies Model<"openai-responses">,
   );
-
-  const sol = augmentedModels.find((m) => m.id === "gpt-5.6-sol");
-  const astra = {
-    id: "gpt-6-astra",
-    name: "GPT-6 Astra",
-    api: "openai-responses",
-    provider: "codex-openai",
-    baseUrl: state.baseUrl!,
-    reasoning: true,
-    input: ["text", "image"],
-    cost: {
-      input: 10,
-      output: 50,
-      cacheRead: 1,
-      cacheWrite: 12.5,
-      tiers: [
-        {
-          inputTokensAbove: 272000,
-          input: 20,
-          output: 75,
-          cacheRead: 2,
-          cacheWrite: 25,
-        },
-      ],
-    },
-    contextWindow: Math.min(272000, CODEX_OPENAI_CONTEXT_WINDOW),
-    maxTokens: 128000,
-    headers: sol?.headers,
-    thinkingLevelMap: {
-      off: null,
-      minimal: "low",
-      low: "low",
-      medium: "medium",
-      high: "high",
-      xhigh: "xhigh",
-      max: "max",
-    },
-    compat: {
-      supportsOpenAIGrammarTools: true,
-      supportsAdditionalTools: true,
-      supportsToolSearch: true,
-    },
-  } satisfies Model<"openai-responses">;
-
-  augmentedModels.push(astra);
-
-  return augmentedModels;
 }
 
 function createDeepSeekModels(_state: LiteLLMState): ProviderModelConfig[] {

@@ -52,7 +52,7 @@ Never remove or downgrade functionality/dependencies to fix type errors — upgr
 
 | File                            | Role                                                                                                                                                                                                                                                             |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/update/command.ts`         | Parses `update` args and target (`--self` / `--extensions` / `--all`, default all), orchestrates the run.                                                                                                                                                        |
+| `src/update/command.ts`         | Intercepts wrapper self/all targets (`pi update`, `--self`, `--all`) and leaves upstream package/model targets (`--extensions`, `--models`, `--extension`, package sources) untouched.                                                                           |
 | `src/update/version.ts`         | `getRuntimeVersion` — reads `package.json`, classifies the channel (`latest` vs `preview`; preview versions match a `dev.<commit>` pattern).                                                                                                                     |
 | `src/update/github-packages.ts` | `getLatestPackageRelease` — queries the GitHub Packages npm registry for dist-tag metadata; for the preview channel also hits the GitHub Releases API.                                                                                                           |
 | `src/update/auth.ts`            | `resolveAuthToken` — checks `$NODE_AUTH_TOKEN`/`$NPM_TOKEN`/`$GH_TOKEN`/`$GITHUB_TOKEN`, falling back to `gh auth token`. `verifyGitHubPackagesAccess` confirms the token has `read:packages`.                                                                   |
@@ -61,7 +61,7 @@ Never remove or downgrade functionality/dependencies to fix type errors — upgr
 
 Runtime steps:
 
-1. Parse target. `--extensions` delegates to upstream pi via `spawnSync` with `SHEKOHEX_AGENT_BYPASS_UPDATE=1` (prevents recursive update).
+1. Intercept only wrapper self/all targets. Upstream handles `--extensions`, `--models`, `--extension`, package sources, and other update options; `--all` delegates its extension update to upstream via `spawnSync` with `SHEKOHEX_AGENT_BYPASS_UPDATE=1` (prevents recursive update).
 2. Resolve an auth token and verify GitHub Packages access (public packages still require auth).
 3. Read install state; resolve the install method (from state, inferred from package dir, or forced via `--npm`/`--pnpm`/`--bun`/`--yarn`).
 4. Fetch the latest release for the channel; bail if already current (compares version, then commit hash).

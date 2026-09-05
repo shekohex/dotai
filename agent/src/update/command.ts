@@ -19,12 +19,11 @@ interface UpdateOptions {
   packageDir?: string;
 }
 
-type UpdateTarget = "all" | "self" | "extensions" | "extension";
+type UpdateTarget = "all" | "self";
 
 interface ParsedUpdateCommand {
   target: UpdateTarget;
   force: boolean;
-  extensionSource?: string;
   requestedMethod?: InstallMethod;
   passthroughArgs: string[];
 }
@@ -37,10 +36,6 @@ export async function handleWrapperUpdateCommand(options: UpdateOptions): Promis
   if (!parsed) {
     return false;
   }
-  if (parsed.target === "extensions" || parsed.target === "extension") {
-    return false;
-  }
-
   if (parsed.target === "all") {
     runUpstreamExtensionsUpdate(parsed.passthroughArgs);
   }
@@ -60,39 +55,38 @@ export function parseUpdateCommand(args: string[]): ParsedUpdateCommand | undefi
   const strippedArgs = stripInstallMethodFlags(args);
   const force = strippedArgs.includes("--force");
   const selfFlag = strippedArgs.includes("--self");
-  const extensionsFlag = strippedArgs.includes("--extensions");
-  const extensionIndex = strippedArgs.indexOf("--extension");
-  const extensionSource = extensionIndex >= 0 ? strippedArgs[extensionIndex + 1] : undefined;
+  const allFlag = strippedArgs.includes("--all");
   const source = strippedArgs.slice(1).find((arg) => !arg.startsWith("-"));
-  const target = resolveUpdateTarget({ selfFlag, extensionsFlag, extensionSource, source });
+  const hasUpstreamTarget = strippedArgs.some(
+    (arg) => arg === "--extensions" || arg === "--models" || arg === "--extension",
+  );
+  const hasUnsupportedOption = strippedArgs
+    .slice(1)
+    .some(
+      (arg) =>
+        arg.startsWith("-") &&
+        !["--force", "--self", "--all", "--approve", "-a", "--no-approve", "-na"].includes(arg),
+    );
+  const hasUnsupportedSource = source !== undefined && source !== "self" && source !== "pi";
+  if (
+    hasUpstreamTarget ||
+    hasUnsupportedOption ||
+    hasUnsupportedSource ||
+    (selfFlag && allFlag) ||
+    (allFlag && source !== undefined)
+  ) {
+    return undefined;
+  }
+
   const command: ParsedUpdateCommand = {
-    target,
+    target: allFlag ? "all" : "self",
     force,
     passthroughArgs: strippedArgs,
   };
-  if (extensionSource !== undefined) {
-    command.extensionSource = extensionSource;
-  }
   if (requestedMethod !== undefined) {
     command.requestedMethod = requestedMethod;
   }
   return command;
-}
-
-function resolveUpdateTarget(input: {
-  selfFlag: boolean;
-  extensionsFlag: boolean;
-  extensionSource?: string;
-  source?: string;
-}): UpdateTarget {
-  if (input.extensionSource !== undefined) return "extension";
-  if (input.source !== undefined && input.source !== "self" && input.source !== "pi")
-    return "extension";
-  if (input.extensionsFlag && !input.selfFlag && !input.source) return "extensions";
-  if (input.selfFlag || input.source === "self" || input.source === "pi") {
-    return input.extensionsFlag ? "all" : "self";
-  }
-  return "all";
 }
 
 async function runWrapperSelfUpdate(

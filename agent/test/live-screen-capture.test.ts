@@ -112,7 +112,9 @@ function connection(
 }
 
 function createSession(sessionId = "session-1"): LiveScreenCaptureSession {
-  const session = new LiveScreenCaptureSession(sessionId, { requestTimeoutMs: 50 });
+  // Generous budget: the e2e test does a real WS roundtrip with a 2MB+ JSON frame,
+  // which can exceed tight timeouts on loaded CI runners.
+  const session = new LiveScreenCaptureSession(sessionId, { requestTimeoutMs: 5_000 });
   sessions.push(session);
   return session;
 }
@@ -316,7 +318,7 @@ describe("look_at", () => {
     );
 
     expect(request).toHaveBeenCalledOnce();
-    expect(request).toHaveBeenCalledWith("screen.capture", {}, 50, undefined);
+    expect(request).toHaveBeenCalledWith("screen.capture", {}, 5_000, undefined);
     const image = result.content.find((item): item is ImageContent => item.type === "image");
     expect(image).toEqual({ type: "image", data: jpeg.toString("base64"), mimeType: "image/jpeg" });
     expect(result.details).toMatchObject({

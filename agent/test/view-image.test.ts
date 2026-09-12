@@ -38,7 +38,7 @@ function createImageFixture(): { cwd: string; path: string } {
   const cwd = process.cwd();
   return {
     cwd,
-    path: resolve(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+    path: resolve(cwd, "macos/PiLive/Sources/PiLive/Resources/Orbs/miss-minutes.png"),
   };
 }
 

@@ -69,10 +69,6 @@ npm audit --audit-level=moderate
 
 If `npm audit` reports stale hoisted transitives but nested Pi shrinkwrap has fixed versions, inspect with `npm explain <package>`. Prefer `npm update <package>` only when it updates lockfile within declared semver ranges and tests pass.
 
-If generated Plannotator HTML changes only because formatting touched it, restore those files unless directly relevant:
-
-`git -C /home/coder/dotai restore -- agent/src/resources/plannotator/plannotator.html agent/src/resources/plannotator/review-editor.html`
-
 ## Commit And Push
 
 When user asks to commit/push, read `git-commiting` skill first.

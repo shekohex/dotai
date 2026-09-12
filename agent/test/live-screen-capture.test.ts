@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import type { Api, AssistantMessage, ImageContent, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -45,10 +44,10 @@ const textModel = {
 
 const sessions: LiveScreenCaptureSession[] = [];
 const servers: LivePairingServer[] = [];
-const jpegPath = resolve(
-  "vendor/plannotator-ui/packages/ui/node_modules/highlight.js/styles/pojoaque.jpg",
+const jpeg = Buffer.from(
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/wAALCACMAIwBAREA/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAA/AKpgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//9k=",
+  "base64",
 );
-const jpeg = readFileSync(jpegPath);
 
 function paddedJpeg(targetBytes: number): Buffer {
   const segments: Buffer[] = [jpeg.subarray(0, 2)];

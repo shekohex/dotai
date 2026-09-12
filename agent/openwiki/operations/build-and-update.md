@@ -6,11 +6,10 @@ How the package is built, how install seeds defaults and applies patches, and ho
 
 `package.json#scripts.build` runs, in order:
 
-1. **`node --import tsx scripts/build-plannotator-ui.mts`** — builds the vendored React apps in `vendor/plannotator-ui/` (`apps/review`, `apps/hook`, and the `packages/*`) with Vite, then copies the resulting `index.html` files to `src/resources/plannotator/plannotator.html` and `review-editor.html`. Skippable via `SHEKOHEX_AGENT_SKIP_PLANNOTATOR_BUILD=true` when cached outputs exist; in CI it installs vendor deps automatically, locally it errors if they're missing.
-2. **`tsc -p tsconfig.json`** — compiles `src/` → `dist/`.
-3. **`node scripts/copy-bundled-resources.mjs`** — copies `src/resources/` → `dist/resources/` (and `src/extensions/interview/form/` → `dist/extensions/interview/form/`), replacing the target first.
-4. **`node scripts/generate-default-settings.mjs`** — imports the compiled `dist/default-settings.js` and writes `dist/defaults/{settings.json,modes.json}` from the `defaultSettings` / `defaultModes` exports.
-5. **`node scripts/prepare-bin.mjs`** — writes `bin/pi.js` (Unix shim) and `bin/pi.cmd` (Windows shim) and marks Unix entrypoints executable.
+1. **`tsc -p tsconfig.json`** — compiles `src/` → `dist/`.
+2. **`node scripts/copy-bundled-resources.mjs`** — copies `src/resources/` → `dist/resources/` (and `src/extensions/interview/form/` → `dist/extensions/interview/form/`), replacing the target first.
+3. **`node scripts/generate-default-settings.mjs`** — imports the compiled `dist/default-settings.js` and writes `dist/defaults/{settings.json,modes.json}` from the `defaultSettings` / `defaultModes` exports.
+4. **`node scripts/prepare-bin.mjs`** — writes `bin/pi.js` (Unix shim) and `bin/pi.cmd` (Windows shim) and marks Unix entrypoints executable.
 
 `npm run prepare` runs `build`; `npm run postinstall` / `postprepare` run `scripts/postinstall.mjs`.
 

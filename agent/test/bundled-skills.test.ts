@@ -46,14 +46,6 @@ describe("bundled skills", () => {
     }
   });
 
-  it("does not include retired plannotator visual explainer skill", () => {
-    const skillPath = discoverSkillPaths().find((path) =>
-      path.endsWith("/plannotator-visual-explainer/SKILL.md"),
-    );
-
-    expect(skillPath).toBeUndefined();
-  });
-
   it("does not include retired Executor skill", () => {
     const skillPath = discoverSkillPaths().find((path) => path.endsWith("/executor/SKILL.md"));
 

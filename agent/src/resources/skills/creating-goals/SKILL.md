@@ -19,7 +19,7 @@ Before drafting the goal prompt, read `references/PROMPT_GUIDE_GPT5_5.md` and ap
 
 1. Read relevant codebase files, docs, and prior context that can answer open questions about the goal.
 2. Ask the user for clarification before drafting when the goal is still ambiguous after inspection.
-3. Run `./scripts/draft-goal.sh <short-slug>` on Unix or `./scripts/draft-goal.ps1 <short-slug>` on PowerShell to create the temporary draft file and get the Plannotator annotation command.
+3. Run `./scripts/draft-goal.sh <short-slug>` on Unix or `./scripts/draft-goal.ps1 <short-slug>` on PowerShell to create the temporary draft file and print its path.
 4. The file has YAML frontmatter plus a prompt template. Fill in frontmatter deterministically, then write the full goal prompt from the user's intent, discovered context, and the prompt guide. Present that file path for review before using any goal tool.
 5. If the user requests changes, update the temporary file and present the same file path again. Repeat until explicit approval.
 6. If the user approves, call the `goal` tool to create or update the goal using `objectiveFile` with the absolute path to the approved prompt file. Prefer `objectiveFile` over inline `objective` so the file content is used exactly as written and the prompt is not duplicated into the tool call. If the `goal` tool is unavailable, ask the user to run `/goal on`.
@@ -33,7 +33,7 @@ Unix: `./scripts/draft-goal.sh <short-slug>`
 
 PowerShell: `./scripts/draft-goal.ps1 <short-slug>`
 
-The script creates `/tmp/goal-prompt-<short-slug>.md` or the platform temp equivalent. It prints the draft file path and the full `/plannotator annotate <draft-path>` command to show the user. It does not overwrite an existing draft.
+The script creates `/tmp/goal-prompt-<short-slug>.md` or the platform temp equivalent. It prints the draft file path. It does not overwrite an existing draft.
 
 ## Frontmatter
 
@@ -118,9 +118,9 @@ Work loop:
 
 ## Review Output
 
-Store the draft in the temporary file created by the draft script so feedback can be applied directly to the same artifact. When presenting a draft, include the Plannotator annotation command from the draft script and advise the user they can run it to review and annotate the prompt visually. Use this shape:
+Store the draft in the temporary file created by the draft script so feedback can be applied directly to the same artifact. Present its path for review and ask the user to approve or request edits. Use this shape:
 
-`**Draft Goal Prompt**`, `File: /tmp/goal-prompt-<short-slug>.md`, `Review UI: /plannotator annotate /tmp/goal-prompt-<short-slug>.md` `or set the goal manually: /goal @/tmp/goal-prompt-<short-slug>`, then: `Approve to create/update goal from this file, send edits, or run the Review UI command to annotate it.`
+`**Draft Goal Prompt**`, `File: /tmp/goal-prompt-<short-slug>.md`, `or set the goal manually: /goal @/tmp/goal-prompt-<short-slug>`, then: `Approve to create/update goal from this file or send edits.`
 
 ## Approval Rule
 

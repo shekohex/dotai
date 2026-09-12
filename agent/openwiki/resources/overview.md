@@ -67,7 +67,3 @@ Small static HTML assets served by their extensions:
 
 - `glance/index.html` (+ `favicon.svg`) — local web dashboard served by the `glance` extension's daemon/HTTP server.
 - `tmux-share/index.html` — browser view of a tmux pane served by the `tmux-share` extension.
-
-## plannotator resources
-
-`src/resources/plannotator/` (`plannotator.html`, `review-editor.html`) are **built** from `vendor/plannotator-ui/` by `scripts/build-plannotator-ui.mts` at build time (not hand-edited). They back the `plannotator` extension's browser review UI. See the [plannotator extension](../extensions/catalog.md#integrations--external-surfaces).

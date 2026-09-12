@@ -13,7 +13,7 @@ Expose child Pi session activity and assistant updates through the Subagent SDK 
 - Do not add JSONL tailing, file watchers, polling, or side-channel transcript files for streaming.
 - Reuse Pi agent event semantics and payloads directly.
 - Do not invent browser permission/control semantics for downstream UIs; forward events and let consumers decide what to render.
-- Let downstream SDK users map events to their own protocol, such as Plannotator Server-Sent Events.
+- Let downstream SDK users map events to their own UI or transport protocol.
 
 ## Current State
 
@@ -139,9 +139,9 @@ type ChildEventFrame = {
 
 The SDK must not mutate `event`, rename event fields, synthesize missing deltas, or hide tool/permission events.
 
-## Plannotator Ask AI Use
+## Downstream UI Use
 
-Plannotator should subscribe to child Pi events and map them to its AI SSE protocol:
+Downstream UIs should subscribe to child Pi events and map them to their own AI event protocol:
 
 ```ts
 handle.on("message_update", (_ctx, event) => {
@@ -174,4 +174,4 @@ Ask AI sessions should use persisted children so follow-up messages can auto-res
 5. Add child `ipc.ts` bootstrap bridge that registers `pi.on(...)` handlers and forwards live event payloads unchanged.
 6. Wire child launch/resume env with endpoint address, session ID, and auth token.
 7. Add IPC tests for framing, auth rejection, session routing, reconnect/resume, disposal cleanup, and platform endpoint selection.
-8. Wire Plannotator Ask AI SSE to the new event API without adding unsupported browser controls.
+8. Wire downstream AI event consumers to the new event API without adding unsupported browser controls.

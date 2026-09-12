@@ -33,7 +33,6 @@ The package is published to GitHub Packages and installs a single `pi` binary.
 | `scripts/`                                        | Build, postinstall, settings generation, bin prep.                                                                      |
 | `patches/`                                        | `patch-package` patches against upstream pi packages.                                                                   |
 | `support/oxlint-plugin-project-rules/`            | Custom oxlint rules enforcing the repo's boundary/type discipline.                                                      |
-| `vendor/plannotator-ui/`                          | Vendored React UI built into static HTML at build time.                                                                 |
 | `test/`                                           | Vitest suite. See [Testing](./operations/testing.md).                                                                   |
 | `docs/`, `REMOTE.md`, `plans/`                    | Additional in-repo reference docs.                                                                                      |
 
@@ -57,7 +56,7 @@ Full detail in [Architecture overview](./architecture/overview.md).
 ```bash
 npm run pi                         # run locally (tsx, skips version check)
 npm run pi -- -p "hello"           # one-shot prompt
-npm run build                      # build plannotator UI, tsc, copy resources, gen defaults, prep bin
+npm run build                      # tsc, copy resources, gen defaults, prep bin
 npm test                           # vitest run
 npm run typecheck && npm run lint && npm run format:check   # quality gates
 ```

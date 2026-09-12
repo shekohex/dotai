@@ -348,19 +348,19 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       toolDefinition: viewImageDefinition,
       cwd,
       args: {
-        path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+        path: joinPath(cwd, "macos/PiLive/Sources/PiLive/Resources/Orbs/miss-minutes.png"),
       },
       partialResult: {
         content: [{ type: "text", text: "Loading image." }],
         details: {
-          path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+          path: joinPath(cwd, "macos/PiLive/Sources/PiLive/Resources/Orbs/miss-minutes.png"),
           phase: "loading",
         },
       },
       successResult: {
         content: [{ type: "text", text: "RAW IMAGE PAYLOAD SHOULD NEVER RENDER" }],
         details: {
-          path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+          path: joinPath(cwd, "macos/PiLive/Sources/PiLive/Resources/Orbs/miss-minutes.png"),
           mimeType: "image/png",
           byteSize: 12_345,
         },
@@ -376,19 +376,19 @@ export function getToolPreviewScenarios(cwd = process.cwd()): ToolPreviewScenari
       toolDefinition: viewImageDefinition,
       cwd,
       args: {
-        path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+        path: joinPath(cwd, "macos/PiLive/Sources/PiLive/Resources/Orbs/miss-minutes.png"),
       },
       partialResult: {
         content: [{ type: "text", text: "Describing image." }],
         details: {
-          path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+          path: joinPath(cwd, "macos/PiLive/Sources/PiLive/Resources/Orbs/miss-minutes.png"),
           phase: "describing",
         },
       },
       successResult: {
         content: [{ type: "text", text: "SENSITIVE IMAGE DESCRIPTION SHOULD NEVER RENDER" }],
         details: {
-          path: joinPath(cwd, "vendor/plannotator-ui/packages/ui/assets/icon-codex.png"),
+          path: joinPath(cwd, "macos/PiLive/Sources/PiLive/Resources/Orbs/miss-minutes.png"),
           mimeType: "image/png",
           byteSize: 12_345,
           describedBy: "openai-codex/gpt-5.6-luna",

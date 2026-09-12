@@ -314,14 +314,14 @@ timedTest(
       (line) => stripAnsi(line).trim().length > 0,
     );
 
-    expect(pendingText).toMatch(/loading icon-codex\.png/);
-    expect(describingText).toMatch(/describing icon-codex\.png/);
+    expect(pendingText).toMatch(/loading miss-minutes\.png/);
+    expect(describingText).toMatch(/describing miss-minutes\.png/);
     expect(collapsedLines).toHaveLength(1);
-    expect(collapsedText).toMatch(/viewed icon-codex\.png/);
+    expect(collapsedText).toMatch(/viewed miss-minutes\.png/);
     expect(collapsedText).toMatch(/image\/png · .* · viewed directly · took \d+s/);
-    expect(expandedText).toMatch(/path: .*icon-codex\.png/);
+    expect(expandedText).toMatch(/path: .*miss-minutes\.png/);
     expect(expandedText).toMatch(/byteSize: 12345/);
-    expect(errorText).toMatch(/view image failed icon-codex\.png/);
+    expect(errorText).toMatch(/view image failed miss-minutes\.png/);
     expect(errorText).toMatch(/view_image expected an image file: notes\.txt/);
     expect(describedLines).toHaveLength(1);
     expect(describedText).toMatch(/described by openai-codex\/gpt-5\.6-luna/);

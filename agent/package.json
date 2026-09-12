@@ -38,7 +38,7 @@
     "test": "vitest run",
     "test:json": "vitest run --reporter=json --outputFile=/tmp/vitest-results.json && echo /tmp/vitest-results.json",
     "test:coverage": "vitest run --coverage",
-    "build": "node --import tsx ./scripts/build-plannotator-ui.mts && tsc -p tsconfig.json && node ./scripts/copy-bundled-resources.mjs && node ./scripts/generate-default-settings.mjs && node ./scripts/prepare-bin.mjs",
+    "build": "tsc -p tsconfig.json && node ./scripts/copy-bundled-resources.mjs && node ./scripts/generate-default-settings.mjs && node ./scripts/prepare-bin.mjs",
     "prepare": "npm run build",
     "postinstall": "node ./scripts/postinstall.mjs",
     "postprepare": "node ./scripts/postinstall.mjs",

@@ -19,9 +19,6 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED with reason | REJECTED with r
 
 ## Existing unnumbered notes
 
-- `plannotator-review-mode-integration.md` is an unrelated pre-existing plan.
-- `plannotator-v0.19.12-vendor-upgrade-assessment.md` is an unrelated historical assessment.
-
 ## Findings considered and rejected
 
 - T3 CLI bridge: rejected. Direct authenticated HTTP already exposes required project, thread, session, and dispatch operations; a CLI would duplicate protocol/authentication behavior.

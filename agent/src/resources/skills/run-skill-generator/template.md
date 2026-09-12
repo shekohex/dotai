@@ -1,6 +1,6 @@
 ---
 name: run-<unit-name>
-description: Build, run, and drive <unit-name>. Use when asked to start <unit-name>, run its tests, build it, take a screenshot of its UI, or interact with the running app.
+description: Build, run, and drive <unit-name>. Use when asked to launch <unit-name>, capture its UI, or verify behavior in the running app.
 ---
 
 <One-sentence description: what this is and how an agent drives it.
@@ -15,7 +15,7 @@ All paths below are relative to `<unit-dir>/`.
 ## Prerequisites
 
 <System-level requirements. The exact `apt-get install` line you ran —
-not a generic list, the one that actually worked. Target Ubuntu.>
+not a generic list. State the OS on which it was verified; omit OS installs when none are needed.>
 
 ```bash
 sudo apt-get update
@@ -31,7 +31,7 @@ sudo apt-get install -y <packages-you-actually-installed>
 ## Setup
 
 <One-time setup after clone: install deps, configure, apply any
-patches (feature-gate overrides, config stubs) with the exact command.>
+documented development configuration or local fixtures with the exact command.>
 
 ```bash
 <commands>
@@ -128,8 +128,8 @@ NOTE ON THE FRONTMATTER ABOVE:
   becomes the slash command (/run-<unit-name>) and must match the
   directory name.
 - The `description:` is what Pi scans to decide whether to load this
-  skill automatically. Keep the verbs — "start," "run," "build," "test,"
-  "screenshot" — they're what an asking agent will actually type.
+  skill automatically. Name this unit and its launch/interaction boundary;
+  do not route unrelated test or build work into a full app launch.
 
 NOTE ON THE DRIVER:
 

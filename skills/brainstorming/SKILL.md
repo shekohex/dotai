@@ -1,53 +1,17 @@
 ---
 name: brainstorming
-description: Use when creating or developing, before writing code or implementation plans - refines rough ideas into fully-formed designs through collaborative questioning, alternative exploration, and incremental validation. Don't use during clear 'mechanical' processes
+description: Explore an unresolved idea or compare design approaches with the user. Use for requested ideation, not an already specified implementation.
 ---
 
 # Brainstorming Ideas Into Designs
 
-## Overview
+Turn an unresolved idea into a design with clear outcomes and tradeoffs. Use existing conversation context before asking questions.
 
-Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
+1. Inspect the files or docs needed to understand the proposed change. Identify purpose, constraints, and success criteria.
+2. Ask about decisions that materially change the design and cannot be inferred. Keep questions focused; continue independent investigation while awaiting answers.
+3. Compare plausible approaches when there is a real tradeoff. Recommend one with its costs; a straightforward change need not manufacture alternatives.
+4. Present the design at the depth needed for review: relevant boundaries, data flow, failure behavior, and validation. Use one coherent proposal unless the user requested a section-by-section interview.
 
-Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design in small sections (200-300 words), checking after each section whether it looks right so far.
+When a durable design is requested, save it to the user-specified location or `docs/plans/YYYY-MM-DD-<topic>-design.md`. Do not commit merely because a design was written.
 
-## The Process
-
-**Understanding the idea:**
-- Check out the current project state first (files, docs, recent commits)
-- Ask questions one at a time to refine the idea
-- Prefer multiple choice questions when possible, but open-ended is fine too
-- Only one question per message - if a topic needs more exploration, break it into multiple questions
-- Focus on understanding: purpose, constraints, success criteria
-
-**Exploring approaches:**
-- Propose 2-3 different approaches with trade-offs
-- Present options conversationally with your recommendation and reasoning
-- Lead with your recommended option and explain why
-
-**Presenting the design:**
-- Once you believe you understand what you're building, present the design
-- Break it into sections of 200-300 words
-- Ask after each section whether it looks right so far
-- Cover: architecture, components, data flow, error handling, testing
-- Be ready to go back and clarify if something doesn't make sense
-
-## After the Design
-
-**Documentation:**
-- Write the validated design to `docs/plans/YYYY-MM-DD-<topic>-design.md`
-- Commit the design document to git
-
-**Implementation (if continuing):**
-- Ask: "Ready to set up for implementation?"
-- Use superpowers:using-git-worktrees to create isolated workspace
-- Use superpowers:writing-plans to create detailed implementation plan
-
-## Key Principles
-
-- **One question at a time** - Don't overwhelm with multiple questions
-- **Multiple choice preferred** - Easier to answer than open-ended when possible
-- **YAGNI ruthlessly** - Remove unnecessary features from all designs
-- **Explore alternatives** - Always propose 2-3 approaches before settling
-- **Incremental validation** - Present design in sections, validate each
-- **Be flexible** - Go back and clarify when something doesn't make sense
+Completion means material design decisions are resolved or explicitly identified as open. For design-only work, deliver the design. If implementation is already requested, continue into implementation and validation; wait only for a requested review checkpoint or a material unresolved decision.

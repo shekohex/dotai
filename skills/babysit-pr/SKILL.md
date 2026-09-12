@@ -1,6 +1,6 @@
 ---
 name: babysit-pr
-description: Babysit a GitHub pull request after creation by waiting for compact PR events, handling CI/review blockers, retrying likely flaky failures, and continuing until the PR is ready, merged, closed, or blocked on user help. Use when the user asks to monitor, watch, babysit, keep an eye on, handle PR CI, or respond to PR review feedback.
+description: Monitor a GitHub PR and handle CI or review blockers until ready or blocked. Use when asked to watch, babysit, or manage PR feedback.
 ---
 
 # PR Babysitter

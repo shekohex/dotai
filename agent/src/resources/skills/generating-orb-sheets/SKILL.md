@@ -1,6 +1,6 @@
 ---
 name: generating-orb-sheets
-description: Generate, assemble, decontaminate, validate, and install resource-driven animated orb sprite sheets for Pi Live. Use when creating or replacing Pi Live orb artwork, generating keyed animation frames with GPT Image, editing orb catalog packs, or validating sprite alpha, layout, anchoring, and state tracks.
+description: Create or validate Pi Live animated orb sprite packs, including keyed frames, RGBA sheets, anchoring, and catalog entries.
 ---
 
 # Generating Orb Sheets

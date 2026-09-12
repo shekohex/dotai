@@ -1,69 +1,18 @@
 ---
 name: executing-plans
-description: Use when partner provides a complete implementation plan to execute in controlled batches with review checkpoints - loads plan, reviews critically, executes tasks in batches, reports for review between batches
+description: Execute an existing implementation plan through verification. Honor review checkpoints explicitly requested by the user or plan.
 ---
 
 # Executing Plans
 
-## Overview
+Carry an approved or user-supplied implementation plan through its acceptance criteria.
 
-Load plan, review critically, execute tasks in batches, report for review between batches.
+1. Read the plan and relevant repository guidance. Check dependencies, intended outcome, verification steps, and any explicit review checkpoints.
+2. Resolve routine details from code and context. Ask only about gaps that change scope, correctness, or authorization; continue independent tasks meanwhile.
+3. Execute in dependency order. Track meaningful tasks, adapt stale mechanics to current APIs, and preserve the intended behavior.
+4. Run affected checks and required repository gates. Diagnose and fix in-scope failures, then rerun affected checks.
+5. Report progress at useful milestones and continue until all authorized tasks are complete. Pause between batches only when the user or plan explicitly requires review there.
 
-**Core principle:** Batch execution with checkpoints for architect review.
+When a blocker cannot be resolved within scope, report the exact missing input or access and work already completed. A failed test is evidence to investigate, not an automatic handoff.
 
-**Announce at start:** "I'm using the executing-plans skill to implement this plan."
-
-## The Process
-
-### Step 1: Load and Review Plan
-1. Read plan file
-2. Review critically - identify any questions or concerns about the plan
-3. If concerns: Raise them with your human partner before starting
-4. If no concerns: Create TodoWrite and proceed
-
-### Step 2: Execute Batch
-**Default: First 3 tasks**
-
-For each task:
-1. Mark as in_progress
-2. Follow each step exactly (plan has bite-sized steps)
-3. Run verifications as specified
-4. Mark as completed
-
-### Step 3: Report
-When batch complete:
-- Show what was implemented
-- Show verification output
-- Say: "Ready for feedback."
-
-### Step 4: Continue
-Based on feedback:
-- Apply changes if needed
-- Execute next batch
-- Repeat until complete
-
-## When to Stop and Ask for Help
-
-**STOP executing immediately when:**
-- Hit a blocker mid-batch (missing dependency, test fails, instruction unclear)
-- Plan has critical gaps preventing starting
-- You don't understand an instruction
-- Verification fails repeatedly
-
-**Ask for clarification rather than guessing.**
-
-## When to Revisit Earlier Steps
-
-**Return to Review (Step 1) when:**
-- Partner updates the plan based on your feedback
-- Fundamental approach needs rethinking
-
-**Don't force through blockers** - stop and ask.
-
-## Remember
-- Review plan critically first
-- Follow plan steps exactly
-- Don't skip verifications
-- Reference skills when plan says to
-- Between batches: just report and wait
-- Stop when blocked, don't guess
+Done means plan requirements are implemented and verified, with remaining limitations identified. Commits, publishing, and deployment follow existing authorization; executing a plan does not independently authorize them.

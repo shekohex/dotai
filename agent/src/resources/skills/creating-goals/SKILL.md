@@ -1,26 +1,22 @@
 ---
 name: creating-goals
-description: >-
-  Create or update durable agent goals by turning user intent into a polished,
-  outcome-first closed feedback loop prompt. Use when the user asks to create,
-  update, write, refine, or install a goal, or mentions goal prompts, closed
-  feedback loops, goal tool usage, or goal instructions.
+description: Draft or revise a durable agent goal and install an approved prompt. Use for explicit goal-authoring or goal-tool requests.
 ---
 
 # Creating Goals
 
 Use this skill to write goal prompts that another agent can execute autonomously with a closed feedback loop.
 
-## Required Reference
+## Prompt guidance
 
-Before drafting the goal prompt, read `references/PROMPT_GUIDE_GPT5_5.md` and apply its guidance on outcome-first prompts, validation loops, formatting, phase handling, and stop rules.
+Use the outcome and completion rules below. Read `references/PROMPT_GUIDE_GPT5_5.md` only when targeting GPT-5.5 or needing its specific formatting, citation, or Responses phase guidance; it is not a prerequisite for every goal draft.
 
 ## Workflow
 
 1. Read relevant codebase files, docs, and prior context that can answer open questions about the goal.
 2. Ask the user for clarification before drafting when the goal is still ambiguous after inspection.
 3. Run `./scripts/draft-goal.sh <short-slug>` on Unix or `./scripts/draft-goal.ps1 <short-slug>` on PowerShell to create the temporary draft file and print its path.
-4. The file has YAML frontmatter plus a prompt template. Fill in frontmatter deterministically, then write the full goal prompt from the user's intent, discovered context, and the prompt guide. Present that file path for review before using any goal tool.
+4. The file has YAML frontmatter plus a prompt template. Fill in frontmatter deterministically, remove optional sections that add no task-specific guidance, then write the goal prompt from the user's intent and discovered context. Present that file path for review before using any goal tool.
 5. If the user requests changes, update the temporary file and present the same file path again. Repeat until explicit approval.
 6. If the user approves, call the `goal` tool to create or update the goal using `objectiveFile` with the absolute path to the approved prompt file. Prefer `objectiveFile` over inline `objective` so the file content is used exactly as written and the prompt is not duplicated into the tool call. If the `goal` tool is unavailable, ask the user to run `/goal on`.
 7. After goal tool success, delete the temporary file, then report the goal created or updated and any identifier returned by the tool.
@@ -81,7 +77,7 @@ The prompt should define:
 - closed feedback loop rules for inspect, act, verify, collect proof, and decide whether to continue
 - stopping conditions for success, blockers, missing evidence, and user approval needs
 - loophole detection that calls out any requirement gap that could let the agent finish early without proving success
-- self-reflection checks for confidence, ergonomics, optimization, and factual completeness
+- checks for unresolved requirement gaps that would prevent verified completion
 - final output shape
 
 Do not add token limits, turn limits, time estimates, or artificial iteration caps unless the user explicitly asks.
@@ -93,10 +89,7 @@ Use this pattern as baseline and adapt it to the domain:
 ```text
 Resolve the goal end to end.
 
-Before finalizing the strategy, ask:
-- Are you 100% confident in this strategy?
-- Is it the most ergonomic and optimized way of doing this?
-- If not, find all possible loopholes, suggest proper fixes, and run this loop until you are factually 100% confident in the new strategy.
+Choose a strategy that covers the stated requirements. Resolve material gaps with evidence; do not keep optimizing once success criteria are satisfied.
 
 Success means:
 - required outcome is complete and verified
@@ -111,7 +104,8 @@ Loophole rule:
 Work loop:
 - inspect available context and choose the smallest useful next action
 - act using tools or edits when needed
-- verify the result with the strongest practical check and collect proof
+- verify with checks that establish the required outcome and collect relevant proof
+- fix in-scope failures and rerun affected checks; reuse unchanged valid results
 - after each result, ask whether the core goal is now complete
 - stop when success criteria are met, required user input is missing, or continuing would create unapproved risk
 ```

@@ -1,6 +1,6 @@
 ---
 name: run-app
-description: Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library).
+description: Launch and interact with the actual app when asked to run it, capture screenshots, or verify behavior in the running app.
 ---
 
 **Running means launching the actual app and interacting with it** —
@@ -11,10 +11,7 @@ window.
 
 ## First: does a project skill already cover this?
 
-A project skill that launches this app is the repo's verified path —
-its author already cold-started from a Linux container and committed
-what worked: the exact `apt-get` line, the env vars, the patches, the
-driver. Use it instead of rediscovering.
+Prefer a project skill that covers this app: it can contain setup and driver knowledge missing from generic patterns. Check its assumptions against the current environment.
 
 ```bash
 d=$PWD; while :; do
@@ -25,11 +22,10 @@ done
 ```
 
 - **One describes launching/driving this app** → read that SKILL.md
-  and follow it verbatim. Don't paraphrase; don't skip the patches.
+  and use its relevant launch path, preserving non-obvious prerequisites. Adapt stale mechanics to current tools.
 - **Mega-repo, several plausible, no clear match** → ask the user
   which unit to run.
-- **Stale** (fails on mechanics unrelated to your task) → tell the
-  user; offer to refresh it with the `run-skill-generator` skill.
+- **Stale** → diagnose setup failures and continue through reasonable in-scope fixes. Report stale instructions; authoring a new skill is a separate task.
 - **Nothing about running** → fall back to the patterns below.
 
 ## Otherwise: match the shape, use the pattern
@@ -65,7 +61,4 @@ a point where a user would see something:
 - GUI → click the button, screenshot the window. **Look at the
   screenshot.** A blank frame is a failure to launch.
 
-If the fallback pattern didn't work out of the box — you had to
-install packages, set env vars, patch config, or write a driver —
-recommend the `run-skill-generator` skill in your report so that work gets
-captured as a project skill. If it just worked, don't.
+Finish when the requested interaction is observed and any requested screenshot is inspected. Report the result or concrete blocker. Clean up processes created for verification unless the user asked to keep the app running.

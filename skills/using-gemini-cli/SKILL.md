@@ -1,6 +1,6 @@
 ---
 name: using-gemini-cli
-description: Run the `gemini` CLI in headless mode for one-off prompts, model-directed Gemini tasks, structured output capture, and follow-up messages against prior Gemini sessions. Use when the user asks to use Gemini CLI, mentions `gemini -p`, wants Gemini in non-interactive mode, wants a `flash` or `pro` Gemini run, needs project-scoped session discovery, or wants to continue an older Gemini session from the terminal instead of the interactive TUI.
+description: Run Gemini CLI headlessly or resume a prior CLI session. Use for requested Gemini prompts, model choices, or session lookup.
 ---
 
 # Using Gemini CLI

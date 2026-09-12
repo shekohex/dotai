@@ -1,6 +1,6 @@
 ---
 name: using-coder-cli
-description: Discover and operate Coder deployments and workspaces with the `coder` CLI, including authentication context, workspace inventory, `coder ssh`, OpenSSH setup, lifecycle actions, port forwarding, apps, and diagnostics. Use when the user mentions Coder CLI, a Coder deployment or instance, Coder workspaces, `coder ssh`, or connecting to or running commands in a Coder workspace.
+description: Inspect or operate Coder deployments and workspaces with the coder CLI. Use for Coder workspace access, lifecycle, or connection diagnostics.
 compatibility: Requires `coder` in PATH and network access to the target Coder deployment.
 metadata:
   short-description: Discover and control Coder workspaces

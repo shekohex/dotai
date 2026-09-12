@@ -1,6 +1,6 @@
 # Glossary — Building Great Skills
 
-The domain model for what makes a skill great. A skill exists to wrangle determinism out of a stochastic system; the root virtue is **Predictability**, and every term below is a lever on it. This is the disclosed reference for [`writing-great-skills`](SKILL.md).
+The domain model for what makes a skill great. A skill improves decisions through task-specific guidance; **Predictability** is evaluated against the intended outcome and host. This is the disclosed reference for [`writing-great-skills`](SKILL.md).
 
 The terms are grouped by axis: **Invocation** (how a skill is reached), **Information Hierarchy** (how its content is arranged), **Steering** (how the agent's runtime behaviour is shaped), and **Pruning** (how it is kept lean). Each **failure mode** lives beside the lever that cures it, tagged _failure mode_.
 
@@ -8,8 +8,7 @@ The terms are grouped by axis: **Invocation** (how a skill is reached), **Inform
 
 ## Predictability
 
-The degree to which a skill makes the agent behave the same _way_ on every run — the same process, not the same output (a brainstorming skill should _predictably_ diverge; its tokens vary, its behaviour doesn't). The root virtue every other term serves — cost and maintainability are symptoms of it, not rivals.
-
+The degree to which a skill produces dependable task decisions and satisfies observable completion criteria. Exact process is necessary for fragile tool contracts and ordered operations; flexible work can reach the same quality bar through different approaches. Evaluate this against the intended models and hosts.
 _Avoid_: consistency, reliability, robustness, output-determinism
 
 ## Invocation
@@ -18,21 +17,15 @@ How a skill is reached — and the two loads you pay for the choice.
 
 ### Model-Invoked
 
-A skill that keeps its **description** field, so the agent can see it and fire it autonomously — and the human can still type its name, so model-invocation always _includes_ user reach. There is no model-only state: a description only ever _adds_ agent discovery, never removes the human's. Pays a permanent **context load** on every turn in exchange for that discoverability. Reachable by other skills, because the description that makes it agent-discoverable makes it invocable. A model-invoked skill whose content is all **reference** is also one home for shared reference: another skill can invoke it, so reference needed by several skills lives in one place. Pick model-invocation only when the agent must reach the skill on its own; if it never fires except by hand, drop the description and pay no context load.
-
-_Avoid_: ability, tool, capability
+A skill eligible for automatic discovery through its name and description. The user can also request it explicitly. Discovery metadata consumes context; keep it discriminating. Preserve host-supported invocation settings unless the requested change calls for adjusting them.
 
 ### User-Invoked
 
-A skill with its **description** stripped — invisible to the agent and reachable only by the human typing its name (user-_only_, where **model-invoked** is user-_and-agent_). Trades agent-discoverability for zero **context load**. Because it has no description, nothing but the human can reach it: no other skill can fire it.
-
-_Avoid_: procedure, workflow, command
+A skill invoked explicitly rather than automatically selected. Configure this with host-supported metadata; keep required name and description fields. Exclusion from the automatic catalog does not make its files unreadable as linked references.
 
 ### Description
 
-The skill's machine-readable trigger, and the one **context pointer** a **model-invoked** skill is forced to keep loaded at all times. Its mere presence _is_ the invocation axis: keep it and the skill is model-invoked (and reachable by other skills); delete it and the skill is **user-invoked**, reachable only by the human. The source of a model-invoked skill's **context load**.
-
-_Avoid_: frontmatter, summary
+The concise capability and task boundary used for skill selection. Required frontmatter and invocation policy are separate: do not delete the description to disable automatic discovery.
 
 ### Context Pointer
 
@@ -42,9 +35,7 @@ _Avoid_: link, reference, import
 
 ### Context Load
 
-The cost a **model-invoked** skill imposes on the agent's context window — its **description**, always loaded, spending both tokens and attention. What **user-invoked** skills escape by having no description, and the brake on splitting into more model-invoked skills.
-
-_Avoid_: token cost, context bloat
+Tokens and attention spent on catalog metadata and loaded instructions. Progressive disclosure reduces unnecessary loading; the exact catalog behavior depends on the host.
 
 ### Cognitive Load
 

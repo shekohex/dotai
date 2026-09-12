@@ -1,6 +1,6 @@
 ---
 name: creating-pull-requests
-description: Create GitHub pull requests with `gh` in the user's concise, emoji-free style. Use this whenever the user asks to create, open, publish, or send a PR or pull request, including phrases like "create a new PR", "create a new pull request", "open a PR", "publish this branch", or "create a draft PR". Infer the upstream repo and base branch automatically, inspect the last 5-7 authored PRs and issues to mirror tone and structure, verify relevant local quality checks before opening, prefer any repo-provided PR template when present, and produce a brief high-signal PR with validation, review guidance, optional demo notes, optional Mermaid diagrams, and closing issue references when relevant.
+description: Create GitHub PRs with gh in the user's concise style. Use when asked to open a PR, draft PR, or publish a branch as a PR.
 ---
 
 # Creating Pull Requests
@@ -15,7 +15,7 @@ Create a PR that is ready for review, uses the correct repo and base branch, ref
 
 - The user asks to create, open, publish, or send a PR or pull request
 - The user asks for a draft PR or signals the work is not ready to merge
-- The branch is done and opening a PR is the next obvious step
+- Existing user authorization includes publishing this artifact; do not infer publication from completed local work alone
 
 ## Non-Negotiables
 
@@ -187,46 +187,9 @@ Rules:
 
 If the repo template defines different headings, follow the repo template first and adapt the wording to stay concise.
 
-## Evidence Expectations
+## Evidence
 
-Good evidence is concrete and independently useful to reviewers.
-
-Prefer evidence bullets like:
-
-- exact commands that passed
-- exact test names, counts, or suites when available
-- build target, simulator/device, browser, or runtime used for UI changes
-- `git diff --check`, formatters, linters, typechecks, and CI status when actually checked
-- visual capture notes, screenshot tables, or attachment links for UI changes
-- structured review or agent-review results only when such review actually ran
-- known warning-only or pre-existing failures, clearly labeled
-
-Avoid vague evidence like:
-
-- `tested locally`
-- `all tests pass` without command or scope
-- `verified manually` without scenario
-- claiming screenshots, CI, review, or device coverage that did not happen
-
-For larger PRs, include enough evidence for reviewers to trust both the main change and risky follow-ups. For small PRs, keep evidence to 1-3 bullets.
-
-## Visual Proof Guidance
-
-For UI, UX, docs rendering, CLI output, or generated artifact changes, include visual proof when useful and available.
-
-Useful formats:
-
-- before/after screenshot table
-- final-state screenshot table by theme/device/screen
-- short repro transcript or CLI output excerpt
-- linked artifact or recording
-
-Rules:
-
-- label screenshots with what changed, not only file names
-- include environment details when they affect rendering
-- keep tables scoped to high-value surfaces
-- do not add visual sections for backend-only or invisible changes
+State checks actually run and material limits. Read [references/evidence.md](references/evidence.md) when demos, screenshots, or other artifacts help reviewers assess visible behavior. Skip visual sections for changes with no visible effect.
 
 ## Review Guide Expectations
 
@@ -265,10 +228,7 @@ gh pr create \
   --base <base-branch> \
   --head <head-branch> \
   --title "<title>" \
-  --body "$(cat <<'EOF'
-<body>
-EOF
-)"
+  --body-file <prepared-body-file>
 ```
 
 Add `--draft` when needed.

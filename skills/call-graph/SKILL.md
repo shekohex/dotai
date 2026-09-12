@@ -1,6 +1,6 @@
 ---
 name: call-graph
-description: Trace and present verified call graphs for execution flows, request paths, architecture traces, function callers, upstream/downstream behavior, and production/test wiring. Use when the user asks for a call graph, how something works, what calls a symbol, where a request goes, or a production/test flow comparison; skip trivial single-fact questions and unrelated diagrams.
+description: Trace verified callers, request paths, or production/test wiring. Use for execution-flow explanations and call graphs beyond a single lookup.
 ---
 
 # Call Graph

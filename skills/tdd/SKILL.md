@@ -44,19 +44,9 @@ RIGHT (vertical):
 
 ### 1. Planning
 
-When exploring the codebase, read `CONTEXT.md` (if it exists) so that test names and interface vocabulary match the project's domain language, and respect ADRs in the area you're touching.
+Use relevant domain docs or ADRs when interface vocabulary or prior decisions matter. Infer behavior priorities from the request, existing public interfaces, and tests. Ask only about unresolved contract decisions; an already specified change does not need another planning approval.
 
-Before writing any code:
-
-- [ ] Confirm with user what interface changes are needed
-- [ ] Confirm with user which behaviors to test (prioritize)
-- [ ] Identify opportunities for deep modules (small interface, deep implementation) — run the `/codebase-design` skill for the vocabulary and the testability checks
-- [ ] List the behaviors to test (not implementation steps)
-- [ ] Get user approval on the plan
-
-Ask: "What should the public interface look like? Which behaviors are most important to test?"
-
-**You can't test everything.** Confirm with the user exactly which behaviors matter most. Focus testing effort on critical paths and complex logic, not every possible edge case.
+List observable behaviors to cover, prioritizing critical paths and complex logic. Consult `/codebase-design` only when the task requires a new module boundary or test seam. Stay within the requested scope.
 
 ### 2. Tracer Bullet
 
@@ -87,7 +77,7 @@ Rules:
 
 ### 4. Refactor
 
-After all tests pass, look for [refactor candidates](refactoring.md):
+After tests pass, use [refactoring.md](refactoring.md) if cleanup within the changed code is needed:
 
 - [ ] Extract duplication
 - [ ] Deepen modules (move complexity behind simple interfaces)
@@ -106,3 +96,5 @@ After all tests pass, look for [refactor candidates](refactoring.md):
 [ ] Code is minimal for this test
 [ ] No speculative features added
 ```
+
+Complete when requested behaviors are implemented and covered, their red-green evidence is established, and affected plus required checks pass. Reuse valid results for unchanged code; do not add further refactoring to prolong a completed task.

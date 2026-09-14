@@ -41,7 +41,7 @@ python3 scripts/coordinator_state.py registry-remove \
   --repo-path . --reason 'Remove obsolete repository association'
 ```
 
-SQLite state currently uses schema v1. Fresh initialization creates the complete v1 definition and records ordered history `[1]`. Before opening an existing database, the state tool acquires the product lock, validates history, and runs the ordered v1 reconciliation step transactionally. That step idempotently materializes `pull_request_tasks`, its index, and legacy single-task links. Repeated opens converge without changing the schema version; unknown, newer, or inconsistent history refuses before state changes. Future schema work adds an explicit ordered step and version only when approved.
+SQLite state currently uses schema v1. Fresh initialization creates the complete v1 definition and records ordered history `[1]`. Read-only commands validate history through a read-only connection and never reconcile. A lease-protected mutation path runs the ordered v1 reconciliation transactionally; it idempotently materializes `pull_request_tasks`, `pull_request_deployments`, their indexes, legacy single-task links, and canonical `pull_requests.task_id` `ON DELETE SET NULL` behavior. Repeated reconciliation converges without changing schema version; unknown, newer, or inconsistent history refuses before writable connection setup. Future schema work adds an explicit ordered step and version only when approved.
 
 Registry writes require active product coordinator lease, use atomic file replacement, and append product audit events. A remote already assigned to another product is a hard conflict; never reassign silently.
 
@@ -78,9 +78,9 @@ GitHub issue/PR attachments are preferred durable store for published evidence. 
 Do not duplicate authoritative values. Generated Markdown summaries are projections, not state.
 project.json is authoritative configuration. SQLite repository rows are synchronized operational projections used for joins and events.
 
-Pull requests can deliver multiple tightly coupled tasks. Keep `pull_requests.task_id` as the existing single-task compatibility field, and add one row per delivered task to `pull_request_tasks(pull_request_id, task_id, created_at)` in the same guarded transaction. Summary output exposes complete `task_ids`; task gates and completion remain separate.
+Pull requests can deliver multiple tightly coupled tasks. Keep `pull_requests.task_id` as existing single-task compatibility field, and use `pull-request-upsert` to add one row per delivered task to `pull_request_tasks(pull_request_id, task_id, created_at)` in same guarded transaction. Generic `sql` remains one statement per transaction. Summary output exposes complete `task_ids`; task gates and completion remain separate.
 
-Summary output separates merged work into `merged_awaiting_deployment` and `fully_deployed`. A merged PR is fully deployed only when every linked task has a durable `deployment` gate with status `passed`; missing or non-passed task gates remain awaiting deployment. Deployment classification does not infer coverage from PR head SHA equality, repository ancestry, or network calls during summary.
+Summary output separates merged work into `merged_awaiting_deployment` and `fully_deployed`. Record explicit per-PR, per-environment coverage with `pull-request-deployment-upsert`; a merged PR is fully deployed only when every known deployment environment has a `passed` coverage row for that PR. Task-level deployment gates remain task evidence, not PR coverage. Missing or non-passed coverage remains awaiting deployment. Deployment classification does not infer coverage from PR head SHA equality, repository ancestry, or network calls during summary.
 
 ## Checkpoints and rollback
 

@@ -32,6 +32,47 @@ REMINDER = (
     "revealed durable information."
 )
 
+CANONICAL_PULL_REQUESTS_TABLE_SQL = """
+CREATE TABLE pull_requests (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  initiative_id TEXT REFERENCES initiatives(id),
+  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  repository_id TEXT REFERENCES repositories(id),
+  number INTEGER,
+  url TEXT,
+  branch TEXT NOT NULL,
+  base_branch TEXT NOT NULL,
+  head_sha TEXT,
+  state TEXT NOT NULL DEFAULT 'open',
+  stack_id TEXT REFERENCES stacks(id),
+  stack_position INTEGER,
+  mergeable_state TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(repository_id, number)
+);
+"""
+
+PULL_REQUEST_COLUMNS = (
+    "id",
+    "product_id",
+    "initiative_id",
+    "task_id",
+    "repository_id",
+    "number",
+    "url",
+    "branch",
+    "base_branch",
+    "head_sha",
+    "state",
+    "stack_id",
+    "stack_position",
+    "mergeable_state",
+    "created_at",
+    "updated_at",
+)
+
 SCHEMA_SQL = """
 CREATE TABLE schema_migrations (
   version INTEGER PRIMARY KEY,
@@ -136,25 +177,7 @@ CREATE TABLE workspaces (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
-CREATE TABLE pull_requests (
-  id TEXT PRIMARY KEY,
-  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  initiative_id TEXT REFERENCES initiatives(id),
-  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
-  repository_id TEXT REFERENCES repositories(id),
-  number INTEGER,
-  url TEXT,
-  branch TEXT NOT NULL,
-  base_branch TEXT NOT NULL,
-  head_sha TEXT,
-  state TEXT NOT NULL DEFAULT 'open',
-  stack_id TEXT REFERENCES stacks(id),
-  stack_position INTEGER,
-  mergeable_state TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  UNIQUE(repository_id, number)
-);
+__CANONICAL_PULL_REQUESTS_TABLE__
 CREATE TABLE pull_request_tasks (
   pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
   task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -219,6 +242,15 @@ CREATE TABLE deployments (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   verified_at TEXT
+);
+CREATE TABLE pull_request_deployments (
+  pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+  environment TEXT NOT NULL,
+  deployment_id TEXT REFERENCES deployments(id) ON DELETE SET NULL,
+  deployed_head_sha TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending','passed','failed')),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(pull_request_id, environment)
 );
 CREATE TABLE artifacts (
   id TEXT PRIMARY KEY,
@@ -310,7 +342,11 @@ CREATE INDEX initiatives_by_product_archive ON initiatives(product_id, archived_
 CREATE INDEX events_by_product_time ON events(product_id, occurred_at DESC);
 CREATE INDEX prs_by_product_state ON pull_requests(product_id, state);
 CREATE INDEX pull_request_tasks_by_task ON pull_request_tasks(task_id);
-"""
+CREATE INDEX pull_request_deployments_by_environment
+  ON pull_request_deployments(environment, status);
+""".replace(
+    "__CANONICAL_PULL_REQUESTS_TABLE__", CANONICAL_PULL_REQUESTS_TABLE_SQL
+)
 
 # Entries are applied in version order. Version 1 is intentionally rerunnable:
 # it repairs databases created earlier in this skill's v1 lifetime. A future
@@ -327,6 +363,21 @@ SCHEMA_MIGRATION_STEPS: dict[int, tuple[str, ...]] = {
         """,
         "CREATE INDEX IF NOT EXISTS pull_request_tasks_by_task "
         "ON pull_request_tasks(task_id)",
+        """
+        CREATE TABLE IF NOT EXISTS pull_request_deployments (
+          pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+          environment TEXT NOT NULL,
+          deployment_id TEXT REFERENCES deployments(id) ON DELETE SET NULL,
+          deployed_head_sha TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('pending','passed','failed')),
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(pull_request_id, environment)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS pull_request_deployments_by_environment "
+        "ON pull_request_deployments(environment, status)",
+        "CREATE INDEX IF NOT EXISTS prs_by_product_state "
+        "ON pull_requests(product_id, state)",
         """
         INSERT OR IGNORE INTO pull_request_tasks(
           pull_request_id, task_id, created_at
@@ -449,6 +500,79 @@ def read_schema_versions(connection: sqlite3.Connection) -> list[int]:
     ]
 
 
+def pull_request_fk_is_canonical(connection: sqlite3.Connection) -> bool:
+    return any(
+        row["table"] == "tasks"
+        and row["from"] == "task_id"
+        and row["to"] == "id"
+        and row["on_delete"].upper() == "SET NULL"
+        for row in connection.execute("PRAGMA foreign_key_list('pull_requests')")
+    )
+
+
+def schema_reconciliation_plan(product_id: str) -> bool:
+    with connect(product_id, read_only=True) as connection:
+        versions = read_schema_versions(connection)
+        validate_schema_history(versions)
+        return not pull_request_fk_is_canonical(connection)
+
+
+@contextlib.contextmanager
+def schema_reconciliation_mode(
+    connection: sqlite3.Connection, *, rebuild_pull_requests: bool
+) -> Iterator[None]:
+    if rebuild_pull_requests:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("PRAGMA legacy_alter_table = ON")
+    try:
+        yield
+    except BaseException:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        if rebuild_pull_requests:
+            connection.execute("PRAGMA legacy_alter_table = OFF")
+            connection.execute("PRAGMA foreign_keys = ON")
+
+
+def quote_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def rebuild_pull_requests_table(connection: sqlite3.Connection) -> None:
+    old_table_name = "pull_requests_before_v1_reconciliation"
+    if connection.execute(
+        "SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?",
+        (old_table_name,),
+    ).fetchone():
+        raise StateError(f"temporary schema table already exists: {old_table_name}")
+    indexes = connection.execute(
+        "SELECT name, sql FROM sqlite_schema "
+        "WHERE type='index' AND tbl_name='pull_requests' AND sql IS NOT NULL"
+    ).fetchall()
+    for index in indexes:
+        connection.execute(f"DROP INDEX {quote_identifier(index['name'])}")
+    connection.execute(
+        f"ALTER TABLE pull_requests RENAME TO {quote_identifier(old_table_name)}"
+    )
+    connection.execute(CANONICAL_PULL_REQUESTS_TABLE_SQL)
+    columns = ", ".join(PULL_REQUEST_COLUMNS)
+    connection.execute(
+        f"INSERT INTO pull_requests({columns}) "
+        f"SELECT {columns} FROM {quote_identifier(old_table_name)}"
+    )
+    connection.execute(f"DROP TABLE {quote_identifier(old_table_name)}")
+    for index in indexes:
+        connection.execute(index["sql"])
+
+
+def assert_foreign_key_integrity(connection: sqlite3.Connection) -> None:
+    violations = [dict(row) for row in connection.execute("PRAGMA foreign_key_check")]
+    if violations:
+        raise StateError(f"foreign key violations after reconciliation: {violations}")
+
+
 def validate_schema_history(versions: list[int]) -> None:
     if not versions:
         raise StateError("schema migration history is empty")
@@ -524,10 +648,15 @@ def apply_schema_migration_steps(
 
 
 def reconcile_schema_in_transaction(
-    connection: sqlite3.Connection, product_id: str
+    connection: sqlite3.Connection,
+    product_id: str,
+    *,
+    rebuild_pull_requests: bool = False,
 ) -> dict[str, Any]:
     versions = read_schema_versions(connection)
     validate_schema_history(versions)
+    if rebuild_pull_requests:
+        rebuild_pull_requests_table(connection)
     schema_objects_before = {
         (row[0], row[1])
         for row in connection.execute(
@@ -545,7 +674,7 @@ def reconcile_schema_in_transaction(
     }
     schema_objects_changed = schema_objects_before != schema_objects_after
     event_id: str | None = None
-    if changes or schema_objects_changed:
+    if changes or schema_objects_changed or rebuild_pull_requests:
         event_id = add_event(
             connection,
             product_id=product_id,
@@ -560,6 +689,7 @@ def reconcile_schema_in_transaction(
                 "processed_versions": processed_versions,
                 "database_changes": changes,
                 "schema_objects_changed": schema_objects_changed,
+                "pull_requests_fk_rebuilt": rebuild_pull_requests,
             },
         )
     return {
@@ -567,16 +697,62 @@ def reconcile_schema_in_transaction(
         "processed_versions": processed_versions,
         "database_changes": changes,
         "schema_objects_changed": schema_objects_changed,
+        "pull_requests_fk_rebuilt": rebuild_pull_requests,
         "event_id": event_id,
     }
 
 
 def reconcile_schema(product_id: str) -> dict[str, Any]:
-    with product_lock(product_id), connect(product_id) as connection:
-        connection.execute("BEGIN IMMEDIATE")
-        result = reconcile_schema_in_transaction(connection, product_id)
-        connection.commit()
-        return result
+    with product_lock(product_id):
+        rebuild_pull_requests = schema_reconciliation_plan(product_id)
+        with connect(product_id) as connection:
+            with schema_reconciliation_mode(
+                connection, rebuild_pull_requests=rebuild_pull_requests
+            ):
+                connection.execute("BEGIN IMMEDIATE")
+                result = reconcile_schema_in_transaction(
+                    connection,
+                    product_id,
+                    rebuild_pull_requests=rebuild_pull_requests,
+                )
+                assert_foreign_key_integrity(connection)
+                connection.commit()
+                return result
+
+
+def reconcile_schema_for_lease(
+    product_id: str, holder: str, lease_token: str
+) -> dict[str, Any]:
+    with product_lock(product_id):
+        rebuild_pull_requests = schema_reconciliation_plan(product_id)
+        with connect(product_id) as connection:
+            validate_lease(connection, product_id, holder, lease_token)
+            with schema_reconciliation_mode(
+                connection, rebuild_pull_requests=rebuild_pull_requests
+            ):
+                connection.execute("BEGIN IMMEDIATE")
+                validate_lease(connection, product_id, holder, lease_token)
+                result = reconcile_schema_in_transaction(
+                    connection,
+                    product_id,
+                    rebuild_pull_requests=rebuild_pull_requests,
+                )
+                assert_foreign_key_integrity(connection)
+                connection.commit()
+                return result
+
+
+def validate_schema_read_only(product_id: str) -> None:
+    with product_lock(product_id):
+        with connect(product_id, read_only=True) as connection:
+            validate_schema_history(read_schema_versions(connection))
+
+
+def schema_reconcile_command(args: argparse.Namespace) -> None:
+    result = reconcile_schema_for_lease(
+        args.product_id, args.holder, resolve_lease_token(args)
+    )
+    emit({"ok": True, **result})
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -964,48 +1140,60 @@ def acquire_lease(args: argparse.Namespace) -> None:
     lease_token = secrets.token_hex(32)
     acquired_at = dt.datetime.now(dt.timezone.utc)
     expires_at = acquired_at + dt.timedelta(seconds=args.ttl_seconds)
-    with product_lock(args.product_id), connect(args.product_id) as connection:
-        connection.execute("BEGIN IMMEDIATE")
-        existing = connection.execute(
-            "SELECT holder_id, expires_at FROM coordinator_leases WHERE product_id = ?",
-            (args.product_id,),
-        ).fetchone()
-        if existing and parse_time(existing["expires_at"]) > acquired_at:
-            raise StateError(
-                f"active coordinator lease held by {existing['holder_id']} "
-                f"until {existing['expires_at']}"
-            )
-        connection.execute(
-            """
-            INSERT INTO coordinator_leases(
-              product_id, holder_id, token_hash, acquired_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(product_id) DO UPDATE SET
-              holder_id=excluded.holder_id,
-              token_hash=excluded.token_hash,
-              acquired_at=excluded.acquired_at,
-              expires_at=excluded.expires_at
-            """,
-            (
-                args.product_id,
-                args.holder,
-                token_hash(lease_token),
-                acquired_at.isoformat(timespec="seconds"),
-                expires_at.isoformat(timespec="seconds"),
-            ),
-        )
-        event_id = add_event(
-            connection,
-            product_id=args.product_id,
-            actor_id=args.holder,
-            action="coordinator.lease_acquired",
-            risk="low",
-            reason="Acquire canonical coordinator writer lease",
-            target_type="product",
-            target_id=args.product_id,
-            payload={"expires_at": expires_at.isoformat(timespec="seconds")},
-        )
-        connection.commit()
+    with product_lock(args.product_id):
+        rebuild_pull_requests = schema_reconciliation_plan(args.product_id)
+        with connect(args.product_id) as connection:
+            with schema_reconciliation_mode(
+                connection, rebuild_pull_requests=rebuild_pull_requests
+            ):
+                connection.execute("BEGIN IMMEDIATE")
+                existing = connection.execute(
+                    "SELECT holder_id, expires_at FROM coordinator_leases "
+                    "WHERE product_id = ?",
+                    (args.product_id,),
+                ).fetchone()
+                if existing and parse_time(existing["expires_at"]) > acquired_at:
+                    raise StateError(
+                        f"active coordinator lease held by {existing['holder_id']} "
+                        f"until {existing['expires_at']}"
+                    )
+                reconcile_schema_in_transaction(
+                    connection,
+                    args.product_id,
+                    rebuild_pull_requests=rebuild_pull_requests,
+                )
+                assert_foreign_key_integrity(connection)
+                connection.execute(
+                    """
+                    INSERT INTO coordinator_leases(
+                      product_id, holder_id, token_hash, acquired_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(product_id) DO UPDATE SET
+                      holder_id=excluded.holder_id,
+                      token_hash=excluded.token_hash,
+                      acquired_at=excluded.acquired_at,
+                      expires_at=excluded.expires_at
+                    """,
+                    (
+                        args.product_id,
+                        args.holder,
+                        token_hash(lease_token),
+                        acquired_at.isoformat(timespec="seconds"),
+                        expires_at.isoformat(timespec="seconds"),
+                    ),
+                )
+                event_id = add_event(
+                    connection,
+                    product_id=args.product_id,
+                    actor_id=args.holder,
+                    action="coordinator.lease_acquired",
+                    risk="low",
+                    reason="Acquire canonical coordinator writer lease",
+                    target_type="product",
+                    target_id=args.product_id,
+                    payload={"expires_at": expires_at.isoformat(timespec="seconds")},
+                )
+                connection.commit()
     emit(
         {
             "ok": True,
@@ -1438,6 +1626,275 @@ def execute_sql(args: argparse.Namespace) -> None:
         raise
 
 
+def parse_json_object(raw_value: str, argument_name: str) -> dict[str, Any]:
+    value = json.loads(raw_value)
+    if not isinstance(value, dict):
+        raise StateError(f"{argument_name} must decode to object")
+    return value
+
+
+def parse_task_ids(raw_value: str) -> list[str]:
+    value = json.loads(raw_value)
+    if not isinstance(value, list) or any(
+        not isinstance(task_id, str) or not task_id for task_id in value
+    ):
+        raise StateError("--task-ids-json must decode to list of non-empty strings")
+    if len(set(value)) != len(value):
+        raise StateError("--task-ids-json must not contain duplicates")
+    return value
+
+
+def upsert_pull_request(args: argparse.Namespace) -> None:
+    pull_request = parse_json_object(
+        args.pull_request_json, "--pull-request-json"
+    )
+    allowed_fields = set(PULL_REQUEST_COLUMNS) - {"product_id"}
+    unknown_fields = set(pull_request) - allowed_fields
+    if unknown_fields:
+        raise StateError(
+            "--pull-request-json contains unknown fields: "
+            + ", ".join(sorted(unknown_fields))
+        )
+    pull_request_id = pull_request.get("id")
+    if not isinstance(pull_request_id, str) or not pull_request_id:
+        raise StateError("--pull-request-json.id must be a non-empty string")
+    requested_task_ids = parse_task_ids(args.task_ids_json)
+    if "task_id" in pull_request and pull_request["task_id"] is not None:
+        if not isinstance(pull_request["task_id"], str) or not pull_request["task_id"]:
+            raise StateError("--pull-request-json.task_id must be null or non-empty string")
+    failure = {
+        "occurred_at": now(),
+        "actor_id": args.actor,
+        "action": "pull_request.upserted",
+        "risk_class": "low",
+        "reason": args.reason,
+        "target_type": "pull_request",
+        "target_id": pull_request_id,
+    }
+    try:
+        lease_token = resolve_lease_token(args)
+        with product_lock(args.product_id), connect(args.product_id) as connection:
+            validate_lease(connection, args.product_id, args.actor, lease_token)
+            connection.execute("BEGIN IMMEDIATE")
+            validate_lease(connection, args.product_id, args.actor, lease_token)
+            existing_row = connection.execute(
+                "SELECT * FROM pull_requests WHERE id = ?", (pull_request_id,)
+            ).fetchone()
+            if existing_row is not None and existing_row["product_id"] != args.product_id:
+                raise StateError("pull request belongs to another product")
+
+            if existing_row is None:
+                required_fields = {"branch", "base_branch", "created_at", "updated_at"}
+                missing_fields = sorted(
+                    field for field in required_fields if not pull_request.get(field)
+                )
+                if missing_fields:
+                    raise StateError(
+                        "new pull request missing fields: "
+                        + ", ".join(missing_fields)
+                    )
+                values = {
+                    field: pull_request.get(field)
+                    for field in PULL_REQUEST_COLUMNS
+                    if field != "product_id"
+                }
+                values["product_id"] = args.product_id
+                values.setdefault("state", "open")
+                existing_task_ids: list[str] = []
+            else:
+                values = {
+                    field: (
+                        pull_request[field]
+                        if field in pull_request
+                        else existing_row[field]
+                    )
+                    for field in PULL_REQUEST_COLUMNS
+                    if field != "product_id"
+                }
+                values["product_id"] = args.product_id
+                existing_task_ids = [
+                    row["task_id"]
+                    for row in connection.execute(
+                        "SELECT task_id FROM pull_request_tasks "
+                        "WHERE pull_request_id = ? ORDER BY created_at, task_id",
+                        (pull_request_id,),
+                    )
+                ]
+
+            task_ids: list[str] = []
+            for task_id in requested_task_ids + existing_task_ids:
+                if task_id not in task_ids:
+                    task_ids.append(task_id)
+            if values.get("task_id") and values["task_id"] not in task_ids:
+                task_ids.insert(0, values["task_id"])
+            if existing_row is None and task_ids and not values.get("task_id"):
+                values["task_id"] = task_ids[0]
+            if task_ids:
+                placeholders = ", ".join("?" for _ in task_ids)
+                valid_task_ids = {
+                    row["id"]
+                    for row in connection.execute(
+                        "SELECT tasks.id FROM tasks "
+                        "JOIN initiatives ON initiatives.id = tasks.initiative_id "
+                        f"WHERE initiatives.product_id = ? AND tasks.id IN ({placeholders})",
+                        (args.product_id, *task_ids),
+                    )
+                }
+                missing_task_ids = [
+                    task_id for task_id in task_ids if task_id not in valid_task_ids
+                ]
+                if missing_task_ids:
+                    raise StateError(
+                        "task(s) do not belong to product: "
+                        + ", ".join(missing_task_ids)
+                    )
+
+            columns = ", ".join(PULL_REQUEST_COLUMNS)
+            placeholders = ", ".join("?" for _ in PULL_REQUEST_COLUMNS)
+            updates = ", ".join(
+                f"{field}=excluded.{field}"
+                for field in PULL_REQUEST_COLUMNS
+                if field not in {"id", "product_id"}
+            )
+            connection.execute(
+                f"INSERT INTO pull_requests({columns}) VALUES ({placeholders}) "
+                f"ON CONFLICT(id) DO UPDATE SET {updates}",
+                tuple(values[field] for field in PULL_REQUEST_COLUMNS),
+            )
+            association_changes = 0
+            association_timestamp = values["updated_at"]
+            for task_id in task_ids:
+                cursor = connection.execute(
+                    "INSERT OR IGNORE INTO pull_request_tasks("
+                    "pull_request_id, task_id, created_at) VALUES (?, ?, ?)",
+                    (pull_request_id, task_id, association_timestamp),
+                )
+                association_changes += cursor.rowcount
+            event_id = add_event(
+                connection,
+                product_id=args.product_id,
+                actor_id=args.actor,
+                action="pull_request.upserted",
+                risk="low",
+                reason=args.reason,
+                target_type="pull_request",
+                target_id=pull_request_id,
+                initiative_id=values["initiative_id"],
+                payload={
+                    "task_ids": task_ids,
+                    "association_changes": association_changes,
+                },
+            )
+            connection.commit()
+        emit(
+            {
+                "ok": True,
+                "pull_request_id": pull_request_id,
+                "task_ids": task_ids,
+                "changed_rows": 1 + association_changes,
+                "event_id": event_id,
+            }
+        )
+    except Exception as error:
+        failure["error_type"] = type(error).__name__
+        failure["error"] = str(error)
+        append_failure(args.product_id, failure)
+        raise
+
+
+def upsert_pull_request_deployment(args: argparse.Namespace) -> None:
+    if not args.environment.strip():
+        raise StateError("--environment must not be empty")
+    if not args.deployed_head_sha.strip():
+        raise StateError("--deployed-head-sha must not be empty")
+    failure = {
+        "occurred_at": now(),
+        "actor_id": args.actor,
+        "action": "pull_request.deployment_recorded",
+        "risk_class": "low",
+        "reason": args.reason,
+        "target_type": "pull_request",
+        "target_id": args.pull_request_id,
+    }
+    try:
+        lease_token = resolve_lease_token(args)
+        with product_lock(args.product_id), connect(args.product_id) as connection:
+            validate_lease(connection, args.product_id, args.actor, lease_token)
+            connection.execute("BEGIN IMMEDIATE")
+            validate_lease(connection, args.product_id, args.actor, lease_token)
+            pull_request = connection.execute(
+                "SELECT product_id FROM pull_requests WHERE id = ?",
+                (args.pull_request_id,),
+            ).fetchone()
+            if pull_request is None:
+                raise StateError("pull request not found")
+            if pull_request["product_id"] != args.product_id:
+                raise StateError("pull request belongs to another product")
+            if args.deployment_id:
+                deployment = connection.execute(
+                    "SELECT product_id, environment FROM deployments WHERE id = ?",
+                    (args.deployment_id,),
+                ).fetchone()
+                if deployment is None:
+                    raise StateError("deployment not found")
+                if deployment["product_id"] != args.product_id:
+                    raise StateError("deployment belongs to another product")
+                if deployment["environment"] != args.environment:
+                    raise StateError("deployment environment does not match")
+            connection.execute(
+                """
+                INSERT INTO pull_request_deployments(
+                  pull_request_id, environment, deployment_id,
+                  deployed_head_sha, status, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(pull_request_id, environment) DO UPDATE SET
+                  deployment_id=excluded.deployment_id,
+                  deployed_head_sha=excluded.deployed_head_sha,
+                  status=excluded.status,
+                  updated_at=excluded.updated_at
+                """,
+                (
+                    args.pull_request_id,
+                    args.environment,
+                    args.deployment_id,
+                    args.deployed_head_sha,
+                    args.status,
+                    now(),
+                ),
+            )
+            event_id = add_event(
+                connection,
+                product_id=args.product_id,
+                actor_id=args.actor,
+                action="pull_request.deployment_recorded",
+                risk="low",
+                reason=args.reason,
+                target_type="pull_request",
+                target_id=args.pull_request_id,
+                payload={
+                    "environment": args.environment,
+                    "deployment_id": args.deployment_id,
+                    "deployed_head_sha": args.deployed_head_sha,
+                    "status": args.status,
+                },
+            )
+            connection.commit()
+        emit(
+            {
+                "ok": True,
+                "pull_request_id": args.pull_request_id,
+                "environment": args.environment,
+                "status": args.status,
+                "event_id": event_id,
+            }
+        )
+    except Exception as error:
+        failure["error_type"] = type(error).__name__
+        failure["error"] = str(error)
+        append_failure(args.product_id, failure)
+        raise
+
+
 def query_rows(
     connection: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()
 ) -> list[dict[str, Any]]:
@@ -1447,6 +1904,10 @@ def query_rows(
 def pull_request_task_ids(
     connection: sqlite3.Connection, product_id: str
 ) -> dict[str, list[str]]:
+    if connection.execute(
+        "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='pull_request_tasks'"
+    ).fetchone() is None:
+        return {}
     associations = query_rows(
         connection,
         """
@@ -1508,6 +1969,43 @@ def deployment_projections(
     deployment_status_by_task = {
         gate["task_id"]: gate["status"] for gate in deployment_gates
     }
+    coverage_rows = (
+        query_rows(
+            connection,
+            """
+            SELECT pull_request_deployments.pull_request_id,
+                   pull_request_deployments.environment,
+                   pull_request_deployments.status
+            FROM pull_request_deployments
+            JOIN pull_requests
+              ON pull_requests.id = pull_request_deployments.pull_request_id
+            WHERE pull_requests.product_id = ?
+            """,
+            (product_id,),
+        )
+        if connection.execute(
+            "SELECT 1 FROM sqlite_schema "
+            "WHERE type='table' AND name='pull_request_deployments'"
+        ).fetchone()
+        else []
+    )
+    coverage_by_pull_request: dict[str, dict[str, str]] = {}
+    for coverage in coverage_rows:
+        coverage_by_pull_request.setdefault(coverage["pull_request_id"], {})[
+            coverage["environment"]
+        ] = coverage["status"]
+    known_environments = {
+        row["environment"]
+        for row in query_rows(
+            connection,
+            "SELECT DISTINCT environment FROM deployments "
+            "WHERE product_id = ? AND status IN "
+            "('verified', 'deployed', 'passed', 'succeeded')",
+            (product_id,),
+        )
+    }
+    for coverage in coverage_rows:
+        known_environments.add(coverage["environment"])
 
     awaiting_deployment: list[dict[str, Any]] = []
     fully_deployed: list[dict[str, Any]] = []
@@ -1516,9 +2014,17 @@ def deployment_projections(
             task_id: deployment_status_by_task.get(task_id, "missing")
             for task_id in pull_request["task_ids"]
         }
-        is_fully_deployed = bool(pull_request["task_ids"]) and all(
+        pull_request["deployment_coverage_statuses"] = {
+            environment: coverage_by_pull_request.get(pull_request["id"], {}).get(
+                environment, "missing"
+            )
+            for environment in sorted(known_environments)
+        }
+        is_fully_deployed = bool(pull_request["task_ids"]) and bool(
+            pull_request["deployment_coverage_statuses"]
+        ) and all(
             status == "passed"
-            for status in pull_request["deployment_gate_statuses"].values()
+            for status in pull_request["deployment_coverage_statuses"].values()
         )
         pull_request["deployment_state"] = (
             "fully_deployed" if is_fully_deployed else "merged_awaiting_deployment"
@@ -1808,39 +2314,50 @@ def restore_checkpoint(args: argparse.Namespace) -> None:
             restore_path.unlink(missing_ok=True)
 
         with connect(args.product_id) as restored_connection:
-            restored_connection.execute("BEGIN IMMEDIATE")
-            reconcile_schema_in_transaction(restored_connection, args.product_id)
-            restored_connection.execute(
-                """
-                INSERT INTO coordinator_leases(
-                  product_id, holder_id, token_hash, acquired_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(product_id) DO UPDATE SET
-                  holder_id=excluded.holder_id,
-                  token_hash=excluded.token_hash,
-                  acquired_at=excluded.acquired_at,
-                  expires_at=excluded.expires_at
-                """,
-                (
-                    current_lease["product_id"],
-                    current_lease["holder_id"],
-                    current_lease["token_hash"],
-                    current_lease["acquired_at"],
-                    current_lease["expires_at"],
-                ),
+            rebuild_pull_requests = not pull_request_fk_is_canonical(
+                restored_connection
             )
-            event_id = add_event(
-                restored_connection,
-                product_id=args.product_id,
-                actor_id=args.holder,
-                action="state.checkpoint_restored",
-                risk="high",
-                reason=args.reason,
-                target_type="checkpoint",
-                target_id=args.checkpoint_id,
-                payload={"pre_restore_checkpoint": pre_restore_checkpoint},
-            )
-            restored_connection.commit()
+            with schema_reconciliation_mode(
+                restored_connection, rebuild_pull_requests=rebuild_pull_requests
+            ):
+                restored_connection.execute("BEGIN IMMEDIATE")
+                reconcile_schema_in_transaction(
+                    restored_connection,
+                    args.product_id,
+                    rebuild_pull_requests=rebuild_pull_requests,
+                )
+                assert_foreign_key_integrity(restored_connection)
+                restored_connection.execute(
+                    """
+                    INSERT INTO coordinator_leases(
+                      product_id, holder_id, token_hash, acquired_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(product_id) DO UPDATE SET
+                      holder_id=excluded.holder_id,
+                      token_hash=excluded.token_hash,
+                      acquired_at=excluded.acquired_at,
+                      expires_at=excluded.expires_at
+                    """,
+                    (
+                        current_lease["product_id"],
+                        current_lease["holder_id"],
+                        current_lease["token_hash"],
+                        current_lease["acquired_at"],
+                        current_lease["expires_at"],
+                    ),
+                )
+                event_id = add_event(
+                    restored_connection,
+                    product_id=args.product_id,
+                    actor_id=args.holder,
+                    action="state.checkpoint_restored",
+                    risk="high",
+                    reason=args.reason,
+                    target_type="checkpoint",
+                    target_id=args.checkpoint_id,
+                    payload={"pre_restore_checkpoint": pre_restore_checkpoint},
+                )
+                restored_connection.commit()
     emit(
         {
             "ok": True,
@@ -1971,6 +2488,33 @@ def build_parser() -> argparse.ArgumentParser:
     sql_parser.add_argument("sql", help="one SQL statement, or '-' for stdin")
     sql_parser.set_defaults(handler=execute_sql)
 
+    pull_request_parser = commands.add_parser("pull-request-upsert")
+    pull_request_parser.add_argument("--product-id", required=True)
+    pull_request_parser.add_argument("--actor", default="coordinator")
+    add_lease_token_arguments(pull_request_parser, required=True)
+    pull_request_parser.add_argument("--reason", required=True)
+    pull_request_parser.add_argument("--pull-request-json", required=True)
+    pull_request_parser.add_argument("--task-ids-json", default="[]")
+    pull_request_parser.set_defaults(handler=upsert_pull_request)
+
+    deployment_parser = commands.add_parser("pull-request-deployment-upsert")
+    deployment_parser.add_argument("--product-id", required=True)
+    deployment_parser.add_argument("--actor", default="coordinator")
+    add_lease_token_arguments(deployment_parser, required=True)
+    deployment_parser.add_argument("--reason", required=True)
+    deployment_parser.add_argument("--pull-request-id", required=True)
+    deployment_parser.add_argument("--environment", required=True)
+    deployment_parser.add_argument("--deployment-id")
+    deployment_parser.add_argument("--deployed-head-sha", required=True)
+    deployment_parser.add_argument(
+        "--status", choices=("pending", "passed", "failed"), required=True
+    )
+    deployment_parser.set_defaults(handler=upsert_pull_request_deployment)
+
+    reconcile_parser = commands.add_parser("schema-reconcile")
+    add_lease_arguments(reconcile_parser)
+    reconcile_parser.set_defaults(handler=schema_reconcile_command)
+
     summary_parser = commands.add_parser("summary")
     summary_parser.add_argument("--product-id", required=True)
     summary_parser.add_argument("--event-limit", type=int, default=20)
@@ -2008,12 +2552,34 @@ def main() -> int:
     try:
         args = build_parser().parse_args()
         product_id = getattr(args, "product_id", None)
-        if (
-            args.command != "init"
-            and product_id
-            and get_database_path(product_id).exists()
-        ):
-            reconcile_schema(product_id)
+        if args.command != "init" and product_id and get_database_path(product_id).exists():
+            is_read_only_sql = args.command == "sql" and args.read_only
+            if args.command == "lease-acquire":
+                pass
+            elif args.command == "schema-reconcile":
+                pass
+            elif is_read_only_sql or args.command in {
+                "summary",
+                "doctor",
+                "checkpoint-list",
+                "export",
+            }:
+                validate_schema_read_only(product_id)
+            elif hasattr(args, "holder") or (
+                args.command
+                in {
+                    "sql",
+                    "pull-request-upsert",
+                    "pull-request-deployment-upsert",
+                }
+                and hasattr(args, "actor")
+            ):
+                lease_holder = getattr(args, "holder", None) or args.actor
+                reconcile_schema_for_lease(
+                    product_id, lease_holder, resolve_lease_token(args)
+                )
+            else:
+                validate_schema_read_only(product_id)
         args.handler(args)
         return 0
     except (StateError, sqlite3.Error, json.JSONDecodeError, OSError) as error:

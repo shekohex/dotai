@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -13,6 +14,102 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).with_name("coordinator_state.py")
+
+LEGACY_V1_SCHEMA_SQL = """
+CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+CREATE TABLE products(
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE repositories(
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+  name TEXT NOT NULL, path TEXT, url TEXT, default_branch TEXT NOT NULL DEFAULT 'main',
+  role TEXT NOT NULL DEFAULT 'primary', created_at TEXT NOT NULL,
+  UNIQUE(product_id, name)
+);
+CREATE TABLE initiatives(
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+  title TEXT NOT NULL, state TEXT NOT NULL, phase TEXT NOT NULL,
+  charter_status TEXT NOT NULL DEFAULT 'draft', charter_version INTEGER NOT NULL DEFAULT 1,
+  soft_time_budget_minutes INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  completed_at TEXT, archived_at TEXT, archive_reason TEXT
+);
+CREATE TABLE agents(
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+  harness TEXT, external INTEGER NOT NULL DEFAULT 0, managed INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'idle', current_task_id TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE tasks(
+  id TEXT PRIMARY KEY, initiative_id TEXT NOT NULL REFERENCES initiatives(id),
+  title TEXT NOT NULL, state TEXT NOT NULL, phase TEXT NOT NULL,
+  risk_class TEXT NOT NULL DEFAULT 'medium', soft_time_budget_minutes INTEGER,
+  owner_agent_id TEXT REFERENCES agents(id), blocker TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT
+);
+CREATE TABLE approvals(
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+  action TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT NOT NULL,
+  executable_hash TEXT, scope_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL, expires_at TEXT, consumed_at TEXT
+);
+CREATE TABLE task_gates(
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  gate TEXT NOT NULL, status TEXT NOT NULL, evidence_json TEXT NOT NULL DEFAULT '{}',
+  approval_id TEXT REFERENCES approvals(id), updated_at TEXT NOT NULL,
+  PRIMARY KEY(task_id, gate)
+);
+CREATE TABLE stacks(
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+  repository_id TEXT NOT NULL REFERENCES repositories(id), trunk_ref TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE pull_requests(
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+  initiative_id TEXT REFERENCES initiatives(id),
+  task_id TEXT REFERENCES tasks(id),
+  repository_id TEXT REFERENCES repositories(id), number INTEGER, url TEXT,
+  branch TEXT NOT NULL, base_branch TEXT NOT NULL, head_sha TEXT,
+  state TEXT NOT NULL DEFAULT 'open', stack_id TEXT REFERENCES stacks(id),
+  stack_position INTEGER, mergeable_state TEXT, created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL, UNIQUE(repository_id, number)
+);
+CREATE TABLE pull_request_tasks(
+  pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL, PRIMARY KEY(pull_request_id, task_id)
+);
+CREATE INDEX pull_request_tasks_by_task ON pull_request_tasks(task_id);
+CREATE TABLE resource_leases(
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+  resource_class TEXT NOT NULL, holder_agent_id TEXT REFERENCES agents(id),
+  status TEXT NOT NULL, acquired_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+  released_at TEXT
+);
+CREATE TABLE deployments(
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+  initiative_id TEXT REFERENCES initiatives(id), environment TEXT NOT NULL,
+  head_sha TEXT NOT NULL, plan_hash TEXT, status TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, verified_at TEXT
+);
+CREATE TABLE decisions(
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+  initiative_id TEXT REFERENCES initiatives(id), title TEXT NOT NULL,
+  body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
+  supersedes_id TEXT REFERENCES decisions(id), created_at TEXT NOT NULL
+);
+CREATE TABLE coordinator_leases(
+  product_id TEXT PRIMARY KEY REFERENCES products(id), holder_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL, acquired_at TEXT NOT NULL, expires_at TEXT NOT NULL
+);
+CREATE TABLE events(
+  id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id),
+  occurred_at TEXT NOT NULL, actor_type TEXT NOT NULL, actor_id TEXT NOT NULL,
+  initiative_id TEXT REFERENCES initiatives(id), action TEXT NOT NULL,
+  target_type TEXT, target_id TEXT, risk_class TEXT NOT NULL,
+  reason TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}', correlation_id TEXT
+);
+"""
 
 
 def run(
@@ -55,6 +152,182 @@ def set_schema_versions(database_path: Path, versions: list[int]) -> None:
             "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
             [(version, "2026-01-01T00:00:00+00:00") for version in versions],
         )
+
+
+def database_file_snapshot(database_path: Path) -> dict[str, tuple[bool, int | None, bytes]]:
+    snapshot: dict[str, tuple[bool, int | None, bytes]] = {}
+    for path in (
+        database_path,
+        database_path.with_name(f"{database_path.name}-wal"),
+    ):
+        snapshot[path.name] = (
+            path.exists(),
+            path.stat().st_mtime_ns if path.exists() else None,
+            path.read_bytes() if path.exists() else b"",
+        )
+    return snapshot
+
+
+def summarize_file_snapshot(
+    snapshot: dict[str, tuple[bool, int | None, bytes]]
+) -> dict[str, tuple[bool, int | None, int, str]]:
+    return {
+        name: (exists, mtime, len(content), hashlib.sha256(content).hexdigest())
+        for name, (exists, mtime, content) in snapshot.items()
+    }
+
+
+def create_independent_legacy_v1_fixture(agents_home: Path) -> tuple[Path, str]:
+    product_root = agents_home / "projects" / "legacy-fk"
+    for directory in (
+        product_root,
+        product_root / "initiatives",
+        product_root / "artifacts",
+        product_root / "exports",
+        product_root / "checkpoints",
+        product_root / "locks",
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+        directory.chmod(0o700)
+    database_path = product_root / "state.sqlite"
+    lease_token = "legacy-v1-lease-token"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.executescript(LEGACY_V1_SCHEMA_SQL)
+        connection.execute(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (1, ?)",
+            ("2026-01-01T00:00:00+00:00",),
+        )
+        connection.execute(
+            "INSERT INTO products(id, name, created_at, updated_at) "
+            "VALUES ('legacy-fk', 'Legacy FK Product', ?, ?)",
+            ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO initiatives(id, product_id, title, state, phase, created_at, updated_at) "
+            "VALUES ('legacy-fk-initiative', 'legacy-fk', 'Legacy FK initiative', 'active', 'deploy', ?, ?)",
+            ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO tasks(id, initiative_id, title, state, phase, created_at, updated_at) "
+            "VALUES ('legacy-fk-task', 'legacy-fk-initiative', 'Legacy FK task', 'complete', 'deploy', ?, ?)",
+            ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            """
+            INSERT INTO pull_requests(
+              id, product_id, initiative_id, task_id, number, branch, base_branch,
+              head_sha, state, created_at, updated_at
+            ) VALUES ('legacy-fk-pr', 'legacy-fk', 'legacy-fk-initiative',
+              'legacy-fk-task', 1, 'legacy-fk', 'main', 'legacy-fk-head',
+              'merged', ?, ?)
+            """,
+            ("2026-01-02T00:00:00+00:00", "2026-01-02T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO pull_request_tasks(pull_request_id, task_id, created_at) "
+            "VALUES ('legacy-fk-pr', 'legacy-fk-task', ?)",
+            ("2026-01-02T00:00:00+00:00",),
+        )
+        connection.execute(
+            """
+            INSERT INTO coordinator_leases(
+              product_id, holder_id, token_hash, acquired_at, expires_at
+            ) VALUES ('legacy-fk', 'coordinator-1', ?, ?, ?)
+            """,
+            (
+                hashlib.sha256(lease_token.encode()).hexdigest(),
+                "2026-01-01T00:00:00+00:00",
+                "2099-01-01T00:00:00+00:00",
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO events(
+              id, product_id, occurred_at, actor_type, actor_id, action,
+              risk_class, reason
+            ) VALUES ('legacy-fk-event', 'legacy-fk', ?, 'coordinator',
+              'fixture', 'fixture.created', 'low', 'Create independent legacy fixture')
+            """,
+            ("2026-01-01T00:00:00+00:00",),
+        )
+    database_path.chmod(0o600)
+    (product_root / "project.json").write_text(
+        json.dumps(
+            {"schema_version": 1, "product_id": "legacy-fk", "name": "Legacy FK Product"}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (product_root / "project.json").chmod(0o600)
+    return database_path, lease_token
+
+
+def assert_legacy_fk_converges() -> None:
+    with tempfile.TemporaryDirectory(prefix="program-coordinator-fk-") as temporary:
+        agents_home = Path(temporary)
+        database_path, lease_token = create_independent_legacy_v1_fixture(agents_home)
+        with sqlite3.connect(database_path) as connection:
+            assert connection.execute(
+                "SELECT on_delete FROM pragma_foreign_key_list('pull_requests') "
+                "WHERE \"from\" = 'task_id'"
+            ).fetchone()[0] == "NO ACTION"
+        summary = run(agents_home, "summary", "--product-id", "legacy-fk")
+        assert summary["merged_awaiting_deployment"][0]["id"] == "legacy-fk-pr"
+        with sqlite3.connect(database_path) as connection:
+            assert connection.execute(
+                "SELECT on_delete FROM pragma_foreign_key_list('pull_requests') "
+                "WHERE \"from\" = 'task_id'"
+            ).fetchone()[0] == "NO ACTION"
+        run(
+            agents_home,
+            "schema-reconcile",
+            "--product-id",
+            "legacy-fk",
+            "--holder",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+        )
+        with sqlite3.connect(database_path) as connection:
+            assert connection.execute(
+                "SELECT on_delete FROM pragma_foreign_key_list('pull_requests') "
+                "WHERE \"from\" = 'task_id'"
+            ).fetchone()[0] == "SET NULL"
+            assert connection.execute(
+                "SELECT pull_request_id, task_id FROM pull_request_tasks"
+            ).fetchall() == [("legacy-fk-pr", "legacy-fk-task")]
+            assert connection.execute(
+                "SELECT name FROM sqlite_schema "
+                "WHERE type='table' AND name='pull_request_deployments'"
+            ).fetchone()[0] == "pull_request_deployments"
+            event_ids_before_delete = [
+                row[0] for row in connection.execute("SELECT id FROM events")
+            ]
+        deleted = run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "legacy-fk",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Delete task and preserve merged PR",
+            "DELETE FROM tasks WHERE id='legacy-fk-task'",
+        )
+        assert deleted["ok"] is True
+        with sqlite3.connect(database_path) as connection:
+            assert connection.execute(
+                "SELECT task_id FROM pull_requests WHERE id='legacy-fk-pr'"
+            ).fetchone()[0] is None
+            assert connection.execute(
+                "SELECT * FROM pull_request_tasks"
+            ).fetchall() == []
+            assert set(event_ids_before_delete).issubset(
+                {row[0] for row in connection.execute("SELECT id FROM events")}
+            )
 
 
 def create_existing_v1_fixture(
@@ -176,11 +449,30 @@ def assert_existing_v1_opens(*, pre_materialized: bool) -> None:
             ).fetchone()
         assert schema_versions(database_path) == [1]
 
+        before_read_only_commands = database_file_snapshot(database_path)
         summary = run(agents_home, "summary", "--product-id", "legacy")
         assert summary["merged_awaiting_deployment"][0]["id"] == "legacy-pr"
         assert summary["merged_awaiting_deployment"][0]["task_ids"] == [
             "legacy-task"
         ]
+        doctor = run(agents_home, "doctor", "--product-id", "legacy")
+        assert doctor["schema_versions"] == [1]
+        after_read_only_commands = database_file_snapshot(database_path)
+        assert after_read_only_commands == before_read_only_commands, (
+            summarize_file_snapshot(before_read_only_commands),
+            summarize_file_snapshot(after_read_only_commands),
+        )
+
+        run(
+            agents_home,
+            "schema-reconcile",
+            "--product-id",
+            "legacy",
+            "--holder",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+        )
 
         with sqlite3.connect(database_path) as connection:
             event_ids_after_first = [
@@ -235,6 +527,7 @@ def assert_future_schema_refused() -> None:
             ([0], "unknown versions"),
         ):
             set_schema_versions(database_path, versions)
+            before_refusal = database_file_snapshot(database_path)
             refused = run(
                 agents_home,
                 "summary",
@@ -249,6 +542,7 @@ def assert_future_schema_refused() -> None:
                 assert [
                     row[0] for row in connection.execute("SELECT id FROM events")
                 ] == event_ids_before
+            assert database_file_snapshot(database_path) == before_refusal
 
 
 def assert_reconciliation_failure_rolls_back() -> None:
@@ -262,6 +556,14 @@ def assert_reconciliation_failure_rolls_back() -> None:
             "--name",
             "Rollback Product",
         )
+        lease_token = run(
+            agents_home,
+            "lease-acquire",
+            "--product-id",
+            "rollback",
+            "--holder",
+            "coordinator-1",
+        )["lease_token"]
         database_path = agents_home / "projects" / "rollback" / "state.sqlite"
         with sqlite3.connect(database_path) as connection:
             event_ids_before = [
@@ -277,9 +579,13 @@ def assert_reconciliation_failure_rolls_back() -> None:
             )
         refused = run(
             agents_home,
-            "summary",
+            "schema-reconcile",
             "--product-id",
             "rollback",
+            "--holder",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
             expect_success=False,
         )
         assert refused["ok"] is False
@@ -537,8 +843,37 @@ def main() -> int:
                 "VALUES (:task, 'deployment', :status, :now)",
             )
 
+        atomic_pr = run(
+            agents_home,
+            "pull-request-upsert",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Record multi-task merged PR atomically",
+            "--pull-request-json",
+            json.dumps(
+                {
+                    "id": "pr-awaiting",
+                    "task_id": "task-1",
+                    "number": 10,
+                    "branch": "feature/coupled",
+                    "base_branch": "main",
+                    "head_sha": "head-awaiting",
+                    "state": "merged",
+                    "created_at": "2026-01-02T00:00:00+00:00",
+                    "updated_at": "2026-01-02T00:00:00+00:00",
+                }
+            ),
+            "--task-ids-json",
+            '["task-1", "task-2"]',
+        )
+        assert atomic_pr["task_ids"] == ["task-1", "task-2"]
+
         for pull_request_id, head_sha, legacy_task_id in (
-            ("pr-awaiting", "head-awaiting", "task-1"),
             ("pr-deployed", "head-not-deployed", "task-1"),
         ):
             run(
@@ -571,9 +906,9 @@ def main() -> int:
                 ")",
             )
 
-        linked_tasks = run(
+        atomic_failure = run(
             agents_home,
-            "sql",
+            "pull-request-upsert",
             "--product-id",
             "sample",
             "--actor",
@@ -581,20 +916,25 @@ def main() -> int:
             "--lease-token",
             lease_token,
             "--reason",
-            "Link multiple tasks to one PR",
-            "--params-json",
-            json.dumps(
-                {
-                    "pr": "pr-awaiting",
-                    "task_one": "task-1",
-                    "task_two": "task-2",
-                    "now": "2026-01-02T00:00:00+00:00",
-                }
-            ),
-                "INSERT OR IGNORE INTO pull_request_tasks(pull_request_id, task_id, created_at) "
-                "VALUES (:pr, :task_one, :now), (:pr, :task_two, :now)",
-            )
-        assert linked_tasks["changed_rows"] == 1
+            "Verify atomic PR link rollback",
+            "--pull-request-json",
+            '{"id":"pr-atomic-failure","branch":"feature/failure",'
+            '"base_branch":"main","created_at":"2026-01-02T00:00:00+00:00",'
+            '"updated_at":"2026-01-02T00:00:00+00:00"}',
+            "--task-ids-json",
+            '["task-1", "missing-task"]',
+            expect_success=False,
+        )
+        assert atomic_failure["ok"] is False
+        assert run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--read-only",
+            "SELECT COUNT(*) AS count FROM pull_requests "
+            "WHERE id='pr-atomic-failure'",
+        )["rows"] == [{"count": 0}]
 
         run(
             agents_home,
@@ -616,6 +956,53 @@ def main() -> int:
             ") VALUES ("
             ":id, 'sample', 'production', :head, 'verified', :verified, "
             ":verified, :verified"
+            ")",
+        )
+
+        coverage = run(
+            agents_home,
+            "pull-request-deployment-upsert",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token-env",
+            "COORDINATOR_LEASE_TOKEN",
+            "--reason",
+            "Record PR deployment coverage",
+            "--pull-request-id",
+            "pr-deployed",
+            "--environment",
+            "production",
+            "--deployment-id",
+            "deployment-1",
+            "--deployed-head-sha",
+            "deployment-merge",
+            "--status",
+            "passed",
+            environment={"COORDINATOR_LEASE_TOKEN": lease_token},
+        )
+        assert coverage["status"] == "passed"
+
+        run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Record later sequential merged PR",
+            "--params-json",
+            '{"now":"2026-01-04T00:00:00+00:00"}',
+            "INSERT INTO pull_requests("
+            "id, product_id, task_id, number, branch, base_branch, head_sha, "
+            "state, created_at, updated_at"
+            ") VALUES ("
+            "'pr-sequential-later', 'sample', 'task-1', 12, "
+            "'feature/later', 'main', 'later-head', 'merged', :now, :now"
             ")",
         )
 
@@ -774,19 +1161,28 @@ def main() -> int:
         summary = run(agents_home, "summary", "--product-id", "sample")
         assert len(summary["initiatives"]) == 1
         assert len(summary["recent_events"]) >= 3
-        assert summary["merged_awaiting_deployment"][0]["id"] == "pr-awaiting"
-        assert summary["merged_awaiting_deployment"][0]["task_ids"] == [
-            "task-1",
-            "task-2",
-        ]
-        assert summary["merged_awaiting_deployment"][0]["deployment_gate_statuses"] == {
+        awaiting_by_id = {
+            row["id"]: row for row in summary["merged_awaiting_deployment"]
+        }
+        assert set(awaiting_by_id) == {"pr-awaiting", "pr-sequential-later"}
+        assert awaiting_by_id["pr-awaiting"]["task_ids"] == ["task-1", "task-2"]
+        assert awaiting_by_id["pr-awaiting"]["deployment_gate_statuses"] == {
             "task-1": "passed",
             "task-2": "pending",
         }
-        assert summary["fully_deployed"][0]["id"] == "pr-deployed"
+        assert awaiting_by_id["pr-awaiting"]["deployment_coverage_statuses"] == {
+            "production": "missing"
+        }
+        assert awaiting_by_id["pr-sequential-later"]["deployment_coverage_statuses"] == {
+            "production": "missing"
+        }
+        assert [row["id"] for row in summary["fully_deployed"]] == ["pr-deployed"]
         assert summary["fully_deployed"][0]["deployment_state"] == "fully_deployed"
         assert summary["fully_deployed"][0]["deployment_gate_statuses"] == {
             "task-1": "passed"
+        }
+        assert summary["fully_deployed"][0]["deployment_coverage_statuses"] == {
+            "production": "passed"
         }
 
         doctor = run(agents_home, "doctor", "--product-id", "sample")
@@ -836,6 +1232,7 @@ def main() -> int:
 
     assert_existing_v1_opens(pre_materialized=False)
     assert_existing_v1_opens(pre_materialized=True)
+    assert_legacy_fk_converges()
     assert_future_schema_refused()
     assert_reconciliation_failure_rolls_back()
 

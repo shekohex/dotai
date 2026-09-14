@@ -346,6 +346,49 @@ sync_codex_prompts_directory() {
 
   log_warn "No custom prompts source found for Codex"
 }
+
+install_codex_profile_wrapper() {
+  local source="$REPO_DIR/.codex/paseo-codex-profile.py"
+  local installed="$CODEX_CONFIG/paseo-codex-profile.py"
+  local launcher="$HOME/.local/bin/paseo-codex-profile"
+
+  if [[ ! -f "$source" ]]; then
+    log_error "Codex profile wrapper source not found: $source"
+    return 1
+  fi
+
+  mkdir -p "$CODEX_CONFIG" "$(dirname "$launcher")"
+
+  if [[ -d "$launcher" ]]; then
+    log_error "Refusing to replace launcher directory: $launcher"
+    return 1
+  fi
+  if [[ -L "$installed" ]]; then
+    log_error "Refusing to replace symlinked Codex profile wrapper: $installed"
+    return 1
+  fi
+  if [[ -d "$installed" ]]; then
+    log_error "Refusing to replace directory with Codex profile wrapper: $installed"
+    return 1
+  fi
+
+  cp -p "$source" "$installed"
+  chmod +x "$installed"
+
+  if [[ -L "$launcher" && "$(readlink "$launcher")" == "$installed" ]]; then
+    log_info "Paseo Codex profile launcher is already up to date"
+    return 0
+  fi
+
+  if [[ -e "$launcher" || -L "$launcher" ]]; then
+    backup_file "$launcher"
+    rm -f "$launcher"
+  fi
+
+  ln -s "$installed" "$launcher"
+  log_info "Installed Paseo Codex profile launcher: $launcher -> $installed"
+}
+
 # Sync MCP configurations using dedicated script
 sync_mcp_configs() {
   local mcp_sync_script="$REPO_DIR/sync-mcp.sh"
@@ -437,6 +480,7 @@ main() {
   if [[ -d "$REPO_DIR/.codex" ]]; then
     sync_directory "$REPO_DIR/.codex" "$CODEX_CONFIG" "Codex"
   fi
+  install_codex_profile_wrapper
 
   # Sync MCP configurations
   sync_mcp_configs

@@ -38,6 +38,259 @@ def run(
     return json.loads(completed.stdout)
 
 
+def schema_versions(database_path: Path) -> list[int]:
+    with sqlite3.connect(database_path) as connection:
+        return [
+            row[0]
+            for row in connection.execute(
+                "SELECT version FROM schema_migrations ORDER BY version"
+            )
+        ]
+
+
+def set_schema_versions(database_path: Path, versions: list[int]) -> None:
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("DELETE FROM schema_migrations")
+        connection.executemany(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+            [(version, "2026-01-01T00:00:00+00:00") for version in versions],
+        )
+
+
+def create_existing_v1_fixture(
+    agents_home: Path, *, pre_materialized: bool
+) -> tuple[Path, str]:
+    run(
+        agents_home,
+        "init",
+        "--product-id",
+        "legacy",
+        "--name",
+        "Legacy Product",
+    )
+    acquired = run(
+        agents_home,
+        "lease-acquire",
+        "--product-id",
+        "legacy",
+        "--holder",
+        "coordinator-1",
+    )
+    lease_token = acquired["lease_token"]
+    run(
+        agents_home,
+        "sql",
+        "--product-id",
+        "legacy",
+        "--actor",
+        "coordinator-1",
+        "--lease-token",
+        lease_token,
+        "--reason",
+        "Create legacy initiative",
+        "--params-json",
+        '{"now":"2026-01-01T00:00:00+00:00"}',
+        """
+        INSERT INTO initiatives(
+          id, product_id, title, state, phase, created_at, updated_at
+        ) VALUES (
+          'legacy-initiative', 'legacy', 'Legacy initiative', 'active',
+          'deploy', :now, :now
+        )
+        """,
+    )
+    run(
+        agents_home,
+        "sql",
+        "--product-id",
+        "legacy",
+        "--actor",
+        "coordinator-1",
+        "--lease-token",
+        lease_token,
+        "--reason",
+        "Create legacy task",
+        "--params-json",
+        '{"now":"2026-01-01T00:00:00+00:00"}',
+        """
+        INSERT INTO tasks(
+          id, initiative_id, title, state, phase, created_at, updated_at
+        ) VALUES (
+          'legacy-task', 'legacy-initiative', 'Legacy task', 'complete',
+          'deploy', :now, :now
+        )
+        """,
+    )
+    run(
+        agents_home,
+        "sql",
+        "--product-id",
+        "legacy",
+        "--actor",
+        "coordinator-1",
+        "--lease-token",
+        lease_token,
+        "--reason",
+        "Create legacy merged PR",
+        "--params-json",
+        '{"now":"2026-01-02T00:00:00+00:00"}',
+        """
+        INSERT INTO pull_requests(
+          id, product_id, initiative_id, task_id, number, branch, base_branch,
+          head_sha, state, created_at, updated_at
+        ) VALUES (
+          'legacy-pr', 'legacy', 'legacy-initiative', 'legacy-task', 1,
+          'legacy', 'main', 'legacy-head', 'merged', :now, :now
+        )
+        """,
+    )
+    database_path = agents_home / "projects" / "legacy" / "state.sqlite"
+    with sqlite3.connect(database_path) as connection:
+        if not pre_materialized:
+            connection.execute("DROP TABLE pull_request_tasks")
+        else:
+            connection.execute(
+                """
+                INSERT INTO pull_request_tasks(
+                  pull_request_id, task_id, created_at
+                ) VALUES ('legacy-pr', 'legacy-task', ?)
+                """,
+                ("2026-01-02T00:00:00+00:00",),
+            )
+        connection.execute("DELETE FROM schema_migrations WHERE version <> 1")
+    return database_path, lease_token
+
+
+def assert_existing_v1_opens(*, pre_materialized: bool) -> None:
+    with tempfile.TemporaryDirectory(prefix="program-coordinator-v1-") as temporary:
+        agents_home = Path(temporary)
+        database_path, lease_token = create_existing_v1_fixture(
+            agents_home, pre_materialized=pre_materialized
+        )
+        with sqlite3.connect(database_path) as connection:
+            event_ids_before = [
+                row[0] for row in connection.execute("SELECT id FROM events")
+            ]
+            lease_before = connection.execute(
+                "SELECT holder_id, token_hash, expires_at FROM coordinator_leases"
+            ).fetchone()
+        assert schema_versions(database_path) == [1]
+
+        summary = run(agents_home, "summary", "--product-id", "legacy")
+        assert summary["merged_awaiting_deployment"][0]["id"] == "legacy-pr"
+        assert summary["merged_awaiting_deployment"][0]["task_ids"] == [
+            "legacy-task"
+        ]
+
+        with sqlite3.connect(database_path) as connection:
+            event_ids_after_first = [
+                row[0] for row in connection.execute("SELECT id FROM events")
+            ]
+            assert connection.execute(
+                "SELECT name FROM sqlite_schema "
+                "WHERE type='table' AND name='pull_request_tasks'"
+            ).fetchone()[0] == "pull_request_tasks"
+            assert connection.execute(
+                "SELECT pull_request_id, task_id FROM pull_request_tasks"
+            ).fetchall() == [("legacy-pr", "legacy-task")]
+            assert connection.execute(
+                "SELECT title FROM initiatives WHERE id='legacy-initiative'"
+            ).fetchone()[0] == "Legacy initiative"
+            assert connection.execute(
+                "SELECT holder_id, token_hash, expires_at FROM coordinator_leases"
+            ).fetchone() == lease_before
+        assert schema_versions(database_path) == [1]
+        assert set(event_ids_before).issubset(event_ids_after_first)
+        if pre_materialized:
+            assert event_ids_after_first == event_ids_before
+        else:
+            assert len(event_ids_after_first) == len(event_ids_before) + 1
+        assert lease_token.encode() not in database_path.read_bytes()
+
+        run(agents_home, "summary", "--product-id", "legacy")
+        with sqlite3.connect(database_path) as connection:
+            assert [
+                row[0] for row in connection.execute("SELECT id FROM events")
+            ] == event_ids_after_first
+
+
+def assert_future_schema_refused() -> None:
+    with tempfile.TemporaryDirectory(prefix="program-coordinator-future-") as temporary:
+        agents_home = Path(temporary)
+        run(
+            agents_home,
+            "init",
+            "--product-id",
+            "future",
+            "--name",
+            "Future Product",
+        )
+        database_path = agents_home / "projects" / "future" / "state.sqlite"
+        with sqlite3.connect(database_path) as connection:
+            event_ids_before = [
+                row[0] for row in connection.execute("SELECT id FROM events")
+            ]
+        for versions, error_fragment in (
+            ([1, 2], "unsupported newer versions"),
+            ([0], "unknown versions"),
+        ):
+            set_schema_versions(database_path, versions)
+            refused = run(
+                agents_home,
+                "summary",
+                "--product-id",
+                "future",
+                expect_success=False,
+            )
+            assert refused["ok"] is False
+            assert error_fragment in refused["error"]
+            assert schema_versions(database_path) == versions
+            with sqlite3.connect(database_path) as connection:
+                assert [
+                    row[0] for row in connection.execute("SELECT id FROM events")
+                ] == event_ids_before
+
+
+def assert_reconciliation_failure_rolls_back() -> None:
+    with tempfile.TemporaryDirectory(prefix="program-coordinator-rollback-") as temporary:
+        agents_home = Path(temporary)
+        run(
+            agents_home,
+            "init",
+            "--product-id",
+            "rollback",
+            "--name",
+            "Rollback Product",
+        )
+        database_path = agents_home / "projects" / "rollback" / "state.sqlite"
+        with sqlite3.connect(database_path) as connection:
+            event_ids_before = [
+                row[0] for row in connection.execute("SELECT id FROM events")
+            ]
+            connection.execute("DROP TABLE pull_request_tasks")
+            connection.execute(
+                """
+                CREATE TABLE pull_request_tasks(
+                  pull_request_id TEXT NOT NULL, task_id TEXT NOT NULL
+                )
+                """
+            )
+        refused = run(
+            agents_home,
+            "summary",
+            "--product-id",
+            "rollback",
+            expect_success=False,
+        )
+        assert refused["ok"] is False
+        assert "created_at" in refused["error"]
+        assert schema_versions(database_path) == [1]
+        with sqlite3.connect(database_path) as connection:
+            assert [
+                row[0] for row in connection.execute("SELECT id FROM events")
+            ] == event_ids_before
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="program-coordinator-test-") as temporary:
         agents_home = Path(temporary)
@@ -60,9 +313,12 @@ def main() -> int:
         database_path = agents_home / "projects" / "sample" / "state.sqlite"
         with sqlite3.connect(database_path) as connection:
             assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-            assert connection.execute(
-                "SELECT version FROM schema_migrations"
-            ).fetchone()[0] == 1
+            assert [
+                row[0]
+                for row in connection.execute(
+                    "SELECT version FROM schema_migrations ORDER BY version"
+                )
+            ] == [1]
             assert connection.execute(
                 "SELECT name FROM sqlite_schema WHERE name='pull_request_tasks'"
             ).fetchone()[0] == "pull_request_tasks"
@@ -257,9 +513,33 @@ def main() -> int:
                 environment={"COORDINATOR_LEASE_TOKEN": lease_token},
             )
 
+        for task_id, status in (("task-1", "passed"), ("task-2", "pending")):
+            run(
+                agents_home,
+                "sql",
+                "--product-id",
+                "sample",
+                "--actor",
+                "coordinator-1",
+                "--lease-token",
+                lease_token,
+                "--reason",
+                "Set deployment gate",
+                "--params-json",
+                json.dumps(
+                    {
+                        "task": task_id,
+                        "status": status,
+                        "now": "2026-01-03T00:00:00+00:00",
+                    }
+                ),
+                "INSERT INTO task_gates(task_id, gate, status, updated_at) "
+                "VALUES (:task, 'deployment', :status, :now)",
+            )
+
         for pull_request_id, head_sha, legacy_task_id in (
             ("pr-awaiting", "head-awaiting", "task-1"),
-            ("pr-deployed", "head-deployed", None),
+            ("pr-deployed", "head-not-deployed", "task-1"),
         ):
             run(
                 agents_home,
@@ -311,10 +591,10 @@ def main() -> int:
                     "now": "2026-01-02T00:00:00+00:00",
                 }
             ),
-            "INSERT INTO pull_request_tasks(pull_request_id, task_id, created_at) "
-            "VALUES (:pr, :task_one, :now), (:pr, :task_two, :now)",
-        )
-        assert linked_tasks["changed_rows"] == 2
+                "INSERT OR IGNORE INTO pull_request_tasks(pull_request_id, task_id, created_at) "
+                "VALUES (:pr, :task_one, :now), (:pr, :task_two, :now)",
+            )
+        assert linked_tasks["changed_rows"] == 1
 
         run(
             agents_home,
@@ -328,7 +608,7 @@ def main() -> int:
             "--reason",
             "Record verified deployment",
             "--params-json",
-            '{"id":"deployment-1","head":"head-deployed",'
+            '{"id":"deployment-1","head":"deployment-merge",'
             '"verified":"2026-01-03T00:00:00+00:00"}',
             "INSERT INTO deployments("
             "id, product_id, environment, head_sha, status, created_at, "
@@ -499,8 +779,15 @@ def main() -> int:
             "task-1",
             "task-2",
         ]
+        assert summary["merged_awaiting_deployment"][0]["deployment_gate_statuses"] == {
+            "task-1": "passed",
+            "task-2": "pending",
+        }
         assert summary["fully_deployed"][0]["id"] == "pr-deployed"
         assert summary["fully_deployed"][0]["deployment_state"] == "fully_deployed"
+        assert summary["fully_deployed"][0]["deployment_gate_statuses"] == {
+            "task-1": "passed"
+        }
 
         doctor = run(agents_home, "doctor", "--product-id", "sample")
         assert doctor["ok"] is True
@@ -546,6 +833,11 @@ def main() -> int:
             lease_token,
         )
         assert released["ok"] is True
+
+    assert_existing_v1_opens(pre_materialized=False)
+    assert_existing_v1_opens(pre_materialized=True)
+    assert_future_schema_refused()
+    assert_reconciliation_failure_rolls_back()
 
     print("coordinator_state smoke test: passed")
     return 0

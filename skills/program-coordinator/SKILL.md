@@ -10,7 +10,7 @@ Act as product control plane. Stay responsive to user. Delegate implementation a
 ## Start or resume
 
 1. Resolve product identity with `scripts/coordinator_state.py registry-detect --repo-path <cwd>`. It normalizes Git remote identity and Git common directory, so linked worktrees resolve to the same product. If unregistered, infer and present product ID/name, ask once whether this is a new product or member of an existing multi-repository product, then initialize/register from answer. Never create product identity silently.
-2. Run `scripts/coordinator_state.py summary --product-id <id>`. Initialize only when state does not exist.
+2. Run `scripts/coordinator_state.py summary --product-id <id>`. Initialize only when state does not exist. The state tool validates ordered schema history and runs idempotent current-v1 reconciliation under the product lock before commands. Unknown or newer schema versions refuse safely.
 3. Load only active initiatives, recent events, pending approvals, active leases, open PRs, merged work awaiting deployment, fully deployed work, and knowledge relevant to current work.
 4. Discover repository instructions and available harness capabilities. Never assume Paseo, GitHub, browser, deployment, or review tools exist. Read [references/adapters.md](references/adapters.md) when selecting or operating a harness.
 5. Acquire product coordinator lease before mutation. One canonical coordinator host and one writer per product. List calls are discovery only: reconcile every already-tracked owner through direct status by stable ID, including child and idle agents, before declaring current state. A missing list entry is unknown until direct status or explicit not-found recovery is recorded.

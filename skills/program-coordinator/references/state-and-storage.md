@@ -41,6 +41,8 @@ python3 scripts/coordinator_state.py registry-remove \
   --repo-path . --reason 'Remove obsolete repository association'
 ```
 
+SQLite state currently uses schema v1. Fresh initialization creates the complete v1 definition and records ordered history `[1]`. Before opening an existing database, the state tool acquires the product lock, validates history, and runs the ordered v1 reconciliation step transactionally. That step idempotently materializes `pull_request_tasks`, its index, and legacy single-task links. Repeated opens converge without changing the schema version; unknown, newer, or inconsistent history refuses before state changes. Future schema work adds an explicit ordered step and version only when approved.
+
 Registry writes require active product coordinator lease, use atomic file replacement, and append product audit events. A remote already assigned to another product is a hard conflict; never reassign silently.
 
 Lease commands accept either `--lease-token TOKEN` or `--lease-token-env NAME`. The environment form keeps the token out of command arguments and shell history; it is resolved only for that process and still validates the same hashed token under the same product lock. Never write the plaintext token to SQLite, files, checkpoints, logs, or project configuration.
@@ -78,7 +80,7 @@ project.json is authoritative configuration. SQLite repository rows are synchron
 
 Pull requests can deliver multiple tightly coupled tasks. Keep `pull_requests.task_id` as the existing single-task compatibility field, and add one row per delivered task to `pull_request_tasks(pull_request_id, task_id, created_at)` in the same guarded transaction. Summary output exposes complete `task_ids`; task gates and completion remain separate.
 
-Summary output separates merged work into `merged_awaiting_deployment` and `fully_deployed`. A merged PR is fully deployed only when every latest recorded deployment for its head is `status = 'verified'` with non-null `verified_at`; otherwise it remains in the awaiting group, including when no deployment is recorded.
+Summary output separates merged work into `merged_awaiting_deployment` and `fully_deployed`. A merged PR is fully deployed only when every linked task has a durable `deployment` gate with status `passed`; missing or non-passed task gates remain awaiting deployment. Deployment classification does not infer coverage from PR head SHA equality, repository ancestry, or network calls during summary.
 
 ## Checkpoints and rollback
 

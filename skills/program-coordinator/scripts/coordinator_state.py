@@ -27,7 +27,6 @@ CHECKPOINT_LIMIT = 5
 WAL_AUTOCHECKPOINT_PAGES = 1000
 PRODUCT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 RISK_CLASSES = ("low", "medium", "high", "critical")
-VERIFIED_DEPLOYMENT_STATUS = "verified"
 REMINDER = (
     "Consider updating learned knowledge or user preferences if this operation "
     "revealed durable information."
@@ -313,6 +312,32 @@ CREATE INDEX prs_by_product_state ON pull_requests(product_id, state);
 CREATE INDEX pull_request_tasks_by_task ON pull_request_tasks(task_id);
 """
 
+# Entries are applied in version order. Version 1 is intentionally rerunnable:
+# it repairs databases created earlier in this skill's v1 lifetime. A future
+# schema version adds one entry here and is applied only when history is behind.
+SCHEMA_MIGRATION_STEPS: dict[int, tuple[str, ...]] = {
+    1: (
+        """
+        CREATE TABLE IF NOT EXISTS pull_request_tasks (
+          pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+          task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(pull_request_id, task_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS pull_request_tasks_by_task "
+        "ON pull_request_tasks(task_id)",
+        """
+        INSERT OR IGNORE INTO pull_request_tasks(
+          pull_request_id, task_id, created_at
+        )
+        SELECT id, task_id, updated_at
+        FROM pull_requests
+        WHERE task_id IS NOT NULL
+        """,
+    ),
+}
+
 
 class StateError(RuntimeError):
     """Expected coordinator state failure."""
@@ -413,6 +438,145 @@ def connect(product_id: str, *, read_only: bool = False) -> sqlite3.Connection:
         connection.execute(f"PRAGMA wal_autocheckpoint = {WAL_AUTOCHECKPOINT_PAGES}")
         connection.execute("PRAGMA journal_size_limit = 16777216")
     return connection
+
+
+def read_schema_versions(connection: sqlite3.Connection) -> list[int]:
+    return [
+        row[0]
+        for row in connection.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        )
+    ]
+
+
+def validate_schema_history(versions: list[int]) -> None:
+    if not versions:
+        raise StateError("schema migration history is empty")
+    newer_versions = [version for version in versions if version > SCHEMA_VERSION]
+    if newer_versions:
+        raise StateError(
+            "schema contains unsupported newer versions: "
+            f"{newer_versions} (current: {SCHEMA_VERSION})"
+        )
+    unknown_versions = [
+        version for version in versions if version not in SCHEMA_MIGRATION_STEPS
+    ]
+    if unknown_versions:
+        raise StateError(
+            "schema migration history contains unknown versions: "
+            f"{unknown_versions}"
+        )
+    expected_history = list(range(1, versions[-1] + 1))
+    if versions != expected_history:
+        raise StateError(f"schema migration history is inconsistent: {versions}")
+    if versions[-1] < SCHEMA_VERSION:
+        missing_versions = list(range(versions[-1] + 1, SCHEMA_VERSION + 1))
+        if any(version not in SCHEMA_MIGRATION_STEPS for version in missing_versions):
+            raise StateError(
+                "schema migration history has no registered steps for: "
+                f"{missing_versions}"
+            )
+
+
+def apply_schema_migration_steps(
+    connection: sqlite3.Connection, applied_versions: list[int]
+) -> list[int]:
+    registered_versions = sorted(SCHEMA_MIGRATION_STEPS)
+    unsupported_registry_versions = [
+        version
+        for version in registered_versions
+        if version < 1 or version > SCHEMA_VERSION
+    ]
+    if unsupported_registry_versions:
+        raise StateError(
+            "schema migration registry contains unsupported versions: "
+            f"{unsupported_registry_versions}"
+        )
+    highest_applied = applied_versions[-1] if applied_versions else 0
+    pending_versions = list(range(highest_applied + 1, SCHEMA_VERSION + 1))
+    missing_steps = [
+        version
+        for version in pending_versions
+        if version not in SCHEMA_MIGRATION_STEPS
+    ]
+    if missing_steps:
+        raise StateError(
+            "schema migration registry missing versions: " f"{missing_steps}"
+        )
+
+    executed_versions: list[int] = []
+    for version in registered_versions:
+        if version > SCHEMA_VERSION:
+            break
+        # v1 is a compatibility reconciliation and must run even after v1 was
+        # recorded. Future entries run once, when absent from history.
+        if version != 1 and version in applied_versions:
+            continue
+        executed_versions.append(version)
+        for statement in SCHEMA_MIGRATION_STEPS[version]:
+            connection.execute(statement)
+        if version in pending_versions:
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (version, now()),
+            )
+    return executed_versions
+
+
+def reconcile_schema_in_transaction(
+    connection: sqlite3.Connection, product_id: str
+) -> dict[str, Any]:
+    versions = read_schema_versions(connection)
+    validate_schema_history(versions)
+    schema_objects_before = {
+        (row[0], row[1])
+        for row in connection.execute(
+            "SELECT type, name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'"
+        )
+    }
+    changes_before = connection.total_changes
+    processed_versions = apply_schema_migration_steps(connection, versions)
+    changes = connection.total_changes - changes_before
+    schema_objects_after = {
+        (row[0], row[1])
+        for row in connection.execute(
+            "SELECT type, name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'"
+        )
+    }
+    schema_objects_changed = schema_objects_before != schema_objects_after
+    event_id: str | None = None
+    if changes or schema_objects_changed:
+        event_id = add_event(
+            connection,
+            product_id=product_id,
+            actor_id="schema-reconciler",
+            action="state.schema_reconciled",
+            risk="low",
+            reason="Reconcile current coordinator schema under product lock",
+            target_type="product",
+            target_id=product_id,
+            payload={
+                "schema_version": SCHEMA_VERSION,
+                "processed_versions": processed_versions,
+                "database_changes": changes,
+                "schema_objects_changed": schema_objects_changed,
+            },
+        )
+    return {
+        "schema_versions": read_schema_versions(connection),
+        "processed_versions": processed_versions,
+        "database_changes": changes,
+        "schema_objects_changed": schema_objects_changed,
+        "event_id": event_id,
+    }
+
+
+def reconcile_schema(product_id: str) -> dict[str, Any]:
+    with product_lock(product_id), connect(product_id) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        result = reconcile_schema_in_transaction(connection, product_id)
+        connection.commit()
+        return result
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -706,11 +870,8 @@ def initialize(args: argparse.Namespace) -> None:
             )
             connection.execute("PRAGMA journal_size_limit = 16777216")
             connection.executescript(SCHEMA_SQL)
+            apply_schema_migration_steps(connection, [])
             timestamp = now()
-            connection.execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                (SCHEMA_VERSION, timestamp),
-            )
             connection.execute(
                 "INSERT INTO products(id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
                 (args.product_id, args.name, timestamp, timestamp),
@@ -800,7 +961,7 @@ def validate_lease(
 def acquire_lease(args: argparse.Namespace) -> None:
     if args.ttl_seconds <= 0:
         raise StateError("--ttl-seconds must be positive")
-    lease_token = secrets.token_urlsafe(32)
+    lease_token = secrets.token_hex(32)
     acquired_at = dt.datetime.now(dt.timezone.utc)
     expires_at = acquired_at + dt.timedelta(seconds=args.ttl_seconds)
     with product_lock(args.product_id), connect(args.product_id) as connection:
@@ -1332,38 +1493,32 @@ def deployment_projections(
         "AND state = 'merged' ORDER BY updated_at DESC",
         (product_id,),
     )
-    deployments = query_rows(
+    deployment_gates = query_rows(
         connection,
-        "SELECT * FROM deployments WHERE product_id = ?",
+        """
+        SELECT task_gates.task_id, task_gates.status
+        FROM task_gates
+        JOIN tasks ON tasks.id = task_gates.task_id
+        JOIN initiatives ON initiatives.id = tasks.initiative_id
+        WHERE initiatives.product_id = ?
+          AND task_gates.gate = 'deployment'
+        """,
         (product_id,),
     )
-    latest_deployments: dict[tuple[str, str], dict[str, Any]] = {}
-    for deployment in deployments:
-        key = (deployment["head_sha"], deployment["environment"])
-        previous = latest_deployments.get(key)
-        if previous is None or (
-            deployment["updated_at"], deployment["id"]
-        ) > (previous["updated_at"], previous["id"]):
-            latest_deployments[key] = deployment
+    deployment_status_by_task = {
+        gate["task_id"]: gate["status"] for gate in deployment_gates
+    }
 
     awaiting_deployment: list[dict[str, Any]] = []
     fully_deployed: list[dict[str, Any]] = []
     for pull_request in merged_pull_requests:
-        matching_deployments = [
-            deployment
-            for (head_sha, _), deployment in latest_deployments.items()
-            if head_sha == pull_request["head_sha"]
-        ]
-        pull_request["deployment_ids"] = [
-            deployment["id"] for deployment in matching_deployments
-        ]
-        pull_request["deployment_environments"] = sorted(
-            deployment["environment"] for deployment in matching_deployments
-        )
-        is_fully_deployed = bool(matching_deployments) and all(
-            deployment["status"] == VERIFIED_DEPLOYMENT_STATUS
-            and deployment["verified_at"] is not None
-            for deployment in matching_deployments
+        pull_request["deployment_gate_statuses"] = {
+            task_id: deployment_status_by_task.get(task_id, "missing")
+            for task_id in pull_request["task_ids"]
+        }
+        is_fully_deployed = bool(pull_request["task_ids"]) and all(
+            status == "passed"
+            for status in pull_request["deployment_gate_statuses"].values()
         )
         pull_request["deployment_state"] = (
             "fully_deployed" if is_fully_deployed else "merged_awaiting_deployment"
@@ -1630,12 +1785,8 @@ def restore_checkpoint(args: argparse.Namespace) -> None:
                 ).fetchone()
                 if product is None:
                     raise StateError("checkpoint product row missing")
-                versions = [
-                    row[0]
-                    for row in validation_connection.execute(
-                        "SELECT version FROM schema_migrations ORDER BY version"
-                    )
-                ]
+                versions = read_schema_versions(validation_connection)
+                validate_schema_history(versions)
                 if versions != [SCHEMA_VERSION]:
                     raise StateError(f"checkpoint schema versions invalid: {versions}")
             restore_path.chmod(0o600)
@@ -1658,6 +1809,7 @@ def restore_checkpoint(args: argparse.Namespace) -> None:
 
         with connect(args.product_id) as restored_connection:
             restored_connection.execute("BEGIN IMMEDIATE")
+            reconcile_schema_in_transaction(restored_connection, args.product_id)
             restored_connection.execute(
                 """
                 INSERT INTO coordinator_leases(
@@ -1855,6 +2007,13 @@ def main() -> int:
     os.umask(0o077)
     try:
         args = build_parser().parse_args()
+        product_id = getattr(args, "product_id", None)
+        if (
+            args.command != "init"
+            and product_id
+            and get_database_path(product_id).exists()
+        ):
+            reconcile_schema(product_id)
         args.handler(args)
         return 0
     except (StateError, sqlite3.Error, json.JSONDecodeError, OSError) as error:

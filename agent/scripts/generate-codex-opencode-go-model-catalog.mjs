@@ -94,7 +94,7 @@ async function main() {
     `Instructions: bundled=${report.bundledInstructions}; fallback=${report.fallbackInstructions} (${codexRuntime.version})`,
   );
   console.log(
-    `Capabilities: ${report.enriched} exact models.dev matches; ${report.unmatched} retained without models.dev metadata`,
+    `Capabilities: ${report.enriched} exact models.dev matches; ${report.aliased} models.dev family aliases; ${report.unmatched} retained without models.dev metadata`,
   );
 }
 
@@ -586,6 +586,7 @@ function loadBundledCatalog() {
  *     bundledInstructions: number;
  *     fallbackInstructions: number;
  *     enriched: number;
+ *     aliased: number;
  *     unmatched: number;
  *   };
  * }}
@@ -609,12 +610,14 @@ function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
     bundledInstructions: 0,
     fallbackInstructions: 0,
     enriched: 0,
+    aliased: 0,
     unmatched: 0,
   };
   const models = [];
   for (const exposedModel of exposedModels) {
     const idExclusionReason = getIdExclusionReason(exposedModel.id);
-    const capabilityMetadata = modelsDevIndex.get(exposedModel.id);
+    const metadataResolution = resolveModelsDevModel(exposedModel.id, modelsDevIndex);
+    const capabilityMetadata = metadataResolution.model;
     const hasReliableMetadata =
       capabilityMetadata !== undefined && hasReliableAgentCapabilityMetadata(capabilityMetadata);
     if (
@@ -631,10 +634,12 @@ function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
       models.push(withoutVolatileFields(bundledModel));
       continue;
     }
-    if (capabilityMetadata === undefined) {
+    if (metadataResolution.source === "none") {
       report.unmatched += 1;
-    } else {
+    } else if (metadataResolution.source === "exact") {
       report.enriched += 1;
+    } else {
+      report.aliased += 1;
     }
     report.fallbackInstructions += 1;
     models.push(
@@ -652,6 +657,47 @@ function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
     catalog: { models },
     report,
   };
+}
+
+/**
+ * @param {string} modelId - Exposed OpenCode Go model ID.
+ * @param {ModelsDevIndex} modelsDevIndex - Exact models.dev OpenCode Go metadata.
+ * @returns {{ model: ModelsDevModel | undefined; source: "exact" | "family-alias" | "none" }} Exact
+ *   or models.dev family-alias metadata.
+ */
+function resolveModelsDevModel(modelId, modelsDevIndex) {
+  const exactModel = modelsDevIndex.get(modelId);
+  if (exactModel !== undefined) {
+    return { model: exactModel, source: "exact" };
+  }
+
+  const familyModels = [...modelsDevIndex.values()].filter(
+    (model) => normalizeNonEmptyString(model.family) === modelId,
+  );
+  if (familyModels.length === 0) {
+    return { model: undefined, source: "none" };
+  }
+
+  const latestModel = familyModels.reduce((currentModel, candidateModel) =>
+    compareModelsDevRecency(candidateModel, currentModel) > 0 ? candidateModel : currentModel,
+  );
+  return { model: latestModel, source: "family-alias" };
+}
+
+/**
+ * @param {ModelsDevModel} left - First models.dev model.
+ * @param {ModelsDevModel} right - Second models.dev model.
+ * @returns {number} Recency comparison, with later models sorting first.
+ */
+function compareModelsDevRecency(left, right) {
+  for (const field of ["last_updated", "release_date"]) {
+    const leftDate = normalizeNonEmptyString(left[field]);
+    const rightDate = normalizeNonEmptyString(right[field]);
+    if (leftDate !== rightDate) {
+      return compareUtf8Bytes(leftDate ?? "", rightDate ?? "");
+    }
+  }
+  return compareUtf8Bytes(left.id, right.id);
 }
 
 /**

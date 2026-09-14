@@ -79,9 +79,10 @@ describe("Codex OpenCode Go model catalog generator", () => {
                 created: 2,
                 owned_by: "opencode",
               },
-              { id: "unmatched-agent", object: "model", created: 3, owned_by: "opencode" },
-              { id: "text-embedding-3-small", object: "model", created: 4, owned_by: "opencode" },
-              { id: "gpt-image-2", object: "model", created: 5, owned_by: "opencode" },
+              { id: "deepseek-flash", object: "model", created: 3, owned_by: "opencode" },
+              { id: "unmatched-agent", object: "model", created: 4, owned_by: "opencode" },
+              { id: "text-embedding-3-small", object: "model", created: 5, owned_by: "opencode" },
+              { id: "gpt-image-2", object: "model", created: 6, owned_by: "opencode" },
             ],
           }),
         );
@@ -93,9 +94,23 @@ describe("Codex OpenCode Go model catalog generator", () => {
           JSON.stringify({
             "opencode-go": {
               models: {
+                "deepseek-v4-flash": {
+                  id: "deepseek-v4-flash",
+                  name: "DeepSeek V4 Flash",
+                  family: "deepseek-flash",
+                  last_updated: "2026-07-31",
+                  release_date: "2026-07-31",
+                  modalities: { input: ["text"], output: ["text"] },
+                  tool_call: true,
+                  reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+                  limit: { context: 1_000_000, output: 384_000 },
+                },
                 "deepseek-v4.1-flash": {
                   id: "deepseek-v4.1-flash",
                   name: "DeepSeek V4.1 Flash",
+                  family: "deepseek-flash",
+                  last_updated: "2026-09-10",
+                  release_date: "2026-09-10",
                   modalities: { input: ["text", "image"], output: ["text"] },
                   tool_call: true,
                   reasoning: true,
@@ -140,8 +155,9 @@ describe("Codex OpenCode Go model catalog generator", () => {
           },
         },
       );
-      expect(stdout).toContain("Wrote 3 OpenCode Go models");
+      expect(stdout).toContain("Wrote 4 OpenCode Go models");
       expect(stdout).toContain("Excluded 2 non-agent models");
+      expect(stdout).toContain("1 models.dev family aliases");
 
       await execFile(
         process.execPath,
@@ -184,10 +200,22 @@ describe("Codex OpenCode Go model catalog generator", () => {
     };
     const modelsBySlug = Object.fromEntries(catalog.models.map((model) => [model.slug, model]));
     expect(catalog.models.map((model) => model.slug)).toEqual([
+      "deepseek-flash",
       "deepseek-v4.1-flash",
       "gpt-5.6-luna",
       "unmatched-agent",
     ]);
+    expect(modelsBySlug["deepseek-flash"]).toMatchObject({
+      base_instructions: "Runtime fallback instructions",
+      display_name: "DeepSeek V4.1 Flash",
+      context_window: 1_000_000,
+      input_modalities: ["text", "image"],
+      supported_reasoning_levels: [
+        { effort: "low", description: "Fast reasoning" },
+        { effort: "high", description: "Deep reasoning" },
+        { effort: "max", description: "Maximum reasoning" },
+      ],
+    });
     expect(modelsBySlug["deepseek-v4.1-flash"]).toMatchObject({
       base_instructions: "Runtime fallback instructions",
       display_name: "DeepSeek V4.1 Flash",

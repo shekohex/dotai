@@ -69,6 +69,11 @@ uses Codex's required empty description. Boolean, toggle, and token-budget
 reasoning metadata never invents levels. Models without models.dev metadata
 remain selectable with Codex fallback metadata.
 
+When an exposed ID is a models.dev `family` alias, the generator uses the most
+recently updated matching model record. OpenCode Go's `deepseek-flash` alias
+therefore inherits current `deepseek-v4.1-flash` metadata, including reasoning
+levels.
+
 The generator excludes only generic structural non-agent families such as
 embedding, image generation, speech synthesis, transcription, reranking, and
 video generation. It reports exclusion counts. Other models returned by

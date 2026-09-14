@@ -499,6 +499,21 @@ def assert_existing_v1_opens(*, pre_materialized: bool) -> None:
             assert len(event_ids_after_first) == len(event_ids_before) + 1
         assert lease_token.encode() not in database_path.read_bytes()
 
+        run(
+            agents_home,
+            "schema-reconcile",
+            "--product-id",
+            "legacy",
+            "--holder",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+        )
+        with sqlite3.connect(database_path) as connection:
+            assert [
+                row[0] for row in connection.execute("SELECT id FROM events")
+            ] == event_ids_after_first
+
         run(agents_home, "summary", "--product-id", "legacy")
         with sqlite3.connect(database_path) as connection:
             assert [

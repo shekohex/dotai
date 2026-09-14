@@ -1,0 +1,314 @@
+{
+  "provider-a": {
+    "id": "provider-a",
+    "models": {
+      "coding-model": {
+        "id": "coding-model",
+        "name": "Coding Model",
+        "limit": {
+          "context": 200000,
+          "output": 32000
+        },
+        "modalities": {
+          "input": ["text", "image", "pdf"],
+          "output": ["text"]
+        },
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["ultra", "low", "custom-effort", "minimal", "max", "high"]
+          }
+        ],
+        "reasoning": true,
+        "tool_call": true
+      },
+      "toggle-coder": {
+        "id": "toggle-coder",
+        "name": "Toggle Coder",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "toggle"
+          },
+          {
+            "type": "budget_tokens"
+          }
+        ],
+        "tool_call": true
+      },
+      "simple-coder": {
+        "id": "simple-coder",
+        "name": "Simple Coder",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": false,
+        "tool_call": true
+      },
+      "deepseek-v4-flash-related": {
+        "id": "deepseek-v4-flash",
+        "name": "DeepSeek V4.1 Flash",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["ultra"]
+          }
+        ],
+        "tool_call": true
+      },
+      "deepseek-v4-flash-no-effort": {
+        "id": "provider-a/deepseek-v4-flash",
+        "name": "deepseek v4 flash",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "tool_call": true
+      },
+      "glm-5.3": {
+        "id": "provider-a/glm-5.3",
+        "name": "GLM 5.3",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["none", "low", "high", "max"]
+          }
+        ],
+        "tool_call": true
+      },
+      "glm-5.3-related": {
+        "id": "glm-5.3",
+        "name": "GLM 5.3 Flash",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["ultra"]
+          }
+        ],
+        "tool_call": true
+      },
+      "speech-model": {
+        "id": "speech-model",
+        "name": "Speech Model",
+        "modalities": {
+          "input": ["text"],
+          "output": ["audio"]
+        },
+        "tool_call": false
+      },
+      "no-text-input": {
+        "id": "no-text-input",
+        "name": "No Text Input",
+        "modalities": {
+          "input": ["image"],
+          "output": ["text"]
+        },
+        "tool_call": true
+      },
+      "no-text-output": {
+        "id": "no-text-output",
+        "name": "No Text Output",
+        "modalities": {
+          "input": ["text"],
+          "output": ["audio"]
+        },
+        "tool_call": true
+      },
+      "no-tool-calling": {
+        "id": "no-tool-calling",
+        "name": "No Tool Calling",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "tool_call": false
+      }
+    }
+  },
+  "provider-b": {
+    "id": "provider-b",
+    "models": {
+      "ambiguous-coder": {
+        "id": "ambiguous-coder",
+        "name": "Ambiguous Coder",
+        "limit": {
+          "context": 128000
+        },
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["none", "low", "high"]
+          }
+        ],
+        "tool_call": true
+      },
+      "conflicting-coder": {
+        "id": "conflicting-coder",
+        "name": "Conflicting Coder",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["low"]
+          }
+        ],
+        "tool_call": true
+      },
+      "deepseek-v4-flash": {
+        "id": "provider-b/deepseek-v4-flash",
+        "name": "DeepSeek V4 Flash",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["none", "low", "high", "max"]
+          }
+        ],
+        "tool_call": true
+      },
+      "glm-5.3": {
+        "id": "provider-b/glm-5.3",
+        "name": "GLM-5.3",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["minimal", "medium", "high"]
+          }
+        ],
+        "tool_call": true
+      },
+      "ambiguous-non-agent": {
+        "id": "ambiguous-non-agent",
+        "name": "Ambiguous Non Agent",
+        "modalities": {
+          "input": ["text"],
+          "output": ["audio"]
+        },
+        "tool_call": false
+      }
+    }
+  },
+  "provider-c": {
+    "id": "provider-c",
+    "models": {
+      "ambiguous-coder": {
+        "id": "ambiguous-coder",
+        "name": "Ambiguous Coder",
+        "limit": {
+          "context": 256000
+        },
+        "modalities": {
+          "input": ["text", "image"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["low", "high"]
+          }
+        ],
+        "tool_call": true
+      },
+      "conflicting-coder": {
+        "id": "conflicting-coder",
+        "name": "conflicting-coder",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["high"]
+          }
+        ],
+        "tool_call": true
+      },
+      "deepseek-v4-flash": {
+        "id": "deepseek-v4-flash",
+        "name": "DeepSeek-V4-Flash",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["medium", "high", "xhigh"]
+          }
+        ],
+        "tool_call": true
+      },
+      "glm-5.3": {
+        "id": "glm-5.3",
+        "name": "GLM5.3",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "tool_call": true
+      },
+      "ambiguous-non-agent": {
+        "id": "ambiguous-non-agent",
+        "name": "Ambiguous Non Agent",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "tool_call": false
+      },
+      "gateway-alias": {
+        "id": "different-canonical-id",
+        "name": "Gateway Alias",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "tool_call": true
+      }
+    }
+  }
+}

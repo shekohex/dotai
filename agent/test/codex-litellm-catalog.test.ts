@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 describe("Codex LiteLLM model catalog generator", () => {
-  it("uses bundled metadata, captured fallback instructions, and exact models.dev metadata", async () => {
+  it("uses bundled metadata, captured fallback instructions, and canonical models.dev names", async () => {
     const runtimeDirectory = await createTemporaryDirectory();
     const outputPath = join(runtimeDirectory, "litellm-models.json");
     const bundledModel = {
@@ -203,6 +203,12 @@ describe("Codex LiteLLM model catalog generator", () => {
               created: 22,
               owned_by: "litellm",
             },
+            {
+              id: "deepseek-v4-flash",
+              object: "model",
+              created: 23,
+              owned_by: "litellm",
+            },
           ],
         }),
       );
@@ -235,12 +241,12 @@ describe("Codex LiteLLM model catalog generator", () => {
         },
       );
       expect(stdout).toContain(
-        "Instructions: bundled=1 (codex debug models --bundled); fallback=9 (codex exec loopback, codex-cli 0.154.0, sha256=",
+        "Instructions: bundled=1 (codex debug models --bundled); fallback=10 (codex exec loopback, codex-cli 0.154.0, sha256=",
       );
       expect(stdout).toContain("Excluded 12 non-agent models");
-      expect(stdout).toContain("Display names: bundled=1; models.dev=4; ambiguous=1; missing=4");
+      expect(stdout).toContain("Display names: bundled=1; models.dev=8; ambiguous=0; missing=2");
       expect(stdout).toContain(
-        "Reasoning levels: bundled=1; models.dev=2; ambiguous=1; toggle/budget-only=1; non-reasoning=1; unavailable=4; missing descriptions=1",
+        "Reasoning levels: bundled=1; models.dev union=5; conflicting flags=0; no effort options=1; non-reasoning=1; unavailable=3; missing descriptions=2",
       );
     } finally {
       await new Promise<void>((resolve, reject) =>
@@ -258,6 +264,7 @@ describe("Codex LiteLLM model catalog generator", () => {
       "ambiguous-coder",
       "coding-model",
       "conflicting-coder",
+      "deepseek-v4-flash",
       "gateway-alias",
       "gemini-3-pro-preview",
       "glm-5.3",
@@ -291,8 +298,31 @@ describe("Codex LiteLLM model catalog generator", () => {
       ],
     });
     expect(modelsBySlug["conflicting-coder"]).toMatchObject({
-      display_name: "conflicting-coder",
-      supported_reasoning_levels: [],
+      display_name: "Conflicting Coder",
+      supported_reasoning_levels: [
+        { effort: "low", description: "Fast reasoning" },
+        { effort: "high", description: "Deep reasoning" },
+      ],
+    });
+    expect(modelsBySlug["deepseek-v4-flash"]).toMatchObject({
+      display_name: "DeepSeek V4 Flash",
+      supported_reasoning_levels: [
+        { effort: "low", description: "Fast reasoning" },
+        { effort: "medium", description: "Standard reasoning" },
+        { effort: "high", description: "Deep reasoning" },
+        { effort: "xhigh", description: "Extra deep reasoning" },
+        { effort: "max", description: "Maximum reasoning" },
+      ],
+    });
+    expect(modelsBySlug["glm-5.3"]).toMatchObject({
+      display_name: "GLM 5.3",
+      supported_reasoning_levels: [
+        { effort: "minimal", description: "" },
+        { effort: "low", description: "Fast reasoning" },
+        { effort: "medium", description: "Standard reasoning" },
+        { effort: "high", description: "Deep reasoning" },
+        { effort: "max", description: "Maximum reasoning" },
+      ],
     });
     expect(modelsBySlug["toggle-coder"]).toMatchObject({
       display_name: "Toggle Coder",
@@ -305,7 +335,8 @@ describe("Codex LiteLLM model catalog generator", () => {
     expect(modelsBySlug["coding-model"]).not.toHaveProperty("default_reasoning_level");
     expect(modelsBySlug["gateway-alias"]).toMatchObject({
       base_instructions: "Runtime fallback instructions",
-      input_modalities: ["text", "image"],
+      display_name: "Gateway Alias",
+      input_modalities: ["text"],
     });
   });
 
@@ -604,7 +635,11 @@ describe("tracked LiteLLM model catalog", () => {
       expect(Array.isArray(model.supported_reasoning_levels)).toBe(true);
       for (const level of model.supported_reasoning_levels as Array<Record<string, unknown>>) {
         expect(typeof level.description).toBe("string");
-        expect(String(level.description).length).toBeGreaterThan(0);
+        if (level.effort === "minimal") {
+          expect(level.description).toBe("");
+        } else {
+          expect(String(level.description).length).toBeGreaterThan(0);
+        }
       }
       expect(typeof model.truncation_policy).toBe("object");
       expect(model.truncation_policy).not.toBeNull();
@@ -619,6 +654,30 @@ describe("tracked LiteLLM model catalog", () => {
     expect(catalog.models.find((model) => model.slug === "glm-5.2-highspeed")).toMatchObject({
       display_name: "GLM-5.2 Highspeed",
       supported_reasoning_levels: [{ effort: "high" }, { effort: "max" }],
+    });
+    expect(
+      catalog.models.filter((model) => (model.supported_reasoning_levels as unknown[]).length > 0),
+    ).toHaveLength(32);
+    expect(catalog.models.find((model) => model.slug === "deepseek-v4-flash")).toMatchObject({
+      display_name: "DeepSeek V4 Flash",
+      supported_reasoning_levels: [
+        { effort: "minimal" },
+        { effort: "low" },
+        { effort: "medium" },
+        { effort: "high" },
+        { effort: "xhigh" },
+        { effort: "max" },
+      ],
+    });
+    expect(catalog.models.find((model) => model.slug === "glm-5.3")).toMatchObject({
+      display_name: "GLM 5.3",
+      supported_reasoning_levels: [
+        { effort: "minimal" },
+        { effort: "low" },
+        { effort: "medium" },
+        { effort: "high" },
+        { effort: "max" },
+      ],
     });
     expect(catalog.models.find((model) => model.slug === "glm-5.2-highspeed")).not.toHaveProperty(
       "default_reasoning_level",

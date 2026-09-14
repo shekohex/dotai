@@ -95,13 +95,13 @@ async function main() {
     `Instructions: bundled=${report.bundledInstructions} (codex debug models --bundled); fallback=${report.fallbackInstructions} (codex exec loopback, ${codexRuntime.version}, sha256=${sha256(codexRuntime.fallbackInstructions)})`,
   );
   console.log(
-    `Capabilities: ${report.enriched} exact enriched; ${report.ambiguous} ambiguous retained; ${report.incomplete} incomplete exact retained; ${report.unmatched} unmatched retained`,
+    `Capabilities: ${report.enriched} complete single-name matches; ${report.ambiguous} multiple-name matches; ${report.incomplete} incomplete single-name matches; ${report.unmatched} unmatched retained`,
   );
   console.log(
     `Display names: bundled=${report.bundledDisplayNames}; models.dev=${report.modelsDevDisplayNames}; ambiguous=${report.ambiguousDisplayNames}; missing=${report.missingDisplayNames}`,
   );
   console.log(
-    `Reasoning levels: bundled=${report.bundledReasoning}; models.dev=${report.modelsDevReasoning}; ambiguous=${report.ambiguousReasoning}; toggle/budget-only=${report.nonEffortReasoning}; non-reasoning=${report.nonReasoning}; unavailable=${report.unavailableReasoning}; missing descriptions=${report.missingReasoningDescriptions}`,
+    `Reasoning levels: bundled=${report.bundledReasoning}; models.dev union=${report.modelsDevReasoning}; conflicting flags=${report.ambiguousReasoning}; no effort options=${report.nonEffortReasoning}; non-reasoning=${report.nonReasoning}; unavailable=${report.unavailableReasoning}; missing descriptions=${report.missingReasoningDescriptions}`,
   );
 }
 
@@ -204,7 +204,7 @@ async function fetchExposedModels(endpoint, apiKey) {
 
 /**
  * @param {string} endpoint - Models.dev catalog endpoint.
- * @returns {Promise<ModelsDevIndex>} Exact canonical model ids indexed across providers.
+ * @returns {Promise<ModelsDevIndex>} Canonical model names indexed across providers.
  */
 async function fetchModelsDevIndex(endpoint) {
   /** @type {Response} */
@@ -235,15 +235,19 @@ async function fetchModelsDevIndex(endpoint) {
   const modelsDevCatalog = payload;
 
   /** @type {ModelsDevIndex} */
-  const modelsByCanonicalId = new Map();
+  const modelsByCanonicalName = new Map();
   for (const [providerId, provider] of sortEntriesByKey(Object.entries(modelsDevCatalog))) {
     for (const [providerModelId, model] of sortEntriesByKey(Object.entries(provider.models))) {
-      const candidates = modelsByCanonicalId.get(model.id) ?? [];
+      const canonicalName = canonicalizeModelName(model.name);
+      if (canonicalName.length === 0) {
+        continue;
+      }
+      const candidates = modelsByCanonicalName.get(canonicalName) ?? [];
       candidates.push({ providerId, providerModelId, model });
-      modelsByCanonicalId.set(model.id, candidates);
+      modelsByCanonicalName.set(canonicalName, candidates);
     }
   }
-  return modelsByCanonicalId;
+  return modelsByCanonicalName;
 }
 
 /**
@@ -589,7 +593,7 @@ function isModelInfo(model) {
 
 /**
  * @param {ExposedModel[]} exposedModels - Models available through LiteLLM.
- * @param {ModelsDevIndex} modelsDevIndex - Exact canonical models.dev matches.
+ * @param {ModelsDevIndex} modelsDevIndex - Canonical models.dev name matches.
  * @param {{ bundledCatalog: CodexCatalog; fallbackInstructions: string }} codexRuntime - Installed
  *   Codex metadata.
  * @returns {{
@@ -667,7 +671,7 @@ function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
     }
 
     const idExclusionReason = getIdExclusionReason(exposedModel.id);
-    const candidates = modelsDevIndex.get(exposedModel.id) ?? [];
+    const candidates = modelsDevIndex.get(canonicalizeModelName(exposedModel.id)) ?? [];
     const reliableCandidates = candidates.filter(({ model }) =>
       hasReliableAgentCapabilityMetadata(model),
     );
@@ -776,8 +780,18 @@ function hasReliableAgentCapabilityMetadata(model) {
 function resolveModelsDevMetadata(candidates, reasoningMetadata) {
   /** @type {Record<string, unknown>} */
   const metadata = {};
-  const displayNames = candidates.map(({ model }) => normalizeNonEmptyString(model.name));
-  const displayName = getConsensusValue(displayNames);
+  const displayNames = candidates
+    .map(({ model }) => normalizeNonEmptyString(model.name))
+    .filter((name) => name !== null);
+  const canonicalDisplayName = getConsensusValue(
+    displayNames.map((name) => canonicalizeModelName(name)),
+  );
+  const displayName =
+    canonicalDisplayName === null
+      ? null
+      : displayNames.reduce((firstName, name) =>
+          compareUtf8Bytes(name, firstName) < 0 ? name : firstName,
+        );
   /** @type {"modelsDev" | "ambiguous" | "missing"} */
   let displayNameStatus = "missing";
   if (displayName !== null) {
@@ -805,13 +819,13 @@ function resolveModelsDevMetadata(candidates, reasoningMetadata) {
   const candidateEfforts = candidates.map(({ model }) =>
     normalizeReasoningEfforts(model, reasoningMetadata),
   );
-  const supportedEfforts = getConsensusValue(candidateEfforts);
+  const supportedEfforts = reasoningMetadata.effortOrder.filter((effort) =>
+    candidateEfforts.some((efforts) => efforts.includes(effort)),
+  );
   /** @type {"modelsDev" | "ambiguous" | "nonEffort" | "non" | "unavailable"} */
   let reasoningStatus = "unavailable";
   let missingReasoningDescriptions = 0;
-  if (supportedEfforts === null && candidates.length > 1) {
-    reasoningStatus = "ambiguous";
-  } else if (supportedEfforts?.length > 0) {
+  if (supportedEfforts.length > 0) {
     metadata.supported_reasoning_levels = supportedEfforts.map((effort) => ({
       effort,
       description: reasoningMetadata.descriptions.get(effort) ?? "",
@@ -908,7 +922,7 @@ function normalizeReasoningEfforts(model, reasoningMetadata) {
       .filter((option) => option.type === "effort" && Array.isArray(option.values))
       .flatMap((option) => option.values)
       .map((effort) => normalizeNonEmptyString(effort))
-      .filter((effort) => effort !== null),
+      .filter((effort) => effort !== null && effort !== "none"),
   );
   return reasoningMetadata.effortOrder.filter((effort) => advertisedEfforts.has(effort));
 }
@@ -948,6 +962,15 @@ function normalizeNonEmptyString(value) {
     return null;
   }
   return normalized;
+}
+
+/**
+ * @param {unknown} value - Gateway slug or models.dev display name.
+ * @returns {string} Lowercase alphanumeric model identity.
+ */
+function canonicalizeModelName(value) {
+  const normalized = normalizeNonEmptyString(value);
+  return normalized === null ? "" : normalized.toLowerCase().replaceAll(/[^a-z0-9]/gu, "");
 }
 
 /**

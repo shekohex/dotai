@@ -78,6 +78,7 @@ test_install_supports_noninteractive_env() {
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.pi/agent/AGENTS.md"
   assert_file_equals "$ROOT_DIR/.codex/litellm.config.toml" "$temp_home/.codex/litellm.config.toml"
   assert_file_equals "$ROOT_DIR/.codex/litellm.md" "$temp_home/.codex/litellm.md"
+  assert_file_equals "$ROOT_DIR/.codex/litellm-models.json" "$temp_home/.codex/litellm-models.json"
   assert_file_equals "$ROOT_DIR/.codex/pi-agent-auth.mjs" "$temp_home/.codex/pi-agent-auth.mjs"
   assert_contains 'ci --ignore-scripts' "$npm_log"
   assert_contains 'uninstall -g @shekohex/agent' "$npm_log"

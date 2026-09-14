@@ -14,6 +14,7 @@ const generatorPath = new URL(
 );
 const profilePath = new URL("../../.codex/litellm.config.toml", import.meta.url);
 const providerAuthPath = new URL("../../.codex/pi-agent-auth.mjs", import.meta.url);
+const trackedCatalogPath = new URL("../../.codex/litellm-models.json", import.meta.url);
 
 afterEach(async () => {
   await Promise.all(
@@ -31,6 +32,8 @@ describe("Codex LiteLLM model catalog generator", () => {
       description: "Bundled model",
       default_reasoning_level: "medium",
       supported_reasoning_levels: [{ effort: "medium", description: "Standard reasoning" }],
+      experimental_supported_tools: [],
+      truncation_policy: { mode: "tokens", limit: 10_000 },
       shell_type: "unified_exec",
       visibility: "list",
       supported_in_api: true,
@@ -40,6 +43,8 @@ describe("Codex LiteLLM model catalog generator", () => {
       supports_search_tool: true,
       additional_speed_tiers: ["fast"],
       service_tiers: [{ id: "priority", name: "Fast", description: "Faster" }],
+      base_instructions: "Bundled instructions",
+      comp_hash: "bundled-hash",
     };
     await installMockCodex(runtimeDirectory, { models: [bundledModel] });
 
@@ -91,25 +96,119 @@ describe("Codex LiteLLM model catalog generator", () => {
     }
 
     const catalog: unknown = JSON.parse(await readFile(outputPath, "utf8"));
+    const stableBundledModel: Record<string, unknown> = structuredClone(bundledModel);
+    delete stableBundledModel.comp_hash;
     expect(requestedPath).toBe("/v1/models");
     expect(authorizationHeader).toBe("Bearer test-token");
     expect(catalog).toMatchObject({
       models: [
-        bundledModel,
+        stableBundledModel,
         {
           slug: "vendor/custom-code",
+          base_instructions: "You are Codex, a coding agent.",
           display_name: "vendor/custom-code",
           description: "Available through LiteLLM.",
+          experimental_supported_tools: [],
           visibility: "list",
           supported_in_api: true,
           priority: 1001,
+          shell_type: "unified_exec",
+          support_verbosity: false,
+          supported_reasoning_levels: [],
+          truncation_policy: { mode: "tokens", limit: 10_000 },
           input_modalities: ["text"],
           supports_search_tool: false,
-          additional_speed_tiers: [],
-          service_tiers: [],
         },
       ],
     });
+    expect(catalog).not.toHaveProperty("models.0.comp_hash");
+    expect(catalog).not.toHaveProperty("models.1.comp_hash");
+  });
+
+  it("writes canonical bytes independent of gateway model order", async () => {
+    const runtimeDirectory = await createTemporaryDirectory();
+    const firstOutputPath = join(runtimeDirectory, "first.json");
+    const secondOutputPath = join(runtimeDirectory, "second.json");
+    await installMockCodex(runtimeDirectory, {
+      models: [
+        {
+          slug: "gpt-5.5",
+          display_name: "GPT-5.5",
+          experimental_supported_tools: [],
+          priority: 1,
+          shell_type: "unified_exec",
+          support_verbosity: true,
+          supported_in_api: true,
+          supported_reasoning_levels: [],
+          truncation_policy: { mode: "tokens", limit: 10_000 },
+          visibility: "list",
+          base_instructions: "Bundled instructions",
+          model_messages: { zeta: "last", alpha: "first" },
+        },
+      ],
+    });
+
+    const models = [
+      { id: "vendor/zeta", object: "model", created: 2, owned_by: "litellm" },
+      { id: "vendor/alpha", object: "model", created: 1, owned_by: "litellm" },
+    ];
+    let requestCount = 0;
+    const server = createServer((_request, response) => {
+      requestCount += 1;
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          object: "list",
+          data:
+            requestCount === 1
+              ? models
+              : [...models].reverse().map((model) => ({
+                  ...model,
+                  created: model.created + 100,
+                  owned_by: "changed",
+                })),
+        }),
+      );
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        throw new Error("test server did not expose a TCP port");
+      }
+      const generatorArguments = [
+        generatorPath.pathname,
+        "--endpoint",
+        `http://127.0.0.1:${address.port}/v1/models`,
+      ];
+      const environment = {
+        ...process.env,
+        LITELLM_API_KEY: "test-token",
+        PATH: `${runtimeDirectory}${delimiter}${process.env.PATH ?? ""}`,
+      };
+
+      await execFile(process.execPath, [...generatorArguments, "--output", firstOutputPath], {
+        env: environment,
+      });
+      await execFile(process.execPath, [...generatorArguments, "--output", secondOutputPath], {
+        env: environment,
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error === undefined ? resolve() : reject(error))),
+      );
+    }
+
+    const firstOutput = await readFile(firstOutputPath, "utf8");
+    const secondOutput = await readFile(secondOutputPath, "utf8");
+    const catalog = JSON.parse(firstOutput) as { models: Array<{ slug: string }> };
+
+    expect(firstOutput).toBe(secondOutput);
+    expect(firstOutput).toMatch(/^\{\n  "models": \[/);
+    expect(firstOutput.endsWith("\n")).toBe(true);
+    expect(catalog.models.map((model) => model.slug)).toEqual(["vendor/alpha", "vendor/zeta"]);
+    expectCanonicalKeyOrder(catalog);
   });
 
   it.each(["", "   "])(
@@ -208,6 +307,43 @@ describe("Codex LiteLLM profile", () => {
   });
 });
 
+describe("tracked LiteLLM model catalog", () => {
+  it("contains canonical Codex 0.154 ModelInfo entries", async () => {
+    const contents = await readFile(trackedCatalogPath, "utf8");
+    const catalog = JSON.parse(contents) as { models: Array<Record<string, unknown>> };
+
+    expect(contents.endsWith("\n")).toBe(true);
+    expect(contents).toBe(`${JSON.stringify(catalog, null, 2)}\n`);
+    expect(catalog.models.length).toBeGreaterThan(0);
+    expect(catalog.models.map((model) => model.slug)).toEqual(
+      [...catalog.models.map((model) => model.slug)].sort(compareUtf8Values),
+    );
+    expect(new Set(catalog.models.map((model) => model.slug)).size).toBe(catalog.models.length);
+    expectCanonicalKeyOrder(catalog);
+
+    for (const model of catalog.models) {
+      expect(typeof model.slug).toBe("string");
+      expect(String(model.slug).length).toBeGreaterThan(0);
+      expect(typeof model.display_name).toBe("string");
+      expect(Array.isArray(model.experimental_supported_tools)).toBe(true);
+      expect(Number.isInteger(model.priority)).toBe(true);
+      expect(typeof model.shell_type).toBe("string");
+      expect(typeof model.support_verbosity).toBe("boolean");
+      expect(typeof model.supported_in_api).toBe("boolean");
+      expect(Array.isArray(model.supported_reasoning_levels)).toBe(true);
+      expect(typeof model.truncation_policy).toBe("object");
+      expect(model.truncation_policy).not.toBeNull();
+      expect(Array.isArray(model.truncation_policy)).toBe(false);
+      expect(typeof model.visibility).toBe("string");
+      expect(hasCodexInstructions(model)).toBe(true);
+      expect(model).not.toHaveProperty("comp_hash");
+      expect(model).not.toHaveProperty("created");
+      expect(model).not.toHaveProperty("object");
+      expect(model).not.toHaveProperty("owned_by");
+    }
+  });
+});
+
 describe("Codex provider auth helper", () => {
   it.each([
     ["litellm", "fake-litellm-token"],
@@ -285,4 +421,39 @@ async function installMockCodex(runtimeDirectory: string, bundledCatalog: object
 
 function isExecFileError(error: unknown): error is Error & { stderr: string } {
   return error instanceof Error && "stderr" in error && typeof error.stderr === "string";
+}
+
+function expectCanonicalKeyOrder(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      expectCanonicalKeyOrder(item);
+    }
+    return;
+  }
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+
+  const keys = Object.keys(value);
+  expect(keys).toEqual([...keys].sort(compareUtf8Values));
+  for (const item of Object.values(value)) {
+    expectCanonicalKeyOrder(item);
+  }
+}
+
+function compareUtf8Values(left: unknown, right: unknown): number {
+  return Buffer.compare(Buffer.from(String(left), "utf8"), Buffer.from(String(right), "utf8"));
+}
+
+function hasCodexInstructions(model: Record<string, unknown>): boolean {
+  if (typeof model.base_instructions === "string") {
+    return true;
+  }
+  const modelMessages = model.model_messages;
+  return (
+    typeof modelMessages === "object" &&
+    modelMessages !== null &&
+    "instructions_template" in modelMessages &&
+    typeof modelMessages.instructions_template === "string"
+  );
 }

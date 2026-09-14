@@ -14,8 +14,15 @@ const defaultOutputPath = resolve(homedir(), ".codex", "litellm-models.json");
 /**
  * @typedef {Record<string, unknown> & {
  *   slug: string;
- *   visibility?: unknown;
- *   supported_in_api?: unknown;
+ *   display_name: string;
+ *   experimental_supported_tools: unknown[];
+ *   priority: number;
+ *   shell_type: string;
+ *   support_verbosity: boolean;
+ *   supported_in_api: boolean;
+ *   supported_reasoning_levels: unknown[];
+ *   truncation_policy: Record<string, unknown>;
+ *   visibility: string;
  * }} ModelInfo
  */
 /** @typedef {{ models: ModelInfo[] }} CodexCatalog */
@@ -46,7 +53,7 @@ async function main() {
   const catalog = buildCatalog(exposedModels, bundledCatalog);
 
   await mkdir(dirname(options.outputPath), { recursive: true });
-  await writeFile(options.outputPath, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
+  await writeFile(options.outputPath, serializeCatalog(catalog), "utf8");
   console.log(`Wrote ${catalog.models.length} LiteLLM models to ${options.outputPath}`);
 }
 
@@ -182,7 +189,73 @@ function deduplicateModels(models) {
       modelsById.set(model.id, model);
     }
   }
-  return [...modelsById.values()];
+  return sortModelsById([...modelsById.values()]);
+}
+
+/**
+ * @param {ExposedModel[]} models - Models to order.
+ * @returns {ExposedModel[]} Models ordered by UTF-8 id bytes.
+ */
+function sortModelsById(models) {
+  /** @type {ExposedModel[]} */
+  const sortedModels = [];
+  for (const model of models) {
+    const insertionIndex = sortedModels.findIndex(
+      (sortedModel) => compareUtf8Bytes(model.id, sortedModel.id) < 0,
+    );
+    sortedModels.splice(insertionIndex === -1 ? sortedModels.length : insertionIndex, 0, model);
+  }
+  return sortedModels;
+}
+
+/**
+ * @param {CodexCatalog} catalog - Catalog to serialize deterministically.
+ * @returns {string} Canonical JSON with two-space indentation and a final newline.
+ */
+function serializeCatalog(catalog) {
+  return `${JSON.stringify(sortObjectKeys(catalog), null, 2)}\n`;
+}
+
+/**
+ * @param {unknown} value - JSON value to canonicalize.
+ * @returns {unknown} Value with every object ordered by UTF-8 key bytes.
+ */
+function sortObjectKeys(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => sortObjectKeys(item));
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    sortEntriesByKey(Object.entries(value)).map(([key, item]) => [key, sortObjectKeys(item)]),
+  );
+}
+
+/**
+ * @param {[string, unknown][]} entries - Object entries to order.
+ * @returns {[string, unknown][]} Entries ordered by UTF-8 key bytes.
+ */
+function sortEntriesByKey(entries) {
+  /** @type {[string, unknown][]} */
+  const sortedEntries = [];
+  for (const entry of entries) {
+    const insertionIndex = sortedEntries.findIndex(
+      ([sortedKey]) => compareUtf8Bytes(entry[0], sortedKey) < 0,
+    );
+    sortedEntries.splice(insertionIndex === -1 ? sortedEntries.length : insertionIndex, 0, entry);
+  }
+  return sortedEntries;
+}
+
+/**
+ * @param {string} left - First string.
+ * @param {string} right - Second string.
+ * @returns {number} UTF-8 bytewise comparison result.
+ */
+function compareUtf8Bytes(left, right) {
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
 }
 
 /** @returns {CodexCatalog} Validated bundled catalog from installed Codex. */
@@ -226,7 +299,24 @@ function loadBundledCatalog() {
  * @returns {model is ModelInfo} Whether entry has a model slug.
  */
 function isModelInfo(model) {
-  return isRecord(model) && typeof model.slug === "string" && model.slug.length > 0;
+  return (
+    isRecord(model) &&
+    typeof model.slug === "string" &&
+    model.slug.length > 0 &&
+    typeof model.display_name === "string" &&
+    Array.isArray(model.experimental_supported_tools) &&
+    typeof model.priority === "number" &&
+    Number.isInteger(model.priority) &&
+    typeof model.shell_type === "string" &&
+    typeof model.support_verbosity === "boolean" &&
+    typeof model.supported_in_api === "boolean" &&
+    Array.isArray(model.supported_reasoning_levels) &&
+    isRecord(model.truncation_policy) &&
+    typeof model.visibility === "string" &&
+    (typeof model.base_instructions === "string" ||
+      (isRecord(model.model_messages) &&
+        typeof model.model_messages.instructions_template === "string"))
+  );
 }
 
 /**
@@ -239,9 +329,7 @@ function buildCatalog(exposedModels, bundledCatalog) {
   const bundledModelsBySlug = new Map(bundledCatalog.models.map((model) => [model.slug, model]));
   const fallbackTemplate =
     bundledModelsBySlug.get("gpt-5.5") ??
-    bundledCatalog.models.find(
-      (model) => model.visibility === "list" && model.supported_in_api === true,
-    );
+    bundledCatalog.models.find((model) => model.visibility === "list" && model.supported_in_api);
   if (fallbackTemplate === undefined) {
     throw new Error("Bundled Codex catalog has no public model to use for LiteLLM model metadata.");
   }
@@ -250,7 +338,7 @@ function buildCatalog(exposedModels, bundledCatalog) {
     models: exposedModels.map((exposedModel, index) => {
       const bundledModel = bundledModelsBySlug.get(exposedModel.id);
       if (bundledModel !== undefined) {
-        return bundledModel;
+        return withoutVolatileFields(bundledModel);
       }
       return createFallbackModel(fallbackTemplate, exposedModel.id, index);
     }),
@@ -265,21 +353,32 @@ function buildCatalog(exposedModels, bundledCatalog) {
  */
 function createFallbackModel(template, modelId, index) {
   return {
-    ...structuredClone(template),
-    slug: modelId,
-    display_name: modelId,
-    description: "Available through LiteLLM.",
-    visibility: "list",
-    supported_in_api: true,
+    base_instructions: "You are Codex, a coding agent.",
+    experimental_supported_tools: [],
     priority: 1000 + index,
-    availability_nux: null,
-    upgrade: null,
-    additional_speed_tiers: [],
-    service_tiers: [],
+    shell_type: template.shell_type,
+    slug: modelId,
+    support_verbosity: false,
+    supported_in_api: true,
+    supported_reasoning_levels: [],
+    truncation_policy: structuredClone(template.truncation_policy),
+    visibility: "list",
+    description: "Available through LiteLLM.",
+    display_name: modelId,
     input_modalities: ["text"],
     supports_image_detail_original: false,
     supports_search_tool: false,
   };
+}
+
+/**
+ * @param {ModelInfo} model - Exact bundled model metadata.
+ * @returns {ModelInfo} Stable bundled metadata without runtime cache fields.
+ */
+function withoutVolatileFields(model) {
+  const stableModel = structuredClone(model);
+  delete stableModel.comp_hash;
+  return stableModel;
 }
 
 /**

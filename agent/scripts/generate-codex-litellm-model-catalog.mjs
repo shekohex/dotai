@@ -32,14 +32,30 @@ const defaultOutputPath = resolve(homedir(), ".codex", "litellm-models.json");
 /**
  * @typedef {Record<string, unknown> & {
  *   id: string;
+ *   name?: string;
  *   modalities?: { input?: string[]; output?: string[] };
  *   tool_call?: boolean;
  *   limit?: { context?: number };
+ *   reasoning?: boolean;
  *   reasoning_options?: { type?: string; values?: string[] }[];
  * }} ModelsDevModel
  */
 /** @typedef {{ providerId: string; providerModelId: string; model: ModelsDevModel }} ModelsDevCandidate */
 /** @typedef {Map<string, ModelsDevCandidate[]>} ModelsDevIndex */
+/** @typedef {{ effort: string; description: string }} ReasoningLevel */
+/** @typedef {{ descriptions: Map<string, string>; effortOrder: string[] }} ReasoningMetadata */
+
+const codexNamedReasoningEfforts = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+  "persistent",
+];
 
 if (isMain()) {
   try {
@@ -80,6 +96,12 @@ async function main() {
   );
   console.log(
     `Capabilities: ${report.enriched} exact enriched; ${report.ambiguous} ambiguous retained; ${report.incomplete} incomplete exact retained; ${report.unmatched} unmatched retained`,
+  );
+  console.log(
+    `Display names: bundled=${report.bundledDisplayNames}; models.dev=${report.modelsDevDisplayNames}; ambiguous=${report.ambiguousDisplayNames}; missing=${report.missingDisplayNames}`,
+  );
+  console.log(
+    `Reasoning levels: bundled=${report.bundledReasoning}; models.dev=${report.modelsDevReasoning}; ambiguous=${report.ambiguousReasoning}; toggle/budget-only=${report.nonEffortReasoning}; non-reasoning=${report.nonReasoning}; unavailable=${report.unavailableReasoning}; missing descriptions=${report.missingReasoningDescriptions}`,
   );
 }
 
@@ -151,7 +173,9 @@ async function fetchExposedModels(endpoint, apiKey) {
       signal: AbortSignal.timeout(30_000),
     });
   } catch (error) {
-    throw new Error(`Could not fetch ${endpoint}: ${getErrorMessage(error)}`, { cause: error });
+    throw new Error(`Could not fetch ${endpoint}: ${getErrorMessage(error)}`, {
+      cause: error,
+    });
   }
 
   if (!response.ok) {
@@ -188,7 +212,9 @@ async function fetchModelsDevIndex(endpoint) {
   try {
     response = await fetch(endpoint, { signal: AbortSignal.timeout(30_000) });
   } catch (error) {
-    throw new Error(`Could not fetch ${endpoint}: ${getErrorMessage(error)}`, { cause: error });
+    throw new Error(`Could not fetch ${endpoint}: ${getErrorMessage(error)}`, {
+      cause: error,
+    });
   }
 
   if (!response.ok) {
@@ -372,7 +398,9 @@ async function loadCodexRuntime() {
 /** @returns {string} Installed Codex version string. */
 function loadCodexVersion() {
   try {
-    const version = execFileSync("codex", ["--version"], { encoding: "utf8" }).trim();
+    const version = execFileSync("codex", ["--version"], {
+      encoding: "utf8",
+    }).trim();
     if (version.length === 0) {
       throw new Error("empty version output");
     }
@@ -575,6 +603,17 @@ function isModelInfo(model) {
  *     ambiguous: number;
  *     incomplete: number;
  *     unmatched: number;
+ *     bundledDisplayNames: number;
+ *     modelsDevDisplayNames: number;
+ *     ambiguousDisplayNames: number;
+ *     missingDisplayNames: number;
+ *     bundledReasoning: number;
+ *     modelsDevReasoning: number;
+ *     ambiguousReasoning: number;
+ *     nonEffortReasoning: number;
+ *     nonReasoning: number;
+ *     unavailableReasoning: number;
+ *     missingReasoningDescriptions: number;
  *   };
  * }}
  *   Catalog and generation report.
@@ -592,6 +631,7 @@ function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
   if (fallbackTemplate === undefined) {
     throw new Error("Bundled Codex catalog has no public model to use for LiteLLM model metadata.");
   }
+  const reasoningMetadata = createReasoningMetadata(codexRuntime.bundledCatalog.models);
 
   const report = {
     excluded: 0,
@@ -602,6 +642,17 @@ function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
     ambiguous: 0,
     incomplete: 0,
     unmatched: 0,
+    bundledDisplayNames: 0,
+    modelsDevDisplayNames: 0,
+    ambiguousDisplayNames: 0,
+    missingDisplayNames: 0,
+    bundledReasoning: 0,
+    modelsDevReasoning: 0,
+    ambiguousReasoning: 0,
+    nonEffortReasoning: 0,
+    nonReasoning: 0,
+    unavailableReasoning: 0,
+    missingReasoningDescriptions: 0,
   };
   /** @type {ModelInfo[]} */
   const models = [];
@@ -609,6 +660,8 @@ function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
     const bundledModel = bundledModelsBySlug.get(exposedModel.id);
     if (bundledModel !== undefined) {
       report.bundledInstructions += 1;
+      report.bundledDisplayNames += 1;
+      report.bundledReasoning += 1;
       models.push(structuredClone(bundledModel));
       continue;
     }
@@ -627,10 +680,11 @@ function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
       continue;
     }
 
-    /** @type {Record<string, unknown> | undefined} */
-    let capabilityMetadata;
+    const resolvedMetadata = resolveModelsDevMetadata(candidates, reasoningMetadata);
+    recordResolution(report, "DisplayNames", resolvedMetadata.displayNameStatus);
+    recordResolution(report, "Reasoning", resolvedMetadata.reasoningStatus);
+    report.missingReasoningDescriptions += resolvedMetadata.missingReasoningDescriptions;
     if (candidates.length === 1 && reliableCandidates.length === 1) {
-      capabilityMetadata = createCapabilityMetadata(candidates[0].model);
       report.enriched += 1;
     } else if (candidates.length > 1) {
       report.ambiguous += 1;
@@ -646,7 +700,7 @@ function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
         codexRuntime.fallbackInstructions,
         exposedModel.id,
         models.length,
-        capabilityMetadata,
+        resolvedMetadata.metadata,
       ),
     );
   }
@@ -709,42 +763,217 @@ function hasReliableAgentCapabilityMetadata(model) {
 }
 
 /**
- * @param {ModelsDevModel} model - One unambiguous exact models.dev match.
- * @returns {Record<string, unknown>} Supported Codex ModelInfo capability fields.
+ * @param {ModelsDevCandidate[]} candidates - Exact canonical models.dev matches.
+ * @param {ReasoningMetadata} reasoningMetadata - Installed Codex effort metadata.
+ * @returns {{
+ *   metadata: Record<string, unknown>;
+ *   displayNameStatus: "modelsDev" | "ambiguous" | "missing";
+ *   reasoningStatus: "modelsDev" | "ambiguous" | "nonEffort" | "non" | "unavailable";
+ *   missingReasoningDescriptions: number;
+ * }}
+ *   Consensus metadata and evidence classifications.
  */
-function createCapabilityMetadata(model) {
-  const supportedInputModalities = ["text", "image", "audio"].filter(
-    (modality) => model.modalities?.input?.includes(modality) === true,
-  );
-  const supportedReasoningEfforts = [
-    "none",
-    "minimal",
-    "low",
-    "medium",
-    "high",
-    "xhigh",
-    "max",
-    "ultra",
-    "persistent",
-  ].filter(
-    (effort) =>
-      model.reasoning_options?.some(
-        (option) => option.type === "effort" && option.values?.includes(effort) === true,
-      ) === true,
-  );
+function resolveModelsDevMetadata(candidates, reasoningMetadata) {
   /** @type {Record<string, unknown>} */
-  const metadata = {
-    input_modalities: supportedInputModalities,
-    supported_reasoning_levels: supportedReasoningEfforts.map((effort) => ({
-      effort,
-      description: "",
-    })),
-  };
-  if (Number.isInteger(model.limit?.context) && Number(model.limit?.context) > 0) {
-    metadata.context_window = model.limit.context;
-    metadata.max_context_window = model.limit.context;
+  const metadata = {};
+  const displayNames = candidates.map(({ model }) => normalizeNonEmptyString(model.name));
+  const displayName = getConsensusValue(displayNames);
+  /** @type {"modelsDev" | "ambiguous" | "missing"} */
+  let displayNameStatus = "missing";
+  if (displayName !== null) {
+    displayNameStatus = "modelsDev";
+    metadata.display_name = displayName;
+  } else if (candidates.length > 1 && displayNames.some((name) => name !== null)) {
+    displayNameStatus = "ambiguous";
   }
-  return metadata;
+
+  const inputModalities = getConsensusValue(
+    candidates.map(({ model }) => normalizeInputModalities(model.modalities?.input)),
+  );
+  if (inputModalities !== null) {
+    metadata.input_modalities = inputModalities;
+  }
+
+  const contextWindow = getConsensusValue(
+    candidates.map(({ model }) => normalizePositiveInteger(model.limit?.context)),
+  );
+  if (contextWindow !== null) {
+    metadata.context_window = contextWindow;
+    metadata.max_context_window = contextWindow;
+  }
+
+  const candidateEfforts = candidates.map(({ model }) =>
+    normalizeReasoningEfforts(model, reasoningMetadata),
+  );
+  const supportedEfforts = getConsensusValue(candidateEfforts);
+  /** @type {"modelsDev" | "ambiguous" | "nonEffort" | "non" | "unavailable"} */
+  let reasoningStatus = "unavailable";
+  let missingReasoningDescriptions = 0;
+  if (supportedEfforts === null && candidates.length > 1) {
+    reasoningStatus = "ambiguous";
+  } else if (supportedEfforts?.length > 0) {
+    metadata.supported_reasoning_levels = supportedEfforts.map((effort) => ({
+      effort,
+      description: reasoningMetadata.descriptions.get(effort) ?? "",
+    }));
+    missingReasoningDescriptions = supportedEfforts.filter(
+      (effort) => !reasoningMetadata.descriptions.has(effort),
+    ).length;
+    reasoningStatus = "modelsDev";
+  } else if (candidates.length > 0) {
+    const reasoningValues = candidates.map(({ model }) => model.reasoning ?? null);
+    if (getConsensusValue(reasoningValues) === null && candidates.length > 1) {
+      reasoningStatus = "ambiguous";
+    } else if (reasoningValues.every((reasoning) => reasoning === false)) {
+      reasoningStatus = "non";
+    } else if (
+      candidates.some(
+        ({ model }) =>
+          model.reasoning === true ||
+          model.reasoning_options?.some(
+            (option) => option.type === "toggle" || option.type === "budget_tokens",
+          ) === true,
+      )
+    ) {
+      reasoningStatus = "nonEffort";
+    }
+  }
+
+  return {
+    metadata,
+    displayNameStatus,
+    reasoningStatus,
+    missingReasoningDescriptions,
+  };
+}
+
+/**
+ * @param {ModelInfo[]} bundledModels - Installed bundled Codex models.
+ * @returns {ReasoningMetadata} Named effort order and official descriptions.
+ */
+function createReasoningMetadata(bundledModels) {
+  /** @type {{ levels: ReasoningLevel[] }[]} */
+  const modelsByCoverage = [];
+  for (const model of bundledModels) {
+    const entry = { levels: readReasoningLevels(model) };
+    const insertionIndex = modelsByCoverage.findIndex(
+      (existingEntry) => entry.levels.length > existingEntry.levels.length,
+    );
+    modelsByCoverage.splice(
+      insertionIndex === -1 ? modelsByCoverage.length : insertionIndex,
+      0,
+      entry,
+    );
+  }
+  /** @type {Map<string, string>} */
+  const descriptions = new Map();
+  for (const { levels } of modelsByCoverage) {
+    for (const level of levels) {
+      if (!descriptions.has(level.effort)) {
+        descriptions.set(level.effort, level.description);
+      }
+    }
+  }
+  return { descriptions, effortOrder: codexNamedReasoningEfforts };
+}
+
+/**
+ * @param {ModelInfo} model - Bundled ModelInfo.
+ * @returns {ReasoningLevel[]} Valid named levels.
+ */
+function readReasoningLevels(model) {
+  /** @type {ReasoningLevel[]} */
+  const levels = [];
+  for (const level of model.supported_reasoning_levels) {
+    if (
+      isRecord(level) &&
+      codexNamedReasoningEfforts.includes(level.effort) &&
+      typeof level.description === "string" &&
+      level.description.trim().length > 0
+    ) {
+      levels.push({ effort: level.effort, description: level.description });
+    }
+  }
+  return levels;
+}
+
+/**
+ * @param {ModelsDevModel} model - Models.dev record.
+ * @param {ReasoningMetadata} reasoningMetadata - Installed Codex effort metadata.
+ * @returns {string[]} Supported effort values in Codex enum order.
+ */
+function normalizeReasoningEfforts(model, reasoningMetadata) {
+  const advertisedEfforts = new Set(
+    (model.reasoning_options ?? [])
+      .filter((option) => option.type === "effort" && Array.isArray(option.values))
+      .flatMap((option) => option.values)
+      .map((effort) => normalizeNonEmptyString(effort))
+      .filter((effort) => effort !== null),
+  );
+  return reasoningMetadata.effortOrder.filter((effort) => advertisedEfforts.has(effort));
+}
+
+/**
+ * @param {string[] | undefined} modalities - Advertised input modalities.
+ * @returns {string[] | null} Codex-supported modalities or no evidence.
+ */
+function normalizeInputModalities(modalities) {
+  if (!Array.isArray(modalities)) {
+    return null;
+  }
+  return ["text", "image"].filter((modality) => modalities.includes(modality));
+}
+
+/**
+ * @param {unknown} value - Possible positive integer.
+ * @returns {number | null} Positive integer or no evidence.
+ */
+function normalizePositiveInteger(value) {
+  if (!Number.isInteger(value) || Number(value) <= 0) {
+    return null;
+  }
+  return Number(value);
+}
+
+/**
+ * @param {unknown} value - Possible user-facing string.
+ * @returns {string | null} Trimmed non-empty string or no evidence.
+ */
+function normalizeNonEmptyString(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    return null;
+  }
+  return normalized;
+}
+
+/**
+ * @template T
+ * @param {(T | null)[]} values - Candidate normalized field values.
+ * @returns {T | null} Unanimous normalized value or no consensus.
+ */
+function getConsensusValue(values) {
+  if (values.length === 0 || values.some((value) => value === null)) {
+    return null;
+  }
+  const [firstValue] = values;
+  return values.every((value) => JSON.stringify(value) === JSON.stringify(firstValue))
+    ? firstValue
+    : null;
+}
+
+/**
+ * @param {Record<string, number>} report - Mutable generation counts.
+ * @param {"DisplayNames" | "Reasoning"} suffix - Report field suffix.
+ * @param {string} status - Resolution status prefix.
+ * @returns {void}
+ */
+function recordResolution(report, suffix, status) {
+  const field = `${status}${suffix}`;
+  report[field] += 1;
 }
 
 /**

@@ -4,6 +4,7 @@
     "models": {
       "coding-model": {
         "id": "coding-model",
+        "name": "Coding Model",
         "limit": {
           "context": 200000,
           "output": 32000
@@ -15,9 +16,38 @@
         "reasoning_options": [
           {
             "type": "effort",
-            "values": ["low", "high"]
+            "values": ["ultra", "low", "custom-effort", "minimal", "max", "high"]
           }
         ],
+        "reasoning": true,
+        "tool_call": true
+      },
+      "toggle-coder": {
+        "id": "toggle-coder",
+        "name": "Toggle Coder",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "toggle"
+          },
+          {
+            "type": "budget_tokens"
+          }
+        ],
+        "tool_call": true
+      },
+      "simple-coder": {
+        "id": "simple-coder",
+        "name": "Simple Coder",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": false,
         "tool_call": true
       },
       "speech-model": {
@@ -59,6 +89,7 @@
     "models": {
       "ambiguous-coder": {
         "id": "ambiguous-coder",
+        "name": "Ambiguous Coder",
         "limit": {
           "context": 128000
         },
@@ -66,6 +97,29 @@
           "input": ["text"],
           "output": ["text"]
         },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["low", "high"]
+          }
+        ],
+        "tool_call": true
+      },
+      "conflicting-coder": {
+        "id": "conflicting-coder",
+        "name": "Provider B Coder",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["low"]
+          }
+        ],
         "tool_call": true
       },
       "ambiguous-non-agent": {
@@ -83,6 +137,7 @@
     "models": {
       "ambiguous-coder": {
         "id": "ambiguous-coder",
+        "name": "Ambiguous Coder",
         "limit": {
           "context": 256000
         },
@@ -90,6 +145,29 @@
           "input": ["text", "image"],
           "output": ["text"]
         },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["low", "high"]
+          }
+        ],
+        "tool_call": true
+      },
+      "conflicting-coder": {
+        "id": "conflicting-coder",
+        "name": "Provider C Coder",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "reasoning": true,
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["high"]
+          }
+        ],
         "tool_call": true
       },
       "ambiguous-non-agent": {

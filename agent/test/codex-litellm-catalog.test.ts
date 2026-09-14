@@ -32,7 +32,14 @@ describe("Codex LiteLLM model catalog generator", () => {
       display_name: "GPT-5.5",
       description: "Bundled model",
       default_reasoning_level: "medium",
-      supported_reasoning_levels: [{ effort: "medium", description: "Standard reasoning" }],
+      supported_reasoning_levels: [
+        { effort: "low", description: "Fast reasoning" },
+        { effort: "medium", description: "Standard reasoning" },
+        { effort: "high", description: "Deep reasoning" },
+        { effort: "xhigh", description: "Extra deep reasoning" },
+        { effort: "max", description: "Maximum reasoning" },
+        { effort: "ultra", description: "Delegated maximum reasoning" },
+      ],
       experimental_supported_tools: [],
       truncation_policy: { mode: "tokens", limit: 10_000 },
       shell_type: "unified_exec",
@@ -70,29 +77,132 @@ describe("Codex LiteLLM model catalog generator", () => {
           object: "list",
           data: [
             { id: "gpt-5.5", object: "model", created: 1, owned_by: "litellm" },
-            { id: "coding-model", object: "model", created: 2, owned_by: "litellm" },
-            { id: "ambiguous-coder", object: "model", created: 3, owned_by: "litellm" },
-            { id: "gateway-alias", object: "model", created: 4, owned_by: "litellm" },
-            { id: "speech-model", object: "model", created: 5, owned_by: "litellm" },
-            { id: "whisper-1", object: "model", created: 6, owned_by: "litellm" },
-            { id: "text-embedding-3-large", object: "model", created: 7, owned_by: "litellm" },
-            { id: "gpt-image-2", object: "model", created: 8, owned_by: "litellm" },
+            {
+              id: "coding-model",
+              object: "model",
+              created: 2,
+              owned_by: "litellm",
+            },
+            {
+              id: "ambiguous-coder",
+              object: "model",
+              created: 3,
+              owned_by: "litellm",
+            },
+            {
+              id: "gateway-alias",
+              object: "model",
+              created: 4,
+              owned_by: "litellm",
+            },
+            {
+              id: "speech-model",
+              object: "model",
+              created: 5,
+              owned_by: "litellm",
+            },
+            {
+              id: "whisper-1",
+              object: "model",
+              created: 6,
+              owned_by: "litellm",
+            },
+            {
+              id: "text-embedding-3-large",
+              object: "model",
+              created: 7,
+              owned_by: "litellm",
+            },
+            {
+              id: "gpt-image-2",
+              object: "model",
+              created: 8,
+              owned_by: "litellm",
+            },
             {
               id: "gemini-2.5-flash-preview-tts",
               object: "model",
               created: 9,
               owned_by: "litellm",
             },
-            { id: "glm-asr-latest", object: "model", created: 10, owned_by: "litellm" },
-            { id: "rerank-v3", object: "model", created: 11, owned_by: "litellm" },
-            { id: "sora-video-1", object: "model", created: 12, owned_by: "litellm" },
-            { id: "gpt-5.4-nano", object: "model", created: 13, owned_by: "litellm" },
-            { id: "gemini-3-pro-preview", object: "model", created: 14, owned_by: "litellm" },
-            { id: "glm-5.3", object: "model", created: 15, owned_by: "litellm" },
-            { id: "ambiguous-non-agent", object: "model", created: 16, owned_by: "litellm" },
-            { id: "no-text-input", object: "model", created: 17, owned_by: "litellm" },
-            { id: "no-text-output", object: "model", created: 18, owned_by: "litellm" },
-            { id: "no-tool-calling", object: "model", created: 19, owned_by: "litellm" },
+            {
+              id: "glm-asr-latest",
+              object: "model",
+              created: 10,
+              owned_by: "litellm",
+            },
+            {
+              id: "rerank-v3",
+              object: "model",
+              created: 11,
+              owned_by: "litellm",
+            },
+            {
+              id: "sora-video-1",
+              object: "model",
+              created: 12,
+              owned_by: "litellm",
+            },
+            {
+              id: "gpt-5.4-nano",
+              object: "model",
+              created: 13,
+              owned_by: "litellm",
+            },
+            {
+              id: "gemini-3-pro-preview",
+              object: "model",
+              created: 14,
+              owned_by: "litellm",
+            },
+            {
+              id: "glm-5.3",
+              object: "model",
+              created: 15,
+              owned_by: "litellm",
+            },
+            {
+              id: "ambiguous-non-agent",
+              object: "model",
+              created: 16,
+              owned_by: "litellm",
+            },
+            {
+              id: "no-text-input",
+              object: "model",
+              created: 17,
+              owned_by: "litellm",
+            },
+            {
+              id: "no-text-output",
+              object: "model",
+              created: 18,
+              owned_by: "litellm",
+            },
+            {
+              id: "no-tool-calling",
+              object: "model",
+              created: 19,
+              owned_by: "litellm",
+            },
+            {
+              id: "conflicting-coder",
+              object: "model",
+              created: 20,
+              owned_by: "litellm",
+            },
+            {
+              id: "toggle-coder",
+              object: "model",
+              created: 21,
+              owned_by: "litellm",
+            },
+            {
+              id: "simple-coder",
+              object: "model",
+              created: 22,
+              owned_by: "litellm",
+            },
           ],
         }),
       );
@@ -125,9 +235,13 @@ describe("Codex LiteLLM model catalog generator", () => {
         },
       );
       expect(stdout).toContain(
-        "Instructions: bundled=1 (codex debug models --bundled); fallback=6 (codex exec loopback, codex-cli 0.154.0, sha256=",
+        "Instructions: bundled=1 (codex debug models --bundled); fallback=9 (codex exec loopback, codex-cli 0.154.0, sha256=",
       );
       expect(stdout).toContain("Excluded 12 non-agent models");
+      expect(stdout).toContain("Display names: bundled=1; models.dev=4; ambiguous=1; missing=4");
+      expect(stdout).toContain(
+        "Reasoning levels: bundled=1; models.dev=2; ambiguous=1; toggle/budget-only=1; non-reasoning=1; unavailable=4; missing descriptions=1",
+      );
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error === undefined ? resolve() : reject(error))),
@@ -143,28 +257,52 @@ describe("Codex LiteLLM model catalog generator", () => {
     expect(models.map((model) => model.slug)).toEqual([
       "ambiguous-coder",
       "coding-model",
+      "conflicting-coder",
       "gateway-alias",
       "gemini-3-pro-preview",
       "glm-5.3",
       "gpt-5.4-nano",
       "gpt-5.5",
+      "simple-coder",
+      "toggle-coder",
     ]);
     expect(modelsBySlug["gpt-5.5"]).toEqual(stableBundledModel);
     expect(modelsBySlug["ambiguous-coder"]).toMatchObject({
       base_instructions: "Runtime fallback instructions",
+      display_name: "Ambiguous Coder",
       input_modalities: ["text", "image"],
-      supported_reasoning_levels: [],
+      supported_reasoning_levels: [
+        { effort: "low", description: "Fast reasoning" },
+        { effort: "high", description: "Deep reasoning" },
+      ],
     });
     expect(modelsBySlug["coding-model"]).toMatchObject({
       base_instructions: "Runtime fallback instructions",
+      display_name: "Coding Model",
       context_window: 200_000,
       max_context_window: 200_000,
       input_modalities: ["text", "image"],
       supported_reasoning_levels: [
-        { effort: "low", description: "" },
-        { effort: "high", description: "" },
+        { effort: "minimal", description: "" },
+        { effort: "low", description: "Fast reasoning" },
+        { effort: "high", description: "Deep reasoning" },
+        { effort: "max", description: "Maximum reasoning" },
+        { effort: "ultra", description: "Delegated maximum reasoning" },
       ],
     });
+    expect(modelsBySlug["conflicting-coder"]).toMatchObject({
+      display_name: "conflicting-coder",
+      supported_reasoning_levels: [],
+    });
+    expect(modelsBySlug["toggle-coder"]).toMatchObject({
+      display_name: "Toggle Coder",
+      supported_reasoning_levels: [],
+    });
+    expect(modelsBySlug["simple-coder"]).toMatchObject({
+      display_name: "Simple Coder",
+      supported_reasoning_levels: [],
+    });
+    expect(modelsBySlug["coding-model"]).not.toHaveProperty("default_reasoning_level");
     expect(modelsBySlug["gateway-alias"]).toMatchObject({
       base_instructions: "Runtime fallback instructions",
       input_modalities: ["text", "image"],
@@ -281,7 +419,9 @@ describe("Codex LiteLLM model catalog generator", () => {
 
     const firstOutput = await readFile(firstOutputPath, "utf8");
     const secondOutput = await readFile(secondOutputPath, "utf8");
-    const catalog = JSON.parse(firstOutput) as { models: Array<{ slug: string }> };
+    const catalog = JSON.parse(firstOutput) as {
+      models: Array<{ slug: string }>;
+    };
 
     expect(firstOutput).toBe(secondOutput);
     expect(firstOutput).toMatch(/^\{\n  "models": \[/);
@@ -348,7 +488,12 @@ describe("Codex LiteLLM model catalog generator", () => {
         response.end(modelsDevFixture);
         return;
       }
-      response.end(JSON.stringify({ object: "list", data: [{ id: "missing-standard-fields" }] }));
+      response.end(
+        JSON.stringify({
+          object: "list",
+          data: [{ id: "missing-standard-fields" }],
+        }),
+      );
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 
@@ -416,7 +561,9 @@ describe("Codex LiteLLM profile", () => {
 describe("tracked LiteLLM model catalog", () => {
   it("contains canonical Codex 0.154 ModelInfo entries", async () => {
     const contents = await readFile(trackedCatalogPath, "utf8");
-    const catalog = JSON.parse(contents) as { models: Array<Record<string, unknown>> };
+    const catalog = JSON.parse(contents) as {
+      models: Array<Record<string, unknown>>;
+    };
 
     expect(contents.endsWith("\n")).toBe(true);
     expect(contents).toBe(`${JSON.stringify(catalog, null, 2)}\n`);
@@ -455,6 +602,10 @@ describe("tracked LiteLLM model catalog", () => {
       expect(typeof model.support_verbosity).toBe("boolean");
       expect(typeof model.supported_in_api).toBe("boolean");
       expect(Array.isArray(model.supported_reasoning_levels)).toBe(true);
+      for (const level of model.supported_reasoning_levels as Array<Record<string, unknown>>) {
+        expect(typeof level.description).toBe("string");
+        expect(String(level.description).length).toBeGreaterThan(0);
+      }
       expect(typeof model.truncation_policy).toBe("object");
       expect(model.truncation_policy).not.toBeNull();
       expect(Array.isArray(model.truncation_policy)).toBe(false);
@@ -464,6 +615,14 @@ describe("tracked LiteLLM model catalog", () => {
       expect(model).not.toHaveProperty("object");
       expect(model).not.toHaveProperty("owned_by");
     }
+
+    expect(catalog.models.find((model) => model.slug === "glm-5.2-highspeed")).toMatchObject({
+      display_name: "GLM-5.2 Highspeed",
+      supported_reasoning_levels: [{ effort: "high" }, { effort: "max" }],
+    });
+    expect(catalog.models.find((model) => model.slug === "glm-5.2-highspeed")).not.toHaveProperty(
+      "default_reasoning_level",
+    );
   });
 });
 
@@ -512,7 +671,10 @@ describe("Codex provider auth helper", () => {
     await mkdir(authDirectory, { recursive: true });
     await writeFile(
       join(authDirectory, "auth.json"),
-      JSON.stringify({ litellm: { key }, unrelated: { key: "must-not-leak" } }),
+      JSON.stringify({
+        litellm: { key },
+        unrelated: { key: "must-not-leak" },
+      }),
       "utf8",
     );
 

@@ -492,12 +492,67 @@ def registry_lock() -> Iterator[None]:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
+class ReadOnlySnapshotConnection(sqlite3.Connection):
+    snapshot_directory: Path | None = None
+
+    def close(self) -> None:
+        snapshot_directory = self.snapshot_directory
+        self.snapshot_directory = None
+        try:
+            super().close()
+        finally:
+            if snapshot_directory is not None:
+                shutil.rmtree(snapshot_directory, ignore_errors=True)
+
+    def __exit__(self, *args: Any) -> bool | None:
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
+
+def create_read_only_snapshot(database_path: Path) -> tuple[Path, Path]:
+    # Opening a live WAL database read-only can create or update its -shm file.
+    # Copy the main database and WAL first; only the disposable copy is opened.
+    snapshot_directory = Path(tempfile.mkdtemp(prefix="program-coordinator-read-"))
+    snapshot_database = snapshot_directory / database_path.name
+    try:
+        shutil.copyfile(database_path, snapshot_database)
+        wal_path = database_path.with_name(f"{database_path.name}-wal")
+        if wal_path.exists():
+            shutil.copyfile(
+                wal_path,
+                snapshot_database.with_name(f"{snapshot_database.name}-wal"),
+            )
+    except BaseException:
+        shutil.rmtree(snapshot_directory, ignore_errors=True)
+        raise
+    return snapshot_database, snapshot_directory
+
+
 def connect(product_id: str, *, read_only: bool = False) -> sqlite3.Connection:
     database_path = get_database_path(product_id)
     if not database_path.exists():
         raise StateError(f"state does not exist: {database_path}")
     if read_only:
-        connection = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+        snapshot_database, snapshot_directory = create_read_only_snapshot(
+            database_path
+        )
+        connection: ReadOnlySnapshotConnection | None = None
+        try:
+            connection = sqlite3.connect(
+                f"file:{snapshot_database}?mode=ro",
+                uri=True,
+                factory=ReadOnlySnapshotConnection,
+            )
+            connection.snapshot_directory = snapshot_directory
+            connection.execute("PRAGMA query_only = ON")
+        except BaseException:
+            if connection is not None:
+                connection.close()
+            else:
+                shutil.rmtree(snapshot_directory, ignore_errors=True)
+            raise
     else:
         connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
@@ -1727,7 +1782,8 @@ def upsert_pull_request_in_transaction(
             if field != "product_id"
         }
         values["product_id"] = product_id
-        values.setdefault("state", "open")
+        if values["state"] is None:
+            values["state"] = "open"
         existing_task_ids: list[str] = []
     else:
         values = {
@@ -1886,13 +1942,17 @@ def upsert_pull_request_deployment(args: argparse.Namespace) -> None:
             connection.execute("BEGIN IMMEDIATE")
             validate_lease(connection, args.product_id, args.actor, lease_token)
             pull_request = connection.execute(
-                "SELECT product_id FROM pull_requests WHERE id = ?",
+                "SELECT product_id, head_sha FROM pull_requests WHERE id = ?",
                 (args.pull_request_id,),
             ).fetchone()
             if pull_request is None:
                 raise StateError("pull request not found")
             if pull_request["product_id"] != args.product_id:
                 raise StateError("pull request belongs to another product")
+            if args.deployed_head_sha != pull_request["head_sha"]:
+                raise StateError(
+                    "deployed head SHA must match current pull request head"
+                )
             if args.deployment_id:
                 deployment = connection.execute(
                     "SELECT product_id, environment FROM deployments WHERE id = ?",
@@ -2110,7 +2170,11 @@ def deployment_projections(
 
 
 def summarize(args: argparse.Namespace) -> None:
-    with connect(args.product_id, read_only=True) as connection:
+    with product_lock(args.product_id), connect(
+        args.product_id, read_only=True
+    ) as connection:
+        connection.execute("BEGIN")
+        validate_schema_history(read_schema_versions(connection))
         product_row = connection.execute(
             "SELECT * FROM products WHERE id = ?", (args.product_id,)
         ).fetchone()
@@ -2631,8 +2695,9 @@ def main() -> int:
                 pass
             elif args.command == "schema-reconcile":
                 pass
+            elif args.command == "summary":
+                pass
             elif is_read_only_sql or args.command in {
-                "summary",
                 "doctor",
                 "checkpoint-list",
                 "export",

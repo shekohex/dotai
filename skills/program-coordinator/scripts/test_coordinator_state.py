@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import importlib.util
+import io
 import json
 import os
 import sqlite3
@@ -11,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 
 SCRIPT = Path(__file__).with_name("coordinator_state.py")
@@ -159,6 +163,7 @@ def database_file_snapshot(database_path: Path) -> dict[str, tuple[bool, int | N
     for path in (
         database_path,
         database_path.with_name(f"{database_path.name}-wal"),
+        database_path.with_name(f"{database_path.name}-shm"),
     ):
         snapshot[path.name] = (
             path.exists(),
@@ -552,12 +557,12 @@ def assert_future_schema_refused() -> None:
             )
             assert refused["ok"] is False
             assert error_fragment in refused["error"]
+            assert database_file_snapshot(database_path) == before_refusal
             assert schema_versions(database_path) == versions
             with sqlite3.connect(database_path) as connection:
                 assert [
                     row[0] for row in connection.execute("SELECT id FROM events")
                 ] == event_ids_before
-            assert database_file_snapshot(database_path) == before_refusal
 
 
 def assert_reconciliation_failure_rolls_back() -> None:
@@ -610,6 +615,116 @@ def assert_reconciliation_failure_rolls_back() -> None:
             assert [
                 row[0] for row in connection.execute("SELECT id FROM events")
             ] == event_ids_before
+
+
+def assert_summary_consistent_snapshot() -> None:
+    with tempfile.TemporaryDirectory(
+        prefix="program-coordinator-snapshot-"
+    ) as temporary:
+        agents_home = Path(temporary)
+        run(
+            agents_home,
+            "init",
+            "--product-id",
+            "snapshot",
+            "--name",
+            "Snapshot Product",
+        )
+        lease_token = run(
+            agents_home,
+            "lease-acquire",
+            "--product-id",
+            "snapshot",
+            "--holder",
+            "coordinator-1",
+        )["lease_token"]
+        run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "snapshot",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Create snapshot test PR",
+            "--params-json",
+            '{"now":"2026-01-02T00:00:00+00:00"}',
+            "INSERT INTO pull_requests("
+            "id, product_id, number, branch, base_branch, head_sha, state, "
+            "created_at, updated_at"
+            ") VALUES ('snapshot-pr', 'snapshot', 1, 'snapshot', 'main', "
+            "'old-head', 'merged', :now, :now)",
+        )
+
+        module_spec = importlib.util.spec_from_file_location(
+            "program_coordinator_state", SCRIPT
+        )
+        assert module_spec is not None and module_spec.loader is not None
+        coordinator_state = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(coordinator_state)
+        database_path = agents_home / "projects" / "snapshot" / "state.sqlite"
+        original_connect = coordinator_state.connect
+        writer_committed = False
+
+        def traced_connect(product_id: str, *, read_only: bool = False):
+            nonlocal writer_committed
+            if not read_only:
+                return original_connect(product_id, read_only=False)
+            connection = sqlite3.connect(database_path)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+
+            def inject_commit(statement: str) -> None:
+                nonlocal writer_committed
+                if (
+                    writer_committed
+                    or "select * from products where id" not in statement.lower()
+                ):
+                    return
+                with sqlite3.connect(database_path) as writer:
+                    writer.execute("BEGIN IMMEDIATE")
+                    writer.execute(
+                        "UPDATE products SET name='New Snapshot Product' "
+                        "WHERE id='snapshot'"
+                    )
+                    writer.execute(
+                        "UPDATE pull_requests SET head_sha='new-head' "
+                        "WHERE id='snapshot-pr'"
+                    )
+                writer_committed = True
+
+            connection.set_trace_callback(inject_commit)
+            return connection
+
+        previous_agents_home = os.environ.get("AGENTS_HOME")
+        os.environ["AGENTS_HOME"] = str(agents_home)
+        coordinator_state.connect = traced_connect
+        try:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                coordinator_state.summarize(
+                    SimpleNamespace(product_id="snapshot", event_limit=20)
+                )
+        finally:
+            coordinator_state.connect = original_connect
+            if previous_agents_home is None:
+                os.environ.pop("AGENTS_HOME", None)
+            else:
+                os.environ["AGENTS_HOME"] = previous_agents_home
+
+        assert writer_committed is True
+        summary = json.loads(output.getvalue())
+        assert summary["product"]["name"] == "Snapshot Product"
+        assert summary["merged_awaiting_deployment"][0]["head_sha"] == "old-head"
+        with sqlite3.connect(database_path) as connection:
+            assert connection.execute(
+                "SELECT name FROM products WHERE id='snapshot'"
+            ).fetchone()[0] == "New Snapshot Product"
+            assert connection.execute(
+                "SELECT head_sha FROM pull_requests WHERE id='snapshot-pr'"
+            ).fetchone()[0] == "new-head"
 
 
 def main() -> int:
@@ -888,6 +1003,34 @@ def main() -> int:
         )
         assert atomic_pr["task_ids"] == ["task-1", "task-2"]
 
+        default_state_pr = run(
+            agents_home,
+            "pull-request-upsert",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Record PR using default state",
+            "--pull-request-json",
+            '{"id":"pr-default-state","branch":"feature/default-state",'
+            '"base_branch":"main","created_at":"2026-01-02T00:00:00+00:00",'
+            '"updated_at":"2026-01-02T00:00:00+00:00"}',
+            "--task-ids-json",
+            '["task-1"]',
+        )
+        assert default_state_pr["task_ids"] == ["task-1"]
+        assert run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--read-only",
+            "SELECT state FROM pull_requests WHERE id='pr-default-state'",
+        )["rows"] == [{"state": "open"}]
+
         corrected_pr = run(
             agents_home,
             "pull-request-upsert",
@@ -1009,6 +1152,60 @@ def main() -> int:
             ":verified, :verified"
             ")",
         )
+
+        mismatched_coverage = run(
+            agents_home,
+            "pull-request-deployment-upsert",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Reject mismatched PR deployment coverage",
+            "--pull-request-id",
+            "pr-deployed",
+            "--environment",
+            "production",
+            "--deployment-id",
+            "deployment-1",
+            "--deployed-head-sha",
+            "unrelated-head",
+            "--status",
+            "passed",
+            expect_success=False,
+        )
+        assert "current pull request head" in mismatched_coverage["error"]
+        run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Seed stale PR deployment coverage",
+            "--params-json",
+            '{"updated":"2026-01-03T00:00:01+00:00"}',
+            "INSERT INTO pull_request_deployments("
+            "pull_request_id, environment, deployment_id, deployed_head_sha, "
+            "status, updated_at"
+            ") VALUES ('pr-deployed', 'production', 'deployment-1', "
+            "'unrelated-head', 'passed', :updated)",
+        )
+        stale_relation_summary = run(
+            agents_home, "summary", "--product-id", "sample"
+        )
+        stale_relation_awaiting = {
+            row["id"]: row
+            for row in stale_relation_summary["merged_awaiting_deployment"]
+        }
+        assert stale_relation_awaiting["pr-deployed"][
+            "deployment_coverage_statuses"
+        ] == {"production": "stale"}
 
         coverage = run(
             agents_home,
@@ -1337,6 +1534,7 @@ def main() -> int:
     assert_legacy_fk_converges()
     assert_future_schema_refused()
     assert_reconciliation_failure_rolls_back()
+    assert_summary_consistent_snapshot()
 
     print("coordinator_state smoke test: passed")
     return 0

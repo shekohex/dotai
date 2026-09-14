@@ -1,0 +1,12 @@
+model_provider = "opencode-go"
+model_catalog_json = "opencode-go-models.json"
+
+[model_providers.opencode-go]
+name = "OpenCode Go"
+base_url = "https://opencode.ai/zen/go/v1"
+wire_api = "responses"
+
+[model_providers.opencode-go.auth]
+command = "node"
+args = ["pi-agent-auth.mjs", "opencode-go"]
+cwd = "~/.codex"

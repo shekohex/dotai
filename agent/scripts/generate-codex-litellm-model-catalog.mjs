@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
 const defaultEndpoint = "https://ai-gateway.0iq.xyz/v1/models";
+const defaultModelsDevEndpoint = "https://models.dev/api.json";
 const defaultOutputPath = resolve(homedir(), ".codex", "litellm-models.json");
 
-/** @typedef {{ endpoint: string; outputPath: string; help: boolean }} GeneratorOptions */
+/** @typedef {{ endpoint: string; modelsDevEndpoint: string; outputPath: string; help: boolean }} GeneratorOptions */
 /** @typedef {{ id: string; object: "model"; created: number; owned_by: string }} ExposedModel */
 /** @typedef {{ object: "list"; data: ExposedModel[] }} ModelsResponse */
 /**
@@ -26,6 +29,17 @@ const defaultOutputPath = resolve(homedir(), ".codex", "litellm-models.json");
  * }} ModelInfo
  */
 /** @typedef {{ models: ModelInfo[] }} CodexCatalog */
+/**
+ * @typedef {Record<string, unknown> & {
+ *   id: string;
+ *   modalities?: { input?: string[]; output?: string[] };
+ *   tool_call?: boolean;
+ *   limit?: { context?: number };
+ *   reasoning_options?: { type?: string; values?: string[] }[];
+ * }} ModelsDevModel
+ */
+/** @typedef {{ providerId: string; providerModelId: string; model: ModelsDevModel }} ModelsDevCandidate */
+/** @typedef {Map<string, ModelsDevCandidate[]>} ModelsDevIndex */
 
 if (isMain()) {
   try {
@@ -48,13 +62,25 @@ async function main() {
     throw new Error("LITELLM_API_KEY is required. Export it before generating the catalog.");
   }
 
-  const exposedModels = await fetchExposedModels(options.endpoint, apiKey);
-  const bundledCatalog = loadBundledCatalog();
-  const catalog = buildCatalog(exposedModels, bundledCatalog);
+  const [exposedModels, modelsDevIndex, codexRuntime] = await Promise.all([
+    fetchExposedModels(options.endpoint, apiKey),
+    fetchModelsDevIndex(options.modelsDevEndpoint),
+    loadCodexRuntime(),
+  ]);
+  const { catalog, report } = buildCatalog(exposedModels, modelsDevIndex, codexRuntime);
 
   await mkdir(dirname(options.outputPath), { recursive: true });
   await writeFile(options.outputPath, serializeCatalog(catalog), "utf8");
   console.log(`Wrote ${catalog.models.length} LiteLLM models to ${options.outputPath}`);
+  console.log(
+    `Excluded ${report.excluded} non-agent models: ${formatCounts(report.excludedReasons)}`,
+  );
+  console.log(
+    `Instructions: bundled=${report.bundledInstructions} (codex debug models --bundled); fallback=${report.fallbackInstructions} (codex exec loopback, ${codexRuntime.version}, sha256=${sha256(codexRuntime.fallbackInstructions)})`,
+  );
+  console.log(
+    `Capabilities: ${report.enriched} exact enriched; ${report.ambiguous} ambiguous retained; ${report.incomplete} incomplete exact retained; ${report.unmatched} unmatched retained`,
+  );
 }
 
 /**
@@ -65,6 +91,7 @@ function parseArguments(argumentsList) {
   /** @type {GeneratorOptions} */
   const options = {
     endpoint: defaultEndpoint,
+    modelsDevEndpoint: defaultModelsDevEndpoint,
     outputPath: defaultOutputPath,
     help: false,
   };
@@ -82,6 +109,11 @@ function parseArguments(argumentsList) {
     }
     if (argument === "--output") {
       options.outputPath = resolve(readOptionValue(argumentsList, index, argument));
+      index += 1;
+      continue;
+    }
+    if (argument === "--models-dev-endpoint") {
+      options.modelsDevEndpoint = readOptionValue(argumentsList, index, argument);
       index += 1;
       continue;
     }
@@ -144,6 +176,68 @@ async function fetchExposedModels(endpoint, apiKey) {
   }
 
   return deduplicateModels(payload.data);
+}
+
+/**
+ * @param {string} endpoint - Models.dev catalog endpoint.
+ * @returns {Promise<ModelsDevIndex>} Exact canonical model ids indexed across providers.
+ */
+async function fetchModelsDevIndex(endpoint) {
+  /** @type {Response} */
+  let response;
+  try {
+    response = await fetch(endpoint, { signal: AbortSignal.timeout(30_000) });
+  } catch (error) {
+    throw new Error(`Could not fetch ${endpoint}: ${getErrorMessage(error)}`, { cause: error });
+  }
+
+  if (!response.ok) {
+    throw new Error(`GET ${endpoint} returned HTTP ${response.status}.`);
+  }
+
+  /** @type {unknown} */
+  let payload;
+  try {
+    payload = JSON.parse(await response.text());
+  } catch {
+    throw new Error(`GET ${endpoint} returned invalid JSON.`);
+  }
+  if (!isModelsDevCatalog(payload)) {
+    throw new Error(`GET ${endpoint} returned an unsupported models.dev catalog shape.`);
+  }
+  /** @type {Record<string, { models: Record<string, ModelsDevModel> }>} */
+  const modelsDevCatalog = payload;
+
+  /** @type {ModelsDevIndex} */
+  const modelsByCanonicalId = new Map();
+  for (const [providerId, provider] of sortEntriesByKey(Object.entries(modelsDevCatalog))) {
+    for (const [providerModelId, model] of sortEntriesByKey(Object.entries(provider.models))) {
+      const candidates = modelsByCanonicalId.get(model.id) ?? [];
+      candidates.push({ providerId, providerModelId, model });
+      modelsByCanonicalId.set(model.id, candidates);
+    }
+  }
+  return modelsByCanonicalId;
+}
+
+/**
+ * @param {unknown} payload - Parsed models.dev response.
+ * @returns {payload is Record<string, { models: Record<string, ModelsDevModel> }>} Whether the
+ *   catalog has provider model maps and canonical ids.
+ */
+function isModelsDevCatalog(payload) {
+  return (
+    isRecord(payload) &&
+    Object.keys(payload).length > 0 &&
+    Object.values(payload).every(
+      (provider) =>
+        isRecord(provider) &&
+        isRecord(provider.models) &&
+        Object.values(provider.models).every(
+          (model) => isRecord(model) && typeof model.id === "string" && model.id.length > 0,
+        ),
+    )
+  );
 }
 
 /**
@@ -234,11 +328,12 @@ function sortObjectKeys(value) {
 }
 
 /**
- * @param {[string, unknown][]} entries - Object entries to order.
- * @returns {[string, unknown][]} Entries ordered by UTF-8 key bytes.
+ * @template T
+ * @param {[string, T][]} entries - Object entries to order.
+ * @returns {[string, T][]} Entries ordered by UTF-8 key bytes.
  */
 function sortEntriesByKey(entries) {
-  /** @type {[string, unknown][]} */
+  /** @type {[string, T][]} */
   const sortedEntries = [];
   for (const entry of entries) {
     const insertionIndex = sortedEntries.findIndex(
@@ -256,6 +351,151 @@ function sortEntriesByKey(entries) {
  */
 function compareUtf8Bytes(left, right) {
   return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
+/**
+ * @returns {Promise<{
+ *   bundledCatalog: CodexCatalog;
+ *   fallbackInstructions: string;
+ *   version: string;
+ * }>}
+ *   Installed Codex metadata and unknown-model fallback instructions.
+ */
+async function loadCodexRuntime() {
+  return {
+    bundledCatalog: loadBundledCatalog(),
+    fallbackInstructions: await captureFallbackInstructions(),
+    version: loadCodexVersion(),
+  };
+}
+
+/** @returns {string} Installed Codex version string. */
+function loadCodexVersion() {
+  try {
+    const version = execFileSync("codex", ["--version"], { encoding: "utf8" }).trim();
+    if (version.length === 0) {
+      throw new Error("empty version output");
+    }
+    return version;
+  } catch (error) {
+    throw new Error(`Could not read the installed Codex version: ${getErrorMessage(error)}`, {
+      cause: error,
+    });
+  }
+}
+
+/** @returns {Promise<string>} Canonical instructions used by installed Codex for an unknown model. */
+async function captureFallbackInstructions() {
+  const captureHome = await mkdtemp(join(tmpdir(), "codex-model-instructions-"));
+  /** @type {string | undefined} */
+  let capturedInstructions;
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      try {
+        /** @type {unknown} */
+        const payload = JSON.parse(body);
+        if (
+          isRecord(payload) &&
+          typeof payload.instructions === "string" &&
+          payload.instructions.length > 0
+        ) {
+          capturedInstructions = payload.instructions;
+        }
+      } catch {
+        // The actionable error below covers missing or malformed capture payloads.
+      }
+      response.writeHead(400, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "instruction capture complete" } }));
+    });
+  });
+
+  try {
+    await new Promise((resolvePromise, rejectPromise) => {
+      server.once("error", rejectPromise);
+      server.listen(0, "127.0.0.1", resolvePromise);
+    });
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("loopback server did not expose a TCP port");
+    }
+    await writeFile(
+      join(captureHome, "config.toml"),
+      [
+        'model_provider = "instruction-capture"',
+        "",
+        "[model_providers.instruction-capture]",
+        'name = "Instruction capture"',
+        `base_url = "http://127.0.0.1:${address.port}/v1"`,
+        'wire_api = "responses"',
+        "requires_openai_auth = false",
+        "supports_websockets = false",
+        "request_max_retries = 0",
+        "stream_max_retries = 0",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const codexEnvironment = { ...process.env, CODEX_HOME: captureHome };
+    delete codexEnvironment.CODEX_API_KEY;
+    delete codexEnvironment.LITELLM_API_KEY;
+    delete codexEnvironment.OPENAI_API_KEY;
+    const codexProcess = spawn(
+      "codex",
+      [
+        "exec",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "read-only",
+        "--model",
+        "dotai-external-model-instruction-probe",
+        "Return no output.",
+      ],
+      {
+        cwd: captureHome,
+        env: codexEnvironment,
+        stdio: "ignore",
+      },
+    );
+    await waitForProcess(codexProcess, 15_000);
+
+    if (capturedInstructions === undefined) {
+      throw new Error(
+        "Installed Codex did not send fallback instructions to the loopback Responses endpoint.",
+      );
+    }
+    return capturedInstructions;
+  } finally {
+    await new Promise((resolvePromise) => {
+      server.close(() => {
+        resolvePromise();
+      });
+    });
+    await rm(captureHome, { recursive: true, force: true });
+  }
+}
+
+/**
+ * @param {import("node:child_process").ChildProcess} childProcess - Codex fallback probe.
+ * @param {number} timeoutMilliseconds - Maximum probe duration.
+ * @returns {Promise<void>} Resolves when the process exits or is terminated at the timeout.
+ */
+async function waitForProcess(childProcess, timeoutMilliseconds) {
+  await new Promise((resolvePromise) => {
+    const timeout = setTimeout(() => {
+      childProcess.kill();
+    }, timeoutMilliseconds);
+    childProcess.once("close", () => {
+      clearTimeout(timeout);
+      resolvePromise();
+    });
+  });
 }
 
 /** @returns {CodexCatalog} Validated bundled catalog from installed Codex. */
@@ -321,39 +561,111 @@ function isModelInfo(model) {
 
 /**
  * @param {ExposedModel[]} exposedModels - Models available through LiteLLM.
- * @param {CodexCatalog} bundledCatalog - Catalog from installed Codex.
- * @returns {CodexCatalog} Replacement catalog containing exposed models only.
+ * @param {ModelsDevIndex} modelsDevIndex - Exact canonical models.dev matches.
+ * @param {{ bundledCatalog: CodexCatalog; fallbackInstructions: string }} codexRuntime - Installed
+ *   Codex metadata.
+ * @returns {{
+ *   catalog: CodexCatalog;
+ *   report: {
+ *     excluded: number;
+ *     excludedReasons: Map<string, number>;
+ *     bundledInstructions: number;
+ *     fallbackInstructions: number;
+ *     enriched: number;
+ *     ambiguous: number;
+ *     incomplete: number;
+ *     unmatched: number;
+ *   };
+ * }}
+ *   Catalog and generation report.
  */
-function buildCatalog(exposedModels, bundledCatalog) {
+function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
   /** @type {Map<string, ModelInfo>} */
-  const bundledModelsBySlug = new Map(bundledCatalog.models.map((model) => [model.slug, model]));
+  const bundledModelsBySlug = new Map(
+    codexRuntime.bundledCatalog.models.map((model) => [model.slug, model]),
+  );
   const fallbackTemplate =
     bundledModelsBySlug.get("gpt-5.5") ??
-    bundledCatalog.models.find((model) => model.visibility === "list" && model.supported_in_api);
+    codexRuntime.bundledCatalog.models.find(
+      (model) => model.visibility === "list" && model.supported_in_api,
+    );
   if (fallbackTemplate === undefined) {
     throw new Error("Bundled Codex catalog has no public model to use for LiteLLM model metadata.");
   }
 
-  return {
-    models: exposedModels.map((exposedModel, index) => {
-      const bundledModel = bundledModelsBySlug.get(exposedModel.id);
-      if (bundledModel !== undefined) {
-        return withoutVolatileFields(bundledModel);
-      }
-      return createFallbackModel(fallbackTemplate, exposedModel.id, index);
-    }),
+  const report = {
+    excluded: 0,
+    excludedReasons: new Map(),
+    bundledInstructions: 0,
+    fallbackInstructions: 0,
+    enriched: 0,
+    ambiguous: 0,
+    incomplete: 0,
+    unmatched: 0,
   };
+  /** @type {ModelInfo[]} */
+  const models = [];
+  for (const exposedModel of exposedModels) {
+    const bundledModel = bundledModelsBySlug.get(exposedModel.id);
+    if (bundledModel !== undefined) {
+      report.bundledInstructions += 1;
+      models.push(structuredClone(bundledModel));
+      continue;
+    }
+
+    const idExclusionReason = getIdExclusionReason(exposedModel.id);
+    const candidates = modelsDevIndex.get(exposedModel.id) ?? [];
+    const reliableCandidates = candidates.filter(({ model }) =>
+      hasReliableAgentCapabilityMetadata(model),
+    );
+    const reliablyNonAgent =
+      reliableCandidates.length === candidates.length &&
+      reliableCandidates.length > 0 &&
+      !reliableCandidates.some(({ model }) => isAgentCapableModel(model));
+    if (idExclusionReason !== undefined || reliablyNonAgent) {
+      recordExclusion(report, idExclusionReason ?? "models.dev lacks required agent capabilities");
+      continue;
+    }
+
+    /** @type {Record<string, unknown> | undefined} */
+    let capabilityMetadata;
+    if (candidates.length === 1 && reliableCandidates.length === 1) {
+      capabilityMetadata = createCapabilityMetadata(candidates[0].model);
+      report.enriched += 1;
+    } else if (candidates.length > 1) {
+      report.ambiguous += 1;
+    } else if (candidates.length === 1) {
+      report.incomplete += 1;
+    } else {
+      report.unmatched += 1;
+    }
+    report.fallbackInstructions += 1;
+    models.push(
+      createFallbackModel(
+        fallbackTemplate,
+        codexRuntime.fallbackInstructions,
+        exposedModel.id,
+        models.length,
+        capabilityMetadata,
+      ),
+    );
+  }
+
+  return { catalog: { models }, report };
 }
 
 /**
  * @param {ModelInfo} template - Bundled public model used for required schema fields.
+ * @param {string} fallbackInstructions - Canonical unknown-model instructions captured from Codex.
  * @param {string} modelId - Exposed model id.
  * @param {number} index - Position in the exposed model list.
+ * @param {Record<string, unknown> | undefined} capabilityMetadata - Exact models.dev metadata
+ *   supported by Codex.
  * @returns {ModelInfo} Conservative catalog entry for an unknown model.
  */
-function createFallbackModel(template, modelId, index) {
+function createFallbackModel(template, fallbackInstructions, modelId, index, capabilityMetadata) {
   return {
-    base_instructions: "You are Codex, a coding agent.",
+    base_instructions: fallbackInstructions,
     experimental_supported_tools: [],
     priority: 1000 + index,
     shell_type: template.shell_type,
@@ -365,20 +677,125 @@ function createFallbackModel(template, modelId, index) {
     visibility: "list",
     description: "Available through LiteLLM.",
     display_name: modelId,
-    input_modalities: ["text"],
+    input_modalities: ["text", "image"],
     supports_image_detail_original: false,
     supports_search_tool: false,
+    ...capabilityMetadata,
   };
 }
 
 /**
- * @param {ModelInfo} model - Exact bundled model metadata.
- * @returns {ModelInfo} Stable bundled metadata without runtime cache fields.
+ * @param {ModelsDevModel} model - Exact models.dev record.
+ * @returns {boolean} Whether the record reliably describes an agent-capable model.
  */
-function withoutVolatileFields(model) {
-  const stableModel = structuredClone(model);
-  delete stableModel.comp_hash;
-  return stableModel;
+function isAgentCapableModel(model) {
+  return (
+    model.modalities?.input?.includes("text") === true &&
+    model.modalities?.output?.includes("text") === true &&
+    model.tool_call === true
+  );
+}
+
+/**
+ * @param {ModelsDevModel} model - Exact models.dev record.
+ * @returns {boolean} Whether all filtering capability fields are explicit.
+ */
+function hasReliableAgentCapabilityMetadata(model) {
+  return (
+    Array.isArray(model.modalities?.input) &&
+    Array.isArray(model.modalities.output) &&
+    typeof model.tool_call === "boolean"
+  );
+}
+
+/**
+ * @param {ModelsDevModel} model - One unambiguous exact models.dev match.
+ * @returns {Record<string, unknown>} Supported Codex ModelInfo capability fields.
+ */
+function createCapabilityMetadata(model) {
+  const supportedInputModalities = ["text", "image", "audio"].filter(
+    (modality) => model.modalities?.input?.includes(modality) === true,
+  );
+  const supportedReasoningEfforts = [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "ultra",
+    "persistent",
+  ].filter(
+    (effort) =>
+      model.reasoning_options?.some(
+        (option) => option.type === "effort" && option.values?.includes(effort) === true,
+      ) === true,
+  );
+  /** @type {Record<string, unknown>} */
+  const metadata = {
+    input_modalities: supportedInputModalities,
+    supported_reasoning_levels: supportedReasoningEfforts.map((effort) => ({
+      effort,
+      description: "",
+    })),
+  };
+  if (Number.isInteger(model.limit?.context) && Number(model.limit?.context) > 0) {
+    metadata.context_window = model.limit.context;
+    metadata.max_context_window = model.limit.context;
+  }
+  return metadata;
+}
+
+/**
+ * @param {string} modelId - LiteLLM model id.
+ * @returns {string | undefined} Unambiguous non-agent family.
+ */
+function getIdExclusionReason(modelId) {
+  /** @type {[string, RegExp][]} */
+  const families = [
+    ["embedding", /(?:^|[-_/.])(?:embed|embedding|embeddings)(?=$|[-_/.])/iu],
+    ["reranking", /(?:^|[-_/.])rerank(?:er|ing)?(?=$|[-_/.])/iu],
+    [
+      "transcription",
+      /(?:^|[-_/.])(?:asr|whisper|transcribe|transcription|parakeet)(?=$|[-_/.])/iu,
+    ],
+    ["speech synthesis", /(?:^|[-_/.])(?:tts|speech|kokoro|supertonic)(?=$|[-_/.])/iu],
+    [
+      "image generation",
+      /^(?:gpt|glm)-image(?:$|[-_/.])|(?:^|[-_/.])image-(?:edit|gen|generation)(?=$|[-_/.])/iu,
+    ],
+    ["video generation", /(?:^|[-_/.])(?:video|veo|sora)(?=$|[-_/.])/iu],
+  ];
+  return families.find(([, pattern]) => pattern.test(modelId))?.[0];
+}
+
+/**
+ * @param {{ excluded: number; excludedReasons: Map<string, number> }} report - Mutable generation
+ *   report.
+ * @param {string} reason - Stable exclusion category.
+ */
+function recordExclusion(report, reason) {
+  report.excluded += 1;
+  report.excludedReasons.set(reason, (report.excludedReasons.get(reason) ?? 0) + 1);
+}
+
+/**
+ * @param {Map<string, number>} counts - Stable category counts.
+ * @returns {string} UTF-8 bytewise ordered report fragment.
+ */
+function formatCounts(counts) {
+  return sortEntriesByKey([...counts.entries()])
+    .map(([reason, count]) => `${reason}=${count}`)
+    .join(", ");
+}
+
+/**
+ * @param {string} value - Text to fingerprint.
+ * @returns {string} Lowercase SHA-256 digest.
+ */
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 /**
@@ -401,9 +818,10 @@ function printUsage() {
   console.log(`Usage: node agent/scripts/generate-codex-litellm-model-catalog.mjs [options]
 
 Options:
-  --endpoint <url>  Models endpoint (default: ${defaultEndpoint})
-  --output <path>   Catalog output (default: ${defaultOutputPath})
-  -h, --help        Show this help`);
+  --endpoint <url>             Models endpoint (default: ${defaultEndpoint})
+  --models-dev-endpoint <url>  Capability catalog (default: ${defaultModelsDevEndpoint})
+  --output <path>              Catalog output (default: ${defaultOutputPath})
+  -h, --help                   Show this help`);
 }
 
 function isMain() {

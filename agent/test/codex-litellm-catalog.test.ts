@@ -15,6 +15,7 @@ const generatorPath = new URL(
 const profilePath = new URL("../../.codex/litellm.config.toml", import.meta.url);
 const providerAuthPath = new URL("../../.codex/pi-agent-auth.mjs", import.meta.url);
 const trackedCatalogPath = new URL("../../.codex/litellm-models.json", import.meta.url);
+const modelsDevFixturePath = new URL("./fixtures/models-dev-api.json", import.meta.url);
 
 afterEach(async () => {
   await Promise.all(
@@ -23,7 +24,7 @@ afterEach(async () => {
 });
 
 describe("Codex LiteLLM model catalog generator", () => {
-  it("writes exposed models using installed bundled model metadata", async () => {
+  it("uses bundled metadata, captured fallback instructions, and exact models.dev metadata", async () => {
     const runtimeDirectory = await createTemporaryDirectory();
     const outputPath = join(runtimeDirectory, "litellm-models.json");
     const bundledModel = {
@@ -46,20 +47,52 @@ describe("Codex LiteLLM model catalog generator", () => {
       base_instructions: "Bundled instructions",
       comp_hash: "bundled-hash",
     };
-    await installMockCodex(runtimeDirectory, { models: [bundledModel] });
+    await installMockCodex(
+      runtimeDirectory,
+      { models: [bundledModel] },
+      "Runtime fallback instructions",
+    );
+
+    const modelsDevFixture = await readFile(modelsDevFixturePath, "utf8");
 
     let requestedPath: string | undefined;
     let authorizationHeader: string | undefined;
     const server = createServer((request, response) => {
+      response.setHeader("content-type", "application/json");
+      if (request.url === "/models-dev/api.json") {
+        response.end(modelsDevFixture);
+        return;
+      }
       requestedPath = request.url;
       authorizationHeader = request.headers.authorization;
-      response.setHeader("content-type", "application/json");
       response.end(
         JSON.stringify({
           object: "list",
           data: [
             { id: "gpt-5.5", object: "model", created: 1, owned_by: "litellm" },
-            { id: "vendor/custom-code", object: "model", created: 2, owned_by: "litellm" },
+            { id: "coding-model", object: "model", created: 2, owned_by: "litellm" },
+            { id: "ambiguous-coder", object: "model", created: 3, owned_by: "litellm" },
+            { id: "gateway-alias", object: "model", created: 4, owned_by: "litellm" },
+            { id: "speech-model", object: "model", created: 5, owned_by: "litellm" },
+            { id: "whisper-1", object: "model", created: 6, owned_by: "litellm" },
+            { id: "text-embedding-3-large", object: "model", created: 7, owned_by: "litellm" },
+            { id: "gpt-image-2", object: "model", created: 8, owned_by: "litellm" },
+            {
+              id: "gemini-2.5-flash-preview-tts",
+              object: "model",
+              created: 9,
+              owned_by: "litellm",
+            },
+            { id: "glm-asr-latest", object: "model", created: 10, owned_by: "litellm" },
+            { id: "rerank-v3", object: "model", created: 11, owned_by: "litellm" },
+            { id: "sora-video-1", object: "model", created: 12, owned_by: "litellm" },
+            { id: "gpt-5.4-nano", object: "model", created: 13, owned_by: "litellm" },
+            { id: "gemini-3-pro-preview", object: "model", created: 14, owned_by: "litellm" },
+            { id: "glm-5.3", object: "model", created: 15, owned_by: "litellm" },
+            { id: "ambiguous-non-agent", object: "model", created: 16, owned_by: "litellm" },
+            { id: "no-text-input", object: "model", created: 17, owned_by: "litellm" },
+            { id: "no-text-output", object: "model", created: 18, owned_by: "litellm" },
+            { id: "no-tool-calling", object: "model", created: 19, owned_by: "litellm" },
           ],
         }),
       );
@@ -72,7 +105,7 @@ describe("Codex LiteLLM model catalog generator", () => {
         throw new Error("test server did not expose a TCP port");
       }
 
-      await execFile(
+      const { stdout } = await execFile(
         process.execPath,
         [
           generatorPath.pathname,
@@ -80,6 +113,8 @@ describe("Codex LiteLLM model catalog generator", () => {
           `http://127.0.0.1:${address.port}/v1/models`,
           "--output",
           outputPath,
+          "--models-dev-endpoint",
+          `http://127.0.0.1:${address.port}/models-dev/api.json`,
         ],
         {
           env: {
@@ -89,6 +124,10 @@ describe("Codex LiteLLM model catalog generator", () => {
           },
         },
       );
+      expect(stdout).toContain(
+        "Instructions: bundled=1 (codex debug models --bundled); fallback=6 (codex exec loopback, codex-cli 0.154.0, sha256=",
+      );
+      expect(stdout).toContain("Excluded 12 non-agent models");
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error === undefined ? resolve() : reject(error))),
@@ -96,71 +135,109 @@ describe("Codex LiteLLM model catalog generator", () => {
     }
 
     const catalog: unknown = JSON.parse(await readFile(outputPath, "utf8"));
+    const models = (catalog as { models: Array<Record<string, unknown>> }).models;
+    const modelsBySlug = Object.fromEntries(models.map((model) => [model.slug, model]));
     const stableBundledModel: Record<string, unknown> = structuredClone(bundledModel);
-    delete stableBundledModel.comp_hash;
     expect(requestedPath).toBe("/v1/models");
     expect(authorizationHeader).toBe("Bearer test-token");
-    expect(catalog).toMatchObject({
-      models: [
-        stableBundledModel,
-        {
-          slug: "vendor/custom-code",
-          base_instructions: "You are Codex, a coding agent.",
-          display_name: "vendor/custom-code",
-          description: "Available through LiteLLM.",
-          experimental_supported_tools: [],
-          visibility: "list",
-          supported_in_api: true,
-          priority: 1001,
-          shell_type: "unified_exec",
-          support_verbosity: false,
-          supported_reasoning_levels: [],
-          truncation_policy: { mode: "tokens", limit: 10_000 },
-          input_modalities: ["text"],
-          supports_search_tool: false,
-        },
+    expect(models.map((model) => model.slug)).toEqual([
+      "ambiguous-coder",
+      "coding-model",
+      "gateway-alias",
+      "gemini-3-pro-preview",
+      "glm-5.3",
+      "gpt-5.4-nano",
+      "gpt-5.5",
+    ]);
+    expect(modelsBySlug["gpt-5.5"]).toEqual(stableBundledModel);
+    expect(modelsBySlug["ambiguous-coder"]).toMatchObject({
+      base_instructions: "Runtime fallback instructions",
+      input_modalities: ["text", "image"],
+      supported_reasoning_levels: [],
+    });
+    expect(modelsBySlug["coding-model"]).toMatchObject({
+      base_instructions: "Runtime fallback instructions",
+      context_window: 200_000,
+      max_context_window: 200_000,
+      input_modalities: ["text", "image"],
+      supported_reasoning_levels: [
+        { effort: "low", description: "" },
+        { effort: "high", description: "" },
       ],
     });
-    expect(catalog).not.toHaveProperty("models.0.comp_hash");
-    expect(catalog).not.toHaveProperty("models.1.comp_hash");
+    expect(modelsBySlug["gateway-alias"]).toMatchObject({
+      base_instructions: "Runtime fallback instructions",
+      input_modalities: ["text", "image"],
+    });
   });
 
   it("writes canonical bytes independent of gateway model order", async () => {
     const runtimeDirectory = await createTemporaryDirectory();
     const firstOutputPath = join(runtimeDirectory, "first.json");
     const secondOutputPath = join(runtimeDirectory, "second.json");
-    await installMockCodex(runtimeDirectory, {
-      models: [
-        {
-          slug: "gpt-5.5",
-          display_name: "GPT-5.5",
-          experimental_supported_tools: [],
-          priority: 1,
-          shell_type: "unified_exec",
-          support_verbosity: true,
-          supported_in_api: true,
-          supported_reasoning_levels: [],
-          truncation_policy: { mode: "tokens", limit: 10_000 },
-          visibility: "list",
-          base_instructions: "Bundled instructions",
-          model_messages: { zeta: "last", alpha: "first" },
-        },
-      ],
-    });
+    await installMockCodex(
+      runtimeDirectory,
+      {
+        models: [
+          {
+            slug: "gpt-5.5",
+            display_name: "GPT-5.5",
+            experimental_supported_tools: [],
+            priority: 1,
+            shell_type: "unified_exec",
+            support_verbosity: true,
+            supported_in_api: true,
+            supported_reasoning_levels: [],
+            truncation_policy: { mode: "tokens", limit: 10_000 },
+            visibility: "list",
+            base_instructions: "Bundled instructions",
+            model_messages: { zeta: "last", alpha: "first" },
+          },
+        ],
+      },
+      "Runtime fallback instructions",
+    );
+
+    const modelsDevFixture = JSON.parse(await readFile(modelsDevFixturePath, "utf8")) as object;
 
     const models = [
       { id: "vendor/zeta", object: "model", created: 2, owned_by: "litellm" },
       { id: "vendor/alpha", object: "model", created: 1, owned_by: "litellm" },
     ];
-    let requestCount = 0;
+    let gatewayRequestCount = 0;
+    let modelsDevRequestCount = 0;
     const server = createServer((_request, response) => {
-      requestCount += 1;
       response.setHeader("content-type", "application/json");
+      if (_request.url === "/models-dev/api.json") {
+        modelsDevRequestCount += 1;
+        const entries = Object.entries(modelsDevFixture);
+        const reverseModelsDevOrder = modelsDevRequestCount === 2;
+        const orderedEntries = reverseModelsDevOrder ? entries.reverse() : entries;
+        response.end(
+          JSON.stringify(
+            Object.fromEntries(
+              orderedEntries.map(([providerId, provider]) => [
+                providerId,
+                {
+                  ...provider,
+                  models: Object.fromEntries(
+                    reverseModelsDevOrder
+                      ? Object.entries(provider.models).reverse()
+                      : Object.entries(provider.models),
+                  ),
+                },
+              ]),
+            ),
+          ),
+        );
+        return;
+      }
+      gatewayRequestCount += 1;
       response.end(
         JSON.stringify({
           object: "list",
           data:
-            requestCount === 1
+            gatewayRequestCount === 1
               ? models
               : [...models].reverse().map((model) => ({
                   ...model,
@@ -181,6 +258,8 @@ describe("Codex LiteLLM model catalog generator", () => {
         generatorPath.pathname,
         "--endpoint",
         `http://127.0.0.1:${address.port}/v1/models`,
+        "--models-dev-endpoint",
+        `http://127.0.0.1:${address.port}/models-dev/api.json`,
       ];
       const environment = {
         ...process.env,
@@ -245,9 +324,30 @@ describe("Codex LiteLLM model catalog generator", () => {
   it("rejects a non-standard models response", async () => {
     const runtimeDirectory = await createTemporaryDirectory();
     const outputPath = join(runtimeDirectory, "litellm-models.json");
-    await installMockCodex(runtimeDirectory, { models: [{ slug: "gpt-5.5" }] });
-    const server = createServer((_request, response) => {
+    await installMockCodex(runtimeDirectory, {
+      models: [
+        {
+          slug: "gpt-5.5",
+          display_name: "GPT-5.5",
+          experimental_supported_tools: [],
+          priority: 1,
+          shell_type: "unified_exec",
+          support_verbosity: true,
+          supported_in_api: true,
+          supported_reasoning_levels: [],
+          truncation_policy: { mode: "tokens", limit: 10_000 },
+          visibility: "list",
+          base_instructions: "Bundled instructions",
+        },
+      ],
+    });
+    const modelsDevFixture = await readFile(modelsDevFixturePath, "utf8");
+    const server = createServer((request, response) => {
       response.setHeader("content-type", "application/json");
+      if (request.url === "/models-dev/api.json") {
+        response.end(modelsDevFixture);
+        return;
+      }
       response.end(JSON.stringify({ object: "list", data: [{ id: "missing-standard-fields" }] }));
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -267,6 +367,8 @@ describe("Codex LiteLLM model catalog generator", () => {
             `http://127.0.0.1:${address.port}/models`,
             "--output",
             outputPath,
+            "--models-dev-endpoint",
+            `http://127.0.0.1:${address.port}/models-dev/api.json`,
           ],
           {
             env: {
@@ -304,6 +406,10 @@ describe("Codex LiteLLM profile", () => {
     expect(profile).not.toMatch(/env_key\s*=/);
     expect(profile).not.toMatch(/experimental_bearer_token\s*=/);
     expect(profile).not.toMatch(/requires_openai_auth\s*=/);
+    expect(profile).not.toMatch(/^model\s*=/m);
+    expect(profile).not.toMatch(/^approval_policy\s*=/m);
+    expect(profile).not.toMatch(/^sandbox_mode\s*=/m);
+    expect(profile).not.toContain("[features]");
   });
 });
 
@@ -321,6 +427,24 @@ describe("tracked LiteLLM model catalog", () => {
     expect(new Set(catalog.models.map((model) => model.slug)).size).toBe(catalog.models.length);
     expectCanonicalKeyOrder(catalog);
 
+    const slugs = catalog.models.map((model) => String(model.slug));
+    expect(slugs).toEqual(expect.arrayContaining(["gpt-5.5", "gemini-2.5-flash", "glm-5.3"]));
+    expect(slugs).not.toEqual(
+      expect.arrayContaining([
+        "whisper-1",
+        "gpt-4o-transcribe",
+        "glm-asr-latest",
+        "tts-1",
+        "gemini-2.5-flash-preview-tts",
+        "gpt-image-2",
+        "qwen3-embedding",
+        "text-embedding-3-large",
+      ]),
+    );
+    expect(catalog.models.find((model) => model.slug === "Example")?.base_instructions).not.toBe(
+      "You are Codex, a coding agent.",
+    );
+
     for (const model of catalog.models) {
       expect(typeof model.slug).toBe("string");
       expect(String(model.slug).length).toBeGreaterThan(0);
@@ -336,7 +460,6 @@ describe("tracked LiteLLM model catalog", () => {
       expect(Array.isArray(model.truncation_policy)).toBe(false);
       expect(typeof model.visibility).toBe("string");
       expect(hasCodexInstructions(model)).toBe(true);
-      expect(model).not.toHaveProperty("comp_hash");
       expect(model).not.toHaveProperty("created");
       expect(model).not.toHaveProperty("object");
       expect(model).not.toHaveProperty("owned_by");
@@ -412,9 +535,30 @@ async function createTemporaryDirectory(): Promise<string> {
   return directory;
 }
 
-async function installMockCodex(runtimeDirectory: string, bundledCatalog: object): Promise<void> {
+async function installMockCodex(
+  runtimeDirectory: string,
+  bundledCatalog: object,
+  fallbackInstructions = "Runtime fallback instructions",
+): Promise<void> {
   const executablePath = join(runtimeDirectory, "codex");
-  const executable = `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(bundledCatalog))});\n`;
+  const executable = `#!/usr/bin/env node
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+if (process.argv.includes("--version")) {
+  process.stdout.write("codex-cli 0.154.0\\n");
+} else if (process.argv.includes("--bundled")) {
+  process.stdout.write(${JSON.stringify(JSON.stringify(bundledCatalog))});
+} else {
+  const config = await readFile(join(process.env.CODEX_HOME, "config.toml"), "utf8");
+  const baseUrl = config.match(/base_url = "([^"]+)"/)?.[1];
+  await fetch(baseUrl + "/responses", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ instructions: ${JSON.stringify(fallbackInstructions)} }),
+  });
+  process.exitCode = 1;
+}
+`;
   await writeFile(executablePath, executable, "utf8");
   await chmod(executablePath, 0o755);
 }

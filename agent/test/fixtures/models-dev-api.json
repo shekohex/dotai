@@ -1,0 +1,113 @@
+{
+  "provider-a": {
+    "id": "provider-a",
+    "models": {
+      "coding-model": {
+        "id": "coding-model",
+        "limit": {
+          "context": 200000,
+          "output": 32000
+        },
+        "modalities": {
+          "input": ["text", "image", "pdf"],
+          "output": ["text"]
+        },
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["low", "high"]
+          }
+        ],
+        "tool_call": true
+      },
+      "speech-model": {
+        "id": "speech-model",
+        "modalities": {
+          "input": ["text"],
+          "output": ["audio"]
+        },
+        "tool_call": false
+      },
+      "no-text-input": {
+        "id": "no-text-input",
+        "modalities": {
+          "input": ["image"],
+          "output": ["text"]
+        },
+        "tool_call": true
+      },
+      "no-text-output": {
+        "id": "no-text-output",
+        "modalities": {
+          "input": ["text"],
+          "output": ["audio"]
+        },
+        "tool_call": true
+      },
+      "no-tool-calling": {
+        "id": "no-tool-calling",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "tool_call": false
+      }
+    }
+  },
+  "provider-b": {
+    "id": "provider-b",
+    "models": {
+      "ambiguous-coder": {
+        "id": "ambiguous-coder",
+        "limit": {
+          "context": 128000
+        },
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "tool_call": true
+      },
+      "ambiguous-non-agent": {
+        "id": "ambiguous-non-agent",
+        "modalities": {
+          "input": ["text"],
+          "output": ["audio"]
+        },
+        "tool_call": false
+      }
+    }
+  },
+  "provider-c": {
+    "id": "provider-c",
+    "models": {
+      "ambiguous-coder": {
+        "id": "ambiguous-coder",
+        "limit": {
+          "context": 256000
+        },
+        "modalities": {
+          "input": ["text", "image"],
+          "output": ["text"]
+        },
+        "tool_call": true
+      },
+      "ambiguous-non-agent": {
+        "id": "ambiguous-non-agent",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "tool_call": false
+      },
+      "gateway-alias": {
+        "id": "different-canonical-id",
+        "modalities": {
+          "input": ["text"],
+          "output": ["text"]
+        },
+        "tool_call": true
+      }
+    }
+  }
+}

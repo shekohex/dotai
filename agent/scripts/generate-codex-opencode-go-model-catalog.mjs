@@ -6,73 +6,33 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-/**
- * IDs come only from https://opencode.ai/docs/go/#endpoints. Capabilities use exact `opencode-go`
- * entries from https://models.dev/api.json.
- *
- * @type {VerifiedModel[]}
- */
-const documentedResponsesModels = [
-  {
-    id: "gpt-5.6-luna",
-    description: "Cost-efficient GPT-5.6 model for fast, high-volume workloads",
-    contextWindow: 1_050_000,
-    inputModalities: ["text", "image", "pdf"],
-    name: "GPT-5.6 Luna",
-    outputModalities: ["text"],
-    reasoningOptions: [
-      { type: "effort", values: ["none", "low", "medium", "high", "xhigh", "max"] },
-    ],
-    toolCall: true,
-  },
-  {
-    id: "grok-4.6",
-    description:
-      "xAI's frontier model for long-running agents, coding, knowledge work, and visual projects",
-    contextWindow: 500_000,
-    inputModalities: ["text", "image"],
-    name: "Grok 4.6",
-    outputModalities: ["text"],
-    reasoningOptions: [{ type: "effort", values: ["low", "medium", "high", "xhigh"] }],
-    toolCall: true,
-  },
-  {
-    id: "muse-spark-1.2-contributor",
-    description:
-      "Muse Spark 1.2 is a coding-focused update to Muse Spark 1.1 with improvements in code generation, complex debugging, codebase understanding, and end-to-end developer workflows.",
-    contextWindow: 1_048_576,
-    inputModalities: ["text", "image", "video", "pdf", "audio"],
-    name: "Muse Spark 1.2 Contributor",
-    outputModalities: ["text"],
-    reasoningOptions: [{ type: "effort", values: ["minimal", "low", "medium", "high", "xhigh"] }],
-    toolCall: true,
-  },
-  {
-    id: "muse-spark-1.3-contributor",
-    description:
-      "Muse Spark 1.3 is a multimodal reasoning model from Meta for coding and agentic workflows.",
-    contextWindow: 1_048_576,
-    inputModalities: ["text", "image", "video", "pdf", "audio"],
-    name: "Muse Spark 1.3 Contributor",
-    outputModalities: ["text"],
-    reasoningOptions: [{ type: "effort", values: ["minimal", "low", "medium", "high", "xhigh"] }],
-    toolCall: true,
-  },
-];
+const defaultEndpoint = "https://opencode.ai/zen/go/v1/models";
+const defaultModelsDevEndpoint = "https://models.dev/api.json";
 const defaultOutputPath = resolve(import.meta.dirname, "../../.codex/opencode-go-models.json");
+const authHelperPath = resolve(import.meta.dirname, "../../.codex/pi-agent-auth.mjs");
 
 /**
  * @typedef {{
  *   id: string;
- *   name: string;
- *   description: string;
- *   contextWindow: number;
- *   inputModalities: string[];
- *   outputModalities: string[];
- *   reasoningOptions: Array<{ type: string; values?: string[] }>;
- *   toolCall: boolean;
- * }} VerifiedModel
+ *   object: "model";
+ *   created: number;
+ *   owned_by: string;
+ * }} ExposedModel
  */
+/** @typedef {{ object: "list"; data: ExposedModel[] }} ModelsResponse */
+/**
+ * @typedef {Record<string, unknown> & {
+ *   id: string;
+ *   name?: string;
+ *   modalities?: { input?: string[]; output?: string[] };
+ *   tool_call?: boolean;
+ *   limit?: { context?: number };
+ *   reasoning?: boolean;
+ *   reasoning_options?: { type?: string; values?: string[] }[];
+ * }} ModelsDevModel
+ */
+/** @typedef {Map<string, ModelsDevModel>} ModelsDevIndex */
+/** @typedef {{ endpoint: string; modelsDevEndpoint: string; outputPath: string; help: boolean }} GeneratorOptions */
 /**
  * @typedef {Record<string, unknown> & {
  *   slug: string;
@@ -113,28 +73,270 @@ if (isMain()) {
 }
 
 async function main() {
-  const outputPath = parseOutputPath(process.argv.slice(2));
-  const codexRuntime = await loadCodexRuntime();
-  const { catalog, bundledInstructionCount, fallbackInstructionCount } = buildCatalog(codexRuntime);
-  await writeFile(outputPath, serializeCatalog(catalog), "utf8");
-  console.log(`Wrote ${catalog.models.length} OpenCode Go models to ${outputPath}`);
+  const options = parseArguments(process.argv.slice(2));
+  if (options.help) {
+    printUsage();
+    return;
+  }
+  const apiKey = loadApiKey();
+  const [exposedModels, modelsDevIndex, codexRuntime] = await Promise.all([
+    fetchExposedModels(options.endpoint, apiKey),
+    fetchModelsDevIndex(options.modelsDevEndpoint),
+    loadCodexRuntime(),
+  ]);
+  const { catalog, report } = buildCatalog(exposedModels, modelsDevIndex, codexRuntime);
+  await writeFile(options.outputPath, serializeCatalog(catalog), "utf8");
+  console.log(`Wrote ${catalog.models.length} OpenCode Go models to ${options.outputPath}`);
   console.log(
-    `Instructions: ${bundledInstructionCount} exact bundled; ${fallbackInstructionCount} installed Codex fallback (${codexRuntime.version})`,
+    `Excluded ${report.excluded} non-agent models: ${formatCounts(report.excludedReasons)}`,
+  );
+  console.log(
+    `Instructions: bundled=${report.bundledInstructions}; fallback=${report.fallbackInstructions} (${codexRuntime.version})`,
+  );
+  console.log(
+    `Capabilities: ${report.enriched} exact models.dev matches; ${report.unmatched} retained without models.dev metadata`,
   );
 }
 
 /**
  * @param {string[]} argumentsList - CLI arguments to parse.
- * @returns {string} Resolved output path.
+ * @returns {GeneratorOptions} Parsed generator options.
  */
-function parseOutputPath(argumentsList) {
-  if (argumentsList.length === 0) {
-    return defaultOutputPath;
+function parseArguments(argumentsList) {
+  const options = {
+    endpoint: defaultEndpoint,
+    modelsDevEndpoint: defaultModelsDevEndpoint,
+    outputPath: defaultOutputPath,
+    help: false,
+  };
+  for (let index = 0; index < argumentsList.length; index += 1) {
+    const argument = argumentsList[index];
+    if (argument === "--endpoint") {
+      options.endpoint = readOptionValue(argumentsList, ++index, argument);
+    } else if (argument === "--models-dev-endpoint") {
+      options.modelsDevEndpoint = readOptionValue(argumentsList, ++index, argument);
+    } else if (argument === "--output") {
+      options.outputPath = resolve(readOptionValue(argumentsList, ++index, argument));
+    } else if (argument === "--help" || argument === "-h") {
+      options.help = true;
+    } else {
+      throw new Error(`Unknown option: ${argument}`);
+    }
   }
-  if (argumentsList.length === 2 && argumentsList[0] === "--output") {
-    return resolve(argumentsList[1]);
+
+  return options;
+}
+
+/**
+ * @param {string[]} argumentsList - Arguments to parse.
+ * @param {number} index - Option value index.
+ * @param {string} option - Option name.
+ * @returns {string} Option value.
+ */
+function readOptionValue(argumentsList, index, option) {
+  const value = argumentsList[index];
+  if (value === undefined || value.startsWith("--")) {
+    throw new Error(`${option} requires a value.`);
   }
-  throw new Error("Usage: generate-codex-opencode-go-model-catalog.mjs [--output <path>]");
+  return value;
+}
+
+/** @returns {string} OpenCode Go API key without printing it. */
+function loadApiKey() {
+  const configuredKey = process.env.OPENCODE_GO_API_KEY?.trim();
+  if (configuredKey !== undefined && configuredKey.length > 0) {
+    return configuredKey;
+  }
+
+  try {
+    const key = execFileSync(process.execPath, [authHelperPath, "opencode-go"], {
+      encoding: "utf8",
+    }).trim();
+    if (key.length === 0) {
+      throw new Error("empty key output");
+    }
+    return key;
+  } catch (error) {
+    throw new Error(
+      `Could not read the OpenCode Go API key. Set OPENCODE_GO_API_KEY or configure Pi auth: ${getErrorMessage(error)}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * @param {string} endpoint - OpenCode Go models endpoint.
+ * @param {string} apiKey - Bearer token for the endpoint.
+ * @returns {Promise<ExposedModel[]>} Validated, unique exposed models.
+ */
+async function fetchExposedModels(endpoint, apiKey) {
+  /** @type {Response} */
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      headers: { authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (error) {
+    throw new Error(`Could not fetch ${endpoint}: ${getErrorMessage(error)}`, {
+      cause: error,
+    });
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `GET ${endpoint} returned HTTP ${response.status}. Check the endpoint and key.`,
+    );
+  }
+
+  /** @type {unknown} */
+  let payload;
+  try {
+    payload = JSON.parse(await response.text());
+  } catch {
+    throw new Error(`GET ${endpoint} returned invalid JSON.`);
+  }
+  if (!isStandardModelsResponse(payload)) {
+    throw new Error(
+      `GET ${endpoint} did not return an OpenAI-compatible models list with object="list" and standard model entries.`,
+    );
+  }
+  return deduplicateModels(payload.data);
+}
+
+/**
+ * @param {string} endpoint - Models.dev API endpoint.
+ * @returns {Promise<ModelsDevIndex>} Exact OpenCode Go model metadata by ID.
+ */
+async function fetchModelsDevIndex(endpoint) {
+  /** @type {Response} */
+  let response;
+  try {
+    response = await fetch(endpoint, { signal: AbortSignal.timeout(30_000) });
+  } catch (error) {
+    throw new Error(`Could not fetch ${endpoint}: ${getErrorMessage(error)}`, {
+      cause: error,
+    });
+  }
+  if (!response.ok) {
+    throw new Error(`GET ${endpoint} returned HTTP ${response.status}.`);
+  }
+
+  /** @type {unknown} */
+  let payload;
+  try {
+    payload = JSON.parse(await response.text());
+  } catch {
+    throw new Error(`GET ${endpoint} returned invalid JSON.`);
+  }
+  if (!isModelsDevCatalog(payload)) {
+    throw new Error(`GET ${endpoint} returned an unsupported models.dev catalog shape.`);
+  }
+
+  const provider = payload["opencode-go"];
+  if (!isRecord(provider) || !isRecord(provider.models)) {
+    throw new Error(`GET ${endpoint} did not contain an opencode-go provider catalog.`);
+  }
+  /** @type {ModelsDevIndex} */
+  const models = new Map();
+  for (const [modelId, model] of Object.entries(provider.models)) {
+    if (isModelsDevModel(model) && model.id === modelId) {
+      models.set(modelId, model);
+    }
+  }
+  return models;
+}
+
+/**
+ * @param {unknown} payload - Parsed models.dev response.
+ * @returns {payload is Record<string, { models: Record<string, unknown> }>} Valid catalog shape.
+ */
+function isModelsDevCatalog(payload) {
+  return (
+    isRecord(payload) &&
+    Object.keys(payload).length > 0 &&
+    Object.values(payload).every((provider) => isRecord(provider) && isRecord(provider.models))
+  );
+}
+
+/**
+ * @param {unknown} model - Candidate models.dev model.
+ * @returns {model is ModelsDevModel} Whether model has an exact ID.
+ */
+function isModelsDevModel(model) {
+  return isRecord(model) && typeof model.id === "string" && model.id.length > 0;
+}
+
+/**
+ * @param {unknown} payload - Parsed endpoint response.
+ * @returns {payload is ModelsResponse} Whether payload is a standard models response.
+ */
+function isStandardModelsResponse(payload) {
+  return (
+    isRecord(payload) &&
+    payload.object === "list" &&
+    Array.isArray(payload.data) &&
+    payload.data.length > 0 &&
+    payload.data.every(isStandardModel)
+  );
+}
+
+/**
+ * @param {unknown} model - Candidate endpoint model entry.
+ * @returns {model is ExposedModel} Whether model has standard fields.
+ */
+function isStandardModel(model) {
+  return (
+    isRecord(model) &&
+    typeof model.id === "string" &&
+    model.id.length > 0 &&
+    model.object === "model" &&
+    typeof model.created === "number" &&
+    Number.isInteger(model.created) &&
+    typeof model.owned_by === "string" &&
+    model.owned_by.length > 0
+  );
+}
+
+/**
+ * @param {ExposedModel[]} models - Validated endpoint models.
+ * @returns {ExposedModel[]} Unique models ordered by ID.
+ */
+function deduplicateModels(models) {
+  /** @type {Map<string, ExposedModel>} */
+  const modelsById = new Map();
+  for (const model of models) {
+    if (!modelsById.has(model.id)) {
+      modelsById.set(model.id, model);
+    }
+  }
+  return sortModelsById([...modelsById.values()]);
+}
+
+/**
+ * @param {ExposedModel[]} models - Models to order.
+ * @returns {ExposedModel[]} Models ordered by UTF-8 ID bytes.
+ */
+function sortModelsById(models) {
+  /** @type {ExposedModel[]} */
+  const sortedModels = [];
+  for (const model of models) {
+    const insertionIndex = sortedModels.findIndex(
+      (sortedModel) => compareUtf8Bytes(model.id, sortedModel.id) < 0,
+    );
+    sortedModels.splice(insertionIndex === -1 ? sortedModels.length : insertionIndex, 0, model);
+  }
+  return sortedModels;
+}
+
+function printUsage() {
+  console.log(`Usage: node agent/scripts/generate-codex-opencode-go-model-catalog.mjs [options]
+
+Options:
+  --endpoint <url>             OpenCode Go models endpoint (default: ${defaultEndpoint})
+  --models-dev-endpoint <url>  Capability catalog (default: ${defaultModelsDevEndpoint})
+  --output <path>              Catalog output (default: ${defaultOutputPath})
+  -h, --help                   Show this help`);
 }
 
 /**
@@ -165,8 +367,9 @@ function sortObjectKeys(value) {
 }
 
 /**
- * @param {[string, unknown][]} entries - Object entries to order.
- * @returns {[string, unknown][]} Entries ordered by UTF-8 key bytes.
+ * @template T
+ * @param {[string, T][]} entries - Object entries to order.
+ * @returns {[string, T][]} Entries ordered by UTF-8 key bytes.
  */
 function sortEntriesByKey(entries) {
   /** @type {[string, unknown][]} */
@@ -371,16 +574,24 @@ function loadBundledCatalog() {
 }
 
 /**
+ * @param {ExposedModel[]} exposedModels - Models returned by OpenCode Go.
+ * @param {ModelsDevIndex} modelsDevIndex - Exact models.dev OpenCode Go metadata.
  * @param {{ bundledCatalog: CodexCatalog; fallbackInstructions: string }} codexRuntime - Installed
  *   Codex metadata.
  * @returns {{
  *   catalog: CodexCatalog;
- *   bundledInstructionCount: number;
- *   fallbackInstructionCount: number;
+ *   report: {
+ *     excluded: number;
+ *     excludedReasons: Map<string, number>;
+ *     bundledInstructions: number;
+ *     fallbackInstructions: number;
+ *     enriched: number;
+ *     unmatched: number;
+ *   };
  * }}
- *   OpenCode Go catalog and instruction provenance counts.
+ *   OpenCode Go catalog and generation report.
  */
-function buildCatalog(codexRuntime) {
+function buildCatalog(exposedModels, modelsDevIndex, codexRuntime) {
   const { bundledCatalog, fallbackInstructions } = codexRuntime;
   /** @type {Map<string, ModelInfo>} */
   const bundledModelsBySlug = new Map(bundledCatalog.models.map((model) => [model.slug, model]));
@@ -392,101 +603,189 @@ function buildCatalog(codexRuntime) {
   }
   const reasoningMetadata = createReasoningMetadata(bundledCatalog.models);
 
-  const incompatibleModel = documentedResponsesModels.find(
-    (model) =>
-      !model.toolCall ||
-      !model.inputModalities.includes("text") ||
-      !model.outputModalities.includes("text"),
-  );
-  if (incompatibleModel !== undefined) {
-    throw new Error(
-      `Documented Responses model ${incompatibleModel.id} is not a text tool-calling agent in models.dev.`,
+  const report = {
+    excluded: 0,
+    excludedReasons: new Map(),
+    bundledInstructions: 0,
+    fallbackInstructions: 0,
+    enriched: 0,
+    unmatched: 0,
+  };
+  const models = [];
+  for (const exposedModel of exposedModels) {
+    const idExclusionReason = getIdExclusionReason(exposedModel.id);
+    const capabilityMetadata = modelsDevIndex.get(exposedModel.id);
+    const hasReliableMetadata =
+      capabilityMetadata !== undefined && hasReliableAgentCapabilityMetadata(capabilityMetadata);
+    if (
+      idExclusionReason !== undefined ||
+      (hasReliableMetadata && !isAgentCapableModel(capabilityMetadata))
+    ) {
+      recordExclusion(report, idExclusionReason ?? "models.dev lacks required agent capabilities");
+      continue;
+    }
+
+    const bundledModel = bundledModelsBySlug.get(exposedModel.id);
+    if (bundledModel !== undefined) {
+      report.bundledInstructions += 1;
+      models.push(withoutVolatileFields(bundledModel));
+      continue;
+    }
+    if (capabilityMetadata === undefined) {
+      report.unmatched += 1;
+    } else {
+      report.enriched += 1;
+    }
+    report.fallbackInstructions += 1;
+    models.push(
+      createFallbackModel(
+        fallbackTemplate,
+        fallbackInstructions,
+        exposedModel.id,
+        models.length,
+        resolveModelsDevMetadata(capabilityMetadata, reasoningMetadata),
+      ),
     );
   }
-
-  let bundledInstructionCount = 0;
-  let fallbackInstructionCount = 0;
-  const models = sortModelsById(documentedResponsesModels).map((verifiedModel, index) => {
-    const bundledModel = bundledModelsBySlug.get(verifiedModel.id);
-    if (bundledModel !== undefined) {
-      bundledInstructionCount += 1;
-      return withoutVolatileFields(bundledModel);
-    }
-    fallbackInstructionCount += 1;
-    return createFallbackModel(
-      fallbackTemplate,
-      fallbackInstructions,
-      reasoningMetadata,
-      verifiedModel,
-      index,
-    );
-  });
 
   return {
     catalog: { models },
-    bundledInstructionCount,
-    fallbackInstructionCount,
+    report,
   };
-}
-
-/**
- * @param {VerifiedModel[]} models - Models to order.
- * @returns {VerifiedModel[]} Models ordered by UTF-8 ID bytes.
- */
-function sortModelsById(models) {
-  /** @type {VerifiedModel[]} */
-  const sortedModels = [];
-  for (const model of models) {
-    const insertionIndex = sortedModels.findIndex(
-      (sortedModel) => compareUtf8Bytes(model.id, sortedModel.id) < 0,
-    );
-    sortedModels.splice(insertionIndex === -1 ? sortedModels.length : insertionIndex, 0, model);
-  }
-  return sortedModels;
 }
 
 /**
  * @param {ModelInfo} template - Public bundled model used for required schema fields.
  * @param {string} fallbackInstructions - Exact unknown-model instructions captured from Codex.
- * @param {ReasoningMetadata} reasoningMetadata - Installed Codex effort metadata.
- * @param {VerifiedModel} verifiedModel - Exact models.dev OpenCode Go metadata.
+ * @param {string} modelId - Exposed OpenCode Go model ID.
  * @param {number} index - Position in canonical model order.
+ * @param {Record<string, unknown>} capabilityMetadata - Normalized models.dev metadata.
  * @returns {ModelInfo} Conservative metadata for an unknown model.
  */
-function createFallbackModel(
-  template,
-  fallbackInstructions,
-  reasoningMetadata,
-  verifiedModel,
-  index,
-) {
+function createFallbackModel(template, fallbackInstructions, modelId, index, capabilityMetadata) {
   return {
     base_instructions: fallbackInstructions,
-    context_window: verifiedModel.contextWindow,
-    description: verifiedModel.description,
-    display_name: verifiedModel.name,
+    description: "Available through OpenCode Go.",
+    display_name: modelId,
     experimental_supported_tools: [],
-    input_modalities: ["text", "image"].filter((modality) =>
-      verifiedModel.inputModalities.includes(modality),
-    ),
-    max_context_window: verifiedModel.contextWindow,
+    input_modalities: ["text"],
     priority: 1000 + index,
     shell_type: template.shell_type,
-    slug: verifiedModel.id,
+    slug: modelId,
     support_verbosity: false,
     supported_in_api: true,
-    supported_reasoning_levels: normalizeReasoningEfforts(verifiedModel, reasoningMetadata).map(
-      (effort) => ({
-        description: reasoningMetadata.descriptions.get(effort) ?? "",
-        effort,
-      }),
-    ),
+    supported_reasoning_levels: [],
     supports_image_detail_original: false,
     supports_reasoning_summary_parameter: false,
     supports_search_tool: false,
     truncation_policy: structuredClone(template.truncation_policy),
     visibility: "list",
+    ...capabilityMetadata,
   };
+}
+
+/**
+ * @param {ModelsDevModel | undefined} model - Exact models.dev OpenCode Go record.
+ * @param {ReasoningMetadata} reasoningMetadata - Installed Codex effort metadata.
+ * @returns {Record<string, unknown>} Normalized metadata safe for Codex.
+ */
+function resolveModelsDevMetadata(model, reasoningMetadata) {
+  if (model === undefined) {
+    return {};
+  }
+
+  /** @type {Record<string, unknown>} */
+  const metadata = {};
+  const displayName = normalizeNonEmptyString(model.name);
+  if (displayName !== null) {
+    metadata.display_name = displayName;
+  }
+
+  const inputModalities = normalizeInputModalities(model.modalities?.input);
+  if (inputModalities !== null) {
+    metadata.input_modalities = inputModalities;
+  }
+
+  const contextWindow = normalizePositiveInteger(model.limit?.context);
+  if (contextWindow !== null) {
+    metadata.context_window = contextWindow;
+    metadata.max_context_window = contextWindow;
+  }
+
+  const supportedReasoningEfforts = normalizeReasoningEfforts(model, reasoningMetadata);
+  if (supportedReasoningEfforts.length > 0) {
+    metadata.supported_reasoning_levels = supportedReasoningEfforts.map((effort) => ({
+      description: reasoningMetadata.descriptions.get(effort) ?? "",
+      effort,
+    }));
+  }
+  return metadata;
+}
+
+/**
+ * @param {ModelsDevModel} model - Exact models.dev OpenCode Go record.
+ * @returns {boolean} Whether metadata explicitly describes a coding agent.
+ */
+function isAgentCapableModel(model) {
+  return (
+    model.modalities?.input?.includes("text") === true &&
+    model.modalities?.output?.includes("text") === true &&
+    model.tool_call === true
+  );
+}
+
+/**
+ * @param {ModelsDevModel} model - Exact models.dev OpenCode Go record.
+ * @returns {boolean} Whether filtering fields are all explicit.
+ */
+function hasReliableAgentCapabilityMetadata(model) {
+  return (
+    Array.isArray(model.modalities?.input) &&
+    Array.isArray(model.modalities?.output) &&
+    typeof model.tool_call === "boolean"
+  );
+}
+
+/**
+ * @param {string} modelId - Exposed OpenCode Go model ID.
+ * @returns {string | undefined} Generic non-agent family, if unambiguous.
+ */
+function getIdExclusionReason(modelId) {
+  /** @type {[string, RegExp][]} */
+  const families = [
+    ["embedding", /(?:^|[-_/.])(?:embed|embedding|embeddings)(?=$|[-_/.])/iu],
+    ["reranking", /(?:^|[-_/.])rerank(?:er|ing)?(?=$|[-_/.])/iu],
+    [
+      "transcription",
+      /(?:^|[-_/.])(?:asr|whisper|transcribe|transcription|parakeet)(?=$|[-_/.])/iu,
+    ],
+    ["speech synthesis", /(?:^|[-_/.])(?:tts|speech|kokoro|supertonic)(?=$|[-_/.])/iu],
+    [
+      "image generation",
+      /^(?:gpt|glm)-image(?:$|[-_/.])|(?:^|[-_/.])image-(?:edit|gen|generation)(?=$|[-_/.])/iu,
+    ],
+    ["video generation", /(?:^|[-_/.])(?:video|veo|sora)(?=$|[-_/.])/iu],
+  ];
+  return families.find(([, pattern]) => pattern.test(modelId))?.[0];
+}
+
+/**
+ * @param {{ excluded: number; excludedReasons: Map<string, number> }} report - Mutable report.
+ * @param {string} reason - Stable exclusion category.
+ */
+function recordExclusion(report, reason) {
+  report.excluded += 1;
+  report.excludedReasons.set(reason, (report.excludedReasons.get(reason) ?? 0) + 1);
+}
+
+/**
+ * @param {Map<string, number>} counts - Stable category counts.
+ * @returns {string} UTF-8 bytewise ordered report fragment.
+ */
+function formatCounts(counts) {
+  return sortEntriesByKey([...counts.entries()])
+    .map(([reason, count]) => `${reason}=${count}`)
+    .join(", ");
 }
 
 /**
@@ -540,19 +839,38 @@ function readReasoningLevels(model) {
 }
 
 /**
- * @param {VerifiedModel} verifiedModel - Exact models.dev model record.
+ * @param {ModelsDevModel} model - Exact models.dev model record.
  * @param {ReasoningMetadata} reasoningMetadata - Installed Codex effort metadata.
  * @returns {string[]} Supported effort values in Codex enum order.
  */
-function normalizeReasoningEfforts(verifiedModel, reasoningMetadata) {
+function normalizeReasoningEfforts(model, reasoningMetadata) {
   const advertisedEfforts = new Set(
-    verifiedModel.reasoningOptions
+    (model.reasoning_options ?? [])
       .filter((option) => option.type === "effort" && Array.isArray(option.values))
       .flatMap((option) => option.values)
       .map((effort) => normalizeNonEmptyString(effort))
       .filter((effort) => effort !== null && effort !== "none"),
   );
   return reasoningMetadata.effortOrder.filter((effort) => advertisedEfforts.has(effort));
+}
+
+/**
+ * @param {string[] | undefined} modalities - Advertised input modalities.
+ * @returns {string[] | null} Codex-supported modalities or no evidence.
+ */
+function normalizeInputModalities(modalities) {
+  if (!Array.isArray(modalities)) {
+    return null;
+  }
+  return ["text", "image"].filter((modality) => modalities.includes(modality));
+}
+
+/**
+ * @param {unknown} value - Possible positive integer.
+ * @returns {number | null} Positive integer or no evidence.
+ */
+function normalizePositiveInteger(value) {
+  return Number.isInteger(value) && Number(value) > 0 ? Number(value) : null;
 }
 
 /**

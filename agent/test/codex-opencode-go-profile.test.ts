@@ -1,5 +1,6 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
@@ -15,13 +16,6 @@ const profilePath = new URL("../../.codex/opencode-go.config.toml", import.meta.
 const documentationPath = new URL("../../.codex/opencode-go.md", import.meta.url);
 const catalogPath = new URL("../../.codex/opencode-go-models.json", import.meta.url);
 
-const documentedModelIds = [
-  "gpt-5.6-luna",
-  "grok-4.6",
-  "muse-spark-1.2-contributor",
-  "muse-spark-1.3-contributor",
-];
-
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
@@ -29,9 +23,11 @@ afterEach(async () => {
 });
 
 describe("Codex OpenCode Go model catalog generator", () => {
-  it("writes only documented text tool-calling agent models with canonical metadata", async () => {
+  it("builds the catalog from every live agent model with normalized metadata", async () => {
     const runtimeDirectory = await createTemporaryDirectory();
     const outputPath = join(runtimeDirectory, "opencode-go-models.json");
+    const generatorSource = await readFile(generatorPath, "utf8");
+    expect(generatorSource).not.toContain(["documented", "Responses", "Models"].join(""));
     const bundledModel = {
       slug: "gpt-5.6-luna",
       display_name: "GPT-5.6-Luna",
@@ -65,84 +61,155 @@ describe("Codex OpenCode Go model catalog generator", () => {
       models: [bundledModel, fallbackModel],
     });
 
-    const { stdout } = await execFile(
-      process.execPath,
-      [generatorPath.pathname, "--output", outputPath],
-      {
-        env: {
-          ...process.env,
-          PATH: `${runtimeDirectory}${delimiter}${process.env.PATH ?? ""}`,
-        },
-      },
-    );
-    expect(stdout).toContain("Instructions: 1 exact bundled; 3 installed Codex fallback");
+    const requestedPaths: string[] = [];
+    let authorizationHeader: string | undefined;
+    const server = createServer((request, response) => {
+      requestedPaths.push(request.url ?? "");
+      if (request.url === "/v1/models") {
+        authorizationHeader = request.headers.authorization;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            object: "list",
+            data: [
+              { id: "gpt-5.6-luna", object: "model", created: 1, owned_by: "opencode" },
+              {
+                id: "deepseek-v4.1-flash",
+                object: "model",
+                created: 2,
+                owned_by: "opencode",
+              },
+              { id: "unmatched-agent", object: "model", created: 3, owned_by: "opencode" },
+              { id: "text-embedding-3-small", object: "model", created: 4, owned_by: "opencode" },
+              { id: "gpt-image-2", object: "model", created: 5, owned_by: "opencode" },
+            ],
+          }),
+        );
+        return;
+      }
+      if (request.url === "/models-dev/api.json") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            "opencode-go": {
+              models: {
+                "deepseek-v4.1-flash": {
+                  id: "deepseek-v4.1-flash",
+                  name: "DeepSeek V4.1 Flash",
+                  modalities: { input: ["text", "image"], output: ["text"] },
+                  tool_call: true,
+                  reasoning: true,
+                  reasoning_options: [{ type: "effort", values: ["low", "high", "max"] }],
+                  limit: { context: 1_000_000, output: 384_000 },
+                },
+              },
+            },
+          }),
+        );
+        return;
+      }
+      response.writeHead(404);
+      response.end();
+    });
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      server.once("error", rejectPromise);
+      server.listen(0, "127.0.0.1", resolvePromise);
+    });
 
-    const contents = await readFile(outputPath, "utf8");
-    const catalog = JSON.parse(contents) as {
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        throw new Error("test server did not expose a TCP port");
+      }
+      const { stdout } = await execFile(
+        process.execPath,
+        [
+          generatorPath.pathname,
+          "--endpoint",
+          `http://127.0.0.1:${address.port}/v1/models`,
+          "--models-dev-endpoint",
+          `http://127.0.0.1:${address.port}/models-dev/api.json`,
+          "--output",
+          outputPath,
+        ],
+        {
+          env: {
+            ...process.env,
+            OPENCODE_GO_API_KEY: "test-token",
+            PATH: `${runtimeDirectory}${delimiter}${process.env.PATH ?? ""}`,
+          },
+        },
+      );
+      expect(stdout).toContain("Wrote 3 OpenCode Go models");
+      expect(stdout).toContain("Excluded 2 non-agent models");
+
+      await execFile(
+        process.execPath,
+        [
+          generatorPath.pathname,
+          "--endpoint",
+          `http://127.0.0.1:${address.port}/v1/models`,
+          "--models-dev-endpoint",
+          `http://127.0.0.1:${address.port}/models-dev/api.json`,
+          "--output",
+          join(runtimeDirectory, "opencode-go-models-second.json"),
+        ],
+        {
+          env: {
+            ...process.env,
+            OPENCODE_GO_API_KEY: "test-token",
+            PATH: `${runtimeDirectory}${delimiter}${process.env.PATH ?? ""}`,
+          },
+        },
+      );
+    } finally {
+      await new Promise<void>((resolvePromise, rejectPromise) =>
+        server.close((error) => (error === undefined ? resolvePromise() : rejectPromise(error))),
+      );
+    }
+
+    expect(requestedPaths.sort()).toEqual([
+      "/models-dev/api.json",
+      "/models-dev/api.json",
+      "/v1/models",
+      "/v1/models",
+    ]);
+    expect(authorizationHeader).toBe("Bearer test-token");
+    expect(await readFile(outputPath, "utf8")).toBe(
+      await readFile(join(runtimeDirectory, "opencode-go-models-second.json"), "utf8"),
+    );
+
+    const catalog = JSON.parse(await readFile(outputPath, "utf8")) as {
       models: Array<Record<string, unknown>>;
     };
-    expect(catalog.models.map((model) => model.slug)).toEqual(documentedModelIds);
-    expect(catalog.models[0]).toMatchObject({
-      slug: "gpt-5.6-luna",
-      display_name: "GPT-5.6-Luna",
-      description: "Bundled model",
-      base_instructions: "Bundled instructions",
-      model_messages: { instructions_template: "Bundled instruction template" },
-    });
-    expect(catalog.models[0]).not.toHaveProperty("comp_hash");
-    for (const model of catalog.models.slice(1)) {
-      expect(model).toMatchObject({
-        base_instructions: "Runtime fallback instructions",
-        input_modalities: ["text", "image"],
-        support_verbosity: false,
-        supported_in_api: true,
-        supports_reasoning_summary_parameter: false,
-        supports_search_tool: false,
-        visibility: "list",
-      });
-      expect(model).not.toHaveProperty("default_reasoning_level");
-    }
-    expect(catalog.models[1]).toMatchObject({
-      display_name: "Grok 4.6",
-      description:
-        "xAI's frontier model for long-running agents, coding, knowledge work, and visual projects",
+    const modelsBySlug = Object.fromEntries(catalog.models.map((model) => [model.slug, model]));
+    expect(catalog.models.map((model) => model.slug)).toEqual([
+      "deepseek-v4.1-flash",
+      "gpt-5.6-luna",
+      "unmatched-agent",
+    ]);
+    expect(modelsBySlug["deepseek-v4.1-flash"]).toMatchObject({
+      base_instructions: "Runtime fallback instructions",
+      display_name: "DeepSeek V4.1 Flash",
+      context_window: 1_000_000,
+      max_context_window: 1_000_000,
+      input_modalities: ["text", "image"],
       supported_reasoning_levels: [
         { effort: "low", description: "Fast reasoning" },
-        { effort: "medium", description: "Standard reasoning" },
         { effort: "high", description: "Deep reasoning" },
-        { effort: "xhigh", description: "Extra deep reasoning" },
+        { effort: "max", description: "Maximum reasoning" },
       ],
     });
-    for (const model of catalog.models.slice(2)) {
-      expect(model.supported_reasoning_levels).toEqual([
-        { effort: "minimal", description: "" },
-        { effort: "low", description: "Fast reasoning" },
-        { effort: "medium", description: "Standard reasoning" },
-        { effort: "high", description: "Deep reasoning" },
-        { effort: "xhigh", description: "Extra deep reasoning" },
-      ]);
-    }
-    expect(contents).toBe(`${JSON.stringify(catalog, null, 2)}\n`);
-    expectCanonicalKeyOrder(catalog);
-
-    const fallbackOnlyOutputPath = join(runtimeDirectory, "opencode-go-fallback-models.json");
-    await installMockCodex(runtimeDirectory, { models: [fallbackModel] });
-    await execFile(process.execPath, [generatorPath.pathname, "--output", fallbackOnlyOutputPath], {
-      env: {
-        ...process.env,
-        PATH: `${runtimeDirectory}${delimiter}${process.env.PATH ?? ""}`,
-      },
+    expect(modelsBySlug["unmatched-agent"]).toMatchObject({
+      base_instructions: "Runtime fallback instructions",
+      display_name: "unmatched-agent",
+      input_modalities: ["text"],
+      supported_reasoning_levels: [],
     });
-    const fallbackOnlyCatalog = JSON.parse(await readFile(fallbackOnlyOutputPath, "utf8")) as {
-      models: Array<Record<string, unknown>>;
-    };
-    expect(fallbackOnlyCatalog.models[0].supported_reasoning_levels).toEqual([
-      { effort: "low", description: "Fast reasoning" },
-      { effort: "medium", description: "Standard reasoning" },
-      { effort: "high", description: "Deep reasoning" },
-      { effort: "xhigh", description: "Extra deep reasoning" },
-      { effort: "max", description: "Maximum reasoning" },
-    ]);
+    expect(modelsBySlug["gpt-5.6-luna"]).toMatchObject({
+      base_instructions: "Bundled instructions",
+      display_name: "GPT-5.6-Luna",
+    });
   });
 });
 
@@ -170,60 +237,49 @@ describe("Codex OpenCode Go profile", () => {
     expect(profile).not.toContain("[features]");
   });
 
-  it("documents only OpenCode Go models with Responses API endpoints", async () => {
+  it("documents live OpenCode Go model discovery and metadata enrichment", async () => {
     const documentation = await readFile(documentationPath, "utf8");
 
-    expect(documentation).toContain("`gpt-5.6-luna`");
-    expect(documentation).toContain("`grok-4.6`");
-    expect(documentation).toContain("`muse-spark-1.3-contributor`");
-    expect(documentation).toContain("`muse-spark-1.2-contributor`");
-    expect(documentation).toContain("`/chat/completions`");
-    expect(documentation).toContain("`/messages`");
+    expect(documentation).toContain("GET https://opencode.ai/zen/go/v1/models");
+    expect(documentation).toContain("models.dev");
+    expect(documentation).toContain("structural non-agent families");
+    expect(documentation).not.toContain("only four models");
+    expect(documentation).not.toContain("`/chat/completions`");
+    expect(documentation).not.toContain("`/messages`");
     expect(documentation).toContain("codex --profile opencode-go --model <model-id>");
     expect(documentation).not.toContain("profile defaults");
   });
 
-  it("ships a deterministic catalog containing only documented Responses coding agents", async () => {
+  it("ships a deterministic catalog from the current OpenCode Go model source", async () => {
     const source = await readFile(catalogPath, "utf8");
     const catalog = JSON.parse(source) as {
       models: Array<Record<string, unknown>>;
     };
     const modelIds = catalog.models.map((model) => model.slug);
 
-    expect(modelIds).toEqual(documentedModelIds);
     expect(modelIds).toEqual([...modelIds].sort(compareUtf8Values));
-    expect(new Set(modelIds).size).toBe(documentedModelIds.length);
+    expect(new Set(modelIds).size).toBe(modelIds.length);
+    expect(modelIds).toContain("deepseek-v4.1-flash");
+    expect(modelIds).toContain("deepseek-v4-flash");
+    expect(modelIds).toContain("glm-5.3-flash");
+    expect(modelIds).not.toEqual([
+      "gpt-5.6-luna",
+      "grok-4.6",
+      "muse-spark-1.2-contributor",
+      "muse-spark-1.3-contributor",
+    ]);
     expect(source).toBe(`${JSON.stringify(catalog, null, 2)}\n`);
     expectCanonicalKeyOrder(catalog);
 
-    expect(catalog.models[1]).toMatchObject({
-      slug: "grok-4.6",
-      display_name: "Grok 4.6",
-      context_window: 500_000,
-      max_context_window: 500_000,
+    const deepseekModel = catalog.models.find((model) => model.slug === "deepseek-v4.1-flash");
+    expect(deepseekModel).toMatchObject({
+      slug: "deepseek-v4.1-flash",
+      display_name: "DeepSeek V4.1 Flash",
+      context_window: 1_000_000,
+      max_context_window: 1_000_000,
       input_modalities: ["text", "image"],
-      supported_reasoning_levels: [
-        { effort: "low" },
-        { effort: "medium" },
-        { effort: "high" },
-        { effort: "xhigh" },
-      ],
+      supported_reasoning_levels: [{ effort: "low" }, { effort: "high" }, { effort: "max" }],
     });
-    for (const model of catalog.models.slice(2)) {
-      expect(model).toMatchObject({
-        display_name: expect.stringMatching(/^Muse Spark 1\.[23] Contributor$/),
-        context_window: 1_048_576,
-        max_context_window: 1_048_576,
-        input_modalities: ["text", "image"],
-        supported_reasoning_levels: [
-          { effort: "minimal" },
-          { effort: "low" },
-          { effort: "medium" },
-          { effort: "high" },
-          { effort: "xhigh" },
-        ],
-      });
-    }
 
     for (const model of catalog.models) {
       expect(model).toMatchObject({

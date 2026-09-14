@@ -1,0 +1,4 @@
+interface:
+  display_name: "Program Coordinator"
+  short_description: "Coordinate long-lived product work through agents"
+  default_prompt: "Use $program-coordinator to coordinate this product initiative through delegated agents."

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "product_id": "example-product",
+  "name": "Example Product",
+  "repositories": [],
+  "limits": {
+    "max_active_workers": 6,
+    "max_heavy_jobs": 1,
+    "max_reviewers": 2,
+    "max_workers_per_initiative": 3,
+    "max_stack_depth": 4,
+    "max_review_rounds": 3,
+    "soft_time_budget_minutes": null,
+    "fallback_heartbeat_minutes": 10
+  }
+}

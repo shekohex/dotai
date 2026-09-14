@@ -1,0 +1,1730 @@
+#!/usr/bin/env python3
+"""Guarded SQLite state for the program-coordinator skill."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime as dt
+import fcntl
+import hashlib
+import json
+import os
+import re
+import secrets
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any, Iterator
+from urllib.parse import urlparse
+
+
+SCHEMA_VERSION = 1
+CHECKPOINT_LIMIT = 5
+WAL_AUTOCHECKPOINT_PAGES = 1000
+PRODUCT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+RISK_CLASSES = ("low", "medium", "high", "critical")
+REMINDER = (
+    "Consider updating learned knowledge or user preferences if this operation "
+    "revealed durable information."
+)
+
+SCHEMA_SQL = """
+CREATE TABLE schema_migrations (
+  version INTEGER PRIMARY KEY,
+  applied_at TEXT NOT NULL
+);
+CREATE TABLE products (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE repositories (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  path TEXT,
+  url TEXT,
+  default_branch TEXT NOT NULL DEFAULT 'main',
+  role TEXT NOT NULL DEFAULT 'primary',
+  created_at TEXT NOT NULL,
+  UNIQUE(product_id, name)
+);
+CREATE TABLE initiatives (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('pending','active','blocked','complete','deferred','cancelled')),
+  phase TEXT NOT NULL CHECK(phase IN ('research','build','validate','review','merge','deploy')),
+  charter_status TEXT NOT NULL DEFAULT 'draft'
+    CHECK(charter_status IN ('draft','pending','approved','superseded')),
+  charter_version INTEGER NOT NULL DEFAULT 1 CHECK(charter_version > 0),
+  soft_time_budget_minutes INTEGER CHECK(
+    soft_time_budget_minutes IS NULL OR soft_time_budget_minutes > 0
+  ),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT,
+  archived_at TEXT,
+  archive_reason TEXT
+);
+CREATE TABLE agents (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  harness TEXT,
+  external INTEGER NOT NULL DEFAULT 0 CHECK(external IN (0,1)),
+  managed INTEGER NOT NULL DEFAULT 1 CHECK(managed IN (0,1)),
+  status TEXT NOT NULL DEFAULT 'idle',
+  current_task_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE tasks (
+  id TEXT PRIMARY KEY,
+  initiative_id TEXT NOT NULL REFERENCES initiatives(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('pending','active','blocked','complete','deferred','cancelled')),
+  phase TEXT NOT NULL CHECK(phase IN ('research','build','validate','review','merge','deploy')),
+  risk_class TEXT NOT NULL DEFAULT 'medium'
+    CHECK(risk_class IN ('low','medium','high','critical')),
+  soft_time_budget_minutes INTEGER CHECK(
+    soft_time_budget_minutes IS NULL OR soft_time_budget_minutes > 0
+  ),
+  owner_agent_id TEXT REFERENCES agents(id),
+  blocker TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+);
+CREATE TABLE task_dependencies (
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  depends_on_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  PRIMARY KEY(task_id, depends_on_task_id),
+  CHECK(task_id <> depends_on_task_id)
+);
+CREATE TABLE task_gates (
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  gate TEXT NOT NULL CHECK(gate IN (
+    'implementation','focused_validation','heavy_validation','evidence',
+    'review','signoff','merge_approval','deployment'
+  )),
+  status TEXT NOT NULL CHECK(status IN (
+    'not_required','pending','running','passed','failed','waived'
+  )),
+  evidence_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(evidence_json)),
+  approval_id TEXT REFERENCES approvals(id),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(task_id, gate),
+  CHECK(status <> 'waived' OR approval_id IS NOT NULL)
+);
+CREATE TABLE workspaces (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  repository_id TEXT REFERENCES repositories(id),
+  owner_agent_id TEXT REFERENCES agents(id),
+  harness TEXT,
+  path TEXT NOT NULL,
+  branch TEXT,
+  base_sha TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  external INTEGER NOT NULL DEFAULT 0 CHECK(external IN (0,1)),
+  recovery_ref TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE pull_requests (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  initiative_id TEXT REFERENCES initiatives(id),
+  task_id TEXT REFERENCES tasks(id),
+  repository_id TEXT REFERENCES repositories(id),
+  number INTEGER,
+  url TEXT,
+  branch TEXT NOT NULL,
+  base_branch TEXT NOT NULL,
+  head_sha TEXT,
+  state TEXT NOT NULL DEFAULT 'open',
+  stack_id TEXT REFERENCES stacks(id),
+  stack_position INTEGER,
+  mergeable_state TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(repository_id, number)
+);
+CREATE TABLE stacks (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  repository_id TEXT NOT NULL REFERENCES repositories(id),
+  trunk_ref TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'active'
+    CHECK(state IN ('active','merged','dissolved')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE review_rounds (
+  id TEXT PRIMARY KEY,
+  pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+  round_number INTEGER NOT NULL CHECK(round_number > 0),
+  reviewer_agent_id TEXT NOT NULL REFERENCES agents(id),
+  head_sha TEXT NOT NULL,
+  outcome TEXT NOT NULL CHECK(outcome IN ('passed','changes_requested','blocked')),
+  findings_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(findings_json)),
+  completed_at TEXT NOT NULL,
+  UNIQUE(pull_request_id, round_number)
+);
+CREATE TABLE approvals (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  executable_hash TEXT,
+  scope_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(scope_json)),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending','consumed','expired','revoked')),
+  created_at TEXT NOT NULL,
+  expires_at TEXT,
+  consumed_at TEXT,
+  CHECK((status = 'consumed' AND consumed_at IS NOT NULL) OR status <> 'consumed')
+);
+CREATE TABLE resource_leases (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  resource_class TEXT NOT NULL
+    CHECK(resource_class IN ('light','medium','heavy','review','deploy')),
+  holder_agent_id TEXT REFERENCES agents(id),
+  status TEXT NOT NULL CHECK(status IN ('active','released','expired')),
+  acquired_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  released_at TEXT
+);
+CREATE TABLE deployments (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  initiative_id TEXT REFERENCES initiatives(id),
+  environment TEXT NOT NULL,
+  head_sha TEXT NOT NULL,
+  plan_hash TEXT,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  verified_at TEXT
+);
+CREATE TABLE artifacts (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  initiative_id TEXT REFERENCES initiatives(id),
+  task_id TEXT REFERENCES tasks(id),
+  kind TEXT NOT NULL,
+  uri TEXT NOT NULL,
+  sha256 TEXT,
+  media_type TEXT,
+  verified INTEGER NOT NULL DEFAULT 0 CHECK(verified IN (0,1)),
+  created_at TEXT NOT NULL
+);
+CREATE TABLE decisions (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  initiative_id TEXT REFERENCES initiatives(id),
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK(status IN ('active','superseded')),
+  supersedes_id TEXT REFERENCES decisions(id),
+  created_at TEXT NOT NULL
+);
+CREATE TABLE knowledge_entries (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK(status IN ('candidate','active','superseded')),
+  evidence_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(evidence_json)),
+  supersedes_id TEXT REFERENCES knowledge_entries(id),
+  created_at TEXT NOT NULL
+);
+CREATE TABLE preference_entries (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL,
+  body TEXT NOT NULL,
+  explicit INTEGER NOT NULL CHECK(explicit IN (0,1)),
+  status TEXT NOT NULL CHECK(status IN ('candidate','active','superseded')),
+  source_event_id TEXT,
+  supersedes_id TEXT REFERENCES preference_entries(id),
+  created_at TEXT NOT NULL
+);
+CREATE TABLE coordinator_leases (
+  product_id TEXT PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+  holder_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE TABLE events (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  occurred_at TEXT NOT NULL,
+  actor_type TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  initiative_id TEXT REFERENCES initiatives(id),
+  action TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  risk_class TEXT NOT NULL CHECK(risk_class IN ('low','medium','high','critical')),
+  reason TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(payload_json)),
+  correlation_id TEXT
+);
+CREATE TRIGGER events_no_update
+BEFORE UPDATE ON events BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+CREATE TRIGGER events_no_delete
+BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+CREATE TRIGGER approvals_identity_immutable
+BEFORE UPDATE ON approvals
+WHEN OLD.action IS NOT NEW.action
+  OR OLD.target_type IS NOT NEW.target_type
+  OR OLD.target_id IS NOT NEW.target_id
+  OR OLD.executable_hash IS NOT NEW.executable_hash
+  OR OLD.scope_json IS NOT NEW.scope_json
+  OR OLD.created_at IS NOT NEW.created_at
+  OR OLD.expires_at IS NOT NEW.expires_at
+BEGIN SELECT RAISE(ABORT, 'approval identity is immutable'); END;
+CREATE TRIGGER approvals_terminal
+BEFORE UPDATE ON approvals
+WHEN OLD.status IN ('consumed','expired','revoked')
+BEGIN SELECT RAISE(ABORT, 'terminal approval cannot change'); END;
+CREATE INDEX tasks_by_initiative_state ON tasks(initiative_id, state);
+CREATE INDEX initiatives_by_product_archive ON initiatives(product_id, archived_at);
+CREATE INDEX events_by_product_time ON events(product_id, occurred_at DESC);
+CREATE INDEX prs_by_product_state ON pull_requests(product_id, state);
+"""
+
+
+class StateError(RuntimeError):
+    """Expected coordinator state failure."""
+
+
+def now() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def parse_time(value: str) -> dt.datetime:
+    parsed = dt.datetime.fromisoformat(value)
+    return (
+        parsed.replace(tzinfo=dt.timezone.utc)
+        if parsed.tzinfo is None
+        else parsed.astimezone(dt.timezone.utc)
+    )
+
+
+def emit(payload: dict[str, Any]) -> None:
+    payload.setdefault("reminders", [REMINDER])
+    print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
+
+
+def get_agents_home() -> Path:
+    configured = os.environ.get("AGENTS_HOME")
+    return Path(configured).expanduser() if configured else Path.home() / ".agents"
+
+
+def validate_product_id(product_id: str) -> str:
+    if not PRODUCT_ID_PATTERN.fullmatch(product_id):
+        raise StateError("product-id must match [a-z0-9][a-z0-9._-]{0,127}")
+    return product_id
+
+
+def get_product_root(product_id: str) -> Path:
+    return get_agents_home() / "projects" / validate_product_id(product_id)
+
+
+def get_registry_path() -> Path:
+    return get_agents_home() / "projects" / "index.json"
+
+
+def get_database_path(product_id: str) -> Path:
+    return get_product_root(product_id) / "state.sqlite"
+
+
+def get_checkpoints_root(product_id: str) -> Path:
+    return get_product_root(product_id) / "checkpoints"
+
+
+def secure_directory(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    path.chmod(0o700)
+
+
+@contextlib.contextmanager
+def product_lock(product_id: str) -> Iterator[None]:
+    lock_directory = get_product_root(product_id) / "locks"
+    secure_directory(lock_directory)
+    lock_path = lock_directory / "state.lock"
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        lock_path.chmod(0o600)
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def registry_lock() -> Iterator[None]:
+    projects_directory = get_agents_home() / "projects"
+    secure_directory(projects_directory)
+    lock_path = projects_directory / ".index.lock"
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        lock_path.chmod(0o600)
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def connect(product_id: str, *, read_only: bool = False) -> sqlite3.Connection:
+    database_path = get_database_path(product_id)
+    if not database_path.exists():
+        raise StateError(f"state does not exist: {database_path}")
+    if read_only:
+        connection = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+    else:
+        connection = sqlite3.connect(database_path)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA busy_timeout = 5000")
+    if not read_only:
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA synchronous = NORMAL")
+        connection.execute(f"PRAGMA wal_autocheckpoint = {WAL_AUTOCHECKPOINT_PAGES}")
+        connection.execute("PRAGMA journal_size_limit = 16777216")
+    return connection
+
+
+def write_json(path: Path, payload: Any) -> None:
+    secure_directory(path.parent)
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", dir=path.parent
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(file_descriptor, "w", encoding="utf-8") as temporary_file:
+            json.dump(payload, temporary_file, ensure_ascii=False, indent=2, sort_keys=True)
+            temporary_file.write("\n")
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        temporary_path.chmod(0o600)
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def read_registry() -> dict[str, Any]:
+    registry_path = get_registry_path()
+    if not registry_path.exists():
+        return {"schema_version": 1, "repositories": []}
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    if registry.get("schema_version") != 1:
+        raise StateError("unsupported project registry schema")
+    if not isinstance(registry.get("repositories"), list):
+        raise StateError("project registry repositories must be a list")
+    return registry
+
+
+def normalize_remote_url(remote_url: str) -> str:
+    value = remote_url.strip()
+    if not value:
+        raise StateError("remote URL must not be empty")
+    scp_match = re.fullmatch(r"(?:[^@/]+@)?([^:/]+):(.+)", value)
+    if scp_match and "://" not in value:
+        host = scp_match.group(1).lower()
+        repository_path = scp_match.group(2)
+    else:
+        parsed = urlparse(value)
+        if parsed.scheme == "file":
+            return f"file:{Path(parsed.path).expanduser().resolve()}"
+        if not parsed.hostname:
+            return f"file:{Path(value).expanduser().resolve()}"
+        host = parsed.hostname.lower()
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        repository_path = parsed.path
+    repository_path = repository_path.strip("/")
+    if repository_path.endswith(".git"):
+        repository_path = repository_path[:-4]
+    if not repository_path:
+        raise StateError("remote URL has no repository path")
+    if host == "github.com":
+        repository_path = repository_path.lower()
+    return f"{host}/{repository_path}"
+
+
+def run_git(repository_path: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=repository_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise StateError(completed.stderr.strip() or "git command failed")
+    return completed.stdout.strip()
+
+
+def inspect_repository(
+    repository_path: str, explicit_remote_url: str | None = None
+) -> dict[str, str | None]:
+    requested_path = Path(repository_path).expanduser().resolve()
+    if not requested_path.exists():
+        raise StateError(f"repository path does not exist: {requested_path}")
+    worktree_root = Path(
+        run_git(requested_path, "rev-parse", "--show-toplevel")
+    ).resolve()
+    common_directory_raw = run_git(requested_path, "rev-parse", "--git-common-dir")
+    common_directory = Path(common_directory_raw)
+    if not common_directory.is_absolute():
+        common_directory = (requested_path / common_directory).resolve()
+    remote_url = explicit_remote_url
+    if remote_url is None:
+        remote_result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=worktree_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        remote_url = remote_result.stdout.strip() if remote_result.returncode == 0 else None
+    return {
+        "worktree_root": str(worktree_root),
+        "git_common_dir": str(common_directory),
+        "remote": normalize_remote_url(remote_url) if remote_url else None,
+    }
+
+
+def registry_matches(
+    entry: dict[str, Any], repository: dict[str, str | None]
+) -> bool:
+    remote = repository["remote"]
+    return bool(
+        (remote and entry.get("remote") == remote)
+        or repository["git_common_dir"] in entry.get("git_common_dirs", [])
+        or repository["worktree_root"] in entry.get("paths", [])
+    )
+
+
+def append_failure(product_id: str, payload: dict[str, Any]) -> None:
+    failure_path = get_product_root(product_id) / "failed-events.jsonl"
+    secure_directory(failure_path.parent)
+    file_descriptor = os.open(
+        failure_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600
+    )
+    with os.fdopen(file_descriptor, "a", encoding="utf-8") as failure_file:
+        failure_file.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+        failure_file.flush()
+        os.fsync(failure_file.fileno())
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source_file:
+        for chunk in iter(lambda: source_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def prune_checkpoints(
+    product_id: str, *, protected_ids: set[str] | None = None
+) -> list[str]:
+    checkpoints_root = get_checkpoints_root(product_id)
+    checkpoints = sorted(
+        (path for path in checkpoints_root.iterdir() if path.is_dir()),
+        key=lambda path: path.name,
+        reverse=True,
+    )
+    protected_ids = protected_ids or set()
+    retained = checkpoints[:CHECKPOINT_LIMIT]
+    for checkpoint in checkpoints[CHECKPOINT_LIMIT:]:
+        if checkpoint.name in protected_ids:
+            retained.append(checkpoint)
+    while len(retained) > CHECKPOINT_LIMIT:
+        removable_index = next(
+            (
+                index
+                for index in range(len(retained) - 1, -1, -1)
+                if retained[index].name not in protected_ids
+            ),
+            None,
+        )
+        if removable_index is None:
+            break
+        retained.pop(removable_index)
+    retained_ids = {checkpoint.name for checkpoint in retained}
+    removed: list[str] = []
+    for expired_checkpoint in checkpoints:
+        if expired_checkpoint.name not in retained_ids:
+            shutil.rmtree(expired_checkpoint)
+            removed.append(expired_checkpoint.name)
+    return removed
+
+
+def create_checkpoint_locked(
+    product_id: str,
+    *,
+    reason: str,
+    trigger: str,
+    actor: str,
+    protected_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    checkpoints_root = get_checkpoints_root(product_id)
+    secure_directory(checkpoints_root)
+    timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    checkpoint_id = f"{timestamp}-{secrets.token_hex(4)}"
+    checkpoint_directory = checkpoints_root / checkpoint_id
+    secure_directory(checkpoint_directory)
+    checkpoint_database = checkpoint_directory / "state.sqlite"
+    temporary_database = checkpoint_directory / ".state.sqlite.tmp"
+    try:
+        with connect(product_id, read_only=True) as source_connection:
+            destination_connection = sqlite3.connect(temporary_database)
+            try:
+                source_connection.backup(destination_connection)
+            finally:
+                destination_connection.close()
+        temporary_database.chmod(0o600)
+        temporary_database.replace(checkpoint_database)
+        project_config_path = get_product_root(product_id) / "project.json"
+        if project_config_path.exists():
+            write_json(
+                checkpoint_directory / "project.json",
+                json.loads(project_config_path.read_text(encoding="utf-8")),
+            )
+        manifest = {
+            "schema_version": SCHEMA_VERSION,
+            "product_id": product_id,
+            "checkpoint_id": checkpoint_id,
+            "created_at": now(),
+            "actor": actor,
+            "reason": reason,
+            "trigger": trigger,
+            "database_sha256": file_sha256(checkpoint_database),
+        }
+        write_json(checkpoint_directory / "manifest.json", manifest)
+    except Exception:
+        shutil.rmtree(checkpoint_directory, ignore_errors=True)
+        raise
+    removed = prune_checkpoints(product_id, protected_ids=protected_ids)
+    return {
+        "checkpoint_id": checkpoint_id,
+        "checkpoint_directory": str(checkpoint_directory),
+        "removed_checkpoints": removed,
+    }
+
+
+def sql_requires_checkpoint(sql: str, risk: str) -> bool:
+    first_token_match = re.match(r"\s*(?:--[^\n]*\n\s*)*([A-Za-z]+)", sql)
+    first_token = first_token_match.group(1).upper() if first_token_match else ""
+    return risk in {"high", "critical"} or first_token in {"DELETE", "REPLACE"}
+
+
+def add_event(
+    connection: sqlite3.Connection,
+    *,
+    product_id: str,
+    actor_id: str,
+    action: str,
+    risk: str,
+    reason: str,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    initiative_id: str | None = None,
+    correlation_id: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> str:
+    event_id = secrets.token_hex(16)
+    connection.execute(
+        """
+        INSERT INTO events (
+          id, product_id, occurred_at, actor_type, actor_id, initiative_id,
+          action, target_type, target_id, risk_class, reason, payload_json,
+          correlation_id
+        ) VALUES (?, ?, ?, 'coordinator', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            event_id,
+            product_id,
+            now(),
+            actor_id,
+            initiative_id,
+            action,
+            target_type,
+            target_id,
+            risk,
+            reason,
+            json.dumps(payload or {}, ensure_ascii=False, sort_keys=True),
+            correlation_id,
+        ),
+    )
+    return event_id
+
+
+def initialize(args: argparse.Namespace) -> None:
+    root = get_product_root(args.product_id)
+    if get_database_path(args.product_id).exists():
+        raise StateError(f"product already initialized: {args.product_id}")
+    with product_lock(args.product_id):
+        for directory in (
+            root,
+            root / "initiatives",
+            root / "artifacts",
+            root / "exports",
+            root / "checkpoints",
+            root / "locks",
+        ):
+            secure_directory(directory)
+        connection = sqlite3.connect(get_database_path(args.product_id))
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute("PRAGMA synchronous = NORMAL")
+            connection.execute(
+                f"PRAGMA wal_autocheckpoint = {WAL_AUTOCHECKPOINT_PAGES}"
+            )
+            connection.execute("PRAGMA journal_size_limit = 16777216")
+            connection.executescript(SCHEMA_SQL)
+            timestamp = now()
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (SCHEMA_VERSION, timestamp),
+            )
+            connection.execute(
+                "INSERT INTO products(id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (args.product_id, args.name, timestamp, timestamp),
+            )
+            event_id = add_event(
+                connection,
+                product_id=args.product_id,
+                actor_id=args.actor,
+                action="product.initialized",
+                risk="low",
+                reason="Initialize coordinator state",
+                target_type="product",
+                target_id=args.product_id,
+                payload={"schema_version": SCHEMA_VERSION},
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        get_database_path(args.product_id).chmod(0o600)
+        write_json(
+            root / "project.json",
+            {
+                "schema_version": SCHEMA_VERSION,
+                "product_id": args.product_id,
+                "name": args.name,
+                "repositories": [],
+                "limits": {
+                    "max_active_workers": 6,
+                    "max_heavy_jobs": 1,
+                    "max_reviewers": 2,
+                    "max_workers_per_initiative": 3,
+                    "max_stack_depth": 4,
+                    "max_review_rounds": 3,
+                    "soft_time_budget_minutes": None,
+                    "fallback_heartbeat_minutes": 10,
+                },
+            },
+        )
+    emit(
+        {
+            "ok": True,
+            "product_id": args.product_id,
+            "root": str(root),
+            "database": str(get_database_path(args.product_id)),
+            "event_id": event_id,
+        }
+    )
+
+
+def token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def validate_lease(
+    connection: sqlite3.Connection, product_id: str, holder: str, token: str
+) -> None:
+    lease = connection.execute(
+        "SELECT holder_id, token_hash, expires_at FROM coordinator_leases "
+        "WHERE product_id = ?",
+        (product_id,),
+    ).fetchone()
+    if lease is None:
+        raise StateError("no active coordinator lease")
+    if lease["holder_id"] != holder:
+        raise StateError(f"coordinator lease belongs to {lease['holder_id']}")
+    if not secrets.compare_digest(lease["token_hash"], token_hash(token)):
+        raise StateError("invalid coordinator lease token")
+    if parse_time(lease["expires_at"]) <= dt.datetime.now(dt.timezone.utc):
+        raise StateError("coordinator lease expired")
+
+
+def acquire_lease(args: argparse.Namespace) -> None:
+    if args.ttl_seconds <= 0:
+        raise StateError("--ttl-seconds must be positive")
+    lease_token = secrets.token_urlsafe(32)
+    acquired_at = dt.datetime.now(dt.timezone.utc)
+    expires_at = acquired_at + dt.timedelta(seconds=args.ttl_seconds)
+    with product_lock(args.product_id), connect(args.product_id) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        existing = connection.execute(
+            "SELECT holder_id, expires_at FROM coordinator_leases WHERE product_id = ?",
+            (args.product_id,),
+        ).fetchone()
+        if existing and parse_time(existing["expires_at"]) > acquired_at:
+            raise StateError(
+                f"active coordinator lease held by {existing['holder_id']} "
+                f"until {existing['expires_at']}"
+            )
+        connection.execute(
+            """
+            INSERT INTO coordinator_leases(
+              product_id, holder_id, token_hash, acquired_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(product_id) DO UPDATE SET
+              holder_id=excluded.holder_id,
+              token_hash=excluded.token_hash,
+              acquired_at=excluded.acquired_at,
+              expires_at=excluded.expires_at
+            """,
+            (
+                args.product_id,
+                args.holder,
+                token_hash(lease_token),
+                acquired_at.isoformat(timespec="seconds"),
+                expires_at.isoformat(timespec="seconds"),
+            ),
+        )
+        event_id = add_event(
+            connection,
+            product_id=args.product_id,
+            actor_id=args.holder,
+            action="coordinator.lease_acquired",
+            risk="low",
+            reason="Acquire canonical coordinator writer lease",
+            target_type="product",
+            target_id=args.product_id,
+            payload={"expires_at": expires_at.isoformat(timespec="seconds")},
+        )
+        connection.commit()
+    emit(
+        {
+            "ok": True,
+            "holder": args.holder,
+            "lease_token": lease_token,
+            "expires_at": expires_at.isoformat(timespec="seconds"),
+            "event_id": event_id,
+        }
+    )
+
+
+def renew_lease(args: argparse.Namespace) -> None:
+    if args.ttl_seconds <= 0:
+        raise StateError("--ttl-seconds must be positive")
+    expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+        seconds=args.ttl_seconds
+    )
+    with product_lock(args.product_id), connect(args.product_id) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        validate_lease(connection, args.product_id, args.holder, args.lease_token)
+        connection.execute(
+            "UPDATE coordinator_leases SET expires_at = ? WHERE product_id = ?",
+            (expires_at.isoformat(timespec="seconds"), args.product_id),
+        )
+        event_id = add_event(
+            connection,
+            product_id=args.product_id,
+            actor_id=args.holder,
+            action="coordinator.lease_renewed",
+            risk="low",
+            reason="Renew canonical coordinator writer lease",
+            target_type="product",
+            target_id=args.product_id,
+            payload={"expires_at": expires_at.isoformat(timespec="seconds")},
+        )
+        connection.commit()
+    emit(
+        {
+            "ok": True,
+            "expires_at": expires_at.isoformat(timespec="seconds"),
+            "event_id": event_id,
+        }
+    )
+
+
+def release_lease(args: argparse.Namespace) -> None:
+    with product_lock(args.product_id), connect(args.product_id) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        validate_lease(connection, args.product_id, args.holder, args.lease_token)
+        connection.execute(
+            "DELETE FROM coordinator_leases WHERE product_id = ?", (args.product_id,)
+        )
+        event_id = add_event(
+            connection,
+            product_id=args.product_id,
+            actor_id=args.holder,
+            action="coordinator.lease_released",
+            risk="low",
+            reason="Release canonical coordinator writer lease",
+            target_type="product",
+            target_id=args.product_id,
+        )
+        connection.commit()
+    emit({"ok": True, "event_id": event_id})
+
+
+def registry_upsert(args: argparse.Namespace) -> None:
+    repository = inspect_repository(args.repo_path, args.remote_url)
+    with product_lock(args.product_id), connect(args.product_id) as connection:
+        validate_lease(
+            connection, args.product_id, args.holder, args.lease_token
+        )
+        with registry_lock():
+            registry = read_registry()
+            matches = [
+                entry
+                for entry in registry["repositories"]
+                if registry_matches(entry, repository)
+            ]
+            conflicting_products = {
+                entry["product_id"]
+                for entry in matches
+                if entry["product_id"] != args.product_id
+            }
+            if conflicting_products:
+                raise StateError(
+                    "repository already belongs to product(s): "
+                    + ", ".join(sorted(conflicting_products))
+                )
+            if matches:
+                entry = matches[0]
+                for duplicate in matches[1:]:
+                    for key in ("paths", "git_common_dirs"):
+                        entry.setdefault(key, []).extend(duplicate.get(key, []))
+                    registry["repositories"].remove(duplicate)
+            else:
+                entry = {
+                    "product_id": args.product_id,
+                    "remote": repository["remote"],
+                    "paths": [],
+                    "git_common_dirs": [],
+                    "created_at": now(),
+                }
+                registry["repositories"].append(entry)
+            if repository["remote"]:
+                entry["remote"] = repository["remote"]
+            entry["paths"] = sorted(
+                set(entry.get("paths", [])) | {repository["worktree_root"]}
+            )
+            entry["git_common_dirs"] = sorted(
+                set(entry.get("git_common_dirs", []))
+                | {repository["git_common_dir"]}
+            )
+            entry["updated_at"] = now()
+            registry["repositories"].sort(
+                key=lambda item: (
+                    item["product_id"], item.get("remote") or "", item["paths"]
+                )
+            )
+            write_json(get_registry_path(), registry)
+        connection.execute("BEGIN IMMEDIATE")
+        validate_lease(
+            connection, args.product_id, args.holder, args.lease_token
+        )
+        event_id = add_event(
+            connection,
+            product_id=args.product_id,
+            actor_id=args.holder,
+            action="registry.repository_upserted",
+            risk="low",
+            reason=args.reason,
+            target_type="repository",
+            target_id=repository["remote"] or repository["git_common_dir"],
+            payload=repository,
+        )
+        connection.commit()
+    emit({"ok": True, "repository": entry, "event_id": event_id})
+
+
+def registry_detect(args: argparse.Namespace) -> None:
+    repository = inspect_repository(args.repo_path, args.remote_url)
+    with registry_lock():
+        matches = [
+            entry
+            for entry in read_registry()["repositories"]
+            if registry_matches(entry, repository)
+        ]
+    product_ids = sorted({entry["product_id"] for entry in matches})
+    if not product_ids:
+        raise StateError("repository is not registered to a product")
+    if len(product_ids) > 1:
+        raise StateError(
+            "repository registry is ambiguous: " + ", ".join(product_ids)
+        )
+    emit(
+        {
+            "ok": True,
+            "product_id": product_ids[0],
+            "repository": repository,
+            "matched_by": [
+                key
+                for key, matched in (
+                    (
+                        "remote",
+                        bool(
+                            repository["remote"]
+                            and any(
+                                entry.get("remote") == repository["remote"]
+                                for entry in matches
+                            )
+                        ),
+                    ),
+                    (
+                        "git_common_dir",
+                        any(
+                            repository["git_common_dir"]
+                            in entry.get("git_common_dirs", [])
+                            for entry in matches
+                        ),
+                    ),
+                    (
+                        "path",
+                        any(
+                            repository["worktree_root"] in entry.get("paths", [])
+                            for entry in matches
+                        ),
+                    ),
+                )
+                if matched
+            ],
+        }
+    )
+
+
+def registry_list(args: argparse.Namespace) -> None:
+    with registry_lock():
+        repositories = read_registry()["repositories"]
+    if args.product_id:
+        repositories = [
+            entry
+            for entry in repositories
+            if entry["product_id"] == args.product_id
+        ]
+    emit({"ok": True, "repositories": repositories})
+
+
+def registry_remove(args: argparse.Namespace) -> None:
+    repository = inspect_repository(args.repo_path, args.remote_url)
+    with product_lock(args.product_id), connect(args.product_id) as connection:
+        validate_lease(
+            connection, args.product_id, args.holder, args.lease_token
+        )
+        with registry_lock():
+            registry = read_registry()
+            removed = [
+                entry
+                for entry in registry["repositories"]
+                if entry["product_id"] == args.product_id
+                and registry_matches(entry, repository)
+            ]
+            if not removed:
+                raise StateError("matching repository registration not found")
+            registry["repositories"] = [
+                entry for entry in registry["repositories"] if entry not in removed
+            ]
+            write_json(get_registry_path(), registry)
+        connection.execute("BEGIN IMMEDIATE")
+        validate_lease(
+            connection, args.product_id, args.holder, args.lease_token
+        )
+        event_id = add_event(
+            connection,
+            product_id=args.product_id,
+            actor_id=args.holder,
+            action="registry.repository_removed",
+            risk="low",
+            reason=args.reason,
+            target_type="repository",
+            target_id=repository["remote"] or repository["git_common_dir"],
+            payload={"removed": removed},
+        )
+        connection.commit()
+    emit({"ok": True, "removed": removed, "event_id": event_id})
+
+
+def forbidden_actions() -> set[int]:
+    names = (
+        "SQLITE_ALTER_TABLE",
+        "SQLITE_ANALYZE",
+        "SQLITE_ATTACH",
+        "SQLITE_CREATE_INDEX",
+        "SQLITE_CREATE_TABLE",
+        "SQLITE_CREATE_TEMP_INDEX",
+        "SQLITE_CREATE_TEMP_TABLE",
+        "SQLITE_CREATE_TEMP_TRIGGER",
+        "SQLITE_CREATE_TEMP_VIEW",
+        "SQLITE_CREATE_TRIGGER",
+        "SQLITE_CREATE_VIEW",
+        "SQLITE_CREATE_VTABLE",
+        "SQLITE_DETACH",
+        "SQLITE_DROP_INDEX",
+        "SQLITE_DROP_TABLE",
+        "SQLITE_DROP_TEMP_INDEX",
+        "SQLITE_DROP_TEMP_TABLE",
+        "SQLITE_DROP_TEMP_TRIGGER",
+        "SQLITE_DROP_TEMP_VIEW",
+        "SQLITE_DROP_TRIGGER",
+        "SQLITE_DROP_VIEW",
+        "SQLITE_DROP_VTABLE",
+        "SQLITE_PRAGMA",
+        "SQLITE_REINDEX",
+    )
+    return {getattr(sqlite3, name) for name in names if hasattr(sqlite3, name)}
+
+
+def install_guard(connection: sqlite3.Connection) -> tuple[set[str], list[bool]]:
+    touched_tables: set[str] = set()
+    mutation_seen = [False]
+    protected_tables = {"events", "schema_migrations", "coordinator_leases"}
+    mutations = {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}
+    denied = forbidden_actions()
+
+    def authorize(
+        action: int,
+        argument_one: str | None,
+        argument_two: str | None,
+        database_name: str | None,
+        trigger_name: str | None,
+    ) -> int:
+        del database_name, trigger_name
+        if action in denied:
+            return sqlite3.SQLITE_DENY
+        if action in mutations:
+            mutation_seen[0] = True
+            if argument_one:
+                touched_tables.add(argument_one)
+            if argument_one in protected_tables:
+                return sqlite3.SQLITE_DENY
+        if action == sqlite3.SQLITE_FUNCTION and (
+            argument_one == "load_extension" or argument_two == "load_extension"
+        ):
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    connection.set_authorizer(authorize)
+    return touched_tables, mutation_seen
+
+
+def parse_params(raw_params: str) -> dict[str, Any]:
+    params = json.loads(raw_params)
+    if not isinstance(params, dict):
+        raise StateError("--params-json must decode to object")
+    return params
+
+
+def execute_sql(args: argparse.Namespace) -> None:
+    sql = sys.stdin.read() if args.sql == "-" else args.sql
+    if not sql.strip():
+        raise StateError("SQL must not be empty")
+    params = parse_params(args.params_json)
+    statement_hash = hashlib.sha256(sql.encode()).hexdigest()
+
+    if args.read_only:
+        with connect(args.product_id, read_only=True) as connection:
+            _, mutation_seen = install_guard(connection)
+            cursor = connection.execute(sql, params)
+            result_rows = [dict(row) for row in cursor.fetchall()] if cursor.description else []
+            if mutation_seen[0]:
+                raise StateError("read-only SQL attempted mutation")
+        emit(
+            {
+                "ok": True,
+                "read_only": True,
+                "rows": result_rows,
+                "row_count": len(result_rows),
+                "statement_sha256": statement_hash,
+            }
+        )
+        return
+
+    if not args.reason:
+        raise StateError("--reason is required for mutating SQL")
+    if not args.lease_token:
+        raise StateError("--lease-token is required for mutating SQL")
+
+    failure = {
+        "occurred_at": now(),
+        "actor_id": args.actor,
+        "action": args.action,
+        "risk_class": args.risk,
+        "reason": args.reason,
+        "statement_sha256": statement_hash,
+        "target_type": args.target_type,
+        "target_id": args.target_id,
+        "correlation_id": args.correlation_id,
+    }
+    checkpoint: dict[str, Any] | None = None
+    try:
+        with product_lock(args.product_id), connect(args.product_id) as connection:
+            validate_lease(
+                connection, args.product_id, args.actor, args.lease_token
+            )
+            if sql_requires_checkpoint(sql, args.risk):
+                checkpoint = create_checkpoint_locked(
+                    args.product_id,
+                    reason=args.reason,
+                    trigger=f"sql:{args.action}",
+                    actor=args.actor,
+                )
+            connection.execute("BEGIN IMMEDIATE")
+            validate_lease(
+                connection, args.product_id, args.actor, args.lease_token
+            )
+            touched_tables, mutation_seen = install_guard(connection)
+            changes_before = connection.total_changes
+            cursor = connection.execute(sql, params)
+            result_rows = [dict(row) for row in cursor.fetchall()] if cursor.description else []
+            changed_rows = connection.total_changes - changes_before
+            if not mutation_seen[0]:
+                connection.rollback()
+                emit(
+                    {
+                        "ok": True,
+                        "read_only": True,
+                        "rows": result_rows,
+                        "row_count": len(result_rows),
+                        "statement_sha256": statement_hash,
+                    }
+                )
+                return
+            connection.set_authorizer(None)
+            event_id = add_event(
+                connection,
+                product_id=args.product_id,
+                actor_id=args.actor,
+                action=args.action,
+                risk=args.risk,
+                reason=args.reason,
+                target_type=args.target_type,
+                target_id=args.target_id,
+                initiative_id=args.initiative_id,
+                correlation_id=args.correlation_id,
+                payload={
+                    "statement_sha256": statement_hash,
+                    "changed_rows": changed_rows,
+                    "touched_tables": sorted(touched_tables),
+                    "parameter_names": sorted(params),
+                    "checkpoint": checkpoint,
+                },
+            )
+            connection.commit()
+        emit(
+            {
+                "ok": True,
+                "changed_rows": changed_rows,
+                "rows": result_rows,
+                "event_id": event_id,
+                "statement_sha256": statement_hash,
+                "touched_tables": sorted(touched_tables),
+                "checkpoint": checkpoint,
+            }
+        )
+    except Exception as error:
+        failure["error_type"] = type(error).__name__
+        failure["error"] = str(error)
+        append_failure(args.product_id, failure)
+        raise
+
+
+def query_rows(
+    connection: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()
+) -> list[dict[str, Any]]:
+    return [dict(row) for row in connection.execute(sql, params).fetchall()]
+
+
+def summarize(args: argparse.Namespace) -> None:
+    with connect(args.product_id, read_only=True) as connection:
+        product_row = connection.execute(
+            "SELECT * FROM products WHERE id = ?", (args.product_id,)
+        ).fetchone()
+        if product_row is None:
+            raise StateError(f"product missing from state: {args.product_id}")
+        emit(
+            {
+                "ok": True,
+                "product": dict(product_row),
+                "initiatives": query_rows(
+                    connection,
+                    "SELECT * FROM initiatives "
+                    "WHERE state IN ('active','blocked','pending') "
+                    "AND archived_at IS NULL "
+                    "ORDER BY updated_at DESC",
+                ),
+                "tasks": query_rows(
+                    connection,
+                    """
+                    SELECT tasks.* FROM tasks
+                    JOIN initiatives ON initiatives.id = tasks.initiative_id
+                    WHERE initiatives.product_id = ?
+                      AND tasks.state IN ('active','blocked','pending')
+                    ORDER BY tasks.updated_at DESC
+                    """,
+                    (args.product_id,),
+                ),
+                "agents": query_rows(
+                    connection,
+                    "SELECT * FROM agents WHERE product_id = ? "
+                    "AND status NOT IN ('archived','complete') "
+                    "ORDER BY updated_at DESC",
+                    (args.product_id,),
+                ),
+                "pull_requests": query_rows(
+                    connection,
+                    "SELECT * FROM pull_requests WHERE product_id = ? "
+                    "AND state = 'open' ORDER BY updated_at DESC",
+                    (args.product_id,),
+                ),
+                "pending_approvals": query_rows(
+                    connection,
+                    "SELECT * FROM approvals WHERE product_id = ? "
+                    "AND status = 'pending' ORDER BY created_at",
+                    (args.product_id,),
+                ),
+                "resource_leases": query_rows(
+                    connection,
+                    "SELECT * FROM resource_leases WHERE product_id = ? "
+                    "AND status = 'active' ORDER BY acquired_at",
+                    (args.product_id,),
+                ),
+                "deployments": query_rows(
+                    connection,
+                    "SELECT * FROM deployments WHERE product_id = ? "
+                    "ORDER BY updated_at DESC LIMIT 10",
+                    (args.product_id,),
+                ),
+                "recent_decisions": query_rows(
+                    connection,
+                    "SELECT * FROM decisions WHERE product_id = ? "
+                    "AND status = 'active' ORDER BY created_at DESC LIMIT 10",
+                    (args.product_id,),
+                ),
+                "recent_events": query_rows(
+                    connection,
+                    "SELECT * FROM events WHERE product_id = ? "
+                    "ORDER BY occurred_at DESC LIMIT ?",
+                    (args.product_id, args.event_limit),
+                ),
+            }
+        )
+
+
+def diagnose(args: argparse.Namespace) -> None:
+    root = get_product_root(args.product_id)
+    database_path = get_database_path(args.product_id)
+    problems: list[str] = []
+    if root.stat().st_mode & 0o077:
+        problems.append("product directory permissions are broader than 0700")
+    if database_path.stat().st_mode & 0o077:
+        problems.append("state database permissions are broader than 0600")
+    with connect(args.product_id, read_only=True) as connection:
+        journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+        wal_autocheckpoint_pages = connection.execute(
+            "PRAGMA wal_autocheckpoint"
+        ).fetchone()[0]
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+        foreign_key_violations = [
+            dict(row) for row in connection.execute("PRAGMA foreign_key_check")
+        ]
+        schema_versions = [
+            row[0] for row in connection.execute(
+                "SELECT version FROM schema_migrations ORDER BY version"
+            )
+        ]
+        lease = connection.execute(
+            "SELECT holder_id, expires_at FROM coordinator_leases "
+            "WHERE product_id = ?",
+            (args.product_id,),
+        ).fetchone()
+    if integrity != "ok":
+        problems.append(f"integrity_check: {integrity}")
+    if journal_mode.lower() != "wal":
+        problems.append(f"journal_mode is {journal_mode}, expected wal")
+    if foreign_key_violations:
+        problems.append("foreign key violations present")
+    if schema_versions != [SCHEMA_VERSION]:
+        problems.append(f"unexpected schema versions: {schema_versions}")
+    result = {
+        "ok": not problems,
+        "product_id": args.product_id,
+        "integrity": integrity,
+        "journal_mode": journal_mode,
+        "wal_autocheckpoint_pages": wal_autocheckpoint_pages,
+        "foreign_key_violations": foreign_key_violations,
+        "schema_versions": schema_versions,
+        "coordinator_lease": dict(lease) if lease else None,
+        "problems": problems,
+    }
+    emit(result)
+    if problems:
+        raise SystemExit(1)
+
+
+def checkpoint_state(args: argparse.Namespace) -> None:
+    with product_lock(args.product_id), connect(args.product_id) as connection:
+        validate_lease(
+            connection, args.product_id, args.holder, args.lease_token
+        )
+        checkpoint = create_checkpoint_locked(
+            args.product_id,
+            reason=args.reason,
+            trigger=args.trigger,
+            actor=args.holder,
+        )
+        connection.execute("BEGIN IMMEDIATE")
+        validate_lease(
+            connection, args.product_id, args.holder, args.lease_token
+        )
+        event_id = add_event(
+            connection,
+            product_id=args.product_id,
+            actor_id=args.holder,
+            action="state.checkpoint_created",
+            risk="low",
+            reason=args.reason,
+            target_type="checkpoint",
+            target_id=checkpoint["checkpoint_id"],
+            payload={"trigger": args.trigger, **checkpoint},
+        )
+        connection.commit()
+    emit({"ok": True, **checkpoint, "event_id": event_id})
+
+
+def list_checkpoints(args: argparse.Namespace) -> None:
+    checkpoints_root = get_checkpoints_root(args.product_id)
+    checkpoints: list[dict[str, Any]] = []
+    if checkpoints_root.exists():
+        for checkpoint_directory in sorted(
+            (path for path in checkpoints_root.iterdir() if path.is_dir()),
+            key=lambda path: path.name,
+            reverse=True,
+        ):
+            manifest_path = checkpoint_directory / "manifest.json"
+            if manifest_path.exists():
+                checkpoints.append(
+                    json.loads(manifest_path.read_text(encoding="utf-8"))
+                )
+    emit({"ok": True, "checkpoints": checkpoints})
+
+
+def resolve_checkpoint(product_id: str, checkpoint_id: str) -> Path:
+    if Path(checkpoint_id).name != checkpoint_id or checkpoint_id in {".", ".."}:
+        raise StateError("checkpoint must be an exact checkpoint id")
+    checkpoint_directory = get_checkpoints_root(product_id) / checkpoint_id
+    if not checkpoint_directory.is_dir():
+        raise StateError(f"checkpoint not found: {checkpoint_id}")
+    return checkpoint_directory
+
+
+def restore_checkpoint(args: argparse.Namespace) -> None:
+    database_path = get_database_path(args.product_id)
+    with product_lock(args.product_id):
+        checkpoint_directory = resolve_checkpoint(
+            args.product_id, args.checkpoint_id
+        )
+        checkpoint_database = checkpoint_directory / "state.sqlite"
+        manifest = json.loads(
+            (checkpoint_directory / "manifest.json").read_text(encoding="utf-8")
+        )
+        if manifest.get("product_id") != args.product_id:
+            raise StateError("checkpoint product does not match")
+        if manifest.get("schema_version") != SCHEMA_VERSION:
+            raise StateError("checkpoint schema version does not match")
+        if manifest.get("database_sha256") != file_sha256(checkpoint_database):
+            raise StateError("checkpoint database checksum mismatch")
+        with connect(args.product_id) as current_connection:
+            validate_lease(
+                current_connection,
+                args.product_id,
+                args.holder,
+                args.lease_token,
+            )
+            current_lease = dict(
+                current_connection.execute(
+                    "SELECT * FROM coordinator_leases WHERE product_id = ?",
+                    (args.product_id,),
+                ).fetchone()
+            )
+        pre_restore_checkpoint = create_checkpoint_locked(
+            args.product_id,
+            reason=args.reason,
+            trigger="pre-restore",
+            actor=args.holder,
+            protected_ids={args.checkpoint_id},
+        )
+
+        restore_file_descriptor, restore_name = tempfile.mkstemp(
+            prefix=".state.restore.", dir=get_product_root(args.product_id)
+        )
+        os.close(restore_file_descriptor)
+        restore_path = Path(restore_name)
+        try:
+            source_connection = sqlite3.connect(
+                f"file:{checkpoint_database}?mode=ro", uri=True
+            )
+            destination_connection = sqlite3.connect(restore_path)
+            try:
+                source_connection.backup(destination_connection)
+            finally:
+                source_connection.close()
+                destination_connection.close()
+            with sqlite3.connect(restore_path) as validation_connection:
+                if validation_connection.execute(
+                    "PRAGMA integrity_check"
+                ).fetchone()[0] != "ok":
+                    raise StateError("checkpoint integrity check failed")
+                product = validation_connection.execute(
+                    "SELECT id FROM products WHERE id = ?", (args.product_id,)
+                ).fetchone()
+                if product is None:
+                    raise StateError("checkpoint product row missing")
+                versions = [
+                    row[0]
+                    for row in validation_connection.execute(
+                        "SELECT version FROM schema_migrations ORDER BY version"
+                    )
+                ]
+                if versions != [SCHEMA_VERSION]:
+                    raise StateError(f"checkpoint schema versions invalid: {versions}")
+            restore_path.chmod(0o600)
+            for wal_path in (
+                database_path.with_name(f"{database_path.name}-wal"),
+                database_path.with_name(f"{database_path.name}-shm"),
+            ):
+                wal_path.unlink(missing_ok=True)
+            restore_path.replace(database_path)
+            checkpoint_project_config = checkpoint_directory / "project.json"
+            if checkpoint_project_config.exists():
+                write_json(
+                    get_product_root(args.product_id) / "project.json",
+                    json.loads(
+                        checkpoint_project_config.read_text(encoding="utf-8")
+                    ),
+                )
+        finally:
+            restore_path.unlink(missing_ok=True)
+
+        with connect(args.product_id) as restored_connection:
+            restored_connection.execute("BEGIN IMMEDIATE")
+            restored_connection.execute(
+                """
+                INSERT INTO coordinator_leases(
+                  product_id, holder_id, token_hash, acquired_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(product_id) DO UPDATE SET
+                  holder_id=excluded.holder_id,
+                  token_hash=excluded.token_hash,
+                  acquired_at=excluded.acquired_at,
+                  expires_at=excluded.expires_at
+                """,
+                (
+                    current_lease["product_id"],
+                    current_lease["holder_id"],
+                    current_lease["token_hash"],
+                    current_lease["acquired_at"],
+                    current_lease["expires_at"],
+                ),
+            )
+            event_id = add_event(
+                restored_connection,
+                product_id=args.product_id,
+                actor_id=args.holder,
+                action="state.checkpoint_restored",
+                risk="high",
+                reason=args.reason,
+                target_type="checkpoint",
+                target_id=args.checkpoint_id,
+                payload={"pre_restore_checkpoint": pre_restore_checkpoint},
+            )
+            restored_connection.commit()
+    emit(
+        {
+            "ok": True,
+            "restored_checkpoint_id": args.checkpoint_id,
+            "pre_restore_checkpoint": pre_restore_checkpoint,
+            "event_id": event_id,
+        }
+    )
+
+
+def export_state(args: argparse.Namespace) -> None:
+    root = get_product_root(args.product_id)
+    timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    output_directory = (
+        Path(args.output_dir) if args.output_dir else root / "exports" / timestamp
+    )
+    secure_directory(output_directory)
+    with connect(args.product_id, read_only=True) as connection:
+        table_names = [
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_schema WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+        ]
+        snapshot = {
+            "schema_version": SCHEMA_VERSION,
+            "exported_at": now(),
+            "product_id": args.product_id,
+            "tables": {
+                table_name: query_rows(connection, f'SELECT * FROM "{table_name}"')
+                for table_name in table_names
+                if table_name != "events"
+            },
+        }
+        event_rows = query_rows(connection, "SELECT * FROM events ORDER BY occurred_at")
+    write_json(output_directory / "state.json", snapshot)
+    events_path = output_directory / "events.jsonl"
+    with events_path.open("w", encoding="utf-8") as events_file:
+        for event in event_rows:
+            events_file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+    events_path.chmod(0o600)
+    emit(
+        {
+            "ok": True,
+            "output_directory": str(output_directory),
+            "tables": len(snapshot["tables"]),
+            "events": len(event_rows),
+        }
+    )
+
+
+def add_lease_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--product-id", required=True)
+    parser.add_argument("--holder", required=True)
+    parser.add_argument("--lease-token", required=True)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = commands.add_parser("init")
+    init_parser.add_argument("--product-id", required=True)
+    init_parser.add_argument("--name", required=True)
+    init_parser.add_argument("--actor", default="coordinator")
+    init_parser.set_defaults(handler=initialize)
+
+    acquire_parser = commands.add_parser("lease-acquire")
+    acquire_parser.add_argument("--product-id", required=True)
+    acquire_parser.add_argument("--holder", required=True)
+    acquire_parser.add_argument("--ttl-seconds", type=int, default=900)
+    acquire_parser.set_defaults(handler=acquire_lease)
+
+    renew_parser = commands.add_parser("lease-renew")
+    add_lease_arguments(renew_parser)
+    renew_parser.add_argument("--ttl-seconds", type=int, default=900)
+    renew_parser.set_defaults(handler=renew_lease)
+
+    release_parser = commands.add_parser("lease-release")
+    add_lease_arguments(release_parser)
+    release_parser.set_defaults(handler=release_lease)
+
+    registry_upsert_parser = commands.add_parser("registry-upsert")
+    add_lease_arguments(registry_upsert_parser)
+    registry_upsert_parser.add_argument("--repo-path", default=".")
+    registry_upsert_parser.add_argument("--remote-url")
+    registry_upsert_parser.add_argument("--reason", required=True)
+    registry_upsert_parser.set_defaults(handler=registry_upsert)
+
+    registry_detect_parser = commands.add_parser("registry-detect")
+    registry_detect_parser.add_argument("--repo-path", default=".")
+    registry_detect_parser.add_argument("--remote-url")
+    registry_detect_parser.set_defaults(handler=registry_detect)
+
+    registry_list_parser = commands.add_parser("registry-list")
+    registry_list_parser.add_argument("--product-id")
+    registry_list_parser.set_defaults(handler=registry_list)
+
+    registry_remove_parser = commands.add_parser("registry-remove")
+    add_lease_arguments(registry_remove_parser)
+    registry_remove_parser.add_argument("--repo-path", default=".")
+    registry_remove_parser.add_argument("--remote-url")
+    registry_remove_parser.add_argument("--reason", required=True)
+    registry_remove_parser.set_defaults(handler=registry_remove)
+
+    sql_parser = commands.add_parser("sql")
+    sql_parser.add_argument("--product-id", required=True)
+    sql_parser.add_argument("--actor", default="coordinator")
+    sql_parser.add_argument("--lease-token")
+    sql_parser.add_argument("--reason")
+    sql_parser.add_argument("--risk", choices=RISK_CLASSES, default="low")
+    sql_parser.add_argument("--action", default="state.sql_mutation")
+    sql_parser.add_argument("--target-type")
+    sql_parser.add_argument("--target-id")
+    sql_parser.add_argument("--initiative-id")
+    sql_parser.add_argument("--correlation-id")
+    sql_parser.add_argument("--params-json", default="{}")
+    sql_parser.add_argument("--read-only", action="store_true")
+    sql_parser.add_argument("sql", help="one SQL statement, or '-' for stdin")
+    sql_parser.set_defaults(handler=execute_sql)
+
+    summary_parser = commands.add_parser("summary")
+    summary_parser.add_argument("--product-id", required=True)
+    summary_parser.add_argument("--event-limit", type=int, default=20)
+    summary_parser.set_defaults(handler=summarize)
+
+    doctor_parser = commands.add_parser("doctor")
+    doctor_parser.add_argument("--product-id", required=True)
+    doctor_parser.set_defaults(handler=diagnose)
+
+    checkpoint_parser = commands.add_parser("checkpoint")
+    add_lease_arguments(checkpoint_parser)
+    checkpoint_parser.add_argument("--reason", required=True)
+    checkpoint_parser.add_argument("--trigger", default="manual")
+    checkpoint_parser.set_defaults(handler=checkpoint_state)
+
+    checkpoint_list_parser = commands.add_parser("checkpoint-list")
+    checkpoint_list_parser.add_argument("--product-id", required=True)
+    checkpoint_list_parser.set_defaults(handler=list_checkpoints)
+
+    restore_parser = commands.add_parser("restore")
+    add_lease_arguments(restore_parser)
+    restore_parser.add_argument("--checkpoint-id", required=True)
+    restore_parser.add_argument("--reason", required=True)
+    restore_parser.set_defaults(handler=restore_checkpoint)
+
+    export_parser = commands.add_parser("export")
+    export_parser.add_argument("--product-id", required=True)
+    export_parser.add_argument("--output-dir")
+    export_parser.set_defaults(handler=export_state)
+    return parser
+
+
+def main() -> int:
+    os.umask(0o077)
+    try:
+        args = build_parser().parse_args()
+        args.handler(args)
+        return 0
+    except (StateError, sqlite3.Error, json.JSONDecodeError, OSError) as error:
+        emit({"ok": False, "error_type": type(error).__name__, "error": str(error)})
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

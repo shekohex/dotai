@@ -1,0 +1,128 @@
+# State and storage
+
+## Locations
+
+Private coordinator state:
+
+```text
+${AGENTS_HOME:-$HOME/.agents}/projects/<product-id>/
+├── project.json
+├── state.sqlite
+├── initiatives/<initiative-id>/
+├── events.jsonl
+├── artifacts/
+├── checkpoints/<timestamp-id>/
+├── exports/
+└── locks/
+```
+
+Global product registry:
+
+```text
+${AGENTS_HOME:-$HOME/.agents}/projects/index.json
+```
+
+Registry maps normalized remote identity, known checkout roots, and Git common directories to product IDs. GitHub SSH/HTTPS URLs normalize to one identity. Git common-directory matching makes linked worktrees resolve without separate registration. Registry contains no secrets.
+
+Use state script for all registry CRUD:
+
+```bash
+python3 scripts/coordinator_state.py registry-upsert \
+  --product-id example --holder coordinator \
+  --lease-token "$COORDINATOR_LEASE_TOKEN" \
+  --repo-path . --reason 'Register primary repository'
+
+python3 scripts/coordinator_state.py registry-detect --repo-path .
+python3 scripts/coordinator_state.py registry-list --product-id example
+
+python3 scripts/coordinator_state.py registry-remove \
+  --product-id example --holder coordinator \
+  --lease-token "$COORDINATOR_LEASE_TOKEN" \
+  --repo-path . --reason 'Remove obsolete repository association'
+```
+
+Registry writes require active product coordinator lease, use atomic file replacement, and append product audit events. A remote already assigned to another product is a hard conflict; never reassign silently.
+
+When detection finds no mapping, derive a concise candidate ID/name from normalized remote and ask one bootstrap question: create new product or attach repository to existing product. Initialization and registration follow that answer. This one-time identity confirmation prevents accidental fragmentation of multi-repository products. Later worktrees and clones resolve automatically.
+
+Committed repository knowledge:
+
+```text
+<repo>/.agents/project/
+├── PRODUCT.md
+├── ARCHITECTURE.md
+├── WORKFLOWS.md
+└── LEARNINGS.md
+```
+
+Use existing repository equivalents rather than duplicating them. Never store secrets. Keep private directories `0700` and files `0600`. Disposable caches belong under `${XDG_CACHE_HOME:-$HOME/.cache}/agents/projects`.
+
+## Ownership
+
+One canonical coordinator host owns product. One active coordinator lease permits mutations. Other coordinators may inspect read-only. Transfer requires export, verified import, old-lease release, and explicit new-lease acquisition. Never synchronize live SQLite across machines.
+
+## Data responsibilities
+
+- SQLite: canonical live operational state.
+- Markdown: human-authored briefs, decisions, summaries, durable knowledge.
+- JSON: product configuration and portable snapshot.
+- JSONL: append-only event export.
+- External artifact store: large screenshots, videos, traces, and logs. SQLite stores URI, hash, media type, provenance, and verification state.
+
+GitHub issue/PR attachments are preferred durable store for published evidence. Local media is temporary and stays outside Git unless repository visual tests require committed baselines/fixtures. Clean local copies after merge and required deployment verification; retain while diagnosing failures or when user requests it.
+
+Do not duplicate authoritative values. Generated Markdown summaries are projections, not state.
+project.json is authoritative configuration. SQLite repository rows are synchronized operational projections used for joins and events.
+
+## Checkpoints and rollback
+
+SQLite uses WAL mode, `synchronous=NORMAL`, a 1,000-page automatic WAL checkpoint, and a 16 MiB journal limit. `checkpoint` uses SQLite's online backup API, so each checkpoint is a consistent standalone `state.sqlite` plus manifest/checksum and `project.json` copy.
+
+Keep newest five checkpoints per product. The state tool prunes older checkpoints automatically. It creates a checkpoint before `DELETE`, `REPLACE`, any high/critical SQL mutation, and every restore. Before an external destructive action, coordinator explicitly runs `checkpoint`; external action remains governed by its separate approval.
+
+```bash
+python3 scripts/coordinator_state.py checkpoint \
+  --product-id example \
+  --holder coordinator \
+  --lease-token "$COORDINATOR_LEASE_TOKEN" \
+  --reason 'Before approved production reset' \
+  --trigger pre-deployment
+```
+
+List retained checkpoint IDs with `checkpoint-list --product-id <id>`.
+
+Restore requires current writer lease and exact checkpoint ID. Tool verifies product, schema, checksum, and SQLite integrity; first checkpoints current state; atomically replaces database; preserves current lease; then audits restore inside restored database.
+
+```bash
+python3 scripts/coordinator_state.py restore \
+  --product-id example \
+  --holder coordinator \
+  --lease-token "$COORDINATOR_LEASE_TOKEN" \
+  --checkpoint-id 20260101T120000.000000Z-deadbeef \
+  --reason 'Roll back invalid coordinator-state mutation'
+```
+
+These checkpoints cover coordinator bookkeeping only. They do not back up repositories, application databases, infrastructure, secrets, or external systems. Timestamped `exports/` remain portable JSON/JSONL snapshots for host transfer, not rollback source.
+
+## Guarded SQL
+
+Use `scripts/coordinator_state.py sql`; never raw `sqlite3`. Pass parameters as JSON. One invocation is one transaction. DDL, `ATTACH`, writable pragmas, extension loading, and direct audit/schema mutation are denied. Every successful mutation appends audit event in same transaction. Failed mutations append failure record outside rolled-back transaction.
+
+Example:
+
+```bash
+python3 scripts/coordinator_state.py sql \
+  --product-id example \
+  --actor coordinator \
+  --lease-token "$COORDINATOR_LEASE_TOKEN" \
+  --reason 'Assign ready task' \
+  --risk low \
+  --params-json '{"task":"task-1","owner":"agent-1"}' \
+  'UPDATE tasks SET owner_agent_id=:owner, state="active" WHERE id=:task'
+```
+
+Use `--read-only` for diagnostics. Code mode should compose calls and parse JSON results instead of scraping prose.
+
+## Progressive loading
+
+Startup summary includes product, active initiatives, ready/blocked tasks, running agents, leases, open PRs, pending approvals, deployed heads, recent decisions, and unread events. Query archived initiatives, full event history, artifacts, and unrelated knowledge only when needed.

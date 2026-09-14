@@ -54,6 +54,38 @@ CREATE TABLE pull_requests (
 );
 """
 
+PULL_REQUEST_TASKS_TABLE_SQL = """
+CREATE TABLE pull_request_tasks (
+  pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(pull_request_id, task_id)
+);
+"""
+
+PULL_REQUEST_DEPLOYMENTS_TABLE_SQL = """
+CREATE TABLE pull_request_deployments (
+  pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+  environment TEXT NOT NULL,
+  deployment_id TEXT REFERENCES deployments(id) ON DELETE SET NULL,
+  deployed_head_sha TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending','passed','failed')),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(pull_request_id, environment)
+);
+"""
+
+PULL_REQUEST_TASKS_INDEX_SQL = (
+    "CREATE INDEX pull_request_tasks_by_task ON pull_request_tasks(task_id);"
+)
+PULL_REQUEST_DEPLOYMENTS_INDEX_SQL = (
+    "CREATE INDEX pull_request_deployments_by_environment "
+    "ON pull_request_deployments(environment, status);"
+)
+PULL_REQUESTS_PRODUCT_STATE_INDEX_SQL = (
+    "CREATE INDEX prs_by_product_state ON pull_requests(product_id, state);"
+)
+
 PULL_REQUEST_COLUMNS = (
     "id",
     "product_id",
@@ -178,12 +210,7 @@ CREATE TABLE workspaces (
   updated_at TEXT NOT NULL
 );
 __CANONICAL_PULL_REQUESTS_TABLE__
-CREATE TABLE pull_request_tasks (
-  pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
-  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  created_at TEXT NOT NULL,
-  PRIMARY KEY(pull_request_id, task_id)
-);
+__PULL_REQUEST_TASKS_TABLE__
 CREATE TABLE stacks (
   id TEXT PRIMARY KEY,
   product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -243,15 +270,7 @@ CREATE TABLE deployments (
   updated_at TEXT NOT NULL,
   verified_at TEXT
 );
-CREATE TABLE pull_request_deployments (
-  pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
-  environment TEXT NOT NULL,
-  deployment_id TEXT REFERENCES deployments(id) ON DELETE SET NULL,
-  deployed_head_sha TEXT NOT NULL,
-  status TEXT NOT NULL CHECK(status IN ('pending','passed','failed')),
-  updated_at TEXT NOT NULL,
-  PRIMARY KEY(pull_request_id, environment)
-);
+__PULL_REQUEST_DEPLOYMENTS_TABLE__
 CREATE TABLE artifacts (
   id TEXT PRIMARY KEY,
   product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -340,44 +359,45 @@ BEGIN SELECT RAISE(ABORT, 'terminal approval cannot change'); END;
 CREATE INDEX tasks_by_initiative_state ON tasks(initiative_id, state);
 CREATE INDEX initiatives_by_product_archive ON initiatives(product_id, archived_at);
 CREATE INDEX events_by_product_time ON events(product_id, occurred_at DESC);
-CREATE INDEX prs_by_product_state ON pull_requests(product_id, state);
-CREATE INDEX pull_request_tasks_by_task ON pull_request_tasks(task_id);
-CREATE INDEX pull_request_deployments_by_environment
-  ON pull_request_deployments(environment, status);
+__PULL_REQUESTS_PRODUCT_STATE_INDEX__
+__PULL_REQUEST_TASKS_INDEX__
+__PULL_REQUEST_DEPLOYMENTS_INDEX__
 """.replace(
     "__CANONICAL_PULL_REQUESTS_TABLE__", CANONICAL_PULL_REQUESTS_TABLE_SQL
+).replace(
+    "__PULL_REQUEST_TASKS_TABLE__", PULL_REQUEST_TASKS_TABLE_SQL
+).replace(
+    "__PULL_REQUEST_DEPLOYMENTS_TABLE__", PULL_REQUEST_DEPLOYMENTS_TABLE_SQL
+).replace(
+    "__PULL_REQUESTS_PRODUCT_STATE_INDEX__", PULL_REQUESTS_PRODUCT_STATE_INDEX_SQL
+).replace(
+    "__PULL_REQUEST_TASKS_INDEX__", PULL_REQUEST_TASKS_INDEX_SQL
+).replace(
+    "__PULL_REQUEST_DEPLOYMENTS_INDEX__", PULL_REQUEST_DEPLOYMENTS_INDEX_SQL
 )
 
 # Entries are applied in version order. Version 1 is intentionally rerunnable:
 # it repairs databases created earlier in this skill's v1 lifetime. A future
 # schema version adds one entry here and is applied only when history is behind.
+def make_idempotent_ddl(sql: str) -> str:
+    leading_whitespace = sql[: len(sql) - len(sql.lstrip())]
+    normalized_sql = sql.lstrip()
+    for statement_type in ("TABLE", "INDEX"):
+        prefix = f"CREATE {statement_type} "
+        if normalized_sql.startswith(prefix):
+            return leading_whitespace + normalized_sql.replace(
+                prefix, f"CREATE {statement_type} IF NOT EXISTS ", 1
+            )
+    raise ValueError(f"unsupported schema DDL: {sql}")
+
+
 SCHEMA_MIGRATION_STEPS: dict[int, tuple[str, ...]] = {
     1: (
-        """
-        CREATE TABLE IF NOT EXISTS pull_request_tasks (
-          pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
-          task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-          created_at TEXT NOT NULL,
-          PRIMARY KEY(pull_request_id, task_id)
-        )
-        """,
-        "CREATE INDEX IF NOT EXISTS pull_request_tasks_by_task "
-        "ON pull_request_tasks(task_id)",
-        """
-        CREATE TABLE IF NOT EXISTS pull_request_deployments (
-          pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
-          environment TEXT NOT NULL,
-          deployment_id TEXT REFERENCES deployments(id) ON DELETE SET NULL,
-          deployed_head_sha TEXT NOT NULL,
-          status TEXT NOT NULL CHECK(status IN ('pending','passed','failed')),
-          updated_at TEXT NOT NULL,
-          PRIMARY KEY(pull_request_id, environment)
-        )
-        """,
-        "CREATE INDEX IF NOT EXISTS pull_request_deployments_by_environment "
-        "ON pull_request_deployments(environment, status)",
-        "CREATE INDEX IF NOT EXISTS prs_by_product_state "
-        "ON pull_requests(product_id, state)",
+        make_idempotent_ddl(PULL_REQUEST_TASKS_TABLE_SQL),
+        make_idempotent_ddl(PULL_REQUEST_TASKS_INDEX_SQL),
+        make_idempotent_ddl(PULL_REQUEST_DEPLOYMENTS_TABLE_SQL),
+        make_idempotent_ddl(PULL_REQUEST_DEPLOYMENTS_INDEX_SQL),
+        make_idempotent_ddl(PULL_REQUESTS_PRODUCT_STATE_INDEX_SQL),
         """
         INSERT OR IGNORE INTO pull_request_tasks(
           pull_request_id, task_id, created_at
@@ -700,24 +720,6 @@ def reconcile_schema_in_transaction(
         "pull_requests_fk_rebuilt": rebuild_pull_requests,
         "event_id": event_id,
     }
-
-
-def reconcile_schema(product_id: str) -> dict[str, Any]:
-    with product_lock(product_id):
-        rebuild_pull_requests = schema_reconciliation_plan(product_id)
-        with connect(product_id) as connection:
-            with schema_reconciliation_mode(
-                connection, rebuild_pull_requests=rebuild_pull_requests
-            ):
-                connection.execute("BEGIN IMMEDIATE")
-                result = reconcile_schema_in_transaction(
-                    connection,
-                    product_id,
-                    rebuild_pull_requests=rebuild_pull_requests,
-                )
-                assert_foreign_key_integrity(connection)
-                connection.commit()
-                return result
 
 
 def reconcile_schema_for_lease(
@@ -1644,7 +1646,9 @@ def parse_task_ids(raw_value: str) -> list[str]:
     return value
 
 
-def upsert_pull_request(args: argparse.Namespace) -> None:
+def parse_pull_request_request(
+    args: argparse.Namespace,
+) -> tuple[dict[str, Any], list[str] | None]:
     pull_request = parse_json_object(
         args.pull_request_json, "--pull-request-json"
     )
@@ -1658,10 +1662,177 @@ def upsert_pull_request(args: argparse.Namespace) -> None:
     pull_request_id = pull_request.get("id")
     if not isinstance(pull_request_id, str) or not pull_request_id:
         raise StateError("--pull-request-json.id must be a non-empty string")
-    requested_task_ids = parse_task_ids(args.task_ids_json)
+    requested_task_ids = (
+        parse_task_ids(args.task_ids_json)
+        if args.task_ids_json is not None
+        else None
+    )
     if "task_id" in pull_request and pull_request["task_id"] is not None:
         if not isinstance(pull_request["task_id"], str) or not pull_request["task_id"]:
             raise StateError("--pull-request-json.task_id must be null or non-empty string")
+    return pull_request, requested_task_ids
+
+
+def validate_pull_request_task_ids(
+    connection: sqlite3.Connection, product_id: str, task_ids: list[str]
+) -> None:
+    if not task_ids:
+        return
+    placeholders = ", ".join("?" for _ in task_ids)
+    valid_task_ids = {
+        row["id"]
+        for row in connection.execute(
+            "SELECT tasks.id FROM tasks "
+            "JOIN initiatives ON initiatives.id = tasks.initiative_id "
+            f"WHERE initiatives.product_id = ? AND tasks.id IN ({placeholders})",
+            (product_id, *task_ids),
+        )
+    }
+    missing_task_ids = [
+        task_id for task_id in task_ids if task_id not in valid_task_ids
+    ]
+    if missing_task_ids:
+        raise StateError(
+            "task(s) do not belong to product: " + ", ".join(missing_task_ids)
+        )
+
+
+def upsert_pull_request_in_transaction(
+    connection: sqlite3.Connection,
+    product_id: str,
+    actor: str,
+    reason: str,
+    pull_request: dict[str, Any],
+    requested_task_ids: list[str] | None,
+) -> dict[str, Any]:
+    pull_request_id = pull_request["id"]
+    existing_row = connection.execute(
+        "SELECT * FROM pull_requests WHERE id = ?", (pull_request_id,)
+    ).fetchone()
+    if existing_row is not None and existing_row["product_id"] != product_id:
+        raise StateError("pull request belongs to another product")
+
+    if existing_row is None:
+        required_fields = {"branch", "base_branch", "created_at", "updated_at"}
+        missing_fields = sorted(
+            field for field in required_fields if not pull_request.get(field)
+        )
+        if missing_fields:
+            raise StateError(
+                "new pull request missing fields: " + ", ".join(missing_fields)
+            )
+        values = {
+            field: pull_request.get(field)
+            for field in PULL_REQUEST_COLUMNS
+            if field != "product_id"
+        }
+        values["product_id"] = product_id
+        values.setdefault("state", "open")
+        existing_task_ids: list[str] = []
+    else:
+        values = {
+            field: (
+                pull_request[field]
+                if field in pull_request
+                else existing_row[field]
+            )
+            for field in PULL_REQUEST_COLUMNS
+            if field != "product_id"
+        }
+        values["product_id"] = product_id
+        existing_task_ids = [
+            row["task_id"]
+            for row in connection.execute(
+                "SELECT task_id FROM pull_request_tasks "
+                "WHERE pull_request_id = ? ORDER BY created_at, task_id",
+                (pull_request_id,),
+            )
+        ]
+
+    requested_compatibility_task_id = pull_request.get("task_id")
+    if requested_task_ids is None:
+        task_ids: list[str] = []
+        for task_id in existing_task_ids:
+            if task_id not in task_ids:
+                task_ids.append(task_id)
+        if values.get("task_id") and values["task_id"] not in task_ids:
+            task_ids.insert(0, values["task_id"])
+    else:
+        task_ids = requested_task_ids.copy()
+        values["task_id"] = (
+            requested_compatibility_task_id
+            if requested_compatibility_task_id in task_ids
+            else (task_ids[0] if task_ids else None)
+        )
+
+    validate_pull_request_task_ids(connection, product_id, task_ids)
+
+    columns = ", ".join(PULL_REQUEST_COLUMNS)
+    placeholders = ", ".join("?" for _ in PULL_REQUEST_COLUMNS)
+    updates = ", ".join(
+        f"{field}=excluded.{field}"
+        for field in PULL_REQUEST_COLUMNS
+        if field not in {"id", "product_id"}
+    )
+    connection.execute(
+        f"INSERT INTO pull_requests({columns}) VALUES ({placeholders}) "
+        f"ON CONFLICT(id) DO UPDATE SET {updates}",
+        tuple(values[field] for field in PULL_REQUEST_COLUMNS),
+    )
+
+    association_changes = 0
+    association_timestamp = values["updated_at"]
+    if requested_task_ids is not None:
+        if task_ids:
+            placeholders = ", ".join("?" for _ in task_ids)
+            cursor = connection.execute(
+                "DELETE FROM pull_request_tasks "
+                "WHERE pull_request_id = ? "
+                f"AND task_id NOT IN ({placeholders})",
+                (pull_request_id, *task_ids),
+            )
+        else:
+            cursor = connection.execute(
+                "DELETE FROM pull_request_tasks WHERE pull_request_id = ?",
+                (pull_request_id,),
+            )
+        association_changes += cursor.rowcount
+    for task_id in task_ids:
+        cursor = connection.execute(
+            "INSERT OR IGNORE INTO pull_request_tasks("
+            "pull_request_id, task_id, created_at) VALUES (?, ?, ?)",
+            (pull_request_id, task_id, association_timestamp),
+        )
+        association_changes += cursor.rowcount
+    event_id = add_event(
+        connection,
+        product_id=product_id,
+        actor_id=actor,
+        action="pull_request.upserted",
+        risk="low",
+        reason=reason,
+        target_type="pull_request",
+        target_id=pull_request_id,
+        initiative_id=values["initiative_id"],
+        payload={
+            "task_ids": task_ids,
+            "association_changes": association_changes,
+            "task_link_semantics": (
+                "replace" if requested_task_ids is not None else "preserve"
+            ),
+        },
+    )
+    return {
+        "pull_request_id": pull_request_id,
+        "task_ids": task_ids,
+        "changed_rows": 1 + association_changes,
+        "event_id": event_id,
+    }
+
+
+def upsert_pull_request(args: argparse.Namespace) -> None:
+    pull_request, requested_task_ids = parse_pull_request_request(args)
+    pull_request_id = pull_request["id"]
     failure = {
         "occurred_at": now(),
         "actor_id": args.actor,
@@ -1677,124 +1848,16 @@ def upsert_pull_request(args: argparse.Namespace) -> None:
             validate_lease(connection, args.product_id, args.actor, lease_token)
             connection.execute("BEGIN IMMEDIATE")
             validate_lease(connection, args.product_id, args.actor, lease_token)
-            existing_row = connection.execute(
-                "SELECT * FROM pull_requests WHERE id = ?", (pull_request_id,)
-            ).fetchone()
-            if existing_row is not None and existing_row["product_id"] != args.product_id:
-                raise StateError("pull request belongs to another product")
-
-            if existing_row is None:
-                required_fields = {"branch", "base_branch", "created_at", "updated_at"}
-                missing_fields = sorted(
-                    field for field in required_fields if not pull_request.get(field)
-                )
-                if missing_fields:
-                    raise StateError(
-                        "new pull request missing fields: "
-                        + ", ".join(missing_fields)
-                    )
-                values = {
-                    field: pull_request.get(field)
-                    for field in PULL_REQUEST_COLUMNS
-                    if field != "product_id"
-                }
-                values["product_id"] = args.product_id
-                values.setdefault("state", "open")
-                existing_task_ids: list[str] = []
-            else:
-                values = {
-                    field: (
-                        pull_request[field]
-                        if field in pull_request
-                        else existing_row[field]
-                    )
-                    for field in PULL_REQUEST_COLUMNS
-                    if field != "product_id"
-                }
-                values["product_id"] = args.product_id
-                existing_task_ids = [
-                    row["task_id"]
-                    for row in connection.execute(
-                        "SELECT task_id FROM pull_request_tasks "
-                        "WHERE pull_request_id = ? ORDER BY created_at, task_id",
-                        (pull_request_id,),
-                    )
-                ]
-
-            task_ids: list[str] = []
-            for task_id in requested_task_ids + existing_task_ids:
-                if task_id not in task_ids:
-                    task_ids.append(task_id)
-            if values.get("task_id") and values["task_id"] not in task_ids:
-                task_ids.insert(0, values["task_id"])
-            if existing_row is None and task_ids and not values.get("task_id"):
-                values["task_id"] = task_ids[0]
-            if task_ids:
-                placeholders = ", ".join("?" for _ in task_ids)
-                valid_task_ids = {
-                    row["id"]
-                    for row in connection.execute(
-                        "SELECT tasks.id FROM tasks "
-                        "JOIN initiatives ON initiatives.id = tasks.initiative_id "
-                        f"WHERE initiatives.product_id = ? AND tasks.id IN ({placeholders})",
-                        (args.product_id, *task_ids),
-                    )
-                }
-                missing_task_ids = [
-                    task_id for task_id in task_ids if task_id not in valid_task_ids
-                ]
-                if missing_task_ids:
-                    raise StateError(
-                        "task(s) do not belong to product: "
-                        + ", ".join(missing_task_ids)
-                    )
-
-            columns = ", ".join(PULL_REQUEST_COLUMNS)
-            placeholders = ", ".join("?" for _ in PULL_REQUEST_COLUMNS)
-            updates = ", ".join(
-                f"{field}=excluded.{field}"
-                for field in PULL_REQUEST_COLUMNS
-                if field not in {"id", "product_id"}
-            )
-            connection.execute(
-                f"INSERT INTO pull_requests({columns}) VALUES ({placeholders}) "
-                f"ON CONFLICT(id) DO UPDATE SET {updates}",
-                tuple(values[field] for field in PULL_REQUEST_COLUMNS),
-            )
-            association_changes = 0
-            association_timestamp = values["updated_at"]
-            for task_id in task_ids:
-                cursor = connection.execute(
-                    "INSERT OR IGNORE INTO pull_request_tasks("
-                    "pull_request_id, task_id, created_at) VALUES (?, ?, ?)",
-                    (pull_request_id, task_id, association_timestamp),
-                )
-                association_changes += cursor.rowcount
-            event_id = add_event(
+            result = upsert_pull_request_in_transaction(
                 connection,
-                product_id=args.product_id,
-                actor_id=args.actor,
-                action="pull_request.upserted",
-                risk="low",
-                reason=args.reason,
-                target_type="pull_request",
-                target_id=pull_request_id,
-                initiative_id=values["initiative_id"],
-                payload={
-                    "task_ids": task_ids,
-                    "association_changes": association_changes,
-                },
+                args.product_id,
+                args.actor,
+                args.reason,
+                pull_request,
+                requested_task_ids,
             )
             connection.commit()
-        emit(
-            {
-                "ok": True,
-                "pull_request_id": pull_request_id,
-                "task_ids": task_ids,
-                "changed_rows": 1 + association_changes,
-                "event_id": event_id,
-            }
-        )
+        emit({"ok": True, **result})
     except Exception as error:
         failure["error_type"] = type(error).__name__
         failure["error"] = str(error)
@@ -1975,7 +2038,8 @@ def deployment_projections(
             """
             SELECT pull_request_deployments.pull_request_id,
                    pull_request_deployments.environment,
-                   pull_request_deployments.status
+                   pull_request_deployments.status,
+                   pull_request_deployments.deployed_head_sha
             FROM pull_request_deployments
             JOIN pull_requests
               ON pull_requests.id = pull_request_deployments.pull_request_id
@@ -1989,11 +2053,14 @@ def deployment_projections(
         ).fetchone()
         else []
     )
-    coverage_by_pull_request: dict[str, dict[str, str]] = {}
+    coverage_by_pull_request: dict[str, dict[str, dict[str, str]]] = {}
     for coverage in coverage_rows:
         coverage_by_pull_request.setdefault(coverage["pull_request_id"], {})[
             coverage["environment"]
-        ] = coverage["status"]
+        ] = {
+            "status": coverage["status"],
+            "deployed_head_sha": coverage["deployed_head_sha"],
+        }
     known_environments = {
         row["environment"]
         for row in query_rows(
@@ -2014,12 +2081,18 @@ def deployment_projections(
             task_id: deployment_status_by_task.get(task_id, "missing")
             for task_id in pull_request["task_ids"]
         }
-        pull_request["deployment_coverage_statuses"] = {
-            environment: coverage_by_pull_request.get(pull_request["id"], {}).get(
-                environment, "missing"
+        deployment_coverage_statuses: dict[str, str] = {}
+        for environment in sorted(known_environments):
+            coverage = coverage_by_pull_request.get(pull_request["id"], {}).get(
+                environment
             )
-            for environment in sorted(known_environments)
-        }
+            if coverage is None:
+                deployment_coverage_statuses[environment] = "missing"
+            elif coverage["deployed_head_sha"] != pull_request["head_sha"]:
+                deployment_coverage_statuses[environment] = "stale"
+            else:
+                deployment_coverage_statuses[environment] = coverage["status"]
+        pull_request["deployment_coverage_statuses"] = deployment_coverage_statuses
         is_fully_deployed = bool(pull_request["task_ids"]) and bool(
             pull_request["deployment_coverage_statuses"]
         ) and all(
@@ -2494,7 +2567,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_lease_token_arguments(pull_request_parser, required=True)
     pull_request_parser.add_argument("--reason", required=True)
     pull_request_parser.add_argument("--pull-request-json", required=True)
-    pull_request_parser.add_argument("--task-ids-json", default="[]")
+    pull_request_parser.add_argument("--task-ids-json")
     pull_request_parser.set_defaults(handler=upsert_pull_request)
 
     deployment_parser = commands.add_parser("pull-request-deployment-upsert")

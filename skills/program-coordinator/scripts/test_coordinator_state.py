@@ -888,8 +888,44 @@ def main() -> int:
         )
         assert atomic_pr["task_ids"] == ["task-1", "task-2"]
 
+        corrected_pr = run(
+            agents_home,
+            "pull-request-upsert",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Correct complete PR task links",
+            "--pull-request-json",
+            '{"id":"pr-awaiting","task_id":"task-1",'
+            '"updated_at":"2026-01-02T00:00:01+00:00"}',
+            "--task-ids-json",
+            '["task-2"]',
+        )
+        assert corrected_pr["task_ids"] == ["task-2"]
+        assert run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--read-only",
+            "SELECT task_id FROM pull_request_tasks "
+            "WHERE pull_request_id='pr-awaiting' ORDER BY task_id",
+        )["rows"] == [{"task_id": "task-2"}]
+        assert run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--read-only",
+            "SELECT task_id FROM pull_requests WHERE id='pr-awaiting'",
+        )["rows"] == [{"task_id": "task-2"}]
+
         for pull_request_id, head_sha, legacy_task_id in (
-            ("pr-deployed", "head-not-deployed", "task-1"),
+            ("pr-deployed", "pr-deployed-head", "task-1"),
         ):
             run(
                 agents_home,
@@ -992,7 +1028,7 @@ def main() -> int:
             "--deployment-id",
             "deployment-1",
             "--deployed-head-sha",
-            "deployment-merge",
+            "pr-deployed-head",
             "--status",
             "passed",
             environment={"COORDINATOR_LEASE_TOKEN": lease_token},
@@ -1180,9 +1216,8 @@ def main() -> int:
             row["id"]: row for row in summary["merged_awaiting_deployment"]
         }
         assert set(awaiting_by_id) == {"pr-awaiting", "pr-sequential-later"}
-        assert awaiting_by_id["pr-awaiting"]["task_ids"] == ["task-1", "task-2"]
+        assert awaiting_by_id["pr-awaiting"]["task_ids"] == ["task-2"]
         assert awaiting_by_id["pr-awaiting"]["deployment_gate_statuses"] == {
-            "task-1": "passed",
             "task-2": "pending",
         }
         assert awaiting_by_id["pr-awaiting"]["deployment_coverage_statuses"] == {
@@ -1199,6 +1234,58 @@ def main() -> int:
         assert summary["fully_deployed"][0]["deployment_coverage_statuses"] == {
             "production": "passed"
         }
+
+        run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Advance deployed PR head",
+            "--params-json",
+            '{"id":"pr-deployed","head":"pr-deployed-new-head"}',
+            "UPDATE pull_requests SET head_sha=:head WHERE id=:id",
+        )
+        stale_summary = run(agents_home, "summary", "--product-id", "sample")
+        stale_awaiting = {
+            row["id"]: row for row in stale_summary["merged_awaiting_deployment"]
+        }
+        assert stale_awaiting["pr-deployed"]["deployment_coverage_statuses"] == {
+            "production": "stale"
+        }
+        assert stale_summary["fully_deployed"] == []
+
+        refreshed_coverage = run(
+            agents_home,
+            "pull-request-deployment-upsert",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Refresh PR deployment coverage for new head",
+            "--pull-request-id",
+            "pr-deployed",
+            "--environment",
+            "production",
+            "--deployment-id",
+            "deployment-1",
+            "--deployed-head-sha",
+            "pr-deployed-new-head",
+            "--status",
+            "passed",
+        )
+        assert refreshed_coverage["status"] == "passed"
+        recovered_summary = run(agents_home, "summary", "--product-id", "sample")
+        assert [row["id"] for row in recovered_summary["fully_deployed"]] == [
+            "pr-deployed"
+        ]
 
         doctor = run(agents_home, "doctor", "--product-id", "sample")
         assert doctor["ok"] is True

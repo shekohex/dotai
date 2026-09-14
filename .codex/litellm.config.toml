@@ -1,0 +1,12 @@
+model_provider = "litellm"
+model_catalog_json = "litellm-models.json"
+
+[model_providers.litellm]
+name = "LiteLLM"
+base_url = "https://ai-gateway.0iq.xyz/v1"
+wire_api = "responses"
+
+[model_providers.litellm.auth]
+command = "node"
+args = ["pi-agent-auth.mjs", "litellm"]
+cwd = "~/.codex"

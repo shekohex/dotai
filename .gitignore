@@ -18,6 +18,8 @@
 *.log
 *.log.*
 *.db
+*.pyc
+__pycache__/
 .claude/history.jsonl
 .claude/debug/
 .claude/file-history/

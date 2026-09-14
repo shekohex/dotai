@@ -14,6 +14,8 @@ When Paseo exists:
 6. Use heartbeat only when no event subscription can wake coordinator.
 7. Archive agent/workspace only after merge and recovery verification.
 
+List calls are discovery, not current-state proof. For every already-tracked owner, workspace, and child agent, call direct status by stable ID before reconciliation; include idle agents and children that may be absent from list results. Treat a missing list entry as unknown until direct status returns not-found and recovery is recorded. Do not declare state current, release ownership, or archive from list output alone.
+
 For external agent delegated by user, message named agent through Paseo and enable notification. This grants no authority over unrelated worktree resources.
 
 ## Generic harness

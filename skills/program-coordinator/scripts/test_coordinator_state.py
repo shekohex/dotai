@@ -16,11 +16,17 @@ SCRIPT = Path(__file__).with_name("coordinator_state.py")
 
 
 def run(
-    agents_home: Path, *arguments: str, expect_success: bool = True
+    agents_home: Path,
+    *arguments: str,
+    expect_success: bool = True,
+    environment: dict[str, str] | None = None,
 ) -> dict:
+    command_environment = {**os.environ, "AGENTS_HOME": str(agents_home)}
+    if environment:
+        command_environment.update(environment)
     completed = subprocess.run(
         [sys.executable, str(SCRIPT), *arguments],
-        env={**os.environ, "AGENTS_HOME": str(agents_home)},
+        env=command_environment,
         check=False,
         capture_output=True,
         text=True,
@@ -48,11 +54,18 @@ def main() -> int:
         project_config = json.loads(
             (agents_home / "projects" / "sample" / "project.json").read_text()
         )
+        assert project_config["schema_version"] == 1
         assert project_config["limits"]["soft_time_budget_minutes"] is None
         assert project_config["limits"]["fallback_heartbeat_minutes"] == 10
         database_path = agents_home / "projects" / "sample" / "state.sqlite"
         with sqlite3.connect(database_path) as connection:
             assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+            assert connection.execute(
+                "SELECT version FROM schema_migrations"
+            ).fetchone()[0] == 1
+            assert connection.execute(
+                "SELECT name FROM sqlite_schema WHERE name='pull_request_tasks'"
+            ).fetchone()[0] == "pull_request_tasks"
 
         acquired = run(
             agents_home,
@@ -63,6 +76,32 @@ def main() -> int:
             "coordinator-1",
         )
         lease_token = acquired["lease_token"]
+        assert lease_token.encode() not in database_path.read_bytes()
+
+        renewed = run(
+            agents_home,
+            "lease-renew",
+            "--product-id",
+            "sample",
+            "--holder",
+            "coordinator-1",
+            "--lease-token-env",
+            "COORDINATOR_LEASE_TOKEN",
+            environment={"COORDINATOR_LEASE_TOKEN": lease_token},
+        )
+        assert renewed["ok"] is True
+        missing_environment_token = run(
+            agents_home,
+            "lease-renew",
+            "--product-id",
+            "sample",
+            "--holder",
+            "coordinator-1",
+            "--lease-token-env",
+            "MISSING_COORDINATOR_LEASE_TOKEN",
+            expect_success=False,
+        )
+        assert missing_environment_token["ok"] is False
 
         repository_path = agents_home / "sample-repository"
         worktree_path = agents_home / "sample-worktree"
@@ -185,6 +224,120 @@ def main() -> int:
         assert query["rows"] == [
             {"title": "Ship capability", "soft_time_budget_minutes": 90}
         ]
+
+        for task_id, title in (
+            ("task-1", "First coupled task"),
+            ("task-2", "Second coupled task"),
+        ):
+            run(
+                agents_home,
+                "sql",
+                "--product-id",
+                "sample",
+                "--actor",
+                "coordinator-1",
+                "--lease-token-env",
+                "COORDINATOR_LEASE_TOKEN",
+                "--reason",
+                "Create coupled task",
+                "--params-json",
+                json.dumps(
+                    {
+                        "id": task_id,
+                        "initiative": "initiative-1",
+                        "title": title,
+                        "now": "2026-01-01T00:00:00+00:00",
+                    }
+                ),
+                "INSERT INTO tasks("
+                "id, initiative_id, title, state, phase, created_at, updated_at"
+                ") VALUES ("
+                ":id, :initiative, :title, 'complete', 'merge', :now, :now"
+                ")",
+                environment={"COORDINATOR_LEASE_TOKEN": lease_token},
+            )
+
+        for pull_request_id, head_sha, legacy_task_id in (
+            ("pr-awaiting", "head-awaiting", "task-1"),
+            ("pr-deployed", "head-deployed", None),
+        ):
+            run(
+                agents_home,
+                "sql",
+                "--product-id",
+                "sample",
+                "--actor",
+                "coordinator-1",
+                "--lease-token",
+                lease_token,
+                "--reason",
+                "Record merged PR",
+                "--params-json",
+                json.dumps(
+                    {
+                        "id": pull_request_id,
+                        "initiative": "initiative-1",
+                        "legacy_task": legacy_task_id,
+                        "head": head_sha,
+                        "now": "2026-01-02T00:00:00+00:00",
+                    }
+                ),
+                "INSERT INTO pull_requests("
+                "id, product_id, initiative_id, task_id, number, branch, "
+                "base_branch, head_sha, state, created_at, updated_at"
+                ") VALUES ("
+                ":id, 'sample', NULL, :legacy_task, 10, 'feature/coupled', "
+                "'main', :head, 'merged', :now, :now"
+                ")",
+            )
+
+        linked_tasks = run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Link multiple tasks to one PR",
+            "--params-json",
+            json.dumps(
+                {
+                    "pr": "pr-awaiting",
+                    "task_one": "task-1",
+                    "task_two": "task-2",
+                    "now": "2026-01-02T00:00:00+00:00",
+                }
+            ),
+            "INSERT INTO pull_request_tasks(pull_request_id, task_id, created_at) "
+            "VALUES (:pr, :task_one, :now), (:pr, :task_two, :now)",
+        )
+        assert linked_tasks["changed_rows"] == 2
+
+        run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Record verified deployment",
+            "--params-json",
+            '{"id":"deployment-1","head":"head-deployed",'
+            '"verified":"2026-01-03T00:00:00+00:00"}',
+            "INSERT INTO deployments("
+            "id, product_id, environment, head_sha, status, created_at, "
+            "updated_at, verified_at"
+            ") VALUES ("
+            ":id, 'sample', 'production', :head, 'verified', :verified, "
+            ":verified, :verified"
+            ")",
+        )
 
         checkpoint = run(
             agents_home,
@@ -341,6 +494,13 @@ def main() -> int:
         summary = run(agents_home, "summary", "--product-id", "sample")
         assert len(summary["initiatives"]) == 1
         assert len(summary["recent_events"]) >= 3
+        assert summary["merged_awaiting_deployment"][0]["id"] == "pr-awaiting"
+        assert summary["merged_awaiting_deployment"][0]["task_ids"] == [
+            "task-1",
+            "task-2",
+        ]
+        assert summary["fully_deployed"][0]["id"] == "pr-deployed"
+        assert summary["fully_deployed"][0]["deployment_state"] == "fully_deployed"
 
         doctor = run(agents_home, "doctor", "--product-id", "sample")
         assert doctor["ok"] is True

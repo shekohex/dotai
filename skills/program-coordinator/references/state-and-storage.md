@@ -29,7 +29,7 @@ Use state script for all registry CRUD:
 ```bash
 python3 scripts/coordinator_state.py registry-upsert \
   --product-id example --holder coordinator \
-  --lease-token "$COORDINATOR_LEASE_TOKEN" \
+  --lease-token-env COORDINATOR_LEASE_TOKEN \
   --repo-path . --reason 'Register primary repository'
 
 python3 scripts/coordinator_state.py registry-detect --repo-path .
@@ -37,11 +37,13 @@ python3 scripts/coordinator_state.py registry-list --product-id example
 
 python3 scripts/coordinator_state.py registry-remove \
   --product-id example --holder coordinator \
-  --lease-token "$COORDINATOR_LEASE_TOKEN" \
+  --lease-token-env COORDINATOR_LEASE_TOKEN \
   --repo-path . --reason 'Remove obsolete repository association'
 ```
 
 Registry writes require active product coordinator lease, use atomic file replacement, and append product audit events. A remote already assigned to another product is a hard conflict; never reassign silently.
+
+Lease commands accept either `--lease-token TOKEN` or `--lease-token-env NAME`. The environment form keeps the token out of command arguments and shell history; it is resolved only for that process and still validates the same hashed token under the same product lock. Never write the plaintext token to SQLite, files, checkpoints, logs, or project configuration.
 
 When detection finds no mapping, derive a concise candidate ID/name from normalized remote and ask one bootstrap question: create new product or attach repository to existing product. Initialization and registration follow that answer. This one-time identity confirmation prevents accidental fragmentation of multi-repository products. Later worktrees and clones resolve automatically.
 
@@ -74,6 +76,10 @@ GitHub issue/PR attachments are preferred durable store for published evidence. 
 Do not duplicate authoritative values. Generated Markdown summaries are projections, not state.
 project.json is authoritative configuration. SQLite repository rows are synchronized operational projections used for joins and events.
 
+Pull requests can deliver multiple tightly coupled tasks. Keep `pull_requests.task_id` as the existing single-task compatibility field, and add one row per delivered task to `pull_request_tasks(pull_request_id, task_id, created_at)` in the same guarded transaction. Summary output exposes complete `task_ids`; task gates and completion remain separate.
+
+Summary output separates merged work into `merged_awaiting_deployment` and `fully_deployed`. A merged PR is fully deployed only when every latest recorded deployment for its head is `status = 'verified'` with non-null `verified_at`; otherwise it remains in the awaiting group, including when no deployment is recorded.
+
 ## Checkpoints and rollback
 
 SQLite uses WAL mode, `synchronous=NORMAL`, a 1,000-page automatic WAL checkpoint, and a 16 MiB journal limit. `checkpoint` uses SQLite's online backup API, so each checkpoint is a consistent standalone `state.sqlite` plus manifest/checksum and `project.json` copy.
@@ -84,7 +90,7 @@ Keep newest five checkpoints per product. The state tool prunes older checkpoint
 python3 scripts/coordinator_state.py checkpoint \
   --product-id example \
   --holder coordinator \
-  --lease-token "$COORDINATOR_LEASE_TOKEN" \
+  --lease-token-env COORDINATOR_LEASE_TOKEN \
   --reason 'Before approved production reset' \
   --trigger pre-deployment
 ```
@@ -97,7 +103,7 @@ Restore requires current writer lease and exact checkpoint ID. Tool verifies pro
 python3 scripts/coordinator_state.py restore \
   --product-id example \
   --holder coordinator \
-  --lease-token "$COORDINATOR_LEASE_TOKEN" \
+  --lease-token-env COORDINATOR_LEASE_TOKEN \
   --checkpoint-id 20260101T120000.000000Z-deadbeef \
   --reason 'Roll back invalid coordinator-state mutation'
 ```
@@ -114,7 +120,7 @@ Example:
 python3 scripts/coordinator_state.py sql \
   --product-id example \
   --actor coordinator \
-  --lease-token "$COORDINATOR_LEASE_TOKEN" \
+  --lease-token-env COORDINATOR_LEASE_TOKEN \
   --reason 'Assign ready task' \
   --risk low \
   --params-json '{"task":"task-1","owner":"agent-1"}' \
@@ -125,4 +131,4 @@ Use `--read-only` for diagnostics. Code mode should compose calls and parse JSON
 
 ## Progressive loading
 
-Startup summary includes product, active initiatives, ready/blocked tasks, running agents, leases, open PRs, pending approvals, deployed heads, recent decisions, and unread events. Query archived initiatives, full event history, artifacts, and unrelated knowledge only when needed.
+Startup summary includes product, active initiatives, ready/blocked tasks, running agents, leases, open PRs, merged work awaiting deployment, fully deployed work, pending approvals, recent decisions, and unread events. Query archived initiatives, full event history, artifacts, and unrelated knowledge only when needed.

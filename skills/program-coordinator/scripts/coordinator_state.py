@@ -27,6 +27,7 @@ CHECKPOINT_LIMIT = 5
 WAL_AUTOCHECKPOINT_PAGES = 1000
 PRODUCT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 RISK_CLASSES = ("low", "medium", "high", "critical")
+VERIFIED_DEPLOYMENT_STATUS = "verified"
 REMINDER = (
     "Consider updating learned knowledge or user preferences if this operation "
     "revealed durable information."
@@ -140,7 +141,7 @@ CREATE TABLE pull_requests (
   id TEXT PRIMARY KEY,
   product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   initiative_id TEXT REFERENCES initiatives(id),
-  task_id TEXT REFERENCES tasks(id),
+  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   repository_id TEXT REFERENCES repositories(id),
   number INTEGER,
   url TEXT,
@@ -154,6 +155,12 @@ CREATE TABLE pull_requests (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE(repository_id, number)
+);
+CREATE TABLE pull_request_tasks (
+  pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(pull_request_id, task_id)
 );
 CREATE TABLE stacks (
   id TEXT PRIMARY KEY,
@@ -303,6 +310,7 @@ CREATE INDEX tasks_by_initiative_state ON tasks(initiative_id, state);
 CREATE INDEX initiatives_by_product_archive ON initiatives(product_id, archived_at);
 CREATE INDEX events_by_product_time ON events(product_id, occurred_at DESC);
 CREATE INDEX prs_by_product_state ON pull_requests(product_id, state);
+CREATE INDEX pull_request_tasks_by_task ON pull_request_tasks(task_id);
 """
 
 
@@ -756,6 +764,21 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def resolve_lease_token(args: argparse.Namespace) -> str:
+    lease_token = getattr(args, "lease_token", None)
+    if lease_token:
+        return lease_token
+    environment_name = getattr(args, "lease_token_env", None)
+    if environment_name:
+        lease_token = os.environ.get(environment_name)
+        if lease_token:
+            return lease_token
+        raise StateError(
+            f"lease token environment variable is empty: {environment_name}"
+        )
+    raise StateError("--lease-token or --lease-token-env is required")
+
+
 def validate_lease(
     connection: sqlite3.Connection, product_id: str, holder: str, token: str
 ) -> None:
@@ -836,12 +859,13 @@ def acquire_lease(args: argparse.Namespace) -> None:
 def renew_lease(args: argparse.Namespace) -> None:
     if args.ttl_seconds <= 0:
         raise StateError("--ttl-seconds must be positive")
+    lease_token = resolve_lease_token(args)
     expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
         seconds=args.ttl_seconds
     )
     with product_lock(args.product_id), connect(args.product_id) as connection:
         connection.execute("BEGIN IMMEDIATE")
-        validate_lease(connection, args.product_id, args.holder, args.lease_token)
+        validate_lease(connection, args.product_id, args.holder, lease_token)
         connection.execute(
             "UPDATE coordinator_leases SET expires_at = ? WHERE product_id = ?",
             (expires_at.isoformat(timespec="seconds"), args.product_id),
@@ -868,9 +892,10 @@ def renew_lease(args: argparse.Namespace) -> None:
 
 
 def release_lease(args: argparse.Namespace) -> None:
+    lease_token = resolve_lease_token(args)
     with product_lock(args.product_id), connect(args.product_id) as connection:
         connection.execute("BEGIN IMMEDIATE")
-        validate_lease(connection, args.product_id, args.holder, args.lease_token)
+        validate_lease(connection, args.product_id, args.holder, lease_token)
         connection.execute(
             "DELETE FROM coordinator_leases WHERE product_id = ?", (args.product_id,)
         )
@@ -890,9 +915,10 @@ def release_lease(args: argparse.Namespace) -> None:
 
 def registry_upsert(args: argparse.Namespace) -> None:
     repository = inspect_repository(args.repo_path, args.remote_url)
+    lease_token = resolve_lease_token(args)
     with product_lock(args.product_id), connect(args.product_id) as connection:
         validate_lease(
-            connection, args.product_id, args.holder, args.lease_token
+            connection, args.product_id, args.holder, lease_token
         )
         with registry_lock():
             registry = read_registry()
@@ -944,7 +970,7 @@ def registry_upsert(args: argparse.Namespace) -> None:
             write_json(get_registry_path(), registry)
         connection.execute("BEGIN IMMEDIATE")
         validate_lease(
-            connection, args.product_id, args.holder, args.lease_token
+            connection, args.product_id, args.holder, lease_token
         )
         event_id = add_event(
             connection,
@@ -1030,9 +1056,10 @@ def registry_list(args: argparse.Namespace) -> None:
 
 def registry_remove(args: argparse.Namespace) -> None:
     repository = inspect_repository(args.repo_path, args.remote_url)
+    lease_token = resolve_lease_token(args)
     with product_lock(args.product_id), connect(args.product_id) as connection:
         validate_lease(
-            connection, args.product_id, args.holder, args.lease_token
+            connection, args.product_id, args.holder, lease_token
         )
         with registry_lock():
             registry = read_registry()
@@ -1050,7 +1077,7 @@ def registry_remove(args: argparse.Namespace) -> None:
             write_json(get_registry_path(), registry)
         connection.execute("BEGIN IMMEDIATE")
         validate_lease(
-            connection, args.product_id, args.holder, args.lease_token
+            connection, args.product_id, args.holder, lease_token
         )
         event_id = add_event(
             connection,
@@ -1164,8 +1191,7 @@ def execute_sql(args: argparse.Namespace) -> None:
 
     if not args.reason:
         raise StateError("--reason is required for mutating SQL")
-    if not args.lease_token:
-        raise StateError("--lease-token is required for mutating SQL")
+    lease_token = resolve_lease_token(args)
 
     failure = {
         "occurred_at": now(),
@@ -1182,7 +1208,7 @@ def execute_sql(args: argparse.Namespace) -> None:
     try:
         with product_lock(args.product_id), connect(args.product_id) as connection:
             validate_lease(
-                connection, args.product_id, args.actor, args.lease_token
+                connection, args.product_id, args.actor, lease_token
             )
             if sql_requires_checkpoint(sql, args.risk):
                 checkpoint = create_checkpoint_locked(
@@ -1193,7 +1219,7 @@ def execute_sql(args: argparse.Namespace) -> None:
                 )
             connection.execute("BEGIN IMMEDIATE")
             validate_lease(
-                connection, args.product_id, args.actor, args.lease_token
+                connection, args.product_id, args.actor, lease_token
             )
             touched_tables, mutation_seen = install_guard(connection)
             changes_before = connection.total_changes
@@ -1257,6 +1283,98 @@ def query_rows(
     return [dict(row) for row in connection.execute(sql, params).fetchall()]
 
 
+def pull_request_task_ids(
+    connection: sqlite3.Connection, product_id: str
+) -> dict[str, list[str]]:
+    associations = query_rows(
+        connection,
+        """
+        SELECT pull_request_tasks.pull_request_id, pull_request_tasks.task_id
+        FROM pull_request_tasks
+        JOIN pull_requests ON pull_requests.id = pull_request_tasks.pull_request_id
+        WHERE pull_requests.product_id = ?
+        ORDER BY pull_request_tasks.created_at, pull_request_tasks.task_id
+        """,
+        (product_id,),
+    )
+    task_ids_by_pull_request: dict[str, list[str]] = {}
+    for association in associations:
+        task_ids_by_pull_request.setdefault(
+            association["pull_request_id"], []
+        ).append(association["task_id"])
+    return task_ids_by_pull_request
+
+
+def pull_request_rows(
+    connection: sqlite3.Connection,
+    product_id: str,
+    sql: str,
+    params: tuple[Any, ...] = (),
+) -> list[dict[str, Any]]:
+    rows = query_rows(connection, sql, params)
+    task_ids_by_pull_request = pull_request_task_ids(connection, product_id)
+    for row in rows:
+        task_ids = task_ids_by_pull_request.get(row["id"], []).copy()
+        legacy_task_id = row.get("task_id")
+        if legacy_task_id and legacy_task_id not in task_ids:
+            task_ids.insert(0, legacy_task_id)
+        row["task_ids"] = task_ids
+    return rows
+
+
+def deployment_projections(
+    connection: sqlite3.Connection, product_id: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    merged_pull_requests = pull_request_rows(
+        connection,
+        product_id,
+        "SELECT * FROM pull_requests WHERE product_id = ? "
+        "AND state = 'merged' ORDER BY updated_at DESC",
+        (product_id,),
+    )
+    deployments = query_rows(
+        connection,
+        "SELECT * FROM deployments WHERE product_id = ?",
+        (product_id,),
+    )
+    latest_deployments: dict[tuple[str, str], dict[str, Any]] = {}
+    for deployment in deployments:
+        key = (deployment["head_sha"], deployment["environment"])
+        previous = latest_deployments.get(key)
+        if previous is None or (
+            deployment["updated_at"], deployment["id"]
+        ) > (previous["updated_at"], previous["id"]):
+            latest_deployments[key] = deployment
+
+    awaiting_deployment: list[dict[str, Any]] = []
+    fully_deployed: list[dict[str, Any]] = []
+    for pull_request in merged_pull_requests:
+        matching_deployments = [
+            deployment
+            for (head_sha, _), deployment in latest_deployments.items()
+            if head_sha == pull_request["head_sha"]
+        ]
+        pull_request["deployment_ids"] = [
+            deployment["id"] for deployment in matching_deployments
+        ]
+        pull_request["deployment_environments"] = sorted(
+            deployment["environment"] for deployment in matching_deployments
+        )
+        is_fully_deployed = bool(matching_deployments) and all(
+            deployment["status"] == VERIFIED_DEPLOYMENT_STATUS
+            and deployment["verified_at"] is not None
+            for deployment in matching_deployments
+        )
+        pull_request["deployment_state"] = (
+            "fully_deployed" if is_fully_deployed else "merged_awaiting_deployment"
+        )
+        if is_fully_deployed:
+            fully_deployed.append(pull_request)
+        else:
+            awaiting_deployment.append(pull_request)
+    return awaiting_deployment, fully_deployed
+
+
 def summarize(args: argparse.Namespace) -> None:
     with connect(args.product_id, read_only=True) as connection:
         product_row = connection.execute(
@@ -1264,6 +1382,16 @@ def summarize(args: argparse.Namespace) -> None:
         ).fetchone()
         if product_row is None:
             raise StateError(f"product missing from state: {args.product_id}")
+        open_pull_requests = pull_request_rows(
+            connection,
+            args.product_id,
+            "SELECT * FROM pull_requests WHERE product_id = ? "
+            "AND state = 'open' ORDER BY updated_at DESC",
+            (args.product_id,),
+        )
+        awaiting_deployment, fully_deployed = deployment_projections(
+            connection, args.product_id
+        )
         emit(
             {
                 "ok": True,
@@ -1293,12 +1421,7 @@ def summarize(args: argparse.Namespace) -> None:
                     "ORDER BY updated_at DESC",
                     (args.product_id,),
                 ),
-                "pull_requests": query_rows(
-                    connection,
-                    "SELECT * FROM pull_requests WHERE product_id = ? "
-                    "AND state = 'open' ORDER BY updated_at DESC",
-                    (args.product_id,),
-                ),
+                "pull_requests": open_pull_requests,
                 "pending_approvals": query_rows(
                     connection,
                     "SELECT * FROM approvals WHERE product_id = ? "
@@ -1317,6 +1440,8 @@ def summarize(args: argparse.Namespace) -> None:
                     "ORDER BY updated_at DESC LIMIT 10",
                     (args.product_id,),
                 ),
+                "merged_awaiting_deployment": awaiting_deployment,
+                "fully_deployed": fully_deployed,
                 "recent_decisions": query_rows(
                     connection,
                     "SELECT * FROM decisions WHERE product_id = ? "
@@ -1350,8 +1475,9 @@ def diagnose(args: argparse.Namespace) -> None:
         foreign_key_violations = [
             dict(row) for row in connection.execute("PRAGMA foreign_key_check")
         ]
-        schema_versions = [
-            row[0] for row in connection.execute(
+        current_schema_versions = [
+            row[0]
+            for row in connection.execute(
                 "SELECT version FROM schema_migrations ORDER BY version"
             )
         ]
@@ -1366,8 +1492,8 @@ def diagnose(args: argparse.Namespace) -> None:
         problems.append(f"journal_mode is {journal_mode}, expected wal")
     if foreign_key_violations:
         problems.append("foreign key violations present")
-    if schema_versions != [SCHEMA_VERSION]:
-        problems.append(f"unexpected schema versions: {schema_versions}")
+    if current_schema_versions != [SCHEMA_VERSION]:
+        problems.append(f"unexpected schema versions: {current_schema_versions}")
     result = {
         "ok": not problems,
         "product_id": args.product_id,
@@ -1375,7 +1501,7 @@ def diagnose(args: argparse.Namespace) -> None:
         "journal_mode": journal_mode,
         "wal_autocheckpoint_pages": wal_autocheckpoint_pages,
         "foreign_key_violations": foreign_key_violations,
-        "schema_versions": schema_versions,
+        "schema_versions": current_schema_versions,
         "coordinator_lease": dict(lease) if lease else None,
         "problems": problems,
     }
@@ -1385,9 +1511,10 @@ def diagnose(args: argparse.Namespace) -> None:
 
 
 def checkpoint_state(args: argparse.Namespace) -> None:
+    lease_token = resolve_lease_token(args)
     with product_lock(args.product_id), connect(args.product_id) as connection:
         validate_lease(
-            connection, args.product_id, args.holder, args.lease_token
+            connection, args.product_id, args.holder, lease_token
         )
         checkpoint = create_checkpoint_locked(
             args.product_id,
@@ -1397,7 +1524,7 @@ def checkpoint_state(args: argparse.Namespace) -> None:
         )
         connection.execute("BEGIN IMMEDIATE")
         validate_lease(
-            connection, args.product_id, args.holder, args.lease_token
+            connection, args.product_id, args.holder, lease_token
         )
         event_id = add_event(
             connection,
@@ -1442,6 +1569,7 @@ def resolve_checkpoint(product_id: str, checkpoint_id: str) -> Path:
 
 def restore_checkpoint(args: argparse.Namespace) -> None:
     database_path = get_database_path(args.product_id)
+    lease_token = resolve_lease_token(args)
     with product_lock(args.product_id):
         checkpoint_directory = resolve_checkpoint(
             args.product_id, args.checkpoint_id
@@ -1461,7 +1589,7 @@ def restore_checkpoint(args: argparse.Namespace) -> None:
                 current_connection,
                 args.product_id,
                 args.holder,
-                args.lease_token,
+                lease_token,
             )
             current_lease = dict(
                 current_connection.execute(
@@ -1613,10 +1741,18 @@ def export_state(args: argparse.Namespace) -> None:
     )
 
 
+def add_lease_token_arguments(
+    parser: argparse.ArgumentParser, *, required: bool
+) -> None:
+    lease_group = parser.add_mutually_exclusive_group(required=required)
+    lease_group.add_argument("--lease-token")
+    lease_group.add_argument("--lease-token-env", metavar="NAME")
+
+
 def add_lease_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--product-id", required=True)
     parser.add_argument("--holder", required=True)
-    parser.add_argument("--lease-token", required=True)
+    add_lease_token_arguments(parser, required=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1670,7 +1806,7 @@ def build_parser() -> argparse.ArgumentParser:
     sql_parser = commands.add_parser("sql")
     sql_parser.add_argument("--product-id", required=True)
     sql_parser.add_argument("--actor", default="coordinator")
-    sql_parser.add_argument("--lease-token")
+    add_lease_token_arguments(sql_parser, required=False)
     sql_parser.add_argument("--reason")
     sql_parser.add_argument("--risk", choices=RISK_CLASSES, default="low")
     sql_parser.add_argument("--action", default="state.sql_mutation")

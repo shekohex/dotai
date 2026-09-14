@@ -617,6 +617,145 @@ def assert_reconciliation_failure_rolls_back() -> None:
             ] == event_ids_before
 
 
+def assert_existing_v1_deployment_relation_converges() -> None:
+    with tempfile.TemporaryDirectory(
+        prefix="program-coordinator-deployment-v1-"
+    ) as temporary:
+        agents_home = Path(temporary)
+        run(
+            agents_home,
+            "init",
+            "--product-id",
+            "deployment-legacy",
+            "--name",
+            "Deployment Legacy Product",
+        )
+        lease_token = run(
+            agents_home,
+            "lease-acquire",
+            "--product-id",
+            "deployment-legacy",
+            "--holder",
+            "coordinator-1",
+        )["lease_token"]
+        database_path = (
+            agents_home / "projects" / "deployment-legacy" / "state.sqlite"
+        )
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                "DROP INDEX pull_request_deployments_by_environment"
+            )
+            connection.execute(
+                "ALTER TABLE pull_request_deployments "
+                "RENAME TO pull_request_deployments_current"
+            )
+            connection.executescript(
+                """
+                CREATE TABLE pull_request_deployments (
+                  pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+                  environment TEXT NOT NULL,
+                  deployment_id TEXT REFERENCES deployments(id) ON DELETE SET NULL,
+                  deployed_head_sha TEXT NOT NULL,
+                  status TEXT NOT NULL CHECK(status IN ('pending','passed','failed')),
+                  updated_at TEXT NOT NULL,
+                  PRIMARY KEY(pull_request_id, environment)
+                );
+                CREATE INDEX pull_request_deployments_by_environment
+                  ON pull_request_deployments(environment, status);
+                DROP TABLE pull_request_deployments_current;
+                """
+            )
+            connection.executemany(
+                """
+                INSERT INTO initiatives(
+                  id, product_id, title, state, phase, created_at, updated_at
+                ) VALUES (?, 'deployment-legacy', ?, 'complete', 'deploy', ?, ?)
+                """,
+                [("deployment-legacy-init", "Deployment legacy", "2026-01-01", "2026-01-01")],
+            )
+            connection.execute(
+                """
+                INSERT INTO tasks(
+                  id, initiative_id, title, state, phase, created_at, updated_at
+                ) VALUES (
+                  'deployment-legacy-task', 'deployment-legacy-init',
+                  'Deployment task', 'complete', 'deploy', '2026-01-01', '2026-01-01'
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO pull_requests(
+                  id, product_id, task_id, branch, base_branch, head_sha, state,
+                  created_at, updated_at
+                ) VALUES (
+                  'deployment-legacy-pr', 'deployment-legacy',
+                  'deployment-legacy-task', 'legacy', 'main', 'legacy-pr-head',
+                  'merged', '2026-01-02', '2026-01-02'
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO pull_request_tasks(
+                  pull_request_id, task_id, created_at
+                ) VALUES ('deployment-legacy-pr', 'deployment-legacy-task', '2026-01-02')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO deployments(
+                  id, product_id, environment, head_sha, status, created_at,
+                  updated_at, verified_at
+                ) VALUES (
+                  'deployment-legacy-deployment', 'deployment-legacy',
+                  'production', 'legacy-merge-head', 'verified', '2026-01-03',
+                  '2026-01-03', '2026-01-03'
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO pull_request_deployments(
+                  pull_request_id, environment, deployment_id, deployed_head_sha,
+                  status, updated_at
+                ) VALUES (
+                  'deployment-legacy-pr', 'production',
+                  'deployment-legacy-deployment', 'legacy-pr-head', 'passed',
+                  '2026-01-03'
+                )
+                """
+            )
+
+        before_reconcile = run(
+            agents_home, "summary", "--product-id", "deployment-legacy"
+        )
+        before_row = before_reconcile["merged_awaiting_deployment"][0]
+        assert before_row["deployment_coverage_statuses"] == {
+            "production": "invalid"
+        }
+        run(
+            agents_home,
+            "schema-reconcile",
+            "--product-id",
+            "deployment-legacy",
+            "--holder",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+        )
+        with sqlite3.connect(database_path) as connection:
+            assert connection.execute(
+                "SELECT deployment_head_sha FROM pull_request_deployments"
+            ).fetchone()[0] == "legacy-merge-head"
+        after_reconcile = run(
+            agents_home, "summary", "--product-id", "deployment-legacy"
+        )
+        assert [row["id"] for row in after_reconcile["fully_deployed"]] == [
+            "deployment-legacy-pr"
+        ]
+
+
 def assert_summary_consistent_snapshot() -> None:
     with tempfile.TemporaryDirectory(
         prefix="program-coordinator-snapshot-"
@@ -1177,6 +1316,64 @@ def main() -> int:
             expect_success=False,
         )
         assert "current pull request head" in mismatched_coverage["error"]
+
+        for deployment_id, deployment_status, verified_at in (
+            ("deployment-pending", "pending", "2026-01-03T00:00:00+00:00"),
+            ("deployment-failed", "failed", "2026-01-03T00:00:00+00:00"),
+            ("deployment-unverified", "verified", None),
+        ):
+            run(
+                agents_home,
+                "sql",
+                "--product-id",
+                "sample",
+                "--actor",
+                "coordinator-1",
+                "--lease-token",
+                lease_token,
+                "--reason",
+                "Create invalid deployment coverage fixture",
+                "--params-json",
+                json.dumps(
+                    {
+                        "id": deployment_id,
+                        "status": deployment_status,
+                        "verified_at": verified_at,
+                        "now": "2026-01-03T00:00:00+00:00",
+                    }
+                ),
+                "INSERT INTO deployments("
+                "id, product_id, environment, head_sha, status, created_at, "
+                "updated_at, verified_at"
+                ") VALUES ("
+                ":id, 'sample', 'production', 'deployment-merge', :status, "
+                ":now, :now, :verified_at)",
+            )
+            rejected_coverage = run(
+                agents_home,
+                "pull-request-deployment-upsert",
+                "--product-id",
+                "sample",
+                "--actor",
+                "coordinator-1",
+                "--lease-token",
+                lease_token,
+                "--reason",
+                "Reject invalid linked deployment",
+                "--pull-request-id",
+                "pr-deployed",
+                "--environment",
+                "production",
+                "--deployment-id",
+                deployment_id,
+                "--deployed-head-sha",
+                "pr-deployed-head",
+                "--status",
+                "passed",
+                expect_success=False,
+            )
+            assert "successful verified deployment" in rejected_coverage["error"]
+
         run(
             agents_home,
             "sql",
@@ -1191,10 +1388,10 @@ def main() -> int:
             "--params-json",
             '{"updated":"2026-01-03T00:00:01+00:00"}',
             "INSERT INTO pull_request_deployments("
-            "pull_request_id, environment, deployment_id, deployed_head_sha, "
-            "status, updated_at"
+            "pull_request_id, environment, deployment_id, deployment_head_sha, "
+            "deployed_head_sha, status, updated_at"
             ") VALUES ('pr-deployed', 'production', 'deployment-1', "
-            "'unrelated-head', 'passed', :updated)",
+            "'deployment-merge', 'unrelated-head', 'passed', :updated)",
         )
         stale_relation_summary = run(
             agents_home, "summary", "--product-id", "sample"
@@ -1231,6 +1428,111 @@ def main() -> int:
             environment={"COORDINATOR_LEASE_TOKEN": lease_token},
         )
         assert coverage["status"] == "passed"
+
+        initial_deployment_summary = run(
+            agents_home, "summary", "--product-id", "sample"
+        )
+        assert [row["id"] for row in initial_deployment_summary["fully_deployed"]] == [
+            "pr-deployed"
+        ]
+        assert run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--read-only",
+            "SELECT deployment_head_sha, deployed_head_sha "
+            "FROM pull_request_deployments WHERE pull_request_id='pr-deployed'",
+        )["rows"] == [
+            {
+                "deployment_head_sha": "deployment-merge",
+                "deployed_head_sha": "pr-deployed-head",
+            }
+        ]
+        run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Change linked deployment head",
+            "--params-json",
+            '{"head":"changed-deployment-merge"}',
+            "UPDATE deployments SET head_sha=:head WHERE id='deployment-1'",
+        )
+        changed_head_summary = run(
+            agents_home, "summary", "--product-id", "sample"
+        )
+        changed_head_awaiting = {
+            row["id"]: row
+            for row in changed_head_summary["merged_awaiting_deployment"]
+        }
+        assert changed_head_awaiting["pr-deployed"][
+            "deployment_coverage_statuses"
+        ] == {"production": "invalid"}
+        assert changed_head_summary["fully_deployed"] == []
+        run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Restore linked deployment head",
+            "--params-json",
+            '{"head":"deployment-merge"}',
+            "UPDATE deployments SET head_sha=:head WHERE id='deployment-1'",
+        )
+        run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Invalidate linked deployment",
+            "--params-json",
+            '{"status":"failed"}',
+            "UPDATE deployments SET status=:status, verified_at=NULL "
+            "WHERE id='deployment-1'",
+        )
+        failed_deployment_summary = run(
+            agents_home, "summary", "--product-id", "sample"
+        )
+        failed_deployment_awaiting = {
+            row["id"]: row
+            for row in failed_deployment_summary["merged_awaiting_deployment"]
+        }
+        assert failed_deployment_awaiting["pr-deployed"][
+            "deployment_coverage_statuses"
+        ] == {"production": "invalid"}
+        assert failed_deployment_summary["fully_deployed"] == []
+        run(
+            agents_home,
+            "sql",
+            "--product-id",
+            "sample",
+            "--actor",
+            "coordinator-1",
+            "--lease-token",
+            lease_token,
+            "--reason",
+            "Restore verified deployment",
+            "--params-json",
+            '{"status":"verified","verified":"2026-01-03T00:00:00+00:00"}',
+            "UPDATE deployments SET status=:status, verified_at=:verified "
+            "WHERE id='deployment-1'",
+        )
 
         run(
             agents_home,
@@ -1534,6 +1836,7 @@ def main() -> int:
     assert_legacy_fk_converges()
     assert_future_schema_refused()
     assert_reconciliation_failure_rolls_back()
+    assert_existing_v1_deployment_relation_converges()
     assert_summary_consistent_snapshot()
 
     print("coordinator_state smoke test: passed")

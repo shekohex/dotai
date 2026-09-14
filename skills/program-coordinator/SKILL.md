@@ -56,7 +56,7 @@ Report meaningful transitions to user conversation immediately: ready PR, hard b
 
 - PR creation is automatic inside approved initiative scope.
 - Choose ordinary PRs for independent work and stacked PRs for true same-repository dependency chains.
-- One coherent PR may deliver several tightly coupled tasks.
+- One coherent PR may deliver several tightly coupled tasks; read [references/git-pr-and-review.md](references/git-pr-and-review.md) for task-link and per-task gate mechanics.
 - Default maximum stack depth is 4. Ask before deeper stacks.
 - Require independent review according to risk policy. Coordinator never substitutes for reviewer.
 - Default maximum is 3 completed reviewer passes. Builder fixes do not count as review rounds.

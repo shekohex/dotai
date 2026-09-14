@@ -27,6 +27,9 @@ CHECKPOINT_LIMIT = 5
 WAL_AUTOCHECKPOINT_PAGES = 1000
 PRODUCT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 RISK_CLASSES = ("low", "medium", "high", "critical")
+SUCCESSFUL_DEPLOYMENT_STATUSES = frozenset(
+    ("verified", "deployed", "passed", "succeeded")
+)
 REMINDER = (
     "Consider updating learned knowledge or user preferences if this operation "
     "revealed durable information."
@@ -68,10 +71,12 @@ CREATE TABLE pull_request_deployments (
   pull_request_id TEXT NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
   environment TEXT NOT NULL,
   deployment_id TEXT REFERENCES deployments(id) ON DELETE SET NULL,
+  deployment_head_sha TEXT,
   deployed_head_sha TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('pending','passed','failed')),
   updated_at TEXT NOT NULL,
-  PRIMARY KEY(pull_request_id, environment)
+  PRIMARY KEY(pull_request_id, environment),
+  CHECK(deployment_id IS NULL OR deployment_head_sha IS NOT NULL)
 );
 """
 
@@ -722,6 +727,39 @@ def apply_schema_migration_steps(
     return executed_versions
 
 
+def reconcile_pull_request_deployment_relation(
+    connection: sqlite3.Connection,
+) -> bool:
+    table_exists = connection.execute(
+        "SELECT 1 FROM sqlite_schema WHERE type='table' "
+        "AND name='pull_request_deployments'"
+    ).fetchone()
+    if table_exists is None:
+        return False
+    columns = {
+        row["name"] for row in connection.execute(
+            "PRAGMA table_info('pull_request_deployments')"
+        )
+    }
+    if "deployment_head_sha" in columns:
+        return False
+    connection.execute(
+        "ALTER TABLE pull_request_deployments ADD COLUMN deployment_head_sha TEXT"
+    )
+    connection.execute(
+        """
+        UPDATE pull_request_deployments
+        SET deployment_head_sha = (
+          SELECT deployments.head_sha
+          FROM deployments
+          WHERE deployments.id = pull_request_deployments.deployment_id
+        )
+        WHERE deployment_id IS NOT NULL
+        """
+    )
+    return True
+
+
 def reconcile_schema_in_transaction(
     connection: sqlite3.Connection,
     product_id: str,
@@ -740,6 +778,9 @@ def reconcile_schema_in_transaction(
     }
     changes_before = connection.total_changes
     processed_versions = apply_schema_migration_steps(connection, versions)
+    deployment_relation_changed = reconcile_pull_request_deployment_relation(
+        connection
+    )
     changes = connection.total_changes - changes_before
     schema_objects_after = {
         (row[0], row[1])
@@ -747,7 +788,9 @@ def reconcile_schema_in_transaction(
             "SELECT type, name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'"
         )
     }
-    schema_objects_changed = schema_objects_before != schema_objects_after
+    schema_objects_changed = (
+        schema_objects_before != schema_objects_after or deployment_relation_changed
+    )
     event_id: str | None = None
     if changes or schema_objects_changed or rebuild_pull_requests:
         event_id = add_event(
@@ -765,6 +808,7 @@ def reconcile_schema_in_transaction(
                 "database_changes": changes,
                 "schema_objects_changed": schema_objects_changed,
                 "pull_requests_fk_rebuilt": rebuild_pull_requests,
+                "deployment_relation_materialized": deployment_relation_changed,
             },
         )
     return {
@@ -1752,14 +1796,11 @@ def validate_pull_request_task_ids(
         )
 
 
-def upsert_pull_request_in_transaction(
+def prepare_pull_request_values(
     connection: sqlite3.Connection,
     product_id: str,
-    actor: str,
-    reason: str,
     pull_request: dict[str, Any],
-    requested_task_ids: list[str] | None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[str]]:
     pull_request_id = pull_request["id"]
     existing_row = connection.execute(
         "SELECT * FROM pull_requests WHERE id = ?", (pull_request_id,)
@@ -1805,24 +1846,34 @@ def upsert_pull_request_in_transaction(
             )
         ]
 
-    requested_compatibility_task_id = pull_request.get("task_id")
+    return values, existing_task_ids
+
+
+def resolve_pull_request_task_links(
+    pull_request: dict[str, Any],
+    values: dict[str, Any],
+    existing_task_ids: list[str],
+    requested_task_ids: list[str] | None,
+) -> list[str]:
     if requested_task_ids is None:
-        task_ids: list[str] = []
-        for task_id in existing_task_ids:
-            if task_id not in task_ids:
-                task_ids.append(task_id)
+        task_ids = list(dict.fromkeys(existing_task_ids))
         if values.get("task_id") and values["task_id"] not in task_ids:
             task_ids.insert(0, values["task_id"])
-    else:
-        task_ids = requested_task_ids.copy()
-        values["task_id"] = (
-            requested_compatibility_task_id
-            if requested_compatibility_task_id in task_ids
-            else (task_ids[0] if task_ids else None)
-        )
+        return task_ids
 
-    validate_pull_request_task_ids(connection, product_id, task_ids)
+    task_ids = requested_task_ids.copy()
+    requested_compatibility_task_id = pull_request.get("task_id")
+    values["task_id"] = (
+        requested_compatibility_task_id
+        if requested_compatibility_task_id in task_ids
+        else (task_ids[0] if task_ids else None)
+    )
+    return task_ids
 
+
+def persist_pull_request(
+    connection: sqlite3.Connection, values: dict[str, Any]
+) -> None:
     columns = ", ".join(PULL_REQUEST_COLUMNS)
     placeholders = ", ".join("?" for _ in PULL_REQUEST_COLUMNS)
     updates = ", ".join(
@@ -1836,9 +1887,17 @@ def upsert_pull_request_in_transaction(
         tuple(values[field] for field in PULL_REQUEST_COLUMNS),
     )
 
+
+def replace_pull_request_task_links(
+    connection: sqlite3.Connection,
+    pull_request_id: str,
+    task_ids: list[str],
+    association_timestamp: str,
+    *,
+    replace_existing: bool,
+) -> int:
     association_changes = 0
-    association_timestamp = values["updated_at"]
-    if requested_task_ids is not None:
+    if replace_existing:
         if task_ids:
             placeholders = ", ".join("?" for _ in task_ids)
             cursor = connection.execute(
@@ -1860,6 +1919,21 @@ def upsert_pull_request_in_transaction(
             (pull_request_id, task_id, association_timestamp),
         )
         association_changes += cursor.rowcount
+    return association_changes
+
+
+def record_pull_request_upsert_event(
+    connection: sqlite3.Connection,
+    product_id: str,
+    actor: str,
+    reason: str,
+    pull_request_id: str,
+    initiative_id: str | None,
+    task_ids: list[str],
+    association_changes: int,
+    *,
+    replace_existing: bool,
+) -> str:
     event_id = add_event(
         connection,
         product_id=product_id,
@@ -1869,17 +1943,54 @@ def upsert_pull_request_in_transaction(
         reason=reason,
         target_type="pull_request",
         target_id=pull_request_id,
-        initiative_id=values["initiative_id"],
+        initiative_id=initiative_id,
         payload={
             "task_ids": task_ids,
             "association_changes": association_changes,
             "task_link_semantics": (
-                "replace" if requested_task_ids is not None else "preserve"
+                "replace" if replace_existing else "preserve"
             ),
         },
     )
+    return event_id
+
+
+def upsert_pull_request_in_transaction(
+    connection: sqlite3.Connection,
+    product_id: str,
+    actor: str,
+    reason: str,
+    pull_request: dict[str, Any],
+    requested_task_ids: list[str] | None,
+) -> dict[str, Any]:
+    values, existing_task_ids = prepare_pull_request_values(
+        connection, product_id, pull_request
+    )
+    task_ids = resolve_pull_request_task_links(
+        pull_request, values, existing_task_ids, requested_task_ids
+    )
+    validate_pull_request_task_ids(connection, product_id, task_ids)
+    persist_pull_request(connection, values)
+    association_changes = replace_pull_request_task_links(
+        connection,
+        pull_request["id"],
+        task_ids,
+        values["updated_at"],
+        replace_existing=requested_task_ids is not None,
+    )
+    event_id = record_pull_request_upsert_event(
+        connection,
+        product_id,
+        actor,
+        reason,
+        pull_request["id"],
+        values["initiative_id"],
+        task_ids,
+        association_changes,
+        replace_existing=requested_task_ids is not None,
+    )
     return {
-        "pull_request_id": pull_request_id,
+        "pull_request_id": pull_request["id"],
         "task_ids": task_ids,
         "changed_rows": 1 + association_changes,
         "event_id": event_id,
@@ -1921,6 +2032,34 @@ def upsert_pull_request(args: argparse.Namespace) -> None:
         raise
 
 
+def validate_linked_deployment(
+    connection: sqlite3.Connection,
+    product_id: str,
+    environment: str,
+    deployment_id: str,
+    coverage_status: str,
+) -> sqlite3.Row:
+    deployment = connection.execute(
+        "SELECT product_id, environment, head_sha, status, verified_at "
+        "FROM deployments WHERE id = ?",
+        (deployment_id,),
+    ).fetchone()
+    if deployment is None:
+        raise StateError("deployment not found")
+    if deployment["product_id"] != product_id:
+        raise StateError("deployment belongs to another product")
+    if deployment["environment"] != environment:
+        raise StateError("deployment environment does not match")
+    if coverage_status == "passed" and (
+        deployment["status"] not in SUCCESSFUL_DEPLOYMENT_STATUSES
+        or deployment["verified_at"] is None
+    ):
+        raise StateError(
+            "passed coverage requires successful verified deployment"
+        )
+    return deployment
+
+
 def upsert_pull_request_deployment(args: argparse.Namespace) -> None:
     if not args.environment.strip():
         raise StateError("--environment must not be empty")
@@ -1953,25 +2092,25 @@ def upsert_pull_request_deployment(args: argparse.Namespace) -> None:
                 raise StateError(
                     "deployed head SHA must match current pull request head"
                 )
+            deployment_head_sha = None
             if args.deployment_id:
-                deployment = connection.execute(
-                    "SELECT product_id, environment FROM deployments WHERE id = ?",
-                    (args.deployment_id,),
-                ).fetchone()
-                if deployment is None:
-                    raise StateError("deployment not found")
-                if deployment["product_id"] != args.product_id:
-                    raise StateError("deployment belongs to another product")
-                if deployment["environment"] != args.environment:
-                    raise StateError("deployment environment does not match")
+                deployment = validate_linked_deployment(
+                    connection,
+                    args.product_id,
+                    args.environment,
+                    args.deployment_id,
+                    args.status,
+                )
+                deployment_head_sha = deployment["head_sha"]
             connection.execute(
                 """
                 INSERT INTO pull_request_deployments(
                   pull_request_id, environment, deployment_id,
-                  deployed_head_sha, status, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                  deployment_head_sha, deployed_head_sha, status, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(pull_request_id, environment) DO UPDATE SET
                   deployment_id=excluded.deployment_id,
+                  deployment_head_sha=excluded.deployment_head_sha,
                   deployed_head_sha=excluded.deployed_head_sha,
                   status=excluded.status,
                   updated_at=excluded.updated_at
@@ -1980,6 +2119,7 @@ def upsert_pull_request_deployment(args: argparse.Namespace) -> None:
                     args.pull_request_id,
                     args.environment,
                     args.deployment_id,
+                    deployment_head_sha,
                     args.deployed_head_sha,
                     args.status,
                     now(),
@@ -1997,6 +2137,7 @@ def upsert_pull_request_deployment(args: argparse.Namespace) -> None:
                 payload={
                     "environment": args.environment,
                     "deployment_id": args.deployment_id,
+                    "deployment_head_sha": deployment_head_sha,
                     "deployed_head_sha": args.deployed_head_sha,
                     "status": args.status,
                 },
@@ -2092,17 +2233,34 @@ def deployment_projections(
     deployment_status_by_task = {
         gate["task_id"]: gate["status"] for gate in deployment_gates
     }
+    deployment_head_column = (
+        "pull_request_deployments.deployment_head_sha"
+        if connection.execute(
+            "SELECT 1 FROM pragma_table_info('pull_request_deployments') "
+            "WHERE name = 'deployment_head_sha'"
+        ).fetchone()
+        else "NULL"
+    )
     coverage_rows = (
         query_rows(
             connection,
-            """
+            f"""
             SELECT pull_request_deployments.pull_request_id,
                    pull_request_deployments.environment,
                    pull_request_deployments.status,
-                   pull_request_deployments.deployed_head_sha
+                   pull_request_deployments.deployed_head_sha,
+                   pull_request_deployments.deployment_id,
+                   {deployment_head_column} AS recorded_deployment_head_sha,
+                   deployments.product_id AS deployment_product_id,
+                   deployments.environment AS deployment_environment,
+                   deployments.head_sha AS deployment_head_sha,
+                   deployments.status AS deployment_status,
+                   deployments.verified_at AS deployment_verified_at
             FROM pull_request_deployments
             JOIN pull_requests
               ON pull_requests.id = pull_request_deployments.pull_request_id
+            LEFT JOIN deployments
+              ON deployments.id = pull_request_deployments.deployment_id
             WHERE pull_requests.product_id = ?
             """,
             (product_id,),
@@ -2120,6 +2278,15 @@ def deployment_projections(
         ] = {
             "status": coverage["status"],
             "deployed_head_sha": coverage["deployed_head_sha"],
+            "deployment_id": coverage["deployment_id"],
+            "recorded_deployment_head_sha": coverage[
+                "recorded_deployment_head_sha"
+            ],
+            "deployment_head_sha": coverage["deployment_head_sha"],
+            "deployment_product_id": coverage["deployment_product_id"],
+            "deployment_environment": coverage["deployment_environment"],
+            "deployment_status": coverage["deployment_status"],
+            "deployment_verified_at": coverage["deployment_verified_at"],
         }
     known_environments = {
         row["environment"]
@@ -2150,6 +2317,16 @@ def deployment_projections(
                 deployment_coverage_statuses[environment] = "missing"
             elif coverage["deployed_head_sha"] != pull_request["head_sha"]:
                 deployment_coverage_statuses[environment] = "stale"
+            elif coverage["deployment_id"] is not None and (
+                coverage["deployment_product_id"] != product_id
+                or coverage["deployment_environment"] != environment
+                or coverage["recorded_deployment_head_sha"]
+                != coverage["deployment_head_sha"]
+                or coverage["deployment_status"]
+                not in SUCCESSFUL_DEPLOYMENT_STATUSES
+                or coverage["deployment_verified_at"] is None
+            ):
+                deployment_coverage_statuses[environment] = "invalid"
             else:
                 deployment_coverage_statuses[environment] = coverage["status"]
         pull_request["deployment_coverage_statuses"] = deployment_coverage_statuses

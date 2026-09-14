@@ -17,7 +17,7 @@ Generated conflicts resolve from authoritative source and regenerate outputs. Ne
 
 ## Ordinary versus stacked PRs
 
-One coherent PR may deliver several tightly coupled tasks. Record every task-to-PR association in `pull_request_tasks` while retaining the legacy `pull_requests.task_id` value for existing consumers. Keep review, signoff, and completion evidence per task; one PR merge does not collapse task gates.
+One coherent PR may deliver several tightly coupled tasks. Record every task-to-PR association in `pull_request_tasks` while retaining the legacy `pull_requests.task_id` value for existing consumers. `pull-request-upsert --task-ids-json` treats supplied IDs as the complete set and replaces stale links atomically; omit it to preserve existing links. Keep review, signoff, and completion evidence per task; one PR merge does not collapse task gates.
 
 Use ordinary PRs for independent changes. Use stack only when later same-repository change truly depends on unmerged lower layer and each layer remains independently reviewable/revertible.
 

@@ -1,8 +1,8 @@
-model = "gpt-5.5"
+model = "gpt-5.6-sol"
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
-profile = "balanced"
 personality = "pragmatic"
+model_reasoning_effort = "high"
 
 [sandbox_workspace_write]
 network_access = true
@@ -14,6 +14,8 @@ hide_agent_reasoning = false
 
 [tui.model_availability_nux]
 "gpt-5.5" = 4
+"gpt-5.6-sol" = 1
+gpt-6-astra = 1
 
 [features]
 unified_exec = false
@@ -28,40 +30,112 @@ shell_snapshot = true
 multi_agent = true
 goals = true
 remote_connections = true
-
-[profiles.balanced]
-approval_policy = "on-request"
-sandbox_mode = "workspace-write"
-model = "gpt-5.5"
-model_reasoning_effort = "low"
-web_search = "live"
-
-[profiles.safe]
-approval_policy = "on-failure"
-sandbox_mode = "workspace-write"
-model = "gpt-5.5"
-model_reasoning_effort = "medium"
-web_search = "disabled"
-
-[profiles.minimal]
-model = "gpt-5.5"
-model_reasoning_effort = "medium"
-web_search = "disabled"
-
-[profiles.yolo]
-approval_policy = "never"
-sandbox_mode = "danger-full-access"
-model = "gpt-5.5"
-model_reasoning_effort = "low"
-tool_output_token_limit = 25000
-web_search = "live"
+memories = true
+js_repl = false
 
 [shell_environment_policy]
 inherit = "all"
 ignore_default_excludes = true
 experimental_use_profile = true
 
-[mcp_servers]
-
 [projects."/home/coder/dotai"]
 trust_level = "trusted"
+
+[desktop]
+conversationDetailMode = "STEPS_COMMANDS"
+enabled-reasoning-efforts = ["low", "medium", "high", "xhigh", "max"]
+followUpQueueMode = "steer"
+realtimeVoiceScreenContextEnabled = true
+show-context-window-usage = true
+appearanceLightCodeThemeId = "catppuccin"
+appearanceDarkCodeThemeId = "catppuccin"
+usePointerCursors = true
+sansFontSize = 16
+codeFontSize = 16
+git-pull-request-merge-method = "squash"
+git-always-force-push = true
+git-commit-instructions = """
+Create a git commit for the current changes using a concise Conventional Commits-style subject.
+
+1. For each group, generate a commit message in the Conventional Commits format (<https://www.conventionalcommits.org/en/v1.0.0/>):
+  <type>[optional scope]: <description>
+  [optional body]
+  [optional footer(s)]
+2. If changes are unrelated, create multiple commits.
+3. (Optional) Run `git log -n 50 --pretty=format:%s` to see commonly used scopes.
+4. Only group changes that are logically related and should be committed together.
+5. Be atomic and precise. Never mix unrelated changes in a single commit.
+"""
+
+[desktop.appearanceLightChromeTheme]
+accent = "#8839ef"
+contrast = 45
+ink = "#4c4f69"
+opaqueWindows = false
+surface = "#eff1f5"
+
+[desktop.appearanceLightChromeTheme.fonts]
+code = "Maple Mono NF"
+ui = "Maple Mono NF"
+
+[desktop.appearanceLightChromeTheme.semanticColors]
+diffAdded = "#40a02b"
+diffRemoved = "#d20f39"
+skill = "#8839ef"
+
+[desktop.appearanceDarkChromeTheme]
+accent = "#cba6f7"
+contrast = 45
+ink = "#cdd6f4"
+opaqueWindows = false
+surface = "#1e1e2e"
+
+[desktop.appearanceDarkChromeTheme.fonts]
+code = "Maple Mono NF"
+ui = "Maple Mono NF"
+
+[desktop.appearanceDarkChromeTheme.semanticColors]
+diffAdded = "#a6e3a1"
+diffRemoved = "#f38ba8"
+skill = "#cba6f7"
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[plugins."pdf@openai-primary-runtime"]
+enabled = true
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[plugins."template-creator@openai-primary-runtime"]
+enabled = true
+
+[plugins."sites@openai-bundled"]
+enabled = true
+
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[plugins."computer-use@openai-bundled"]
+enabled = true
+
+[plugins."visualize@openai-bundled"]
+enabled = true
+
+[plugins."codex-app-tools@openai-bundled"]
+enabled = true
+
+[plugins."chrome@openai-bundled"]
+enabled = true
+
+[plugins."unified-computer-use@openai-bundled"]
+enabled = true
+
+[memories]
+generate_memories = true
+use_memories = true
+

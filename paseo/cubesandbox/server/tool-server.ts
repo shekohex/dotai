@@ -94,7 +94,7 @@ function createRepositoryToolServer(
     "cube_create_agent",
     {
       description:
-        "Create a Work Sandbox and first remote Paseo worktree agent, or add another isolated worktree agent to an existing workId. Optional provider, model, modeId, thinkingOptionId, and featureValues settings are passed to Paseo.",
+        "Create a Work Sandbox and first remote Paseo worktree agent, or add another isolated worktree agent to an existing workId. Optional provider, model, modeId, thinkingOptionId, and featureValues settings are passed to Paseo. Optional timeoutMs is a positive safe integer in milliseconds for new-Sandbox bootstrap commands only; omitted means no artificial command deadline.",
       inputSchema: createAgentInputSchema.shape,
     },
     async (input) => {

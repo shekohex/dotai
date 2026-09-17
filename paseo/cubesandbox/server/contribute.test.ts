@@ -103,6 +103,13 @@ describe("CubeSandbox server contribution", () => {
       expect(tools.tools.map((tool) => tool.name)).toContain(
         "cube_get_work_events",
       );
+      const createAgentTool = tools.tools.find(
+        (tool) => tool.name === "cube_create_agent",
+      );
+      expect(createAgentTool?.description).toContain("timeoutMs");
+      expect(createAgentTool?.inputSchema).toMatchObject({
+        properties: { timeoutMs: expect.any(Object) },
+      });
       const activityTool = tools.tools.find(
         (tool) => tool.name === "cube_get_activity",
       );

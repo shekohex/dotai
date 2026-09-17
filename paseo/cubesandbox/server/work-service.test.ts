@@ -6,7 +6,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CUBE_CONFIG_SCHEMA_URL } from "../shared/config.js";
-import type { CubeRuntime, CubeSandboxHandle } from "./cube-runtime.js";
+import type {
+  CubeCommandOptions,
+  CubeRuntime,
+  CubeSandboxHandle,
+} from "./cube-runtime.js";
 import {
   UNASSIGNED_PROJECT_ID,
   type ProjectScope,
@@ -154,22 +158,17 @@ function dependencies() {
   const writeFile = vi.fn(
     async (_path: string, _contents: string) => undefined,
   );
-  const run = vi.fn(
-    async (
-      command: string,
-      _options?: { cwd?: string; env?: Record<string, string> },
-    ) => ({
-      stdout: command.includes("daemon pair")
-        ? JSON.stringify({
-            relayEnabled: true,
-            url: "https://app.paseo.sh/#offer=test",
-            qr: null,
-          })
-        : "",
-      stderr: "",
-      exitCode: 0,
-    }),
-  );
+  const run = vi.fn(async (command: string, _options?: CubeCommandOptions) => ({
+    stdout: command.includes("daemon pair")
+      ? JSON.stringify({
+          relayEnabled: true,
+          url: "https://app.paseo.sh/#offer=test",
+          qr: null,
+        })
+      : "",
+    stderr: "",
+    exitCode: 0,
+  }));
   const sandbox: CubeSandboxHandle = {
     sandboxId: "sandbox-1",
     run,
@@ -334,6 +333,11 @@ describe("WorkService lifecycle", () => {
       "/workspace/widget",
     ]);
     expect(deps.run).toHaveBeenCalledTimes(6);
+    expect(
+      deps.run.mock.calls.every(
+        ([, options]) => options?.timeoutMs === undefined,
+      ),
+    ).toBe(true);
   });
 
   it("transfers runtime identities before strict SSH clone and daemon start", async () => {
@@ -621,6 +625,47 @@ describe("WorkService lifecycle", () => {
       thinkingOptionId: "xhigh",
       featureValues: { fast_mode: true },
     });
+    await service.close();
+  });
+
+  it("validates optional creation timeout as a positive safe integer", () => {
+    expect(
+      createAgentInputSchema.parse({ prompt: "build" }),
+    ).not.toHaveProperty("timeoutMs");
+    expect(
+      createAgentInputSchema.parse({ prompt: "build", timeoutMs: 240_000 }),
+    ).toMatchObject({ timeoutMs: 240_000 });
+
+    for (const timeoutMs of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() =>
+        createAgentInputSchema.parse({ prompt: "build", timeoutMs }),
+      ).toThrow();
+    }
+  });
+
+  it("uses explicit creation timeout only for new-work bootstrap commands", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "build",
+      timeoutMs: 240_000,
+    });
+
+    expect(
+      deps.run.mock.calls.map(([, options]) => options?.timeoutMs),
+    ).toEqual(Array.from({ length: 6 }, () => 240_000));
+    await service.getStatus(owner(repositoryRoot), work.workId);
+    await service.getActivity(owner(repositoryRoot), { workId: work.workId });
+    expect(deps.run).toHaveBeenCalledTimes(6);
+
     await service.close();
   });
 

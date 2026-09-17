@@ -8,6 +8,7 @@ import {
   cubeProjectConfigSchema,
 } from "../shared/config.js";
 import { CubeSdkRuntime } from "./cube-runtime.js";
+import { Commands } from "./vendor/cubesandbox-sdk/commands.js";
 import { Config } from "./vendor/cubesandbox-sdk/config.js";
 import { TemplateNotFoundError } from "./vendor/cubesandbox-sdk/exceptions.js";
 import { Filesystem } from "./vendor/cubesandbox-sdk/filesystem.js";
@@ -89,6 +90,47 @@ describe("CubeSdkRuntime", () => {
       runtime.resolveSnapshot(projectConfig("pinned")),
     ).resolves.toBe("pinned");
     expect(listSnapshots).toHaveBeenCalledOnce();
+  });
+
+  it("only passes command timeout when the caller supplies one", async () => {
+    const run = vi
+      .spyOn(Commands.prototype, "run")
+      .mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+    vi.spyOn(Sandbox, "create").mockResolvedValue(
+      new Sandbox(
+        { sandboxID: "sandbox-timeout", domain: "sbx.0iq.xyz" },
+        new Config({
+          apiUrl: "https://sandbox.0iq.xyz",
+          sandboxDomain: "sbx.0iq.xyz",
+        }),
+      ),
+    );
+
+    const sandbox = await new CubeSdkRuntime().create(
+      projectConfig("pinned"),
+      "work-timeout",
+    );
+    await sandbox.run("without-timeout");
+    expect(run).toHaveBeenLastCalledWith("without-timeout", {
+      cwd: undefined,
+      envs: undefined,
+      user: "coder",
+    });
+    expect(run.mock.calls[0]?.[1]).not.toHaveProperty("timeoutMs");
+
+    await sandbox.run("with-timeout", { timeoutMs: 240_000 });
+    expect(run).toHaveBeenLastCalledWith("with-timeout", {
+      cwd: undefined,
+      envs: undefined,
+      timeoutMs: 240_000,
+      user: "coder",
+    });
+
+    await sandbox.keepAlive();
+    expect(run).toHaveBeenLastCalledWith("true", {
+      timeoutMs: 10_000,
+      user: "coder",
+    });
   });
 
   it("uses an available snapshot before falling back to the template", async () => {

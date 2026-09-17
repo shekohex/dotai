@@ -35,11 +35,17 @@ export interface CubeCommandResult {
   exitCode: number;
 }
 
+export interface CubeCommandOptions {
+  cwd?: string;
+  env?: Record<string, string>;
+  timeoutMs?: number;
+}
+
 export interface CubeSandboxHandle {
   readonly sandboxId: string;
   run(
     command: string,
-    options?: { cwd?: string; env?: Record<string, string> },
+    options?: CubeCommandOptions,
   ): Promise<CubeCommandResult>;
   writeFile(path: string, contents: string): Promise<void>;
   keepAlive(): Promise<void>;
@@ -169,7 +175,9 @@ function wrapSandbox(
       const result = await sandbox.commands.run(command, {
         cwd: options?.cwd,
         envs: options?.env,
-        timeoutMs: 180_000,
+        ...(options?.timeoutMs !== undefined
+          ? { timeoutMs: options.timeoutMs }
+          : {}),
         user: "coder",
       });
       return z

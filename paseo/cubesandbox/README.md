@@ -82,6 +82,11 @@ effective Git `user.signingkey`. No ssh-agent dependency. Runtime Git helper sto
 and prepared snapshot contain no `hosts.yml`, Git credential, SSH key, signing config, auth, or Paseo
 identity.
 
+`cube_create_agent.timeoutMs` is optional, must be a positive safe integer, and is measured in
+milliseconds. When supplied, it applies only to Cube commands used while bootstrapping a new Work
+Sandbox. Omit it for no artificial bootstrap command deadline. It is not stored or reused for later
+prompt, status, activity, or keepalive operations; keepalive retains its 10-second timeout.
+
 Supplying `workId` reuses Sandbox and creates another isolated Paseo worktree agent. Multiple agents
 share Sandbox compute, not working directories. Work IDs are internal UUIDs; optional external task
 metadata is descriptive only.

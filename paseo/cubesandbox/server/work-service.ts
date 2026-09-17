@@ -11,6 +11,7 @@ import {
 import {
   sandboxRuntimeEnvironment,
   type CubeRuntime,
+  type CubeCommandOptions,
   type CubeSandboxHandle,
 } from "./cube-runtime.js";
 import {
@@ -50,6 +51,12 @@ export const createAgentInputSchema = z
     modeId: z.string().min(1).optional(),
     thinkingOptionId: z.string().min(1).optional(),
     featureValues: z.record(z.string(), z.json()).optional(),
+    timeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .refine(Number.isSafeInteger, "must be a safe integer")
+      .optional(),
     task: z
       .object({
         source: z.string().min(1),
@@ -186,7 +193,7 @@ function pushGroup(
 async function runChecked(
   sandbox: CubeSandboxHandle,
   command: string,
-  options?: { cwd?: string; env?: Record<string, string> },
+  options?: CubeCommandOptions,
 ): Promise<string> {
   const result = await sandbox.run(command, options);
   if (result.exitCode !== 0) {
@@ -205,6 +212,7 @@ async function bootstrapSandbox(
   loadRuntimeIdentityBundle: (
     repositoryRoot: string,
   ) => Promise<RuntimeIdentityBundle>,
+  timeoutMs?: number,
 ): Promise<string> {
   const remoteUrl = shellQuote(
     `git@github.com:${config.project.repository}.git`,
@@ -223,6 +231,8 @@ async function bootstrapSandbox(
       ),
     ]),
   ].sort((left, right) => left.length - right.length);
+  const bootstrapCommandOptions =
+    timeoutMs === undefined ? undefined : { timeoutMs };
   await runChecked(
     sandbox,
     [
@@ -233,6 +243,7 @@ async function bootstrapSandbox(
           `install -m ${file.mode.toString(8).padStart(4, "0")} /dev/null ${shellQuote(file.destination)}`,
       ),
     ].join("\n"),
+    bootstrapCommandOptions,
   );
   for (const { destination, contents } of runtimeIdentity.files) {
     await sandbox.writeFile(destination, contents);
@@ -262,6 +273,7 @@ async function bootstrapSandbox(
           `test "$(stat -c %a ${shellQuote(file.destination)})" = ${file.mode.toString(8)}`,
       ),
     ].join("\n"),
+    bootstrapCommandOptions,
   );
   const cloneCommand = [
     "set -euo pipefail",
@@ -292,17 +304,23 @@ async function bootstrapSandbox(
   if (runtimeIdentity.githubToken) {
     runtimeEnvironment.GH_TOKEN = runtimeIdentity.githubToken;
   }
-  await runChecked(sandbox, cloneCommand, { env: githubEnvironment });
+  await runChecked(sandbox, cloneCommand, {
+    env: githubEnvironment,
+    ...bootstrapCommandOptions,
+  });
   await runChecked(
     sandbox,
     "command -v paseo >/dev/null 2>&1 || bun add --global @getpaseo/cli@0.8.0",
+    bootstrapCommandOptions,
   );
   await runChecked(sandbox, "paseo daemon start --json", {
     env: runtimeEnvironment,
+    ...bootstrapCommandOptions,
   });
   const pairingOutput = await runChecked(
     sandbox,
     "paseo daemon pair --relay --json",
+    bootstrapCommandOptions,
   );
   const parsed: unknown = JSON.parse(pairingOutput);
   return pairingOutputSchema.parse(parsed).url;
@@ -879,6 +897,7 @@ export class WorkService {
         config,
         owner.canonicalRoot,
         this.loadRuntimeIdentityBundle,
+        input.timeoutMs,
       );
       this.assertAccepting();
       await this.records.saveSecrets(workId, { pairingUrl });

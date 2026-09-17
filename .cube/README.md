@@ -35,7 +35,8 @@ remote images/containers/volumes.
 Image uses exact JS Hakim base tag
 `bbcr.0iq.xyz/hakim/cube-hakim-js:71a7eaf6d746-20260917122636` without a digest, and pins Paseo
 0.8.0 and Codex 0.154.0. Codex uses official standalone
-installer with exact `--release`; gh 2.95.0 comes from pinned base image and is verified as `coder`.
+installer with exact `--release`; gh 2.95.0 is installed from its checksum-verified release archive
+and verified as `coder`.
 No dotai checkout or config is installed at build time. Build leaves no source checkout, GitHub
 state, Git credentials, Git identity, auth files, or Paseo identity. Health port `49983` belongs to
 Cube adapter; it is not an app preview.

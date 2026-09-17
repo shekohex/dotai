@@ -607,7 +607,9 @@ def test_dockerfile_pins_tools_and_excludes_identity() -> None:
     assert '--release "${CODEX_VERSION}"' in dockerfile
     assert "CODEX_NON_INTERACTIVE=true" in dockerfile
     assert "GH_VERSION=2.95.0" in dockerfile
-    assert "github.com/cli/cli/releases/download" not in dockerfile
+    assert "GH_SHA256=25d1e4729e8808c9ed3d613e96ebd3f3e44446f2d368c89d878a71a36ddb3d8c" in dockerfile
+    assert "github.com/cli/cli/releases/download/v${GH_VERSION}" in dockerfile
+    assert "sha256sum --check --strict" in dockerfile
     assert "test ! -e /home/coder/.config/gh/hosts.yml" in dockerfile
     assert "test ! -e /home/coder/.paseo" in dockerfile
     assert "find /home/coder/.ssh /root/.ssh -type f" in dockerfile

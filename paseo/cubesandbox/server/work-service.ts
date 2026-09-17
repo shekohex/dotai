@@ -18,6 +18,7 @@ import {
   type RemotePaseoConnection,
   type RemotePaseoConnector,
 } from "./remote-paseo.js";
+import type { RuntimeIdentityFile } from "./runtime-identity.js";
 import { type WorkRecord, WorkRecordStore } from "./work-record.js";
 
 const pairingOutputSchema = z
@@ -111,6 +112,7 @@ async function runChecked(
 async function bootstrapSandbox(
   sandbox: CubeSandboxHandle,
   config: CubeProjectConfig,
+  loadRuntimeIdentityFiles: () => Promise<RuntimeIdentityFile[]>,
 ): Promise<string> {
   const repository = shellQuote(config.project.repository);
   const remoteUrl = shellQuote(
@@ -129,11 +131,32 @@ async function bootstrapSandbox(
     "else",
     `  git clone --branch ${defaultRef} ${remoteUrl} ${workspacePath}`,
     "fi",
+    `cd ${workspacePath}`,
+    "./install.sh --yes",
+    "sed -i 's#/home/coder/dotai#/workspace/dotai#g' /home/coder/.codex/config.toml",
     `npm ci --prefix ${workspacePath}/agent`,
     "test ! -e /home/coder/.config/gh/hosts.yml",
   ].join("\n");
   const runtimeEnvironment = sandboxRuntimeEnvironment(process.env);
-  await runChecked(sandbox, cloneCommand, { env: runtimeEnvironment });
+  const githubEnvironment = Object.fromEntries(
+    ["GH_TOKEN", "GITHUB_TOKEN"].flatMap((name) => {
+      const value = runtimeEnvironment[name];
+      return value ? [[name, value]] : [];
+    }),
+  );
+  const runtimeIdentityFiles = await loadRuntimeIdentityFiles();
+  await runChecked(sandbox, cloneCommand, { env: githubEnvironment });
+  await runChecked(
+    sandbox,
+    "install -d -m 0700 /home/coder/.pi/agent /home/coder/.codex /home/coder/.paseo",
+  );
+  for (const { destination, contents } of runtimeIdentityFiles) {
+    await sandbox.writeFile(destination, contents);
+  }
+  await runChecked(
+    sandbox,
+    "chmod 0600 /home/coder/.pi/agent/auth.json /home/coder/.codex/auth.json /home/coder/.paseo/config.json",
+  );
   await runChecked(
     sandbox,
     "command -v paseo >/dev/null 2>&1 || bun add --global @getpaseo/cli@0.8.0",
@@ -167,6 +190,9 @@ export class WorkService {
     private readonly records: WorkRecordStore,
     private readonly cube: CubeRuntime,
     private readonly paseo: RemotePaseoConnector,
+    private readonly loadRuntimeIdentityFiles: () => Promise<
+      RuntimeIdentityFile[]
+    >,
   ) {}
 
   bindRepositoryRoot(repositoryRoot: string): void {
@@ -529,7 +555,11 @@ export class WorkService {
       };
       await this.records.save(record);
       this.assertAccepting();
-      const pairingUrl = await bootstrapSandbox(sandbox, config);
+      const pairingUrl = await bootstrapSandbox(
+        sandbox,
+        config,
+        this.loadRuntimeIdentityFiles,
+      );
       this.assertAccepting();
       await this.records.saveSecrets(workId, { pairingUrl });
       this.assertAccepting();

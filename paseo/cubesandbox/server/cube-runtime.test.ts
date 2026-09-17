@@ -8,6 +8,7 @@ import {
   cubeProjectConfigSchema,
 } from "../shared/config.js";
 import { CubeSdkRuntime } from "./cube-runtime.js";
+import { Filesystem } from "./vendor/cubesandbox-sdk/filesystem.js";
 import { Sandbox } from "./vendor/cubesandbox-sdk/sandbox.js";
 
 function projectConfig(
@@ -197,4 +198,34 @@ describe("CubeSdkRuntime", () => {
       expect(kill).toHaveBeenCalledOnce();
     },
   );
+
+  it("writes runtime identity only through validated sandbox data plane", async () => {
+    vi.spyOn(Sandbox, "create").mockResolvedValue(
+      new Sandbox(
+        { sandboxID: "sandbox-1", domain: "sbx.0iq.xyz" },
+        new (await import("./vendor/cubesandbox-sdk/config.js")).Config({
+          apiUrl: "https://sandbox.0iq.xyz",
+          sandboxDomain: "sbx.0iq.xyz",
+        }),
+      ),
+    );
+    const write = vi
+      .spyOn(Filesystem.prototype, "write")
+      .mockResolvedValue(undefined);
+
+    const sandbox = await new CubeSdkRuntime().create(
+      projectConfig("pinned"),
+      "work-1",
+    );
+    await sandbox.writeFile(
+      "/home/coder/.codex/auth.json",
+      '{"token":"secret"}\n',
+    );
+
+    expect(write).toHaveBeenCalledWith(
+      "/home/coder/.codex/auth.json",
+      '{"token":"secret"}\n',
+      { user: "coder" },
+    );
+  });
 });

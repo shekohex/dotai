@@ -86,6 +86,7 @@ function dependencies() {
   const pause = vi.fn(async () => undefined);
   const destroy = vi.fn(async () => undefined);
   const keepAlive = vi.fn(async () => undefined);
+  const writeFile = vi.fn(async () => undefined);
   const run = vi.fn(
     async (
       command: string,
@@ -105,6 +106,7 @@ function dependencies() {
   const sandbox: CubeSandboxHandle = {
     sandboxId: "sandbox-1",
     run,
+    writeFile,
     keepAlive,
     info: vi.fn(async () => ({ state: "running" })),
     pause,
@@ -119,6 +121,20 @@ function dependencies() {
     connect: vi.fn(async () => sandbox),
   };
   const createdAgents: RemoteAgentInput[] = [];
+  const loadRuntimeIdentityFiles = vi.fn(async () => [
+    {
+      destination: "/home/coder/.pi/agent/auth.json",
+      contents: '{"pi":true}\n',
+    },
+    {
+      destination: "/home/coder/.codex/auth.json",
+      contents: '{"codex":true}\n',
+    },
+    {
+      destination: "/home/coder/.paseo/config.json",
+      contents: '{"paseo":true}\n',
+    },
+  ]);
   const remote: RemotePaseoConnection = {
     serverId: "remote-1",
     createAgent: vi.fn(async (input) => {
@@ -141,6 +157,8 @@ function dependencies() {
     pause,
     destroy,
     keepAlive,
+    writeFile,
+    loadRuntimeIdentityFiles,
     run,
     remote,
     createdAgents,
@@ -161,6 +179,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
+      deps.loadRuntimeIdentityFiles,
     );
 
     const first = await service.createAgent(repositoryRoot, {
@@ -178,7 +197,7 @@ describe("WorkService lifecycle", () => {
       "/workspace/widget",
       "/workspace/widget",
     ]);
-    expect(deps.run).toHaveBeenCalledTimes(4);
+    expect(deps.run).toHaveBeenCalledTimes(6);
   });
 
   it("configures gh credentials only during runtime bootstrap", async () => {
@@ -190,6 +209,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
+      deps.loadRuntimeIdentityFiles,
     );
 
     await service.createAgent(repositoryRoot, { prompt: "first" });
@@ -199,12 +219,25 @@ describe("WorkService lifecycle", () => {
     expect(cloneCommand.indexOf("gh auth setup-git")).toBeGreaterThan(
       cloneCommand.indexOf("gh repo clone"),
     );
+    expect(cloneCommand).toContain("./install.sh --yes");
     expect(cloneCommand).toContain("npm ci --prefix '/workspace/widget'/agent");
     expect(cloneCommand).toContain(
       "test ! -e /home/coder/.config/gh/hosts.yml",
     );
     expect(cloneOptions?.env).toMatchObject({ GH_TOKEN: "runtime-token" });
     expect(cloneCommand).not.toContain("runtime-token");
+    expect(deps.loadRuntimeIdentityFiles).toHaveBeenCalledOnce();
+    expect(deps.writeFile.mock.calls).toEqual([
+      ["/home/coder/.pi/agent/auth.json", '{"pi":true}\n'],
+      ["/home/coder/.codex/auth.json", '{"codex":true}\n'],
+      ["/home/coder/.paseo/config.json", '{"paseo":true}\n'],
+    ]);
+    expect(JSON.stringify(deps.run.mock.calls)).not.toContain('"pi":true');
+    expect(JSON.stringify(deps.run.mock.calls)).not.toContain('"codex":true');
+    expect(JSON.stringify(deps.run.mock.calls)).not.toContain('"paseo":true');
+    const identityCommand = deps.run.mock.calls[2]?.[0];
+    expect(identityCommand).toContain("chmod 0600");
+    expect(deps.run.mock.calls[4]?.[0]).toContain("paseo daemon start");
     await service.close();
   });
 
@@ -216,6 +249,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
+      deps.loadRuntimeIdentityFiles,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
 
@@ -238,6 +272,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
+      deps.loadRuntimeIdentityFiles,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
     vi.mocked(deps.cube.inspect).mockResolvedValue({ state: "paused" });
@@ -257,6 +292,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
+      deps.loadRuntimeIdentityFiles,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
 
@@ -276,6 +312,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
+      deps.loadRuntimeIdentityFiles,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "long" });
 
@@ -295,7 +332,12 @@ describe("WorkService lifecycle", () => {
     vi.mocked(deps.cube.destroy).mockRejectedValueOnce(
       new Error("simulated destroy failure"),
     );
-    const service = new WorkService(store, deps.cube, deps.paseo);
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityFiles,
+    );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
 
     await expect(service.destroy(repositoryRoot, work.workId)).rejects.toThrow(
@@ -312,7 +354,12 @@ describe("WorkService lifecycle", () => {
     const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
     const store = new WorkRecordStore(state);
     const deps = dependencies();
-    const service = new WorkService(store, deps.cube, deps.paseo);
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityFiles,
+    );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
 
     const [second, third] = await Promise.all([
@@ -350,7 +397,12 @@ describe("WorkService lifecycle", () => {
     const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
     const store = new WorkRecordStore(state);
     const deps = dependencies();
-    const service = new WorkService(store, deps.cube, deps.paseo);
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityFiles,
+    );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
     vi.spyOn(store, "save").mockRejectedValueOnce(
       new Error("simulated persistence failure"),
@@ -377,7 +429,12 @@ describe("WorkService lifecycle", () => {
     const store = new WorkRecordStore(state);
     const deps = dependencies();
     vi.mocked(deps.remote.hasBusyAgent).mockResolvedValue(true);
-    const service = new WorkService(store, deps.cube, deps.paseo);
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityFiles,
+    );
     const work = await service.createAgent(repositoryRoot, { prompt: "long" });
 
     expect(vi.getTimerCount()).toBe(1);
@@ -412,6 +469,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
+      deps.loadRuntimeIdentityFiles,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "long" });
 
@@ -440,6 +498,7 @@ describe("WorkService lifecycle", () => {
         new WorkRecordStore(state),
         deps.cube,
         deps.paseo,
+        deps.loadRuntimeIdentityFiles,
       );
       const work = await service.createAgent(repositoryRoot, {
         prompt: "long",
@@ -467,6 +526,7 @@ describe("WorkService lifecycle", () => {
       store,
       firstDependencies.cube,
       firstDependencies.paseo,
+      firstDependencies.loadRuntimeIdentityFiles,
     );
     await firstService.createAgent(repositoryRoot, { prompt: "long" });
     await firstService.close();
@@ -477,6 +537,7 @@ describe("WorkService lifecycle", () => {
       store,
       reloadedDependencies.cube,
       reloadedDependencies.paseo,
+      reloadedDependencies.loadRuntimeIdentityFiles,
     );
     await reloadedService.start();
     await vi.advanceTimersToNextTimerAsync();
@@ -513,7 +574,12 @@ describe("WorkService lifecycle", () => {
         exitCode: 0,
       };
     });
-    const service = new WorkService(store, deps.cube, deps.paseo);
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityFiles,
+    );
 
     const creation = service.createAgent(repositoryRoot, { prompt: "first" });
     await pairingStarted.promise;
@@ -569,7 +635,12 @@ describe("WorkService lifecycle", () => {
     deps.sandbox.destroy = vi.fn(async () => {
       throw new Error("shutdown destroy failed");
     });
-    const service = new WorkService(store, deps.cube, deps.paseo);
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityFiles,
+    );
 
     const creation = service.createAgent(repositoryRoot, { prompt: "first" });
     await pairingStarted.promise;
@@ -604,6 +675,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
+      deps.loadRuntimeIdentityFiles,
     );
 
     const creation = service.createAgent(repositoryRoot, { prompt: "first" });

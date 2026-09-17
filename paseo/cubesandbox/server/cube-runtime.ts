@@ -41,6 +41,7 @@ export interface CubeSandboxHandle {
     command: string,
     options?: { cwd?: string; env?: Record<string, string> },
   ): Promise<CubeCommandResult>;
+  writeFile(path: string, contents: string): Promise<void>;
   keepAlive(): Promise<void>;
   info(): Promise<{ state: string }>;
   pause(): Promise<void>;
@@ -180,6 +181,8 @@ function wrapSandbox(
         .strict()
         .parse(result);
     },
+    writeFile: (path, contents) =>
+      sandbox.files.write(path, contents, { user: "coder" }),
     keepAlive: async () => {
       const result = await sandbox.commands.run("true", {
         timeoutMs: 10_000,

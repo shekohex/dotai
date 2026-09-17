@@ -60,11 +60,13 @@ destroys source on success or failure.
 ## Lifecycle
 
 `cube_create_agent` without `workId` creates Sandbox from prepared snapshot with no credentials,
-validates trusted response domain, then supplies runtime-only provider/Git credentials. Bootstrap
-clones configured repository, runs `gh auth setup-git` with runtime token, installs agent
-dependencies, installs Paseo CLI v0.8 with Bun when missing, starts remote daemon, enables relay, and
-creates first Paseo-owned worktree agent. Runtime Git helper stores no token; image and snapshot
-contain no `hosts.yml`, Git credential, or Paseo identity.
+validates trusted response domain, then resolves runtime-only provider/Git credentials and local
+identity files. Bootstrap clones configured repository, runs `gh auth setup-git` with runtime token,
+runs project `./install.sh --yes`, installs agent dependencies, and installs Paseo CLI v0.8 with Bun
+when missing. It then copies local Pi/Codex auth JSON and Paseo config JSON with mode `0600` before
+starting remote daemon, enabling relay, and creating first Paseo-owned worktree agent. Runtime Git
+helper stores no token; image and prepared snapshot contain no `hosts.yml`, Git credential, auth, or
+Paseo identity.
 
 Supplying `workId` reuses Sandbox and creates another isolated Paseo worktree agent. Multiple agents
 share Sandbox compute, not working directories. Work IDs are internal UUIDs; optional external task
@@ -121,8 +123,9 @@ host mutation. Treat pairing links as passwords.
 ## Security and local state
 
 - Plugin is trusted, unsandboxed daemon code.
-- Cube/API/provider/Git tokens stay in process or sandbox runtime environment; project config and
-  WorkRecord never contain them.
+- Cube/API/provider/Git tokens stay in process or sandbox runtime. Pi/Codex auth and Paseo config are
+  transferred through validated Cube data plane only after response-domain validation. Project
+  config and WorkRecord never contain them.
 - Private state defaults to `~/.paseo/cubesandbox-plugin/cubesandbox`: directories mode `0700`, files
   mode `0600`. WorkRecord stores work/sandbox/task/relay/workspace/agent references and lifecycle
   timestamps/status. Pairing offers are separate private secret files and are returned only through

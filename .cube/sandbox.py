@@ -58,6 +58,8 @@ class ProjectSettings:
     git_ref: str
     workspace: str
     pi_auth_file: str
+    codex_auth_file: str
+    paseo_config_file: str
     dockerfile: str
     build_context: str
     cpu_millicores: int
@@ -338,6 +340,16 @@ def load_project_settings(args: argparse.Namespace) -> ProjectSettings:
             "CUBE_PI_AUTH_FILE",
             "~/.pi/agent/auth.json",
         ),
+        codex_auth_file=resolve_string(
+            args.codex_auth_file,
+            "CUBE_CODEX_AUTH_FILE",
+            "~/.codex/auth.json",
+        ),
+        paseo_config_file=resolve_string(
+            args.paseo_config_file,
+            "CUBE_PASEO_CONFIG_FILE",
+            "~/.paseo/config.json",
+        ),
         dockerfile=required_config_value(template, "dockerfile", str),
         build_context=required_config_value(template, "buildContext", str),
         cpu_millicores=required_config_value(resources, "cpuMillicores", int),
@@ -469,16 +481,35 @@ def required_git_identity(key: str) -> str:
     return result.stdout.strip()
 
 
-def pi_auth_json(settings: ProjectSettings) -> str:
-    auth_path = Path(settings.pi_auth_file).expanduser()
-    if not auth_path.is_file():
-        raise RuntimeError(f"Pi auth file does not exist: {auth_path}")
-    contents = auth_path.read_text()
+def required_json_file(path_value: str, label: str) -> str:
+    file_path = Path(path_value).expanduser()
+    if not file_path.is_file():
+        raise RuntimeError(f"{label} file does not exist: {file_path}")
+    contents = file_path.read_text()
     try:
-        json.loads(contents)
+        parsed = json.loads(contents)
     except json.JSONDecodeError as error:
-        raise RuntimeError(f"Pi auth file is not valid JSON: {auth_path}") from error
+        raise RuntimeError(f"{label} file is not valid JSON: {file_path}") from error
+    if not isinstance(parsed, dict):
+        raise RuntimeError(f"{label} file must contain a JSON object: {file_path}")
     return contents
+
+
+def runtime_identity_files(settings: ProjectSettings) -> tuple[tuple[str, str], ...]:
+    return (
+        (
+            "/home/coder/.pi/agent/auth.json",
+            required_json_file(settings.pi_auth_file, "Pi auth"),
+        ),
+        (
+            "/home/coder/.codex/auth.json",
+            required_json_file(settings.codex_auth_file, "Codex auth"),
+        ),
+        (
+            "/home/coder/.paseo/config.json",
+            required_json_file(settings.paseo_config_file, "Paseo config"),
+        ),
+    )
 
 
 def publish_image(
@@ -513,8 +544,6 @@ def publish_image(
             str(deploy_settings.dockerfile),
             "--build-arg",
             f"CUBE_BASE_IMAGE={project_settings.base_image}",
-            "--secret",
-            "id=github_token,env=GITHUB_TOKEN",
         ]
         for build_argument in deploy_settings.build_arguments:
             parse_key_value(build_argument, "build argument")
@@ -529,9 +558,7 @@ def publish_image(
                 str(deploy_settings.build_context),
             ]
         )
-        build_environment = os.environ.copy()
-        build_environment["GITHUB_TOKEN"] = resolve_github_token()
-        run(command, environment=build_environment)
+        run(command)
 
         metadata = json.loads(metadata_path.read_text())
         digest = str(metadata.get("containerimage.digest", ""))
@@ -667,6 +694,8 @@ def bootstrap_repository(
                 f"test ! -e {workspace}",
                 f"gh repo clone {repository} {workspace} -- --branch {git_ref}",
                 "gh auth setup-git",
+                "./install.sh --yes",
+                "sed -i 's#/home/coder/dotai#/workspace/dotai#g' /home/coder/.codex/config.toml",
                 f"npm ci --prefix {workspace}/agent",
                 "test ! -e /home/coder/.config/gh/hosts.yml",
             ]
@@ -674,14 +703,16 @@ def bootstrap_repository(
         timeout=600,
         environment=runtime_environment,
     )
-    sandbox.files.write(
-        "/home/coder/.pi/agent/auth.json",
-        pi_auth_json(settings),
-        user="coder",
-    )
     run_sandbox_command(
         sandbox,
-        "chmod 0600 /home/coder/.pi/agent/auth.json && "
+        "install -d -m 0700 /home/coder/.pi/agent /home/coder/.codex /home/coder/.paseo",
+    )
+    for destination, contents in runtime_identity_files(settings):
+        sandbox.files.write(destination, contents, user="coder")
+    run_sandbox_command(
+        sandbox,
+        "chmod 0600 /home/coder/.pi/agent/auth.json "
+        "/home/coder/.codex/auth.json /home/coder/.paseo/config.json && "
         "git status --short --branch && "
         "gh auth status",
         cwd=settings.workspace,
@@ -1190,6 +1221,8 @@ def add_global_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--git-ref")
     parser.add_argument("--workspace")
     parser.add_argument("--pi-auth-file")
+    parser.add_argument("--codex-auth-file")
+    parser.add_argument("--paseo-config-file")
 
 
 def add_create_arguments(parser: argparse.ArgumentParser) -> None:

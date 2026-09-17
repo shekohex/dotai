@@ -81,6 +81,9 @@ def test_config_maps_project_defaults(cli: ModuleType) -> None:
     assert settings.idle_timeout_seconds == 300
     assert settings.on_timeout == "pause"
     assert settings.preview_ports == []
+    assert settings.pi_auth_file == "~/.pi/agent/auth.json"
+    assert settings.codex_auth_file == "~/.codex/auth.json"
+    assert settings.paseo_config_file == "~/.paseo/config.json"
 
 
 @pytest.mark.parametrize(
@@ -168,6 +171,7 @@ def test_runtime_clone_configures_gh_after_clone_and_installs_dependencies(
     cli: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     commands: list[tuple[str, dict[str, str]]] = []
+    writes: list[tuple[str, str, str]] = []
 
     class FakeCommands:
         def run(self, command, **kwargs):
@@ -175,22 +179,60 @@ def test_runtime_clone_configures_gh_after_clone_and_installs_dependencies(
             return SimpleNamespace(stdout="", stderr="", exit_code=0)
 
     class FakeFiles:
-        def write(self, *args, **kwargs):
-            return None
+        def write(self, path, contents, *, user):
+            writes.append((path, contents, user))
 
     sandbox = SimpleNamespace(commands=FakeCommands(), files=FakeFiles())
     monkeypatch.setattr(cli, "required_git_identity", lambda key: f"test-{key}")
-    monkeypatch.setattr(cli, "pi_auth_json", lambda settings: "{}")
+    monkeypatch.setattr(
+        cli,
+        "runtime_identity_files",
+        lambda settings: (
+            ("/home/coder/.pi/agent/auth.json", '{"pi":true}'),
+            ("/home/coder/.codex/auth.json", '{"codex":true}'),
+            ("/home/coder/.paseo/config.json", '{"paseo":true}'),
+        ),
+    )
     settings = cli.load_project_settings(parse(cli, "create"))
 
     cli.bootstrap_repository(sandbox, settings, {"GH_TOKEN": "runtime-only"})
 
     bootstrap, environment = commands[0]
     assert bootstrap.index("gh auth setup-git") > bootstrap.index("gh repo clone")
+    assert "./install.sh --yes" in bootstrap
     assert "npm ci --prefix /workspace/dotai/agent" in bootstrap
+    assert "sed -i 's#/home/coder/dotai#/workspace/dotai#g'" in bootstrap
     assert "test ! -e /home/coder/.config/gh/hosts.yml" in bootstrap
     assert environment == {"GH_TOKEN": "runtime-only"}
     assert "runtime-only" not in bootstrap
+    assert writes == [
+        ("/home/coder/.pi/agent/auth.json", '{"pi":true}', "coder"),
+        ("/home/coder/.codex/auth.json", '{"codex":true}', "coder"),
+        ("/home/coder/.paseo/config.json", '{"paseo":true}', "coder"),
+    ]
+    assert '"pi":true' not in json.dumps(commands)
+    assert '"codex":true' not in json.dumps(commands)
+    assert '"paseo":true' not in json.dumps(commands)
+    assert "install -d -m 0700" in commands[1][0]
+    assert "chmod 0600" in commands[2][0]
+
+
+def test_runtime_identity_files_require_valid_json(
+    cli: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pi_auth = tmp_path / "pi-auth.json"
+    codex_auth = tmp_path / "codex-auth.json"
+    paseo_config = tmp_path / "paseo-config.json"
+    pi_auth.write_text('{"pi":true}\n')
+    codex_auth.write_text("not-json")
+    paseo_config.write_text('{"paseo":true}\n')
+    monkeypatch.setenv("CUBE_PI_AUTH_FILE", str(pi_auth))
+    monkeypatch.setenv("CUBE_CODEX_AUTH_FILE", str(codex_auth))
+    monkeypatch.setenv("CUBE_PASEO_CONFIG_FILE", str(paseo_config))
+    settings = cli.load_project_settings(parse(cli, "create"))
+
+    with pytest.raises(RuntimeError, match="Codex auth file is not valid JSON"):
+        cli.runtime_identity_files(settings)
 
 
 @pytest.mark.parametrize("snapshot_fails", (False, True))
@@ -349,18 +391,18 @@ def test_dockerfile_pins_tools_and_excludes_identity() -> None:
 
     assert "@sha256:9b06483a09d0bdf" in dockerfile
     assert '"@getpaseo/cli@${PASEO_VERSION}"' in dockerfile
-    assert '"@openai/codex@${CODEX_VERSION}"' in dockerfile
-    assert "GH_VERSION=2.101.0" in dockerfile
-    assert "GH_LINUX_AMD64_SHA256=9bca2d1c" in dockerfile
+    assert "https://chatgpt.com/codex/install.sh" in dockerfile
+    assert '--release "${CODEX_VERSION}"' in dockerfile
+    assert "CODEX_NON_INTERACTIVE=true" in dockerfile
+    assert "GH_VERSION=2.95.0" in dockerfile
+    assert "github.com/cli/cli/releases/download" not in dockerfile
     assert "test ! -e /home/coder/.config/gh/hosts.yml" in dockerfile
     assert "test ! -e /home/coder/.paseo" in dockerfile
     assert "test ! -e /workspace/dotai" in dockerfile
     assert "gh auth setup-git" not in dockerfile
-    assert (
-        "set -eux"
-        not in dockerfile.split("github_token", 1)[1].split("USER root", 1)[0]
-    )
-    assert "git clone --depth 1" not in dockerfile
+    assert "git init /home/coder/.dotai" not in dockerfile
+    assert "github_token" not in dockerfile
+    assert 'LABEL io.dotai.runtime-ref="${DOTAI_REF}"' in dockerfile
     assert "releases/download/preview" not in dockerfile
 
 

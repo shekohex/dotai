@@ -14,6 +14,7 @@ import {
 import { CubeSdkRuntime } from "./cube-runtime.js";
 import { findGitRoot } from "./project-config.js";
 import { PaseoSdkConnector } from "./remote-paseo.js";
+import { loadRuntimeIdentityFiles } from "./runtime-identity.js";
 import { CubeToolServer } from "./tool-server.js";
 import { WorkRecordStore } from "./work-record.js";
 import { WorkService } from "./work-service.js";
@@ -30,6 +31,7 @@ export function contributeServer(server: PluginServerContext) {
     records,
     new CubeSdkRuntime(),
     new PaseoSdkConnector(),
+    loadRuntimeIdentityFiles,
   );
   const tools = new CubeToolServer(works);
   const ready = (async () => {

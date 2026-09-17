@@ -6,6 +6,7 @@ import type { Dispatcher } from "undici";
 
 import { Commands } from "./commands.js";
 import { Config, resolveConfig, type ConfigOptions } from "./config.js";
+import { Filesystem } from "./filesystem.js";
 import {
   ApiError,
   AuthenticationError,
@@ -55,6 +56,7 @@ async function checkControlResponse(response: {
 
 export class Sandbox {
   readonly commands: Commands;
+  readonly files: Filesystem;
   private dispatcher: Dispatcher | undefined;
 
   constructor(
@@ -62,6 +64,7 @@ export class Sandbox {
     readonly config: Config,
   ) {
     this.commands = new Commands(this);
+    this.files = new Filesystem(this);
   }
 
   get sandboxId(): string {

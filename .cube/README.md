@@ -5,17 +5,38 @@ Project-owned CubeSandbox image and operator CLI, adapted from
 
 ## Image contract
 
-Build requires exact 40-character `DOTAI_REF` and BuildKit `github_token` secret:
+Build requires exact 40-character `DOTAI_REF`, recorded as image provenance. To validate through
+the authorized remote builder without changing local Docker state:
 
 ```sh
-GITHUB_TOKEN="$(gh auth token)" docker buildx build \
+DOCKER_HOST=ssh://builder@bbcr.0iq.xyz \
+GITHUB_TOKEN="$(gh auth token)" \
+docker buildx build \
   --platform linux/amd64 \
   --build-arg DOTAI_REF="$(git rev-parse HEAD)" \
   --secret id=github_token,env=GITHUB_TOKEN \
+  --load \
+  --tag "dotai-cubesandbox-pr34:$(git rev-parse --short=12 HEAD)" \
   -f .cube/Dockerfile .
 ```
 
-Image pins JS Hakim base digest, Paseo 0.8.0, Codex 0.154.0, and gh 2.101.0 with checksum. Exact dotai ref supplies dotai configuration and Pi 0.85.1 package contract. Build removes source checkout, GitHub state, Git credentials, Git identity, auth files, and Paseo identity. Health port `49983` belongs to Cube adapter; it is not an app preview.
+After inspection, remove only that task-owned tag:
+
+```sh
+DOCKER_HOST=ssh://builder@bbcr.0iq.xyz \
+docker image rm "dotai-cubesandbox-pr34:$(git rev-parse --short=12 HEAD)"
+```
+
+The token value stays out of command arguments and build layers/history. Current Dockerfile does not
+mount it because dotai clone moved entirely to runtime; the validation invocation still exercises
+secret-safe BuildKit transport. Cleanup must remove only task tag above, never global cache or other
+remote images/containers/volumes.
+
+Image pins JS Hakim base digest, Paseo 0.8.0, and Codex 0.154.0. Codex uses official standalone
+installer with exact `--release`; gh 2.95.0 comes from pinned base image and is verified as `coder`.
+No dotai checkout or config is installed at build time. Build leaves no source checkout, GitHub
+state, Git credentials, Git identity, auth files, or Paseo identity. Health port `49983` belongs to
+Cube adapter; it is not an app preview.
 
 `pi` is runtime shim:
 
@@ -40,6 +61,12 @@ Defaults come from `.cube/config.json`. `CUBE_API_URL` and `CUBE_SANDBOX_DOMAIN`
 
 `prepare-snapshot` creates a dedicated source Sandbox with empty environment, checks repository/auth/GitHub/Git/Paseo identity paths, snapshots it as `dotai` by default, then destroys source on success or failure. Never prepare snapshot from initialized work sandbox.
 
-Manual CLI-created sandboxes carry `owner=operator-cli`. Paseo plugin owns only sandboxes recorded in private plugin state and never adopts manual sandboxes. Runtime bootstrap clones `shekohex/dotai` `main` into `/workspace/dotai`, runs `npm ci` in `agent`, then configures Git credential integration with runtime `GH_TOKEN`/`GITHUB_TOKEN`. Tokens never enter image or snapshot.
+Manual CLI-created sandboxes carry `owner=operator-cli`. Paseo plugin owns only sandboxes recorded
+in private plugin state and never adopts manual sandboxes. Runtime bootstrap clones `shekohex/dotai`
+`main` into `/workspace/dotai`, runs `gh auth setup-git`, `./install.sh --yes`, and `npm ci` in
+`agent`. Before Paseo daemon starts, it copies local `~/.pi/agent/auth.json`, `~/.codex/auth.json`,
+and `~/.paseo/config.json` into runtime sandbox with mode `0600`. Override manual CLI sources with
+`CUBE_PI_AUTH_FILE`, `CUBE_CODEX_AUTH_FILE`, and `CUBE_PASEO_CONFIG_FILE`. These runtime files and
+GitHub token never enter image or prepared snapshot.
 
 No Android tooling/support included.

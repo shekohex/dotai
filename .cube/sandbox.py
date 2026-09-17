@@ -336,7 +336,7 @@ def load_project_settings(args: argparse.Namespace) -> ProjectSettings:
         base_image=resolve_string(
             args.base_image,
             "CUBE_BASE_IMAGE",
-            f"{registry}/hakim/cube-hakim-js:80671b59cec6-20260916180402@sha256:9b06483a09d0bdf3115b6efcf77473357d305ec4db57a6122871d3f93bce7637",
+            f"{registry}/hakim/cube-hakim-js:71a7eaf6d746-20260917122636",
         ),
         image_repository=resolve_string(
             args.image_repository,

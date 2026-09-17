@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # Adapted from shekohex/cubesandbox-pve@774d85b8c4aa06d63085845ff064efe26aec00b6.
-ARG CUBE_BASE_IMAGE=bbcr.0iq.xyz/hakim/cube-hakim-js:80671b59cec6-20260916180402@sha256:9b06483a09d0bdf3115b6efcf77473357d305ec4db57a6122871d3f93bce7637
+ARG CUBE_BASE_IMAGE=bbcr.0iq.xyz/hakim/cube-hakim-js:71a7eaf6d746-20260917122636
 
 FROM ${CUBE_BASE_IMAGE}
 

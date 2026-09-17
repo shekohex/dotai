@@ -32,7 +32,9 @@ mount it because dotai clone moved entirely to runtime; the validation invocatio
 secret-safe BuildKit transport. Cleanup must remove only task tag above, never global cache or other
 remote images/containers/volumes.
 
-Image pins JS Hakim base digest, Paseo 0.8.0, and Codex 0.154.0. Codex uses official standalone
+Image uses exact JS Hakim base tag
+`bbcr.0iq.xyz/hakim/cube-hakim-js:71a7eaf6d746-20260917122636` without a digest, and pins Paseo
+0.8.0 and Codex 0.154.0. Codex uses official standalone
 installer with exact `--release`; gh 2.95.0 comes from pinned base image and is verified as `coder`.
 No dotai checkout or config is installed at build time. Build leaves no source checkout, GitHub
 state, Git credentials, Git identity, auth files, or Paseo identity. Health port `49983` belongs to

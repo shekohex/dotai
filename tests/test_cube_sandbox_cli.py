@@ -70,6 +70,10 @@ def test_config_maps_project_defaults(cli: ModuleType) -> None:
 
     assert settings.project_id == "dotai"
     assert settings.template_alias == "dotai"
+    assert (
+        settings.base_image
+        == "bbcr.0iq.xyz/hakim/cube-hakim-js:71a7eaf6d746-20260917122636"
+    )
     assert settings.repository == "shekohex/dotai"
     assert settings.git_ref == "main"
     assert settings.workspace == "/workspace/dotai"
@@ -593,7 +597,11 @@ def test_manual_sandbox_metadata_is_not_plugin_owned(
 def test_dockerfile_pins_tools_and_excludes_identity() -> None:
     dockerfile = DOCKERFILE_PATH.read_text()
 
-    assert "@sha256:9b06483a09d0bdf" in dockerfile
+    assert (
+        "ARG CUBE_BASE_IMAGE="
+        "bbcr.0iq.xyz/hakim/cube-hakim-js:71a7eaf6d746-20260917122636"
+    ) in dockerfile
+    assert "@sha256:" not in dockerfile
     assert '"@getpaseo/cli@${PASEO_VERSION}"' in dockerfile
     assert "https://chatgpt.com/codex/install.sh" in dockerfile
     assert '--release "${CODEX_VERSION}"' in dockerfile

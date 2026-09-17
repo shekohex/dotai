@@ -67,10 +67,12 @@ template alias with no credentials, validates trusted response domain, then reso
 provider/Git credentials and local identity files. Bootstrap clones configured repository, runs `gh auth setup-git` with runtime token,
 runs project `./install.sh --yes`, installs agent dependencies, and installs Paseo CLI v0.8 with Bun
 when missing. Before clone or daemon start, it copies local Pi/Codex auth JSON, Paseo config JSON,
-allowlisted SSH auth/signing pairs, and only GitHub `known_hosts` entries through Cube file transfer.
+allowlisted SSH auth/signing pairs, and only GitHub `known_hosts` entries for SSH bootstrap through
+Cube file transfer.
 Private files are pre-created and verified mode `0600`; public keys use `0644`; directories use
 `0700`. Effective host Git name/email, SSH signing, and signing-key path are reproduced. SSH clone
-uses `IdentitiesOnly=yes` and `StrictHostKeyChecking=yes`; existing token-backed gh/HTTPS remains.
+uses `IdentitiesOnly=yes` and `StrictHostKeyChecking=yes`; token-backed gh/HTTPS bootstrap does not
+require or transfer GitHub `known_hosts`.
 
 `CUBE_SSH_AUTH_KEY` selects auth private key and defaults to `~/.ssh/id_ed25519`.
 `CUBE_SSH_KNOWN_HOSTS_FILE` selects host file and defaults to `~/.ssh/known_hosts`. Every SSH source

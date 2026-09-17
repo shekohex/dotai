@@ -195,9 +195,11 @@ async function bootstrapSandbox(
     repositoryRoot: string,
   ) => Promise<RuntimeIdentityBundle>,
 ): Promise<string> {
-  const repository = shellQuote(config.project.repository);
   const remoteUrl = shellQuote(
     `git@github.com:${config.project.repository}.git`,
+  );
+  const httpsRemoteUrl = shellQuote(
+    `https://github.com/${config.project.repository}.git`,
   );
   const workspacePath = shellQuote(config.project.workspacePath);
   const defaultRef = shellQuote(config.project.defaultRef);
@@ -237,9 +239,13 @@ async function bootstrapSandbox(
       "git config --global gpg.format ssh",
       "git config --global commit.gpgsign true",
       `git config --global user.signingkey ${shellQuote(runtimeIdentity.git.signingKeyPath)}`,
-      `git config --global core.sshCommand ${shellQuote(
-        `ssh -i ${runtimeIdentity.git.authKeyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${runtimeIdentity.git.knownHostsPath}`,
-      )}`,
+      ...(runtimeIdentity.git.knownHostsPath
+        ? [
+            `git config --global core.sshCommand ${shellQuote(
+              `ssh -i ${runtimeIdentity.git.authKeyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${runtimeIdentity.git.knownHostsPath}`,
+            )}`,
+          ]
+        : []),
       ...runtimeIdentity.files.map(
         (file) =>
           `test "$(stat -c %a ${shellQuote(file.destination)})" = ${file.mode.toString(8)}`,
@@ -251,11 +257,14 @@ async function bootstrapSandbox(
     `test ! -e ${workspacePath}`,
     `mkdir -p ${shellQuote(config.project.workspacePath.replace(/\/[^/]+$/, ""))}`,
     `if command -v gh >/dev/null 2>&1 && { test -n "\${GH_TOKEN:-}" || test -n "\${GITHUB_TOKEN:-}"; }; then`,
-    `  gh repo clone ${repository} ${workspacePath} -- --branch ${defaultRef}`,
+    `  gh repo clone ${httpsRemoteUrl} ${workspacePath} -- --branch ${defaultRef}`,
     `  cd ${workspacePath}`,
     "  gh auth setup-git",
-    "else",
+    `elif { test -z "\${GH_TOKEN:-}" && test -z "\${GITHUB_TOKEN:-}"; }; then`,
     `  git clone --branch ${defaultRef} ${remoteUrl} ${workspacePath}`,
+    "else",
+    '  echo "GitHub CLI is required for token-backed clone" >&2',
+    "  exit 1",
     "fi",
     `cd ${workspacePath}`,
     "./install.sh --yes",

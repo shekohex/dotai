@@ -98,6 +98,47 @@ async function hostFixture() {
 }
 
 describe("loadRuntimeIdentityBundle", () => {
+  it("allows token-backed identity without a GitHub known_hosts entry", async () => {
+    const fixture = await hostFixture();
+    await writeFile(
+      path.join(fixture.homeDirectory, ".ssh", "known_hosts"),
+      "example.com ssh-ed25519 HOST_FIXTURE\n",
+    );
+
+    const bundle = await loadRuntimeIdentityBundle(fixture.repositoryRoot, {
+      homeDirectory: fixture.homeDirectory,
+      environment: { ...fixture.environment, GH_TOKEN: "runtime-token" },
+    });
+
+    expect(bundle.git.knownHostsPath).toBeUndefined();
+    expect(bundle.files.map(({ destination }) => destination)).not.toContain(
+      "/home/coder/.ssh/known_hosts",
+    );
+    expect(bundle.files.map(({ destination }) => destination)).toEqual(
+      expect.arrayContaining([
+        "/home/coder/.ssh/auth/id_ed25519",
+        "/home/coder/.ssh/git-commit-signing/coder",
+      ]),
+    );
+  });
+
+  it("requires GitHub known_hosts for SSH bootstrap", async () => {
+    const fixture = await hostFixture();
+    await writeFile(
+      path.join(fixture.homeDirectory, ".ssh", "known_hosts"),
+      "example.com ssh-ed25519 HOST_FIXTURE\n",
+    );
+
+    await expect(
+      loadRuntimeIdentityBundle(fixture.repositoryRoot, {
+        homeDirectory: fixture.homeDirectory,
+        environment: fixture.environment,
+      }),
+    ).rejects.toThrow(
+      `GitHub known_hosts has no usable github.com entry: ${path.join(fixture.homeDirectory, ".ssh", "known_hosts")}`,
+    );
+  });
+
   it("loads allowlisted runtime files, effective Git identity, and GitHub hosts", async () => {
     const fixture = await hostFixture();
     const bundle = await loadRuntimeIdentityBundle(fixture.repositoryRoot, {

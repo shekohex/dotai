@@ -22,7 +22,7 @@ export interface RuntimeGitIdentity {
   userEmail: string;
   authKeyPath: string;
   signingKeyPath: string;
-  knownHostsPath: string;
+  knownHostsPath?: string;
 }
 
 export interface RuntimeIdentityBundle {
@@ -39,6 +39,10 @@ interface IdentityFileSpec {
   label: string;
   source: string[];
   destination: string;
+}
+
+function hasGithubToken(environment: NodeJS.ProcessEnv): boolean {
+  return Boolean(environment.GH_TOKEN || environment.GITHUB_TOKEN);
 }
 
 const identityFileSpecs: IdentityFileSpec[] = [
@@ -335,13 +339,15 @@ export async function loadRuntimeIdentityBundle(
       ),
       loadSshKeyPair(authKey, homeDirectory, "SSH auth"),
       loadSshKeyPair(signingKey, homeDirectory, "Git signing"),
-      loadGithubKnownHosts(knownHosts, homeDirectory),
+      hasGithubToken(environment)
+        ? Promise.resolve(undefined)
+        : loadGithubKnownHosts(knownHosts, homeDirectory),
     ]);
   const files = uniqueRuntimeFiles([
     ...jsonFiles,
     ...authFiles,
     ...signingFiles,
-    knownHostsFile,
+    ...(knownHostsFile ? [knownHostsFile] : []),
   ]);
   const privateAuthFile = authFiles.find((file) => file.mode === 0o600)!;
   const privateSigningFile = signingFiles.find((file) => file.mode === 0o600)!;
@@ -352,7 +358,7 @@ export async function loadRuntimeIdentityBundle(
       userEmail,
       authKeyPath: privateAuthFile.destination,
       signingKeyPath: privateSigningFile.destination,
-      knownHostsPath: knownHostsFile.destination,
+      ...(knownHostsFile ? { knownHostsPath: knownHostsFile.destination } : {}),
     },
   };
 }

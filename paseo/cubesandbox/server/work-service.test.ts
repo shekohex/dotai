@@ -184,57 +184,68 @@ function dependencies() {
     connect: vi.fn(async () => sandbox),
   };
   const createdAgents: RemoteAgentInput[] = [];
-  const loadRuntimeIdentityBundle = vi.fn(async () => ({
-    files: [
-      {
-        destination: "/home/coder/.pi/agent/auth.json",
-        contents: '{"pi":true}\n',
-        mode: 0o600 as const,
+  const loadRuntimeIdentityBundle = vi.fn(async () => {
+    const tokenBacked = Boolean(
+      process.env.GH_TOKEN || process.env.GITHUB_TOKEN,
+    );
+    return {
+      files: [
+        {
+          destination: "/home/coder/.pi/agent/auth.json",
+          contents: '{"pi":true}\n',
+          mode: 0o600 as const,
+        },
+        {
+          destination: "/home/coder/.codex/auth.json",
+          contents: '{"codex":true}\n',
+          mode: 0o600 as const,
+        },
+        {
+          destination: "/home/coder/.paseo/config.json",
+          contents: '{"paseo":true}\n',
+          mode: 0o600 as const,
+        },
+        {
+          destination: "/home/coder/.ssh/id_ed25519",
+          contents: "AUTH_PRIVATE_FIXTURE",
+          mode: 0o600 as const,
+        },
+        {
+          destination: "/home/coder/.ssh/id_ed25519.pub",
+          contents: "ssh-ed25519 AUTH_PUBLIC_FIXTURE",
+          mode: 0o644 as const,
+        },
+        {
+          destination: "/home/coder/.ssh/git-commit-signing/coder",
+          contents: "SIGNING_PRIVATE_FIXTURE",
+          mode: 0o600 as const,
+        },
+        {
+          destination: "/home/coder/.ssh/git-commit-signing/coder.pub",
+          contents: "ssh-ed25519 SIGNING_PUBLIC_FIXTURE",
+          mode: 0o644 as const,
+        },
+        ...(tokenBacked
+          ? []
+          : [
+              {
+                destination: "/home/coder/.ssh/known_hosts",
+                contents: "github.com ssh-ed25519 HOST_FIXTURE\n",
+                mode: 0o600 as const,
+              },
+            ]),
+      ],
+      git: {
+        userName: "Runtime User",
+        userEmail: "runtime@example.test",
+        authKeyPath: "/home/coder/.ssh/id_ed25519",
+        signingKeyPath: "/home/coder/.ssh/git-commit-signing/coder",
+        ...(tokenBacked
+          ? {}
+          : { knownHostsPath: "/home/coder/.ssh/known_hosts" }),
       },
-      {
-        destination: "/home/coder/.codex/auth.json",
-        contents: '{"codex":true}\n',
-        mode: 0o600 as const,
-      },
-      {
-        destination: "/home/coder/.paseo/config.json",
-        contents: '{"paseo":true}\n',
-        mode: 0o600 as const,
-      },
-      {
-        destination: "/home/coder/.ssh/id_ed25519",
-        contents: "AUTH_PRIVATE_FIXTURE",
-        mode: 0o600 as const,
-      },
-      {
-        destination: "/home/coder/.ssh/id_ed25519.pub",
-        contents: "ssh-ed25519 AUTH_PUBLIC_FIXTURE",
-        mode: 0o644 as const,
-      },
-      {
-        destination: "/home/coder/.ssh/git-commit-signing/coder",
-        contents: "SIGNING_PRIVATE_FIXTURE",
-        mode: 0o600 as const,
-      },
-      {
-        destination: "/home/coder/.ssh/git-commit-signing/coder.pub",
-        contents: "ssh-ed25519 SIGNING_PUBLIC_FIXTURE",
-        mode: 0o644 as const,
-      },
-      {
-        destination: "/home/coder/.ssh/known_hosts",
-        contents: "github.com ssh-ed25519 HOST_FIXTURE\n",
-        mode: 0o600 as const,
-      },
-    ],
-    git: {
-      userName: "Runtime User",
-      userEmail: "runtime@example.test",
-      authKeyPath: "/home/coder/.ssh/id_ed25519",
-      signingKeyPath: "/home/coder/.ssh/git-commit-signing/coder",
-      knownHostsPath: "/home/coder/.ssh/known_hosts",
-    },
-  }));
+    };
+  });
   const remote: RemotePaseoConnection = {
     serverId: "remote-1",
     createAgent: vi.fn(async (input) => {
@@ -327,9 +338,13 @@ describe("WorkService lifecycle", () => {
     expect(gitConfigCommand).toContain(
       "user.signingkey '/home/coder/.ssh/git-commit-signing/coder'",
     );
-    expect(gitConfigCommand).toContain("StrictHostKeyChecking=yes");
-    expect(gitConfigCommand).not.toContain("StrictHostKeyChecking=no");
-    expect(cloneCommand).toContain("gh repo clone");
+    expect(gitConfigCommand).not.toContain("core.sshCommand");
+    expect(cloneCommand).toContain(
+      "gh repo clone 'https://github.com/acme/widget.git'",
+    );
+    expect(cloneCommand).toContain(
+      'elif { test -z "${GH_TOKEN:-}" && test -z "${GITHUB_TOKEN:-}"; }; then',
+    );
     expect(cloneCommand.indexOf("gh auth setup-git")).toBeGreaterThan(
       cloneCommand.indexOf("gh repo clone"),
     );
@@ -341,7 +356,7 @@ describe("WorkService lifecycle", () => {
     expect(cloneOptions?.env).toMatchObject({ GH_TOKEN: "runtime-token" });
     expect(cloneCommand).not.toContain("runtime-token");
     expect(deps.loadRuntimeIdentityBundle).toHaveBeenCalledWith(repositoryRoot);
-    expect(deps.writeFile).toHaveBeenCalledTimes(8);
+    expect(deps.writeFile).toHaveBeenCalledTimes(7);
     expect(
       deps.writeFile.mock.calls.map(([destination]) => destination),
     ).toEqual([
@@ -352,7 +367,6 @@ describe("WorkService lifecycle", () => {
       "/home/coder/.ssh/id_ed25519.pub",
       "/home/coder/.ssh/git-commit-signing/coder",
       "/home/coder/.ssh/git-commit-signing/coder.pub",
-      "/home/coder/.ssh/known_hosts",
     ]);
     expect(JSON.stringify(deps.run.mock.calls)).not.toContain('"pi":true');
     expect(JSON.stringify(deps.run.mock.calls)).not.toContain('"codex":true');

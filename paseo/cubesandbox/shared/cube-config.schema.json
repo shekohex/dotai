@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/shekohex/dotai/main/paseo/cubesandbox/shared/cube-config.schema.json",
+  "title": "CubeSandbox Paseo Project Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "version",
+    "project",
+    "cube",
+    "template",
+    "sandbox",
+    "snapshot"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://raw.githubusercontent.com/shekohex/dotai/main/paseo/cubesandbox/shared/cube-config.schema.json"
+    },
+    "version": { "const": 1 },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "repository", "defaultRef", "workspacePath"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "repository": { "type": "string", "minLength": 1 },
+        "defaultRef": { "type": "string", "minLength": 1 },
+        "workspacePath": { "type": "string", "pattern": "^/" }
+      }
+    },
+    "cube": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiUrl", "sandboxDomain"],
+      "properties": {
+        "apiUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Expected Cube control endpoint. Runtime trusts CUBE_API_URL or the fixed default and rejects a mismatch before reading secrets."
+        },
+        "sandboxDomain": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Expected data-plane domain. Runtime trusts CUBE_SANDBOX_DOMAIN or fixed default and rejects project/response mismatch before runtime credentials."
+        }
+      }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alias", "dockerfile", "buildContext", "resources"],
+      "properties": {
+        "alias": { "type": "string", "minLength": 1 },
+        "dockerfile": { "type": "string", "minLength": 1 },
+        "buildContext": { "type": "string", "minLength": 1 },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpuMillicores", "memoryMb", "writableLayerSize"],
+          "properties": {
+            "cpuMillicores": { "type": "integer", "minimum": 1 },
+            "memoryMb": { "type": "integer", "minimum": 1 },
+            "writableLayerSize": { "type": "string", "pattern": "^\\d+[KMGT]$" }
+          }
+        }
+      }
+    },
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["idleTimeoutSeconds", "onTimeout", "previewPorts"],
+      "properties": {
+        "idleTimeoutSeconds": { "type": "integer", "minimum": 1 },
+        "onTimeout": { "const": "pause" },
+        "previewPorts": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "const": "manual" },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

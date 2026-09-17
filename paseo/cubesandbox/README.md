@@ -1,0 +1,232 @@
+# CubeSandbox Paseo plugin
+
+Paseo v0.8 plugin for one Work Sandbox per unit of work. Each plugin installation persists only
+the sandbox IDs it creates; it never lists or manages unrelated CubeSandbox workloads.
+
+## Install from Git subdirectory
+
+Enable Paseo plugins after reviewing this trusted server/client code, then:
+
+```bash
+paseo plugin add shekohex/dotai:paseo/cubesandbox --ref main
+```
+
+The Git install runs `npm ci --omit=dev`. Local development uses:
+
+```bash
+npm install
+npm run typecheck
+npm test
+npm run build
+```
+
+Do not place Cube credentials in project files. Set optional `CUBE_API_KEY` in daemon runtime.
+Trusted control endpoint comes from `CUBE_API_URL`, default `https://sandbox.0iq.xyz`; trusted
+data-plane domain comes from `CUBE_SANDBOX_DOMAIN`, default `sbx.0iq.xyz`. Project `cube.apiUrl` and
+`cube.sandboxDomain` are assertions and must match before plugin reads Cube/provider/Git secrets.
+Cube create uses empty environment; missing/mismatched response domain destroys new Sandbox before
+runtime provider/Git credentials are resolved or sent.
+
+## Project `.cube` contract
+
+Project owns:
+
+- `.cube/Dockerfile`
+- `.cube/sandbox.py`
+- `.cube/config.json`
+
+`cube_init_config` derives repository/default branch from Git, creates `.cube` when absent, and
+writes only `.cube/config.json`. Existing config is never overwritten. Plugin never creates or edits
+Dockerfile or Python. Default branch comes from local `origin/HEAD` or origin's advertised symbolic
+HEAD; initialization fails with repair guidance when neither is available. Initialization targets
+the selected registered project root exactly (a worktree or nested project keeps its own config),
+never an enclosing Git top level. The same action is available from the UI for any registered
+project without opening an agent. Bundled schema lives at `shared/cube-config.schema.json`.
+
+Configuration contains deployment intent only: project identity, Cube endpoint, template inputs and
+resources, idle pause policy, preview ports, and optional snapshot selection. No task state, runtime
+state, or secrets belong there.
+
+Snapshot preparation stays explicit and project-owned:
+
+```bash
+uv run .cube/sandbox.py prepare-snapshot --name <template-alias>
+```
+
+Set `snapshot.id` to pin a prepared snapshot. Otherwise plugin consumes newest API result whose
+names include configured template alias when available, then creates directly from the configured
+template alias. It never infers a snapshot from lockfiles and never creates snapshots. Project CLI
+uses dedicated empty-environment source, verifies repository, Git/GitHub/SSH
+auth, Git signing config, Pi/Codex auth, API-key environment, and Paseo identity paths are absent,
+snapshots it, then destroys source on success or failure.
+
+## Lifecycle
+
+`cube_create_agent` without `workId` creates Sandbox from the selected snapshot or configured
+template alias with no credentials, validates trusted response domain, then resolves runtime-only
+provider/Git credentials and local identity files. Bootstrap clones configured repository, runs `gh auth setup-git` with runtime token,
+runs project `./install.sh --yes`, installs agent dependencies, and installs Paseo CLI v0.8 with Bun
+when missing. Before clone or daemon start, it copies local Pi/Codex auth JSON, Paseo config JSON,
+allowlisted SSH auth/signing pairs, and only GitHub `known_hosts` entries for SSH bootstrap through
+Cube file transfer.
+Private files are pre-created and verified mode `0600`; public keys use `0644`; directories use
+`0700`. Effective host Git name/email, SSH signing, and signing-key path are reproduced. SSH clone
+uses `IdentitiesOnly=yes` and `StrictHostKeyChecking=yes`; token-backed gh/HTTPS bootstrap uses
+`GH_TOKEN`, `GITHUB_TOKEN`, or authenticated `gh auth token` credentials in that order, and does not
+require or transfer GitHub `known_hosts`. CLI credentials remain memory-only.
+
+`CUBE_SSH_AUTH_KEY` selects auth private key and defaults to `~/.ssh/id_ed25519`.
+`CUBE_SSH_KNOWN_HOSTS_FILE` selects host file and defaults to `~/.ssh/known_hosts`. Every SSH source
+must be regular, non-symlink, inside daemon user's `~/.ssh`, with matching `.pub`; signing source is
+effective Git `user.signingkey`. No ssh-agent dependency. Runtime Git helper stores no token. Image
+and prepared snapshot contain no `hosts.yml`, Git credential, SSH key, signing config, auth, or Paseo
+identity.
+
+`cube_create_agent.timeoutMs` is optional, must be a positive safe integer, and is measured in
+milliseconds. When supplied, it applies only to Cube commands used while bootstrapping a new Work
+Sandbox. Omit it for no artificial bootstrap command deadline. It is not stored or reused for later
+prompt, status, activity, or keepalive operations; keepalive retains its 10-second timeout.
+
+Supplying `workId` reuses Sandbox and creates another isolated Paseo worktree agent. Multiple agents
+share Sandbox compute, not working directories. Work IDs are internal UUIDs; optional external task
+metadata is descriptive only.
+
+Runtime settings use Paseo names. `provider` and `model` are discovered remotely; a supplied
+`modeId` is checked against that provider's modes. No Pi or Codex mode list is hardcoded. Pi mode is
+optional and omitted when the remote Pi provider exposes no modes. Agent profiles are decomposed
+settings, not modes:
+
+```json
+{
+  "prompt": "Inspect repository and summarize risks.",
+  "provider": "pi"
+}
+```
+
+Fast Build-equivalent Codex settings:
+
+```json
+{
+  "prompt": "Implement requested change.",
+  "provider": "codex",
+  "model": "gpt-5.6-luna",
+  "modeId": "full-access",
+  "thinkingOptionId": "xhigh",
+  "featureValues": { "fast_mode": true }
+}
+```
+
+Cube idle timeout defaults to 300 seconds with `onTimeout: pause`. While any remote Paseo agent is
+running, plugin checks remote status and sends bounded CubeProxy command activity to prevent timeout.
+When all agents become idle, one final activity starts configured idle grace and keepalive stops.
+Prompt sends and new agents auto-resume paused sandboxes and wait for remote Paseo relay readiness.
+Pause is immediate on request. Destroy is explicit, immediate, and has no confirmation. Pause,
+destroy, and plugin shutdown cancel keepalive. Undestroyed work remains paused. Plugin does no GitHub
+polling; Paseo owns merged-PR worktree cleanup.
+
+Plugin shutdown first rejects new MCP, RPC, and lifecycle operations, then drains accepted tool
+requests and tracked work operations before closing relay connections. A Sandbox whose initial
+bootstrap is still in flight is destroyed and its incomplete local record removed; established work
+records survive reload so busy-agent keepalive can recover on startup. Failed destruction retains
+owned error record for explicit retry. Agent-create rollback archives created remote workspace;
+rollback failures propagate through shutdown.
+
+## Agent tools
+
+| Tool                   | Purpose                                                    |
+| ---------------------- | ---------------------------------------------------------- |
+| `cube_create_agent`    | Create/reuse Work Sandbox and create isolated remote agent |
+| `cube_init_config`     | Create project `.cube/config.json` only                    |
+| `cube_send_prompt`     | Resume if needed and prompt managed remote agent           |
+| `cube_get_status`      | Read managed lifecycle/agent status                        |
+| `cube_get_activity`    | Fetch current projected remote agent timeline page         |
+| `cube_get_work_events` | Read persisted local CubeSandbox lifecycle events          |
+| `cube_list_work`       | List work owned by the bound Paseo project                 |
+| `cube_get_ports`       | Return configured preview URLs                             |
+| `cube_pause_work`      | Pause immediately                                          |
+| `cube_destroy_work`    | Destroy immediately, without confirmation                  |
+
+`cube_get_activity` accepts `workId`, optional managed `agentId` (default newest), `limit`, cursor
+`{ "epoch": "...", "seq": 42 }`, and direction `tail`, `before`, or `after`. It performs one fresh
+request/response read with projected timeline data; it does not stream. Response fields are
+`workId`, `workspaceId`, `agentId`, `agent`, `direction`, `projection`, `entries`, `startCursor`,
+`endCursor`, `hasOlder`, `hasNewer`, `epoch`, `reset`, `gap`, `staleCursor`, `window`, and `error`.
+SDK may also return `mergeWindow`. Keep `epoch`, cursor, and reset/gap/staleCursor values when
+paginating. `cube_get_work_events` returns local journal entries under `events` and does not replace
+remote activity.
+
+Paseo v0.8 public plugin API cannot register tools. Server starts loopback-only Streamable HTTP MCP
+and injects opaque per-agent capability URL through `server.before("agent.create")`. The capability
+binds the longest registered Paseo project root that contains the agent's cwd, so it carries both
+the Paseo project id and canonical root. Nested registered projects stay separate. Tool inputs
+accept no project path, and work ids from another project id or root are rejected before any timer
+or resource mutation. An unregistered Git root receives only the initialization capability;
+Work Sandbox tools refuse until the directory is a registered Paseo project. `cube_init_config`
+performs full origin/default-branch resolution and returns actionable repair guidance instead of
+silently omitting the tool. Because injection happens at agent creation, agents created before this
+plugin version must be recreated (or restarted) before they can call the tools.
+
+## Projects and identity
+
+Every registered Paseo project root is an independent Cube scope, including feature worktrees and
+nested registered roots. Identity is the Paseo project id plus the canonical root; the plugin never
+collapses scopes by Git remote, Git top level, Paseo `projectKey`, or Cube config project id. The
+authoritative inventory comes from the authenticated Paseo `projects.list()` API and is refreshed
+from the public `project.update` stream, so it never depends on an agent capability map and survives
+plugin reload. Roots that are missing, not directories, or that canonicalize to the same directory
+as another scope are marked unavailable or ambiguous and cannot be mutated. UI RPCs
+(`cube.list-projects`, `cube.init-config`, `cube.pause-work`, `cube.resume-work`,
+`cube.destroy-work`) accept only project ids and work ids, and the server resolves and canonicalizes
+the registered root before touching the filesystem or Cube.
+
+## UI and pairing
+
+**Cube Sandboxes** sidebar surface works in desktop, browser, iOS, and Android, and is the global
+surface for every registered project. An adaptive top `SettingsSelect` defaults to **All projects**
+and lists each registered project by Paseo display label; the selection persists host-wide through
+plugin settings and falls back to **All projects** when the selected project is removed. The All view
+groups Work Sandbox cards under a project section; the selected view focuses one project. Each
+section shows the Paseo label, repository/Cube project id, readiness, and work/busy/paused counts.
+Loading, error, missing, invalid, unavailable, and removed states are explicit and never render a
+disabled control as enabled:
+
+- missing: an enabled **Initialize configuration** action scoped to the selected registered project,
+  no agent required, and never overwriting an existing file;
+- ready with zero work: **Configuration ready. Create Work Sandbox from an agent.**;
+- invalid: the exact validation error, no overwrite;
+- unavailable/removed: work stays visible and destroy (cleanup) stays available while init, create,
+  pause, and resume are blocked.
+
+Work cards show lifecycle, worktree/agent counts, idle grace, preview links, pairing, pause/resume,
+and immediate destroy. Busy work says **Keepalive active**; only idle/ready work shows pause
+countdown. Busy/success/error states use native Paseo toasts. There is no nested sidebar.
+Current Cube UI consumes lifecycle/status data only; it does not subscribe to remote agent timelines.
+
+Remote daemon runs relay-only. Plugin server connects through Paseo's supported encrypted relay
+client protocol. **Pair / open agent** opens manual pairing offer in app/browser. Seamless host
+registration/removal is intentionally deferred because public v0.8 plugin client API does not expose
+host mutation. Treat pairing links as passwords.
+
+## Security and local state
+
+- Plugin is trusted, unsandboxed daemon code.
+- Cube/API/provider/Git tokens stay in process or sandbox runtime. Pi/Codex auth and Paseo config are
+  transferred through validated Cube data plane only after response-domain validation. Project
+  config and WorkRecord never contain them.
+- SSH private keys never enter environment variables, commands, logs, WorkRecords, RPC/MCP output,
+  image, or prepared snapshot. Partial transfer/config failure destroys new Sandbox; failed destroy
+  retains ownership record for retry.
+- Sandboxed code can read copied runtime keys. Work Sandbox is trusted only for user-authorized
+  coding. Never snapshot, publish, or adopt key-bearing state outside its owning Work Sandbox.
+- Private state defaults to `~/.paseo/cubesandbox-plugin/cubesandbox`: directories mode `0700`, files
+  mode `0600`. WorkRecord v2 stores the Paseo project id, canonical repository root, Cube project id,
+  repository, and ownership status alongside work/sandbox/task/relay/workspace/agent references and
+  lifecycle timestamps. Legacy v1 records migrate only when their canonical root maps to exactly one
+  online registered project; ambiguous or removed roots are quarantined with a stable synthetic id
+  and stay visible for safe cleanup instead of being silently adopted. Pairing offers are separate
+  private secret files and are returned only through authenticated plugin UI RPC or project-bound
+  MCP capability.
+- Server binds MCP to `127.0.0.1` on an ephemeral port. Unknown capabilities return 404.
+- Preview ports are project-declared. Plugin performs no port discovery.
+- Vendored CubeSandbox Node SDK subset comes from upstream v0.7.1 under Apache-2.0; see
+  `server/vendor/cubesandbox-sdk/PROVENANCE.md`.

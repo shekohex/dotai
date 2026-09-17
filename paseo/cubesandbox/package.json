@@ -1,0 +1,41 @@
+{
+  "name": "@shekohex/paseo-plugin-cubesandbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "esbuild index.server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.server.cjs --external:@getpaseo/plugin --external:@getpaseo/plugin/* --external:zod",
+    "build:client": "esbuild index.client.tsx --bundle --platform=neutral --target=es2020 --format=cjs --outfile=dist/index.client.cjs --external:@getpaseo/plugin --external:@getpaseo/plugin/* --external:@tanstack/react-query --external:react --external:react/jsx-runtime --external:react-native --external:zod",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "lint": "oxlint --deny-warnings index.client.tsx index.server.ts client server shared",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@getpaseo/client": "0.8.0",
+    "@getpaseo/protocol": "0.8.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "express": "^5.1.0",
+    "undici": "^7.16.0"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.8.0",
+    "@tanstack/react-query": "^5.90.2",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.16",
+    "esbuild": "^0.28.2",
+    "oxlint": "^1.18.0",
+    "prettier": "^3.6.2",
+    "react": "^19.1.1",
+    "react-native": "^0.81.4",
+    "typescript": "^5.9.2",
+    "vitest": "^5.0.1",
+    "zod": "^4.1.11"
+  }
+}

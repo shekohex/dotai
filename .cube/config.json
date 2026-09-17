@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/shekohex/dotai/main/paseo/cubesandbox/shared/cube-config.schema.json",
+  "version": 1,
+  "project": {
+    "id": "dotai",
+    "repository": "shekohex/dotai",
+    "defaultRef": "main",
+    "workspacePath": "/workspace/dotai"
+  },
+  "cube": {
+    "apiUrl": "https://sandbox.0iq.xyz",
+    "sandboxDomain": "sbx.0iq.xyz"
+  },
+  "template": {
+    "alias": "dotai",
+    "dockerfile": ".cube/Dockerfile",
+    "buildContext": ".",
+    "resources": {
+      "cpuMillicores": 2000,
+      "memoryMb": 4096,
+      "writableLayerSize": "20G"
+    }
+  },
+  "sandbox": {
+    "idleTimeoutSeconds": 300,
+    "onTimeout": "pause",
+    "previewPorts": []
+  },
+  "snapshot": {
+    "mode": "manual"
+  }
+}

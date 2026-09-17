@@ -5,38 +5,24 @@ Project-owned CubeSandbox image and operator CLI, adapted from
 
 ## Image contract
 
-Build requires exact 40-character `DOTAI_REF`, recorded as image provenance. To validate through
-the authorized remote builder without changing local Docker state:
+Deployment requires exact 40-character `DOTAI_REF`, recorded as image provenance. Use the project
+CLI from repository root; it builds and pushes the image through the selected Docker host, creates
+the Cube template, waits for `READY`, then assigns the configured alias:
 
 ```sh
 DOCKER_HOST=ssh://builder@bbcr.0iq.xyz \
-GITHUB_TOKEN="$(gh auth token)" \
-docker buildx build \
-  --platform linux/amd64 \
-  --build-arg DOTAI_REF="$(git rev-parse HEAD)" \
-  --secret id=github_token,env=GITHUB_TOKEN \
-  --load \
-  --tag "dotai-cubesandbox-pr34:$(git rev-parse --short=12 HEAD)" \
-  -f .cube/Dockerfile .
+uv run .cube/sandbox.py --template-alias dotai deploy \
+  --build-arg DOTAI_REF="$(git rev-parse HEAD)"
 ```
 
-After inspection, remove only that task-owned tag:
-
-```sh
-DOCKER_HOST=ssh://builder@bbcr.0iq.xyz \
-docker image rm "dotai-cubesandbox-pr34:$(git rev-parse --short=12 HEAD)"
-```
-
-The token value stays out of command arguments and build layers/history. Current Dockerfile does not
-mount it because dotai clone moved entirely to runtime; the validation invocation still exercises
-secret-safe BuildKit transport. Cleanup must remove only task tag above, never global cache or other
-remote images/containers/volumes.
+Remote registry authentication remains with the Docker host. Pass Cube credentials only through
+`CUBE_API_KEY`; never place credentials in build arguments. Do not prune global cache or unrelated
+remote images, containers, or volumes.
 
 Image uses exact JS Hakim base tag
 `bbcr.0iq.xyz/hakim/cube-hakim-js:71a7eaf6d746-20260917122636` without a digest, and pins Paseo
 0.8.0 and Codex 0.154.0. Codex uses official standalone
-installer with exact `--release`; gh 2.95.0 is installed from its checksum-verified release archive
-and verified as `coder`.
+installer with exact `--release`; gh comes from the exact base image and is verified as `coder`.
 No dotai checkout or config is installed at build time. Build leaves no source checkout, GitHub
 state, Git credentials, Git identity, auth files, or Paseo identity. Health port `49983` belongs to
 Cube adapter; it is not an app preview.

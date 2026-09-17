@@ -14,6 +14,7 @@ import pytest
 REPOSITORY_ROOT = Path(__file__).parents[1]
 SCRIPT_PATH = REPOSITORY_ROOT / ".cube" / "sandbox.py"
 DOCKERFILE_PATH = REPOSITORY_ROOT / ".cube" / "Dockerfile"
+README_PATH = REPOSITORY_ROOT / ".cube" / "README.md"
 
 
 def install_import_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -594,7 +595,7 @@ def test_manual_sandbox_metadata_is_not_plugin_owned(
     assert not any(key.startswith("paseo.") for key in create_calls[0]["metadata"])
 
 
-def test_dockerfile_pins_tools_and_excludes_identity() -> None:
+def test_dockerfile_uses_base_gh_and_excludes_identity() -> None:
     dockerfile = DOCKERFILE_PATH.read_text()
 
     assert (
@@ -606,10 +607,10 @@ def test_dockerfile_pins_tools_and_excludes_identity() -> None:
     assert "https://chatgpt.com/codex/install.sh" in dockerfile
     assert '--release "${CODEX_VERSION}"' in dockerfile
     assert "CODEX_NON_INTERACTIVE=true" in dockerfile
-    assert "GH_VERSION=2.95.0" in dockerfile
-    assert "GH_SHA256=25d1e4729e8808c9ed3d613e96ebd3f3e44446f2d368c89d878a71a36ddb3d8c" in dockerfile
-    assert "github.com/cli/cli/releases/download/v${GH_VERSION}" in dockerfile
-    assert "sha256sum --check --strict" in dockerfile
+    assert "ARG GH_VERSION=" not in dockerfile
+    assert "ARG GH_SHA256=" not in dockerfile
+    assert "github.com/cli/cli/releases/download" not in dockerfile
+    assert "gh --version" in dockerfile
     assert "test ! -e /home/coder/.config/gh/hosts.yml" in dockerfile
     assert "test ! -e /home/coder/.paseo" in dockerfile
     assert "find /home/coder/.ssh /root/.ssh -type f" in dockerfile
@@ -622,6 +623,16 @@ def test_dockerfile_pins_tools_and_excludes_identity() -> None:
     assert "github_token" not in dockerfile
     assert 'LABEL io.dotai.runtime-ref="${DOTAI_REF}"' in dockerfile
     assert "releases/download/preview" not in dockerfile
+
+
+def test_readme_uses_project_cli_for_remote_deployment() -> None:
+    readme = README_PATH.read_text()
+
+    assert "DOCKER_HOST=ssh://builder@bbcr.0iq.xyz" in readme
+    assert "uv run .cube/sandbox.py --template-alias dotai deploy" in readme
+    assert 'DOTAI_REF="$(git rev-parse HEAD)"' in readme
+    assert "docker buildx build" not in readme
+    assert "--secret id=github_token" not in readme
 
 
 def test_pi_shim_exact_body_and_argument_forwarding(tmp_path: Path) -> None:

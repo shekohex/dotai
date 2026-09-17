@@ -8,8 +8,6 @@ FROM ${CUBE_BASE_IMAGE}
 ARG DOTAI_REF
 ARG PASEO_VERSION=0.8.0
 ARG CODEX_VERSION=0.154.0
-ARG GH_VERSION=2.95.0
-ARG GH_SHA256=25d1e4729e8808c9ed3d613e96ebd3f3e44446f2d368c89d878a71a36ddb3d8c
 
 LABEL io.dotai.runtime-ref="${DOTAI_REF}"
 
@@ -26,11 +24,6 @@ RUN set -eux; \
 
 USER root
 RUN set -eux; \
-    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz; \
-    printf '%s  %s\n' "${GH_SHA256}" /tmp/gh.tar.gz | sha256sum --check --strict; \
-    tar -xzf /tmp/gh.tar.gz -C /tmp; \
-    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh; \
-    rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_amd64"; \
     rm -rf /root/.config/gh /root/.paseo; \
     rm -f /root/.gitconfig /root/.git-credentials /root/.codex/auth.json; \
     install -d -o coder -g coder -m 0755 /workspace; \
@@ -42,7 +35,7 @@ RUN set -eux; \
 
 USER coder
 RUN test -x "$(command -v pi)" && \
-    gh --version | head -n 1 | grep -F "gh version ${GH_VERSION} " && \
+    gh --version >/dev/null && \
     paseo --version | grep -Fx '0.8.0' && \
     codex --version | grep -Fx 'codex-cli 0.154.0' && \
     test ! -e /home/coder/.config/gh/hosts.yml && \

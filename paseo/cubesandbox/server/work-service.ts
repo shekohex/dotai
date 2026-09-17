@@ -10,6 +10,7 @@ import {
   loadProjectConfig,
 } from "./project-config.js";
 import {
+  type RemoteAgentReference,
   type RemotePaseoConnection,
   type RemotePaseoConnector,
 } from "./remote-paseo.js";
@@ -61,6 +62,8 @@ export interface WorkSummary {
   pairingUrl?: string;
   lastError?: string;
 }
+
+type WorkServiceLifecycle = "accepting" | "closing" | "closed";
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -148,8 +151,11 @@ export class WorkService {
     ReturnType<typeof setTimeout>
   >();
   private readonly workOperationTails = new Map<string, Promise<void>>();
+  private readonly unkeyedOperations = new Set<Promise<unknown>>();
+  private readonly shutdownCleanupFailures: unknown[] = [];
   private readonly boundRepositoryRoots = new Set<string>();
-  private closing = false;
+  private lifecycle: WorkServiceLifecycle = "accepting";
+  private closePromise: Promise<void> | undefined;
 
   constructor(
     private readonly records: WorkRecordStore,
@@ -158,6 +164,7 @@ export class WorkService {
   ) {}
 
   bindRepositoryRoot(repositoryRoot: string): void {
+    this.assertAccepting();
     this.boundRepositoryRoots.add(repositoryRoot);
   }
 
@@ -166,28 +173,34 @@ export class WorkService {
   }
 
   async start(): Promise<void> {
+    this.assertAccepting();
     for (const record of await this.records.list()) {
       if (record.status === "busy") this.scheduleKeepAlive(record, 0);
     }
   }
 
-  async initializeBoundRepository(): Promise<string> {
-    if (this.boundRepositoryRoots.size !== 1) {
-      throw new Error(
-        "Open exactly one project agent before initializing CubeSandbox configuration",
-      );
-    }
-    return initializeProjectConfig([...this.boundRepositoryRoots][0]!);
+  initializeBoundRepository(): Promise<string> {
+    return this.trackUnkeyedOperation(async () => {
+      if (this.boundRepositoryRoots.size !== 1) {
+        throw new Error(
+          "Open exactly one project agent before initializing CubeSandbox configuration",
+        );
+      }
+      return initializeProjectConfig([...this.boundRepositoryRoots][0]!);
+    });
   }
 
-  async initializeRepository(repositoryRoot: string): Promise<string> {
-    return initializeProjectConfig(repositoryRoot);
+  initializeRepository(repositoryRoot: string): Promise<string> {
+    return this.trackUnkeyedOperation(() =>
+      initializeProjectConfig(repositoryRoot),
+    );
   }
 
   async createAgent(
     repositoryRoot: string,
     rawInput: CreateAgentInput,
   ): Promise<WorkSummary> {
+    this.assertAccepting();
     const input = createAgentInputSchema.parse(rawInput);
     if (input.workId) {
       return this.withWorkLock(input.workId, async () =>
@@ -198,10 +211,23 @@ export class WorkService {
         ),
       );
     }
-    const record = await this.createWork(repositoryRoot, input);
-    return this.withWorkLock(record.workId, () =>
-      this.createAgentForRecord(repositoryRoot, input, record),
-    );
+    const workId = randomUUID();
+    return this.withWorkLock(workId, async () => {
+      const record = await this.createWork(repositoryRoot, input, workId);
+      try {
+        const summary = await this.createAgentForRecord(
+          repositoryRoot,
+          input,
+          record,
+        );
+        this.assertAccepting();
+        return summary;
+      } catch (error) {
+        if (this.lifecycle === "accepting") throw error;
+        await this.cleanupCreatingWork(record.workId, error);
+        throw this.lifecycleError();
+      }
+    });
   }
 
   private async createAgentForRecord(
@@ -224,6 +250,12 @@ export class WorkService {
       mode: input.mode,
       thinking: input.thinking,
     });
+    try {
+      this.assertAccepting();
+    } catch (error) {
+      await this.discardRemoteAgent(connection, reference, error);
+      throw error;
+    }
     const createdAt = new Date().toISOString();
     const updated = activity(
       {
@@ -235,15 +267,29 @@ export class WorkService {
       "agent-created",
       `Created remote agent ${reference.agentId}`,
     );
+    let persisted = false;
     try {
       await this.records.save(updated);
+      persisted = true;
+      this.assertAccepting();
     } catch (persistError) {
+      const cleanupErrors: unknown[] = [];
       try {
         await connection.discardAgent(reference);
-      } catch (cleanupError) {
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+      if (persisted) {
+        try {
+          await this.records.save(readyRecord);
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
+      if (cleanupErrors.length > 0) {
         throw new AggregateError(
-          [persistError, cleanupError],
-          "Remote agent was created, but local persistence and remote cleanup both failed",
+          [persistError, ...cleanupErrors],
+          "Remote agent cleanup failed after local persistence did not complete safely",
         );
       }
       throw persistError;
@@ -256,6 +302,7 @@ export class WorkService {
     repositoryRoot: string,
     input: { workId: string; prompt: string; agentId?: string },
   ): Promise<WorkSummary> {
+    this.assertAccepting();
     const parsed = z
       .object({
         workId: z.string().uuid(),
@@ -293,6 +340,7 @@ export class WorkService {
     repositoryRoot: string,
     workId: string,
   ): Promise<WorkSummary> {
+    this.assertAccepting();
     return this.withWorkLock(workId, async () => {
       const record = await this.refreshStatus(
         await this.requireOwnedRecord(workId, repositoryRoot),
@@ -301,19 +349,25 @@ export class WorkService {
     });
   }
 
-  async getActivity(repositoryRoot: string, workId: string, limit = 20) {
-    const record = await this.requireOwnedRecord(workId, repositoryRoot);
-    return record.activity.slice(-Math.max(1, Math.min(limit, 100))).reverse();
+  getActivity(repositoryRoot: string, workId: string, limit = 20) {
+    return this.trackUnkeyedOperation(async () => {
+      const record = await this.requireOwnedRecord(workId, repositoryRoot);
+      return record.activity
+        .slice(-Math.max(1, Math.min(limit, 100)))
+        .reverse();
+    });
   }
 
-  async list(
+  list(
     repositoryRoot?: string,
     includePairing = false,
   ): Promise<WorkSummary[]> {
-    return Promise.all(
-      (await this.records.list(repositoryRoot)).map(async (record) =>
-        this.withWorkLock(record.workId, async () =>
-          this.summary(await this.refreshStatus(record), includePairing),
+    return this.trackUnkeyedOperation(async () =>
+      Promise.all(
+        (await this.records.list(repositoryRoot)).map(async (record) =>
+          this.withWorkLock(record.workId, async () =>
+            this.summary(await this.refreshStatus(record), includePairing),
+          ),
         ),
       ),
     );
@@ -323,6 +377,7 @@ export class WorkService {
     repositoryRoot: string | undefined,
     workId: string,
   ): Promise<WorkSummary> {
+    this.assertAccepting();
     return this.withWorkLock(workId, async () => {
       this.stopKeepAlive(workId);
       const record = repositoryRoot
@@ -349,6 +404,7 @@ export class WorkService {
     repositoryRoot: string | undefined,
     workId: string,
   ): Promise<WorkSummary> {
+    this.assertAccepting();
     return this.withWorkLock(workId, async () => {
       const record = repositoryRoot
         ? await this.requireOwnedRecord(workId, repositoryRoot)
@@ -362,6 +418,7 @@ export class WorkService {
     repositoryRoot: string | undefined,
     workId: string,
   ): Promise<void> {
+    this.assertAccepting();
     await this.withWorkLock(workId, async () => {
       this.stopKeepAlive(workId);
       const record = repositoryRoot
@@ -375,63 +432,103 @@ export class WorkService {
     });
   }
 
-  async close(): Promise<void> {
-    this.closing = true;
+  beginClosing(): void {
+    if (this.lifecycle === "accepting") this.lifecycle = "closing";
+  }
+
+  close(): Promise<void> {
+    this.beginClosing();
+    this.closePromise ??= this.closeResources().finally(() => {
+      this.lifecycle = "closed";
+    });
+    return this.closePromise;
+  }
+
+  private async closeResources(): Promise<void> {
     for (const workId of this.keepAliveTimers.keys()) {
       this.stopKeepAlive(workId);
     }
-    await Promise.allSettled(this.workOperationTails.values());
+    await Promise.allSettled([
+      ...this.unkeyedOperations,
+      ...this.workOperationTails.values(),
+    ]);
     this.sandboxHandles.clear();
-    await Promise.all(
+    const results = await Promise.allSettled(
       [...this.remoteConnections.keys()].map((workId) =>
-        this.closeRemoteConnection(workId),
+        this.closeRemoteConnection(workId, false),
       ),
     );
+    const failures = [
+      ...this.shutdownCleanupFailures,
+      ...results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      ),
+    ];
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        "CubeSandbox WorkService cleanup failed",
+      );
+    }
   }
 
   private async createWork(
     repositoryRoot: string,
     input: CreateAgentInput,
+    workId: string,
   ): Promise<WorkRecord> {
     const config = await loadProjectConfig(repositoryRoot);
-    const workId = randomUUID();
-    const sandbox = await this.cube.create(config, workId);
-    this.sandboxHandles.set(workId, sandbox);
-    const timestamp = new Date().toISOString();
-    let record: WorkRecord = {
-      version: 1,
-      workId,
-      sandboxId: sandbox.sandboxId,
-      repositoryRoot,
-      projectId: config.project.id,
-      repository: config.project.repository,
-      sandboxDomain: config.cube.sandboxDomain,
-      previewPorts: config.sandbox.previewPorts,
-      idleTimeoutSeconds: config.sandbox.idleTimeoutSeconds,
-      task: input.task,
-      agents: [],
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      lastActivityAt: timestamp,
-      status: "creating",
-      activity: [
-        { at: timestamp, type: "created", detail: "Created Work Sandbox" },
-      ],
-    };
-    await this.records.save(record);
+    this.assertAccepting();
+    let sandbox: CubeSandboxHandle | undefined;
+    let record: WorkRecord | undefined;
     try {
+      sandbox = await this.cube.create(config, workId);
+      this.assertAccepting();
+      this.sandboxHandles.set(workId, sandbox);
+      const timestamp = new Date().toISOString();
+      record = {
+        version: 1,
+        workId,
+        sandboxId: sandbox.sandboxId,
+        repositoryRoot,
+        projectId: config.project.id,
+        repository: config.project.repository,
+        sandboxDomain: config.cube.sandboxDomain,
+        previewPorts: config.sandbox.previewPorts,
+        idleTimeoutSeconds: config.sandbox.idleTimeoutSeconds,
+        task: input.task,
+        agents: [],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        lastActivityAt: timestamp,
+        status: "creating",
+        activity: [
+          { at: timestamp, type: "created", detail: "Created Work Sandbox" },
+        ],
+      };
+      await this.records.save(record);
+      this.assertAccepting();
       const pairingUrl = await bootstrapSandbox(sandbox, config);
+      this.assertAccepting();
       await this.records.saveSecrets(workId, { pairingUrl });
+      this.assertAccepting();
       const connection = await this.paseo.connect(pairingUrl);
       this.remoteConnections.set(workId, connection);
+      this.assertAccepting();
       record = {
         ...record,
         relay: { serverId: connection.serverId },
         status: "ready",
       };
       await this.records.save(record);
+      this.assertAccepting();
       return record;
     } catch (error) {
+      if (this.lifecycle !== "accepting") {
+        if (sandbox) await this.cleanupCreatingWork(workId, error, sandbox);
+        throw this.lifecycleError();
+      }
+      if (!record) throw error;
       const failed = activity(
         {
           ...record,
@@ -442,6 +539,10 @@ export class WorkService {
         "Sandbox bootstrap failed",
       );
       await this.records.save(failed);
+      if (this.lifecycle !== "accepting") {
+        if (sandbox) await this.cleanupCreatingWork(workId, error, sandbox);
+        throw this.lifecycleError();
+      }
       throw error;
     }
   }
@@ -533,7 +634,7 @@ export class WorkService {
   }
 
   private scheduleKeepAlive(record: WorkRecord, delay?: number): void {
-    if (this.closing || record.status !== "busy") return;
+    if (this.lifecycle !== "accepting" || record.status !== "busy") return;
     if (this.keepAliveTimers.has(record.workId)) return;
     const timer = setTimeout(
       async () => {
@@ -542,7 +643,7 @@ export class WorkService {
           this.runKeepAliveCheck(record.workId),
         ).catch(async () => {
           console.warn("CubeSandbox keepalive check failed; retrying");
-          if (this.closing) return;
+          if (this.lifecycle !== "accepting") return;
           const current = await this.records
             .get(record.workId)
             .catch(() => null);
@@ -563,7 +664,7 @@ export class WorkService {
   }
 
   private async runKeepAliveCheck(workId: string): Promise<void> {
-    if (this.closing) return;
+    if (this.lifecycle !== "accepting") return;
     const record = await this.records.get(workId);
     if (record.status !== "busy") return;
     const config = await loadProjectConfig(record.repositoryRoot);
@@ -631,6 +732,81 @@ export class WorkService {
     }
   }
 
+  private trackUnkeyedOperation<T>(operation: () => Promise<T>): Promise<T> {
+    this.assertAccepting();
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const tracked = new Promise<T>((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    });
+    this.unkeyedOperations.add(tracked);
+    void Promise.resolve()
+      .then(() => {
+        this.assertAccepting();
+        return operation();
+      })
+      .then(resolve, reject);
+    void tracked.then(
+      () => this.unkeyedOperations.delete(tracked),
+      () => this.unkeyedOperations.delete(tracked),
+    );
+    return tracked;
+  }
+
+  private assertAccepting(): void {
+    if (this.lifecycle !== "accepting") throw this.lifecycleError();
+  }
+
+  private lifecycleError(): Error {
+    return new Error(`CubeSandbox service is ${this.lifecycle}`);
+  }
+
+  private async discardRemoteAgent(
+    connection: RemotePaseoConnection,
+    reference: RemoteAgentReference,
+    cause: unknown,
+  ): Promise<void> {
+    try {
+      await connection.discardAgent(reference);
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [cause, cleanupError],
+        "Remote agent was created during shutdown and could not be discarded",
+      );
+    }
+  }
+
+  private async cleanupCreatingWork(
+    workId: string,
+    cause: unknown,
+    providedSandbox?: CubeSandboxHandle,
+  ): Promise<void> {
+    this.stopKeepAlive(workId);
+    const sandbox = providedSandbox ?? this.sandboxHandles.get(workId);
+    this.sandboxHandles.delete(workId);
+    const connection = this.remoteConnections.get(workId);
+    this.remoteConnections.delete(workId);
+    const results = await Promise.allSettled([
+      connection?.close(),
+      sandbox?.destroy(),
+      this.records.remove(workId),
+    ]);
+    const failures = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length > 0) {
+      const cleanupError = new AggregateError(
+        [cause, ...failures],
+        "Failed to clean up Work Sandbox creation during shutdown",
+      );
+      if (this.lifecycle !== "accepting") {
+        this.shutdownCleanupFailures.push(cleanupError);
+      }
+      throw cleanupError;
+    }
+  }
+
   private async requireOwnedRecord(
     workId: string,
     repositoryRoot: string,
@@ -657,10 +833,18 @@ export class WorkService {
     return connection;
   }
 
-  private async closeRemoteConnection(workId: string): Promise<void> {
+  private async closeRemoteConnection(
+    workId: string,
+    suppressErrors = true,
+  ): Promise<void> {
     const connection = this.remoteConnections.get(workId);
     this.remoteConnections.delete(workId);
-    await connection?.close().catch(() => undefined);
+    if (!connection) return;
+    if (suppressErrors) {
+      await connection.close().catch(() => undefined);
+      return;
+    }
+    await connection.close();
   }
 
   private async summary(

@@ -39,6 +39,8 @@ function errorResult(error: unknown) {
   };
 }
 
+type ToolServerLifecycle = "accepting" | "closing" | "closed";
+
 function createRepositoryToolServer(
   repositoryRoot: string,
   works: WorkService,
@@ -194,17 +196,34 @@ function createRepositoryToolServer(
 
 export class CubeToolServer {
   private readonly capabilities = new Map<string, string>();
+  private readonly inFlightRequests = new Set<Promise<void>>();
   private httpServer: Server | undefined;
   private port: number | undefined;
+  private lifecycle: ToolServerLifecycle = "accepting";
+  private closePromise: Promise<void> | undefined;
 
   constructor(private readonly works: WorkService) {}
 
   async start(): Promise<void> {
+    if (this.lifecycle !== "accepting") {
+      throw new Error(`CubeSandbox MCP server is ${this.lifecycle}`);
+    }
     if (this.httpServer) return;
     const app = express();
     app.use(express.json({ limit: "1mb" }));
     app.post("/mcp/:token", (request, response) => {
-      void this.handleRequest(request, response);
+      if (this.lifecycle !== "accepting") {
+        response
+          .status(503)
+          .json({ error: "CubeSandbox MCP server is closing" });
+        return;
+      }
+      const operation = this.handleRequest(request, response);
+      this.inFlightRequests.add(operation);
+      void operation.then(
+        () => this.inFlightRequests.delete(operation),
+        () => this.inFlightRequests.delete(operation),
+      );
     });
     const httpServer = createServer(app);
     const port = await new Promise<number>((resolve, reject) => {
@@ -223,6 +242,9 @@ export class CubeToolServer {
   }
 
   createCapability(repositoryRoot: string): string {
+    if (this.lifecycle !== "accepting") {
+      throw new Error(`CubeSandbox MCP server is ${this.lifecycle}`);
+    }
     if (!this.port) throw new Error("CubeSandbox MCP server is not started");
     const token = randomBytes(32).toString("base64url");
     this.capabilities.set(token, repositoryRoot);
@@ -234,15 +256,41 @@ export class CubeToolServer {
     return this.capabilities.get(token);
   }
 
-  async close(): Promise<void> {
+  stopAccepting(): void {
+    if (this.lifecycle === "accepting") this.lifecycle = "closing";
     this.capabilities.clear();
+  }
+
+  close(): Promise<void> {
+    this.stopAccepting();
+    this.closePromise ??= this.closeResources().finally(() => {
+      this.lifecycle = "closed";
+    });
+    return this.closePromise;
+  }
+
+  private async closeResources(): Promise<void> {
     const server = this.httpServer;
     this.httpServer = undefined;
     this.port = undefined;
-    if (!server) return;
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
-    });
+    const closeServer = server
+      ? new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        })
+      : Promise.resolve();
+    const results = await Promise.allSettled([
+      closeServer,
+      ...this.inFlightRequests,
+    ]);
+    const failures = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        "Failed to close CubeSandbox MCP server cleanly",
+      );
+    }
   }
 
   private async handleRequest(

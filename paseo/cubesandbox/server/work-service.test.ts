@@ -72,6 +72,16 @@ async function waitForRecordStatus(
   throw new Error(`Timed out waiting for WorkRecord status ${status}`);
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function dependencies() {
   const pause = vi.fn(async () => undefined);
   const destroy = vi.fn(async () => undefined);
@@ -394,11 +404,65 @@ describe("WorkService lifecycle", () => {
     await reloadedService.start();
     await vi.advanceTimersToNextTimerAsync();
     await waitForCondition(
-      () => reloadedDependencies.keepAlive.mock.calls.length === 1,
+      () =>
+        reloadedDependencies.keepAlive.mock.calls.length === 1 &&
+        vi.getTimerCount() === 1,
     );
 
     expect(reloadedDependencies.cube.connect).toHaveBeenCalledOnce();
-    expect(vi.getTimerCount()).toBe(1);
     await reloadedService.close();
+  });
+
+  it("drains and destroys creation blocked during shutdown", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    const pairingStarted = deferred<void>();
+    const releasePairing = deferred<void>();
+    deps.run.mockImplementation(async (command: string) => {
+      if (!command.includes("daemon pair")) {
+        return { stdout: "", stderr: "", exitCode: 0 };
+      }
+      pairingStarted.resolve();
+      await releasePairing.promise;
+      return {
+        stdout: JSON.stringify({
+          relayEnabled: true,
+          url: "https://app.paseo.sh/#offer=test",
+          qr: null,
+        }),
+        stderr: "",
+        exitCode: 0,
+      };
+    });
+    const service = new WorkService(store, deps.cube, deps.paseo);
+
+    const creation = service.createAgent(repositoryRoot, { prompt: "first" });
+    await pairingStarted.promise;
+    const closing = service.close();
+    let closeFinished = false;
+    void closing.then(() => {
+      closeFinished = true;
+    });
+    await Promise.resolve();
+    expect(closeFinished).toBe(false);
+    expect(deps.sandbox.destroy).not.toHaveBeenCalled();
+    await expect(
+      service.createAgent(repositoryRoot, { prompt: "too late" }),
+    ).rejects.toThrow("CubeSandbox service is closing");
+
+    releasePairing.resolve();
+    await expect(creation).rejects.toThrow("CubeSandbox service is closing");
+    await closing;
+
+    expect(closeFinished).toBe(true);
+    expect(deps.sandbox.destroy).toHaveBeenCalledOnce();
+    expect(deps.paseo.connect).not.toHaveBeenCalled();
+    expect(deps.remote.close).not.toHaveBeenCalled();
+    expect(deps.keepAlive).not.toHaveBeenCalled();
+    expect(await store.list()).toEqual([]);
+    expect(() => service.list()).toThrow("CubeSandbox service is closed");
+    expect(service.close()).toBe(closing);
   });
 });

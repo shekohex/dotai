@@ -12,7 +12,7 @@ import {
   resumeWorkRpc,
 } from "../shared/contracts.js";
 import { CubeSdkRuntime } from "./cube-runtime.js";
-import { discoverGitProject } from "./project-config.js";
+import { findGitRoot } from "./project-config.js";
 import { PaseoSdkConnector } from "./remote-paseo.js";
 import { CubeToolServer } from "./tool-server.js";
 import { WorkRecordStore } from "./work-record.js";
@@ -39,11 +39,9 @@ export function contributeServer(server: PluginServerContext) {
 
   server.before("agent.create", async ({ request }) => {
     await ready;
-    const project = await discoverGitProject(request.config.cwd).catch(
-      () => null,
-    );
-    if (!project) return request;
-    const url = tools.createCapability(project.root);
+    const repositoryRoot = await findGitRoot(request.config.cwd);
+    if (!repositoryRoot) return request;
+    const url = tools.createCapability(repositoryRoot);
     return {
       ...request,
       config: {
@@ -86,6 +84,21 @@ export function contributeServer(server: PluginServerContext) {
 
   return async () => {
     await ready.catch(() => undefined);
-    await Promise.allSettled([works.close(), tools.close()]);
+    tools.stopAccepting();
+    works.beginClosing();
+    const failures: unknown[] = [];
+    try {
+      await tools.close();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await works.close();
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(failures, "CubeSandbox plugin cleanup failed");
+    }
   };
 }

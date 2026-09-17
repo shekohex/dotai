@@ -73,6 +73,11 @@ Pause is immediate on request. Destroy is explicit, immediate, and has no confir
 destroy, and plugin shutdown cancel keepalive. Undestroyed work remains paused. Plugin does no GitHub
 polling; Paseo owns merged-PR worktree cleanup.
 
+Plugin shutdown first rejects new MCP, RPC, and lifecycle operations, then drains accepted tool
+requests and tracked work operations before closing relay connections. A Sandbox whose initial
+bootstrap is still in flight is destroyed and its incomplete local record removed; established work
+records survive reload so busy-agent keepalive can recover on startup.
+
 ## Agent tools
 
 | Tool                | Purpose                                                    |
@@ -90,7 +95,9 @@ polling; Paseo owns merged-PR worktree cleanup.
 Paseo v0.8 public plugin API cannot register tools. Server starts loopback-only Streamable HTTP MCP
 and injects opaque per-agent capability URL through `server.before("agent.create")`. Capability is
 bound to initiating Git root; tool inputs accept no project path. Work IDs from another root are
-rejected.
+rejected. Any valid Git root receives the initialization capability even before `.cube/config.json`
+exists. `cube_init_config` performs full origin/default-branch resolution and returns actionable
+repair guidance instead of silently omitting the tool.
 
 ## UI and pairing
 

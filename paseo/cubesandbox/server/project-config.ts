@@ -27,6 +27,24 @@ async function git(root: string, args: string[]): Promise<string> {
   return stdout.trim();
 }
 
+function isNotGitRepository(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("stderr" in error)) return false;
+  const stderr = error.stderr;
+  return (
+    typeof stderr === "string" &&
+    stderr.toLowerCase().includes("not a git repository")
+  );
+}
+
+export async function findGitRoot(startPath: string): Promise<string | null> {
+  try {
+    return await git(startPath, ["rev-parse", "--show-toplevel"]);
+  } catch (error) {
+    if (isNotGitRepository(error)) return null;
+    throw error;
+  }
+}
+
 export function repositoryFromRemote(remote: string): string {
   const trimmed = remote
     .trim()
@@ -88,7 +106,8 @@ async function resolveDefaultRef(root: string): Promise<string> {
 export async function discoverGitProject(
   startPath: string,
 ): Promise<GitProjectMetadata> {
-  const root = await git(startPath, ["rev-parse", "--show-toplevel"]);
+  const root = await findGitRoot(startPath);
+  if (!root) throw new Error(`Not a Git repository: ${startPath}`);
   const remote = await git(root, ["remote", "get-url", "origin"]);
   const repository = repositoryFromRemote(remote);
   const repositoryName = repository.split("/").filter(Boolean).at(-1);

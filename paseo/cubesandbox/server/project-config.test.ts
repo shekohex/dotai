@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { CUBE_CONFIG_SCHEMA_URL } from "../shared/config.js";
 import {
   discoverGitProject,
+  findGitRoot,
   initializeProjectConfig,
   repositoryFromRemote,
 } from "./project-config.js";
@@ -26,6 +27,12 @@ describe("repositoryFromRemote", () => {
 });
 
 describe("initializeProjectConfig", () => {
+  it("identifies a non-Git context without resolving project metadata", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "cube-non-git-"));
+
+    await expect(findGitRoot(directory)).resolves.toBeNull();
+  });
+
   it("creates only config.json and refuses overwrite", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "cube-config-test-"));
     await executeFile("git", ["init", "-b", "main", root]);

@@ -54,6 +54,10 @@ describe("CubeSandbox server contribution", () => {
         return vi.fn();
       }),
       handle: vi.fn(),
+      registerSettings: vi.fn(() => ({
+        read: vi.fn(),
+        subscribe: vi.fn(() => () => undefined),
+      })),
     } as unknown as PluginServerContext;
     const cleanup = contributeServer(server);
     expect(agentCreateHook).toBeDefined();

@@ -35,11 +35,13 @@ Project owns:
 - `.cube/sandbox.py`
 - `.cube/config.json`
 
-`cube_init_config` finds the Git root, derives repository/default branch from Git, creates `.cube`
-when absent, and writes only `.cube/config.json`. Existing config is never overwritten. Plugin never
-creates or edits Dockerfile or Python. Default branch comes from local `origin/HEAD` or origin's
-advertised symbolic HEAD; initialization fails with repair guidance when neither is available.
-Bundled schema lives at `shared/cube-config.schema.json`.
+`cube_init_config` derives repository/default branch from Git, creates `.cube` when absent, and
+writes only `.cube/config.json`. Existing config is never overwritten. Plugin never creates or edits
+Dockerfile or Python. Default branch comes from local `origin/HEAD` or origin's advertised symbolic
+HEAD; initialization fails with repair guidance when neither is available. Initialization targets
+the selected registered project root exactly (a worktree or nested project keeps its own config),
+never an enclosing Git top level. The same action is available from the UI for any registered
+project without opening an agent. Bundled schema lives at `shared/cube-config.schema.json`.
 
 Configuration contains deployment intent only: project identity, Cube endpoint, template inputs and
 resources, idle pause policy, preview ports, and manual snapshot selection. No task state, runtime
@@ -104,24 +106,56 @@ rollback failures propagate through shutdown.
 | `cube_send_prompt`  | Resume if needed and prompt managed remote agent           |
 | `cube_get_status`   | Read managed lifecycle/agent status                        |
 | `cube_get_activity` | Read local lifecycle activity                              |
-| `cube_list_work`    | List work owned by initiating repository                   |
+| `cube_list_work`    | List work owned by the bound Paseo project                 |
 | `cube_get_ports`    | Return configured preview URLs                             |
 | `cube_pause_work`   | Pause immediately                                          |
 | `cube_destroy_work` | Destroy immediately, without confirmation                  |
 
 Paseo v0.8 public plugin API cannot register tools. Server starts loopback-only Streamable HTTP MCP
-and injects opaque per-agent capability URL through `server.before("agent.create")`. Capability is
-bound to initiating Git root; tool inputs accept no project path. Work IDs from another root are
-rejected. Any valid Git root receives the initialization capability even before `.cube/config.json`
-exists. `cube_init_config` performs full origin/default-branch resolution and returns actionable
-repair guidance instead of silently omitting the tool.
+and injects opaque per-agent capability URL through `server.before("agent.create")`. The capability
+binds the longest registered Paseo project root that contains the agent's cwd, so it carries both
+the Paseo project id and canonical root. Nested registered projects stay separate. Tool inputs
+accept no project path, and work ids from another project id or root are rejected before any timer
+or resource mutation. An unregistered Git root receives only the initialization capability;
+Work Sandbox tools refuse until the directory is a registered Paseo project. `cube_init_config`
+performs full origin/default-branch resolution and returns actionable repair guidance instead of
+silently omitting the tool. Because injection happens at agent creation, agents created before this
+plugin version must be recreated (or restarted) before they can call the tools.
+
+## Projects and identity
+
+Every registered Paseo project root is an independent Cube scope, including feature worktrees and
+nested registered roots. Identity is the Paseo project id plus the canonical root; the plugin never
+collapses scopes by Git remote, Git top level, Paseo `projectKey`, or Cube config project id. The
+authoritative inventory comes from the authenticated Paseo `projects.list()` API and is refreshed
+from the public `project.update` stream, so it never depends on an agent capability map and survives
+plugin reload. Roots that are missing, not directories, or that canonicalize to the same directory
+as another scope are marked unavailable or ambiguous and cannot be mutated. UI RPCs
+(`cube.list-projects`, `cube.init-config`, `cube.pause-work`, `cube.resume-work`,
+`cube.destroy-work`) accept only project ids and work ids, and the server resolves and canonicalizes
+the registered root before touching the filesystem or Cube.
 
 ## UI and pairing
 
-**Cube Sandboxes** sidebar surface works in desktop, browser, iOS, and Android. It shows lifecycle,
-project, worktree/agent counts, idle grace, preview links, pairing, pause/resume, and immediate
-destroy. Busy work says **Keepalive active**; only idle/ready work shows pause countdown.
-Busy/success/error states use native Paseo toasts.
+**Cube Sandboxes** sidebar surface works in desktop, browser, iOS, and Android, and is the global
+surface for every registered project. An adaptive top `SettingsSelect` defaults to **All projects**
+and lists each registered project by Paseo display label; the selection persists host-wide through
+plugin settings and falls back to **All projects** when the selected project is removed. The All view
+groups Work Sandbox cards under a project section; the selected view focuses one project. Each
+section shows the Paseo label, repository/Cube project id, readiness, and work/busy/paused counts.
+Loading, error, missing, invalid, unavailable, and removed states are explicit and never render a
+disabled control as enabled:
+
+- missing: an enabled **Initialize configuration** action scoped to the selected registered project,
+  no agent required, and never overwriting an existing file;
+- ready with zero work: **Configuration ready. Create Work Sandbox from an agent.**;
+- invalid: the exact validation error, no overwrite;
+- unavailable/removed: work stays visible and destroy (cleanup) stays available while init, create,
+  pause, and resume are blocked.
+
+Work cards show lifecycle, worktree/agent counts, idle grace, preview links, pairing, pause/resume,
+and immediate destroy. Busy work says **Keepalive active**; only idle/ready work shows pause
+countdown. Busy/success/error states use native Paseo toasts. There is no nested sidebar.
 
 Remote daemon runs relay-only. Plugin server connects through Paseo's supported encrypted relay
 client protocol. **Pair / open agent** opens manual pairing offer in app/browser. Seamless host
@@ -140,9 +174,13 @@ host mutation. Treat pairing links as passwords.
 - Sandboxed code can read copied runtime keys. Work Sandbox is trusted only for user-authorized
   coding. Never snapshot, publish, or adopt key-bearing state outside its owning Work Sandbox.
 - Private state defaults to `~/.paseo/cubesandbox-plugin/cubesandbox`: directories mode `0700`, files
-  mode `0600`. WorkRecord stores work/sandbox/task/relay/workspace/agent references and lifecycle
-  timestamps/status. Pairing offers are separate private secret files and are returned only through
-  authenticated plugin UI RPC or initiating-repository MCP capability.
+  mode `0600`. WorkRecord v2 stores the Paseo project id, canonical repository root, Cube project id,
+  repository, and ownership status alongside work/sandbox/task/relay/workspace/agent references and
+  lifecycle timestamps. Legacy v1 records migrate only when their canonical root maps to exactly one
+  online registered project; ambiguous or removed roots are quarantined with a stable synthetic id
+  and stay visible for safe cleanup instead of being silently adopted. Pairing offers are separate
+  private secret files and are returned only through authenticated plugin UI RPC or project-bound
+  MCP capability.
 - Server binds MCP to `127.0.0.1` on an ephemeral port. Unknown capabilities return 404.
 - Preview ports are project-declared. Plugin performs no port discovery.
 - Vendored CubeSandbox Node SDK subset comes from upstream v0.7.1 under Apache-2.0; see

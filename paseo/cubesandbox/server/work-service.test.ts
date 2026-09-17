@@ -8,13 +8,61 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CUBE_CONFIG_SCHEMA_URL } from "../shared/config.js";
 import type { CubeRuntime, CubeSandboxHandle } from "./cube-runtime.js";
 import {
+  UNASSIGNED_PROJECT_ID,
+  type ProjectScope,
+} from "./project-registry.js";
+import {
   remoteBranchName,
   type RemoteAgentInput,
   type RemotePaseoConnection,
   type RemotePaseoConnector,
 } from "./remote-paseo.js";
-import { WorkRecordStore } from "./work-record.js";
-import { WorkService } from "./work-service.js";
+import { WorkRecordStore, type WorkRecord } from "./work-record.js";
+import { type WorkOwner, WorkService } from "./work-service.js";
+
+function owner(repositoryRoot: string, paseoProjectId = "prj_test"): WorkOwner {
+  return { paseoProjectId, canonicalRoot: repositoryRoot };
+}
+
+function scope(projectId: string, canonicalRoot: string): ProjectScope {
+  return {
+    projectId,
+    displayName: projectId,
+    declaredRoot: canonicalRoot,
+    canonicalRoot,
+    availability: "online",
+  };
+}
+
+function storedRecord(
+  workId: string,
+  overrides: Partial<WorkRecord>,
+): WorkRecord {
+  const timestamp = new Date().toISOString();
+  return {
+    version: 2,
+    workId,
+    sandboxId: "sandbox-stored",
+    repositoryRoot: "/repo",
+    projectId: "widget",
+    cubeProjectId: "widget",
+    paseoProjectId: "prj_stored",
+    repository: "acme/widget",
+    sandboxDomain: "sbx.0iq.xyz",
+    previewPorts: [],
+    idleTimeoutSeconds: 300,
+    agents: [],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    lastActivityAt: timestamp,
+    status: "ready",
+    ownershipStatus: "active",
+    activity: [
+      { at: timestamp, type: "created", detail: "Created Work Sandbox" },
+    ],
+    ...overrides,
+  };
+}
 
 async function projectFixture(): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "cube-work-service-"));
@@ -221,10 +269,10 @@ describe("WorkService lifecycle", () => {
       deps.loadRuntimeIdentityBundle,
     );
 
-    const first = await service.createAgent(repositoryRoot, {
+    const first = await service.createAgent(owner(repositoryRoot), {
       prompt: "first",
     });
-    const second = await service.createAgent(repositoryRoot, {
+    const second = await service.createAgent(owner(repositoryRoot), {
       prompt: "second",
       workId: first.workId,
     });
@@ -252,7 +300,7 @@ describe("WorkService lifecycle", () => {
       deps.loadRuntimeIdentityBundle,
     );
 
-    await service.createAgent(repositoryRoot, { prompt: "first" });
+    await service.createAgent(owner(repositoryRoot), { prompt: "first" });
 
     const [prepareCommand] = deps.run.mock.calls[0]!;
     const [gitConfigCommand] = deps.run.mock.calls[1]!;
@@ -318,7 +366,7 @@ describe("WorkService lifecycle", () => {
       deps.loadRuntimeIdentityBundle,
     );
 
-    await service.createAgent(repositoryRoot, { prompt: "first" });
+    await service.createAgent(owner(repositoryRoot), { prompt: "first" });
 
     const [gitConfigCommand] = deps.run.mock.calls[1]!;
     const [cloneCommand, cloneOptions] = deps.run.mock.calls[2]!;
@@ -349,7 +397,7 @@ describe("WorkService lifecycle", () => {
     );
 
     await expect(
-      service.createAgent(repositoryRoot, { prompt: "first" }),
+      service.createAgent(owner(repositoryRoot), { prompt: "first" }),
     ).rejects.toThrow("simulated file transfer failure");
 
     expect(deps.sandbox.destroy).toHaveBeenCalledOnce();
@@ -382,7 +430,7 @@ describe("WorkService lifecycle", () => {
     );
 
     await expect(
-      service.createAgent(repositoryRoot, { prompt: "first" }),
+      service.createAgent(owner(repositoryRoot), { prompt: "first" }),
     ).rejects.toThrow("simulated Git configuration failure");
 
     expect(deps.writeFile).toHaveBeenCalledTimes(8);
@@ -415,7 +463,7 @@ describe("WorkService lifecycle", () => {
     );
 
     await expect(
-      service.createAgent(repositoryRoot, { prompt: "first" }),
+      service.createAgent(owner(repositoryRoot), { prompt: "first" }),
     ).rejects.toThrow("Failed to clean up Work Sandbox creation");
 
     const records = await store.list();
@@ -437,16 +485,18 @@ describe("WorkService lifecycle", () => {
       deps.paseo,
       deps.loadRuntimeIdentityBundle,
     );
-    const work = await service.createAgent(repositoryRoot, { prompt: "first" });
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
 
-    expect((await service.pause(repositoryRoot, work.workId)).status).toBe(
-      "paused",
-    );
+    expect(
+      (await service.pause(owner(repositoryRoot), work.workId)).status,
+    ).toBe("paused");
     expect(deps.pause).toHaveBeenCalledOnce();
-    await service.destroy(repositoryRoot, work.workId);
+    await service.destroy(owner(repositoryRoot), work.workId);
     expect(deps.destroy).toHaveBeenCalledOnce();
     await expect(
-      service.getStatus(repositoryRoot, work.workId),
+      service.getStatus(owner(repositoryRoot), work.workId),
     ).rejects.toThrow();
   });
 
@@ -460,12 +510,14 @@ describe("WorkService lifecycle", () => {
       deps.paseo,
       deps.loadRuntimeIdentityBundle,
     );
-    const work = await service.createAgent(repositoryRoot, { prompt: "first" });
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
     vi.mocked(deps.cube.inspect).mockResolvedValue({ state: "paused" });
 
-    expect((await service.getStatus(repositoryRoot, work.workId)).status).toBe(
-      "paused",
-    );
+    expect(
+      (await service.getStatus(owner(repositoryRoot), work.workId)).status,
+    ).toBe("paused");
     expect(deps.cube.connect).not.toHaveBeenCalled();
   });
 
@@ -480,11 +532,13 @@ describe("WorkService lifecycle", () => {
       deps.paseo,
       deps.loadRuntimeIdentityBundle,
     );
-    const work = await service.createAgent(repositoryRoot, { prompt: "first" });
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
 
-    await expect(service.pause(otherRoot, work.workId)).rejects.toThrow(
-      "not owned by this repository capability",
-    );
+    await expect(
+      service.pause(owner(otherRoot, "prj_other"), work.workId),
+    ).rejects.toThrow("not owned by this project capability");
   });
 
   it("authorizes repository ownership before stopping keepalive", async () => {
@@ -500,12 +554,14 @@ describe("WorkService lifecycle", () => {
       deps.paseo,
       deps.loadRuntimeIdentityBundle,
     );
-    const work = await service.createAgent(repositoryRoot, { prompt: "long" });
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "long",
+    });
 
     expect(vi.getTimerCount()).toBe(1);
-    await expect(service.pause(otherRoot, work.workId)).rejects.toThrow(
-      "not owned by this repository capability",
-    );
+    await expect(
+      service.pause(owner(otherRoot, "prj_other"), work.workId),
+    ).rejects.toThrow("not owned by this project capability");
     expect(vi.getTimerCount()).toBe(1);
     await service.close();
   });
@@ -524,11 +580,13 @@ describe("WorkService lifecycle", () => {
       deps.paseo,
       deps.loadRuntimeIdentityBundle,
     );
-    const work = await service.createAgent(repositoryRoot, { prompt: "first" });
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
 
-    await expect(service.destroy(repositoryRoot, work.workId)).rejects.toThrow(
-      "simulated destroy failure",
-    );
+    await expect(
+      service.destroy(owner(repositoryRoot), work.workId),
+    ).rejects.toThrow("simulated destroy failure");
     const retained = await store.get(work.workId);
     expect(retained.status).toBe("error");
     expect(retained.lastError).toContain("simulated destroy failure");
@@ -546,14 +604,16 @@ describe("WorkService lifecycle", () => {
       deps.paseo,
       deps.loadRuntimeIdentityBundle,
     );
-    const work = await service.createAgent(repositoryRoot, { prompt: "first" });
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
 
     const [second, third] = await Promise.all([
-      service.createAgent(repositoryRoot, {
+      service.createAgent(owner(repositoryRoot), {
         prompt: "second",
         workId: work.workId,
       }),
-      service.createAgent(repositoryRoot, {
+      service.createAgent(owner(repositoryRoot), {
         prompt: "third",
         workId: work.workId,
       }),
@@ -589,13 +649,15 @@ describe("WorkService lifecycle", () => {
       deps.paseo,
       deps.loadRuntimeIdentityBundle,
     );
-    const work = await service.createAgent(repositoryRoot, { prompt: "first" });
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
     vi.spyOn(store, "save").mockRejectedValueOnce(
       new Error("simulated persistence failure"),
     );
 
     await expect(
-      service.createAgent(repositoryRoot, {
+      service.createAgent(owner(repositoryRoot), {
         prompt: "second",
         workId: work.workId,
       }),
@@ -621,7 +683,9 @@ describe("WorkService lifecycle", () => {
       deps.paseo,
       deps.loadRuntimeIdentityBundle,
     );
-    const work = await service.createAgent(repositoryRoot, { prompt: "long" });
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "long",
+    });
 
     expect(vi.getTimerCount()).toBe(1);
     for (let check = 0; check < 6; check += 1) {
@@ -657,12 +721,14 @@ describe("WorkService lifecycle", () => {
       deps.paseo,
       deps.loadRuntimeIdentityBundle,
     );
-    const work = await service.createAgent(repositoryRoot, { prompt: "long" });
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "long",
+    });
 
     for (let poll = 0; poll < 5; poll += 1) {
       await vi.advanceTimersByTimeAsync(10_000);
       expect(
-        (await service.getStatus(repositoryRoot, work.workId)).status,
+        (await service.getStatus(owner(repositoryRoot), work.workId)).status,
       ).toBe("busy");
     }
     await vi.advanceTimersByTimeAsync(10_000);
@@ -686,14 +752,14 @@ describe("WorkService lifecycle", () => {
         deps.paseo,
         deps.loadRuntimeIdentityBundle,
       );
-      const work = await service.createAgent(repositoryRoot, {
+      const work = await service.createAgent(owner(repositoryRoot), {
         prompt: "long",
       });
 
       if (cleanup === "pause") {
-        await service.pause(repositoryRoot, work.workId);
+        await service.pause(owner(repositoryRoot), work.workId);
       } else if (cleanup === "destroy") {
-        await service.destroy(repositoryRoot, work.workId);
+        await service.destroy(owner(repositoryRoot), work.workId);
       } else {
         await service.close();
       }
@@ -714,7 +780,7 @@ describe("WorkService lifecycle", () => {
       firstDependencies.paseo,
       firstDependencies.loadRuntimeIdentityBundle,
     );
-    await firstService.createAgent(repositoryRoot, { prompt: "long" });
+    await firstService.createAgent(owner(repositoryRoot), { prompt: "long" });
     await firstService.close();
 
     const reloadedDependencies = dependencies();
@@ -767,7 +833,9 @@ describe("WorkService lifecycle", () => {
       deps.loadRuntimeIdentityBundle,
     );
 
-    const creation = service.createAgent(repositoryRoot, { prompt: "first" });
+    const creation = service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
     await pairingStarted.promise;
     const closing = service.close();
     let closeFinished = false;
@@ -778,7 +846,7 @@ describe("WorkService lifecycle", () => {
     expect(closeFinished).toBe(false);
     expect(deps.sandbox.destroy).not.toHaveBeenCalled();
     await expect(
-      service.createAgent(repositoryRoot, { prompt: "too late" }),
+      service.createAgent(owner(repositoryRoot), { prompt: "too late" }),
     ).rejects.toThrow("CubeSandbox service is closing");
 
     releasePairing.resolve();
@@ -828,7 +896,9 @@ describe("WorkService lifecycle", () => {
       deps.loadRuntimeIdentityBundle,
     );
 
-    const creation = service.createAgent(repositoryRoot, { prompt: "first" });
+    const creation = service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
     await pairingStarted.promise;
     const closing = service.close();
     releasePairing.resolve();
@@ -864,7 +934,9 @@ describe("WorkService lifecycle", () => {
       deps.loadRuntimeIdentityBundle,
     );
 
-    const creation = service.createAgent(repositoryRoot, { prompt: "first" });
+    const creation = service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
     await agentStarted.promise;
     const closing = service.close();
     releaseAgent.resolve();
@@ -872,5 +944,202 @@ describe("WorkService lifecycle", () => {
     await expect(closing).rejects.toThrow(
       "CubeSandbox WorkService cleanup failed",
     );
+  });
+
+  it("reports configured zero-work projects as ready and missing roots as missing", async () => {
+    const repositoryRoot = await projectFixture();
+    const missingRoot = await mkdtemp(path.join(os.tmpdir(), "cube-missing-"));
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+
+    await service.createAgent(owner(repositoryRoot, "prj_ready"), {
+      prompt: "first",
+    });
+    const summaries = await service.projectSummaries(
+      [
+        scope("prj_ready", repositoryRoot),
+        scope("prj_missing", missingRoot),
+        scope("prj_empty", repositoryRoot),
+      ],
+      false,
+    );
+
+    expect(summaries.find((s) => s.projectId === "prj_missing")).toMatchObject({
+      configStatus: "missing",
+      counts: { work: 0, busy: 0, paused: 0 },
+      works: [],
+    });
+    expect(summaries.find((s) => s.projectId === "prj_ready")).toMatchObject({
+      configStatus: "ready",
+      cubeProjectId: "widget",
+      repository: "acme/widget",
+      counts: { work: 1, busy: 0, paused: 0 },
+    });
+    const empty = summaries.find((s) => s.projectId === "prj_empty");
+    expect(empty?.configStatus).toBe("ready");
+    expect(empty?.works).toEqual([]);
+    await service.close();
+  });
+
+  it("rejects a cross-project work id before resource mutation", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    vi.mocked(deps.remote.hasBusyAgent).mockResolvedValue(true);
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+    const work = await service.createAgent(owner(repositoryRoot, "prj_a"), {
+      prompt: "long",
+    });
+
+    expect(vi.getTimerCount()).toBe(1);
+    await expect(
+      service.pause(owner(repositoryRoot, "prj_b"), work.workId),
+    ).rejects.toThrow("not owned by this project capability");
+    expect(vi.getTimerCount()).toBe(1);
+    expect(deps.pause).not.toHaveBeenCalled();
+    await service.close();
+  });
+
+  it("surfaces removed and unassigned records and allows safe cleanup", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+    const removedId = "f4e30d8d-ef62-4b9d-ac62-3c3875660031";
+    const unassignedId = "f4e30d8d-ef62-4b9d-ac62-3c3875660032";
+    await store.save(
+      storedRecord(removedId, {
+        repositoryRoot,
+        paseoProjectId: "prj_removed",
+      }),
+    );
+    await store.save(
+      storedRecord(unassignedId, {
+        repositoryRoot,
+        paseoProjectId: `legacy:${unassignedId}`,
+        ownershipStatus: "quarantined",
+        quarantineReason: "legacy record root is not registered",
+      }),
+    );
+    const scopes = [scope("prj_live", repositoryRoot)];
+
+    const summaries = await service.projectSummaries(scopes, false);
+    const removed = summaries.find((s) => s.projectId === "prj_removed");
+    expect(removed).toMatchObject({
+      availability: "removed",
+      configStatus: "unavailable",
+    });
+    expect(removed?.works.map((work) => work.workId)).toEqual([removedId]);
+    const unassigned = summaries.find(
+      (s) => s.projectId === UNASSIGNED_PROJECT_ID,
+    );
+    expect(unassigned?.works.map((work) => work.workId)).toEqual([
+      unassignedId,
+    ]);
+    expect(unassigned?.works[0]?.quarantined).toBe(true);
+
+    await expect(
+      service.resolveWorkOwner(scopes, "prj_removed", removedId),
+    ).rejects.toThrow("Unknown Paseo project");
+    const removedOwner = await service.resolveWorkOwner(
+      scopes,
+      "prj_removed",
+      removedId,
+      { allowRemoved: true },
+    );
+    await service.destroy(removedOwner, removedId);
+    const unassignedOwner = await service.resolveWorkOwner(
+      scopes,
+      UNASSIGNED_PROJECT_ID,
+      unassignedId,
+    );
+    await service.destroy(unassignedOwner, unassignedId);
+    expect(deps.destroy).toHaveBeenCalledTimes(2);
+    await service.close();
+  });
+
+  it("keeps project inventory available when a record config is missing", async () => {
+    const missingRoot = await mkdtemp(path.join(os.tmpdir(), "cube-missing-"));
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+    const workId = "f4e30d8d-ef62-4b9d-ac62-3c3875660033";
+    await store.save(
+      storedRecord(workId, {
+        repositoryRoot: missingRoot,
+        paseoProjectId: "prj_missing",
+      }),
+    );
+
+    const summaries = await service.projectSummaries(
+      [scope("prj_missing", missingRoot)],
+      false,
+    );
+
+    expect(summaries[0]?.configStatus).toBe("missing");
+    expect(summaries[0]?.works.map((work) => work.workId)).toEqual([workId]);
+    expect(deps.cube.inspect).not.toHaveBeenCalled();
+    await service.close();
+  });
+
+  it("rebuilds project inventory after reload without capability bindings", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const firstDependencies = dependencies();
+    const firstService = new WorkService(
+      store,
+      firstDependencies.cube,
+      firstDependencies.paseo,
+      firstDependencies.loadRuntimeIdentityBundle,
+    );
+    const work = await firstService.createAgent(
+      owner(repositoryRoot, "prj_reload"),
+      { prompt: "first" },
+    );
+    await firstService.close();
+
+    const reloadedDependencies = dependencies();
+    const reloadedService = new WorkService(
+      store,
+      reloadedDependencies.cube,
+      reloadedDependencies.paseo,
+      reloadedDependencies.loadRuntimeIdentityBundle,
+    );
+    await reloadedService.start();
+    const summaries = await reloadedService.projectSummaries(
+      [scope("prj_reload", repositoryRoot)],
+      false,
+    );
+
+    expect(summaries[0]?.works.map((entry) => entry.workId)).toEqual([
+      work.workId,
+    ]);
+    expect(reloadedDependencies.cube.create).not.toHaveBeenCalled();
+    await reloadedService.close();
   });
 });

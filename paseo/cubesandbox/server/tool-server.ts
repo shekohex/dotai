@@ -6,7 +6,11 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express, { type Request, type Response } from "express";
 import { z } from "zod";
 
-import { createAgentInputSchema, type WorkService } from "./work-service.js";
+import {
+  createAgentInputSchema,
+  type WorkOwner,
+  type WorkService,
+} from "./work-service.js";
 
 const workIdSchema = z.object({ workId: z.string().uuid() }).strict();
 const sendPromptSchema = z
@@ -39,12 +43,31 @@ function errorResult(error: unknown) {
   };
 }
 
+/** Opaque MCP capability binding. Project id is absent for unregistered Git roots. */
+export interface CapabilityBinding {
+  canonicalRoot: string;
+  paseoProjectId?: string;
+}
+
+const UNREGISTERED_PROJECT_MESSAGE =
+  "This CubeSandbox capability is not associated with a registered Paseo project. Open or create this agent inside a registered project to manage Work Sandboxes.";
+
 type ToolServerLifecycle = "accepting" | "closing" | "closed";
 
 function createRepositoryToolServer(
-  repositoryRoot: string,
+  binding: CapabilityBinding,
   works: WorkService,
 ): McpServer {
+  const owner: WorkOwner | null = binding.paseoProjectId
+    ? {
+        paseoProjectId: binding.paseoProjectId,
+        canonicalRoot: binding.canonicalRoot,
+      }
+    : null;
+  const requireOwner = (): WorkOwner => {
+    if (!owner) throw new Error(UNREGISTERED_PROJECT_MESSAGE);
+    return owner;
+  };
   const server = new McpServer({ name: "cubesandbox-paseo", version: "0.1.0" });
 
   server.registerTool(
@@ -58,7 +81,7 @@ function createRepositoryToolServer(
       try {
         return toolResult(
           await works.createAgent(
-            repositoryRoot,
+            requireOwner(),
             createAgentInputSchema.parse(input),
           ),
         );
@@ -77,7 +100,7 @@ function createRepositoryToolServer(
     async () => {
       try {
         return toolResult({
-          path: await works.initializeRepository(repositoryRoot),
+          path: await works.initializeConfig(binding.canonicalRoot),
           created: true,
         });
       } catch (error) {
@@ -95,7 +118,7 @@ function createRepositoryToolServer(
     async (input) => {
       try {
         return toolResult(
-          await works.sendPrompt(repositoryRoot, sendPromptSchema.parse(input)),
+          await works.sendPrompt(requireOwner(), sendPromptSchema.parse(input)),
         );
       } catch (error) {
         return errorResult(error);
@@ -111,7 +134,7 @@ function createRepositoryToolServer(
     async (input) => {
       try {
         const { workId } = workIdSchema.parse(input);
-        return toolResult(await works.getStatus(repositoryRoot, workId));
+        return toolResult(await works.getStatus(requireOwner(), workId));
       } catch (error) {
         return errorResult(error);
       }
@@ -128,7 +151,7 @@ function createRepositoryToolServer(
       try {
         const { workId, limit } = activitySchema.parse(input);
         return toolResult({
-          activity: await works.getActivity(repositoryRoot, workId, limit),
+          activity: await works.getActivity(requireOwner(), workId, limit),
         });
       } catch (error) {
         return errorResult(error);
@@ -138,10 +161,10 @@ function createRepositoryToolServer(
   server.registerTool(
     "cube_list_work",
     {
-      description: "List Work Sandboxes owned by this repository capability.",
+      description: "List Work Sandboxes owned by this project capability.",
       inputSchema: {},
     },
-    async () => toolResult({ works: await works.list(repositoryRoot, false) }),
+    async () => toolResult({ works: await works.list(requireOwner(), false) }),
   );
   server.registerTool(
     "cube_get_ports",
@@ -152,7 +175,7 @@ function createRepositoryToolServer(
     async (input) => {
       try {
         const { workId } = workIdSchema.parse(input);
-        const work = await works.getStatus(repositoryRoot, workId);
+        const work = await works.getStatus(requireOwner(), workId);
         return toolResult({ workId, previewUrls: work.previewUrls });
       } catch (error) {
         return errorResult(error);
@@ -168,7 +191,7 @@ function createRepositoryToolServer(
     async (input) => {
       try {
         const { workId } = workIdSchema.parse(input);
-        return toolResult(await works.pause(repositoryRoot, workId));
+        return toolResult(await works.pause(requireOwner(), workId));
       } catch (error) {
         return errorResult(error);
       }
@@ -184,7 +207,7 @@ function createRepositoryToolServer(
     async (input) => {
       try {
         const { workId } = workIdSchema.parse(input);
-        await works.destroy(repositoryRoot, workId);
+        await works.destroy(requireOwner(), workId);
         return toolResult({ workId, destroyed: true });
       } catch (error) {
         return errorResult(error);
@@ -195,7 +218,7 @@ function createRepositoryToolServer(
 }
 
 export class CubeToolServer {
-  private readonly capabilities = new Map<string, string>();
+  private readonly capabilities = new Map<string, CapabilityBinding>();
   private readonly inFlightRequests = new Set<Promise<void>>();
   private httpServer: Server | undefined;
   private port: number | undefined;
@@ -241,18 +264,17 @@ export class CubeToolServer {
     this.port = port;
   }
 
-  createCapability(repositoryRoot: string): string {
+  createCapability(binding: CapabilityBinding): string {
     if (this.lifecycle !== "accepting") {
       throw new Error(`CubeSandbox MCP server is ${this.lifecycle}`);
     }
     if (!this.port) throw new Error("CubeSandbox MCP server is not started");
     const token = randomBytes(32).toString("base64url");
-    this.capabilities.set(token, repositoryRoot);
-    this.works.bindRepositoryRoot(repositoryRoot);
+    this.capabilities.set(token, binding);
     return `http://127.0.0.1:${this.port}/mcp/${token}`;
   }
 
-  repositoryRootForToken(token: string): string | undefined {
+  capabilityForToken(token: string): CapabilityBinding | undefined {
     return this.capabilities.get(token);
   }
 
@@ -298,14 +320,14 @@ export class CubeToolServer {
     response: Response,
   ): Promise<void> {
     const token = z.string().min(1).safeParse(request.params.token);
-    const repositoryRoot = token.success
+    const binding = token.success
       ? this.capabilities.get(token.data)
       : undefined;
-    if (!repositoryRoot) {
+    if (!binding) {
       response.status(404).json({ error: "Unknown CubeSandbox capability" });
       return;
     }
-    const server = createRepositoryToolServer(repositoryRoot, this.works);
+    const server = createRepositoryToolServer(binding, this.works);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableDnsRebindingProtection: false,

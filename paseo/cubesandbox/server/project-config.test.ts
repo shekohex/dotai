@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -11,6 +11,7 @@ import {
   discoverGitProject,
   findGitRoot,
   initializeProjectConfig,
+  initializeProjectConfigAtProjectRoot,
   repositoryFromRemote,
 } from "./project-config.js";
 
@@ -88,6 +89,34 @@ describe("initializeProjectConfig", () => {
     await expect(initializeProjectConfig(root)).rejects.toThrow(
       "Refusing to overwrite",
     );
+  });
+
+  it("initializes at a nested registered root instead of the Git top level", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "cube-nested-test-"));
+    await executeFile("git", ["init", "-b", "main", root]);
+    await executeFile("git", [
+      "-C",
+      root,
+      "remote",
+      "add",
+      "origin",
+      "git@github.com:acme/widget.git",
+    ]);
+    await executeFile("git", [
+      "-C",
+      root,
+      "symbolic-ref",
+      "refs/remotes/origin/HEAD",
+      "refs/remotes/origin/main",
+    ]);
+    const nested = path.join(root, "agent");
+    await mkdir(nested, { recursive: true });
+
+    const configPath = await initializeProjectConfigAtProjectRoot(nested);
+
+    expect(configPath).toBe(path.join(nested, ".cube", "config.json"));
+    expect((await stat(path.join(nested, ".cube"))).isDirectory()).toBe(true);
+    await expect(stat(path.join(root, ".cube"))).rejects.toThrow();
   });
 
   it("resolves advertised remote HEAD instead of the current feature branch", async () => {

@@ -157,7 +157,26 @@ export async function initializeProjectConfig(
   startPath: string,
 ): Promise<string> {
   const metadata = await discoverGitProject(startPath);
-  const cubeDirectory = path.join(metadata.root, ".cube");
+  return writeProjectConfig(metadata.root, metadata);
+}
+
+/**
+ * Creates config at exactly one registered Paseo project root. Git metadata is
+ * still derived from the repository, but the config directory never escapes the
+ * provided root (for example a worktree or a nested registered project).
+ */
+export async function initializeProjectConfigAtProjectRoot(
+  projectRoot: string,
+): Promise<string> {
+  const metadata = await discoverGitProject(projectRoot);
+  return writeProjectConfig(projectRoot, { ...metadata, root: projectRoot });
+}
+
+async function writeProjectConfig(
+  projectRoot: string,
+  metadata: GitProjectMetadata,
+): Promise<string> {
+  const cubeDirectory = path.join(projectRoot, ".cube");
   const configPath = path.join(cubeDirectory, "config.json");
   try {
     await access(configPath, constants.F_OK);

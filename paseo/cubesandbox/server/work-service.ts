@@ -3,16 +3,25 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type { CubeProjectConfig } from "../shared/config.js";
-import { workStatusSchema, workSummarySchema } from "../shared/contracts.js";
+import {
+  cubeProjectSummarySchema,
+  workStatusSchema,
+  workSummarySchema,
+} from "../shared/contracts.js";
 import {
   sandboxRuntimeEnvironment,
   type CubeRuntime,
   type CubeSandboxHandle,
 } from "./cube-runtime.js";
 import {
-  initializeProjectConfig,
+  initializeProjectConfigAtProjectRoot,
   loadProjectConfig,
 } from "./project-config.js";
+import {
+  LEGACY_PROJECT_PREFIX,
+  type ProjectScope,
+  UNASSIGNED_PROJECT_ID,
+} from "./project-registry.js";
 import {
   type RemoteAgentReference,
   type RemotePaseoConnection,
@@ -51,10 +60,26 @@ export const createAgentInputSchema = z
 
 export type CreateAgentInput = z.infer<typeof createAgentInputSchema>;
 
+/** A project-bound owner. Both identity fields are required for resource mutations. */
+export interface WorkOwner {
+  paseoProjectId: string;
+  canonicalRoot: string;
+}
+
+export function workOwnerForScope(scope: ProjectScope): WorkOwner {
+  return {
+    paseoProjectId: scope.projectId,
+    canonicalRoot: scope.canonicalRoot,
+  };
+}
+
+export type CubeProjectSummary = z.infer<typeof cubeProjectSummarySchema>;
+
 export interface WorkSummary {
   workId: string;
   sandboxId: string;
-  projectId: string;
+  paseoProjectId: string;
+  cubeProjectId: string;
   repository: string;
   status: z.infer<typeof workStatusSchema>;
   idleTimeoutSeconds: number;
@@ -66,12 +91,26 @@ export interface WorkSummary {
   previewUrls: string[];
   pairingUrl?: string;
   lastError?: string;
+  quarantined?: boolean;
 }
 
 type WorkServiceLifecycle = "accepting" | "closing" | "closed";
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isMissingConfigError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
 }
 
 function previewUrls(record: WorkRecord): string[] {
@@ -92,6 +131,32 @@ function activity(
     lastActivityAt: at,
     activity: [...record.activity, { at, type, detail }].slice(-100),
   };
+}
+
+function countWorks(
+  works: readonly WorkSummary[],
+): CubeProjectSummary["counts"] {
+  return {
+    work: works.length,
+    busy: works.filter((work) => work.status === "busy").length,
+    paused: works.filter((work) => work.status === "paused").length,
+  };
+}
+
+function isQuarantinedRecord(record: WorkRecord): boolean {
+  if (record.ownershipStatus === "quarantined") return true;
+  const projectId = record.paseoProjectId;
+  return !projectId || projectId.startsWith(LEGACY_PROJECT_PREFIX);
+}
+
+function pushGroup(
+  groups: Map<string, WorkRecord[]>,
+  key: string,
+  record: WorkRecord,
+): void {
+  const group = groups.get(key) ?? [];
+  group.push(record);
+  groups.set(key, group);
 }
 
 async function runChecked(
@@ -218,7 +283,6 @@ export class WorkService {
   private readonly workOperationTails = new Map<string, Promise<void>>();
   private readonly unkeyedOperations = new Set<Promise<unknown>>();
   private readonly shutdownCleanupFailures: unknown[] = [];
-  private readonly boundRepositoryRoots = new Set<string>();
   private lifecycle: WorkServiceLifecycle = "accepting";
   private closePromise: Promise<void> | undefined;
 
@@ -231,15 +295,6 @@ export class WorkService {
     ) => Promise<RuntimeIdentityBundle>,
   ) {}
 
-  bindRepositoryRoot(repositoryRoot: string): void {
-    this.assertAccepting();
-    this.boundRepositoryRoots.add(repositoryRoot);
-  }
-
-  canInitialize(): boolean {
-    return this.boundRepositoryRoots.size === 1;
-  }
-
   async start(): Promise<void> {
     this.assertAccepting();
     for (const record of await this.records.list()) {
@@ -247,25 +302,19 @@ export class WorkService {
     }
   }
 
-  initializeBoundRepository(): Promise<string> {
-    return this.trackUnkeyedOperation(async () => {
-      if (this.boundRepositoryRoots.size !== 1) {
-        throw new Error(
-          "Open exactly one project agent before initializing CubeSandbox configuration",
-        );
-      }
-      return initializeProjectConfig([...this.boundRepositoryRoots][0]!);
-    });
-  }
-
-  initializeRepository(repositoryRoot: string): Promise<string> {
+  /** Creates `.cube/config.json` for exactly one registered project root. */
+  initializeConfig(canonicalRoot: string): Promise<string> {
     return this.trackUnkeyedOperation(() =>
-      initializeProjectConfig(repositoryRoot),
+      initializeProjectConfigAtProjectRoot(canonicalRoot),
     );
   }
 
+  getRecord(workId: string): Promise<WorkRecord> {
+    return this.records.get(workId);
+  }
+
   async createAgent(
-    repositoryRoot: string,
+    owner: WorkOwner,
     rawInput: CreateAgentInput,
   ): Promise<WorkSummary> {
     this.assertAccepting();
@@ -273,21 +322,17 @@ export class WorkService {
     if (input.workId) {
       return this.withWorkLock(input.workId, async () =>
         this.createAgentForRecord(
-          repositoryRoot,
+          owner,
           input,
-          await this.requireOwnedRecord(input.workId!, repositoryRoot),
+          await this.requireOwnedRecord(owner, input.workId!),
         ),
       );
     }
     const workId = randomUUID();
     return this.withWorkLock(workId, async () => {
-      const record = await this.createWork(repositoryRoot, input, workId);
+      const record = await this.createWork(owner, input, workId);
       try {
-        const summary = await this.createAgentForRecord(
-          repositoryRoot,
-          input,
-          record,
-        );
+        const summary = await this.createAgentForRecord(owner, input, record);
         this.assertAccepting();
         return summary;
       } catch (error) {
@@ -302,12 +347,12 @@ export class WorkService {
   }
 
   private async createAgentForRecord(
-    repositoryRoot: string,
+    owner: WorkOwner,
     input: CreateAgentInput,
     record: WorkRecord,
   ): Promise<WorkSummary> {
     const readyRecord = await this.ensureReady(record);
-    const config = await loadProjectConfig(repositoryRoot);
+    const config = await loadProjectConfig(owner.canonicalRoot);
     const connection = await this.getRemoteConnection(readyRecord);
     const reference = await connection.createAgent({
       prompt: input.prompt,
@@ -370,7 +415,7 @@ export class WorkService {
   }
 
   async sendPrompt(
-    repositoryRoot: string,
+    owner: WorkOwner,
     input: { workId: string; prompt: string; agentId?: string },
   ): Promise<WorkSummary> {
     this.assertAccepting();
@@ -384,7 +429,7 @@ export class WorkService {
       .parse(input);
     return this.withWorkLock(parsed.workId, async () => {
       const record = await this.ensureReady(
-        await this.requireOwnedRecord(parsed.workId, repositoryRoot),
+        await this.requireOwnedRecord(owner, parsed.workId),
       );
       const agentId = parsed.agentId ?? record.agents.at(-1)?.agentId;
       if (
@@ -407,52 +452,158 @@ export class WorkService {
     });
   }
 
-  async getStatus(
-    repositoryRoot: string,
-    workId: string,
-  ): Promise<WorkSummary> {
+  async getStatus(owner: WorkOwner, workId: string): Promise<WorkSummary> {
     this.assertAccepting();
     return this.withWorkLock(workId, async () => {
       const record = await this.refreshStatus(
-        await this.requireOwnedRecord(workId, repositoryRoot),
+        await this.requireOwnedRecord(owner, workId),
       );
       return this.summary(record, false);
     });
   }
 
-  getActivity(repositoryRoot: string, workId: string, limit = 20) {
+  getActivity(owner: WorkOwner, workId: string, limit = 20) {
     return this.trackUnkeyedOperation(async () => {
-      const record = await this.requireOwnedRecord(workId, repositoryRoot);
+      const record = await this.requireOwnedRecord(owner, workId);
       return record.activity
         .slice(-Math.max(1, Math.min(limit, 100)))
         .reverse();
     });
   }
 
-  list(
-    repositoryRoot?: string,
-    includePairing = false,
-  ): Promise<WorkSummary[]> {
-    return this.trackUnkeyedOperation(async () =>
-      Promise.all(
-        (await this.records.list(repositoryRoot)).map(async (record) =>
-          this.withWorkLock(record.workId, async () =>
-            this.summary(await this.refreshStatus(record), includePairing),
+  list(owner?: WorkOwner, includePairing = false): Promise<WorkSummary[]> {
+    return this.trackUnkeyedOperation(async () => {
+      const records = await this.records.list(owner?.canonicalRoot);
+      return Promise.all(
+        records
+          .filter(
+            (record) =>
+              owner === undefined ||
+              record.paseoProjectId === owner.paseoProjectId,
+          )
+          .map(async (record) =>
+            this.withWorkLock(record.workId, async () =>
+              this.summary(await this.refreshStatus(record), includePairing),
+            ),
           ),
-        ),
-      ),
-    );
+      );
+    });
   }
 
-  async pause(
-    repositoryRoot: string | undefined,
+  /**
+   * Authoritative, project-grouped inventory for the UI. Requires no capability
+   * binding, so it survives plugin reload and existing-agent recreation.
+   */
+  projectSummaries(
+    scopes: readonly ProjectScope[],
+    includePairing = false,
+  ): Promise<CubeProjectSummary[]> {
+    return this.trackUnkeyedOperation(async () => {
+      const records = await this.records.list();
+      const scopeIds = new Set(scopes.map((scope) => scope.projectId));
+      const scopeWorks = new Map<string, WorkRecord[]>();
+      const removedWorks = new Map<string, WorkRecord[]>();
+      const unassigned: WorkRecord[] = [];
+      for (const record of records) {
+        const projectId = record.paseoProjectId;
+        if (isQuarantinedRecord(record)) {
+          unassigned.push(record);
+          continue;
+        }
+        const scope = scopes.find(
+          (candidate) => candidate.projectId === projectId,
+        );
+        if (!scope) {
+          pushGroup(removedWorks, projectId!, record);
+          continue;
+        }
+        if (scope.canonicalRoot !== record.repositoryRoot) {
+          unassigned.push(record);
+          continue;
+        }
+        pushGroup(scopeWorks, scope.projectId, record);
+      }
+      const summaries: CubeProjectSummary[] = [];
+      for (const scope of scopes) {
+        summaries.push(
+          await this.buildScopeSummary(
+            scope,
+            scopeWorks.get(scope.projectId) ?? [],
+            includePairing,
+          ),
+        );
+      }
+      for (const [projectId, works] of removedWorks) {
+        if (scopeIds.has(projectId)) continue;
+        const removedSummaries = await this.summarizeRecords(
+          works,
+          includePairing,
+        );
+        summaries.push({
+          projectId,
+          displayName: `Removed project ${projectId}`,
+          availability: "removed",
+          configStatus: "unavailable",
+          canonicalRoot: works[0]?.repositoryRoot,
+          counts: countWorks(removedSummaries),
+          works: removedSummaries,
+        });
+      }
+      if (unassigned.length > 0) {
+        const works = await this.summarizeRecords(unassigned, includePairing);
+        summaries.push({
+          projectId: UNASSIGNED_PROJECT_ID,
+          displayName: "Unassigned work records",
+          availability: "removed",
+          configStatus: "unavailable",
+          counts: countWorks(works),
+          works,
+        });
+      }
+      return summaries;
+    });
+  }
+
+  /**
+   * Resolves a UI mutation target to an owner. Unknown projects, unavailable
+   * scopes, and unsupported removed-project operations fail before any
+   * filesystem or resource mutation.
+   */
+  async resolveWorkOwner(
+    scopes: readonly ProjectScope[],
+    projectId: string,
     workId: string,
-  ): Promise<WorkSummary> {
+    options?: { allowRemoved?: boolean },
+  ): Promise<WorkOwner> {
+    if (projectId === UNASSIGNED_PROJECT_ID) {
+      const record = await this.records.get(workId);
+      if (!isQuarantinedRecord(record)) {
+        throw new Error("Work Sandbox is not an unassigned record: " + workId);
+      }
+      return {
+        paseoProjectId: record.paseoProjectId ?? "",
+        canonicalRoot: record.repositoryRoot,
+      };
+    }
+    const scope = scopes.find((candidate) => candidate.projectId === projectId);
+    if (scope) return workOwnerForScope(await this.requireOnlineScope(scope));
+    if (!options?.allowRemoved) {
+      throw new Error(`Unknown Paseo project: ${projectId}`);
+    }
+    const record = await this.records.get(workId);
+    if (record.paseoProjectId !== projectId) {
+      throw new Error(`Unknown Paseo project: ${projectId}`);
+    }
+    return {
+      paseoProjectId: record.paseoProjectId,
+      canonicalRoot: record.repositoryRoot,
+    };
+  }
+
+  async pause(owner: WorkOwner, workId: string): Promise<WorkSummary> {
     this.assertAccepting();
     return this.withWorkLock(workId, async () => {
-      const record = repositoryRoot
-        ? await this.requireOwnedRecord(workId, repositoryRoot)
-        : await this.records.get(workId);
+      const record = await this.requireOwnedRecord(owner, workId);
       this.stopKeepAlive(workId);
       const config = await loadProjectConfig(record.repositoryRoot);
       const pausing = { ...record, status: "pausing" as const };
@@ -467,33 +618,23 @@ export class WorkService {
         "Paused Work Sandbox",
       );
       await this.records.save(paused);
-      return this.summary(paused, repositoryRoot === undefined);
+      return this.summary(paused, false);
     });
   }
 
-  async resume(
-    repositoryRoot: string | undefined,
-    workId: string,
-  ): Promise<WorkSummary> {
+  async resume(owner: WorkOwner, workId: string): Promise<WorkSummary> {
     this.assertAccepting();
     return this.withWorkLock(workId, async () => {
-      const record = repositoryRoot
-        ? await this.requireOwnedRecord(workId, repositoryRoot)
-        : await this.records.get(workId);
+      const record = await this.requireOwnedRecord(owner, workId);
       const resumed = await this.ensureReady(record);
-      return this.summary(resumed, repositoryRoot === undefined);
+      return this.summary(resumed, false);
     });
   }
 
-  async destroy(
-    repositoryRoot: string | undefined,
-    workId: string,
-  ): Promise<void> {
+  async destroy(owner: WorkOwner, workId: string): Promise<void> {
     this.assertAccepting();
     await this.withWorkLock(workId, async () => {
-      const record = repositoryRoot
-        ? await this.requireOwnedRecord(workId, repositoryRoot)
-        : await this.records.get(workId);
+      const record = await this.requireOwnedRecord(owner, workId);
       this.stopKeepAlive(workId);
       const config = await loadProjectConfig(record.repositoryRoot);
       try {
@@ -527,6 +668,70 @@ export class WorkService {
     return this.closePromise;
   }
 
+  private async buildScopeSummary(
+    scope: ProjectScope,
+    records: WorkRecord[],
+    includePairing: boolean,
+  ): Promise<CubeProjectSummary> {
+    const works = await this.summarizeRecords(records, includePairing);
+    return {
+      projectId: scope.projectId,
+      displayName: scope.displayName,
+      availability: scope.availability,
+      canonicalRoot: scope.canonicalRoot,
+      ...(await this.configState(scope)),
+      counts: countWorks(works),
+      works,
+    };
+  }
+
+  private async configState(
+    scope: ProjectScope,
+  ): Promise<
+    Pick<
+      CubeProjectSummary,
+      "configStatus" | "cubeProjectId" | "repository" | "configError"
+    >
+  > {
+    if (scope.availability !== "online") {
+      return { configStatus: "unavailable" };
+    }
+    try {
+      const config = await loadProjectConfig(scope.canonicalRoot);
+      return {
+        configStatus: "ready",
+        cubeProjectId: config.project.id,
+        repository: config.project.repository,
+      };
+    } catch (error) {
+      if (isMissingConfigError(error)) return { configStatus: "missing" };
+      return { configStatus: "invalid", configError: errorMessage(error) };
+    }
+  }
+
+  private summarizeRecords(
+    records: readonly WorkRecord[],
+    includePairing: boolean,
+  ): Promise<WorkSummary[]> {
+    return Promise.all(
+      records.map(async (record) =>
+        this.withWorkLock(record.workId, async () =>
+          this.summary(await this.refreshStatus(record), includePairing),
+        ),
+      ),
+    );
+  }
+
+  private requireOnlineScope(scope: ProjectScope): ProjectScope {
+    if (scope.availability !== "online") {
+      throw new Error(
+        scope.error ??
+          `Paseo project is ${scope.availability}: ${scope.projectId}`,
+      );
+    }
+    return scope;
+  }
+
   private async closeResources(): Promise<void> {
     for (const workId of this.keepAliveTimers.keys()) {
       this.stopKeepAlive(workId);
@@ -556,11 +761,11 @@ export class WorkService {
   }
 
   private async createWork(
-    repositoryRoot: string,
+    owner: WorkOwner,
     input: CreateAgentInput,
     workId: string,
   ): Promise<WorkRecord> {
-    const config = await loadProjectConfig(repositoryRoot);
+    const config = await loadProjectConfig(owner.canonicalRoot);
     this.assertAccepting();
     let sandbox: CubeSandboxHandle | undefined;
     let record: WorkRecord | undefined;
@@ -570,11 +775,13 @@ export class WorkService {
       this.sandboxHandles.set(workId, sandbox);
       const timestamp = new Date().toISOString();
       record = {
-        version: 1,
+        version: 2,
         workId,
         sandboxId: sandbox.sandboxId,
-        repositoryRoot,
+        repositoryRoot: owner.canonicalRoot,
         projectId: config.project.id,
+        cubeProjectId: config.project.id,
+        paseoProjectId: owner.paseoProjectId,
         repository: config.project.repository,
         sandboxDomain: config.cube.sandboxDomain,
         previewPorts: config.sandbox.previewPorts,
@@ -585,6 +792,7 @@ export class WorkService {
         updatedAt: timestamp,
         lastActivityAt: timestamp,
         status: "creating",
+        ownershipStatus: "active",
         activity: [
           { at: timestamp, type: "created", detail: "Created Work Sandbox" },
         ],
@@ -594,7 +802,7 @@ export class WorkService {
       const pairingUrl = await bootstrapSandbox(
         sandbox,
         config,
-        repositoryRoot,
+        owner.canonicalRoot,
         this.loadRuntimeIdentityBundle,
       );
       this.assertAccepting();
@@ -650,8 +858,8 @@ export class WorkService {
   private async refreshStatus(record: WorkRecord): Promise<WorkRecord> {
     if (record.status === "creating" || record.status === "error")
       return record;
-    const config = await loadProjectConfig(record.repositoryRoot);
     try {
+      const config = await loadProjectConfig(record.repositoryRoot);
       const info = await this.cube.inspect(config, record.sandboxId);
       if (info.state === "paused") {
         this.stopKeepAlive(record.workId);
@@ -898,7 +1106,7 @@ export class WorkService {
     record: WorkRecord,
     error: unknown,
   ): Promise<void> {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = errorMessage(error);
     await this.records.save(
       activity(
         { ...record, status: "error", lastError: detail },
@@ -909,14 +1117,15 @@ export class WorkService {
   }
 
   private async requireOwnedRecord(
+    owner: WorkOwner,
     workId: string,
-    repositoryRoot: string,
   ): Promise<WorkRecord> {
     const record = await this.records.get(workId);
-    if (record.repositoryRoot !== repositoryRoot) {
-      throw new Error(
-        "Work Sandbox is not owned by this repository capability",
-      );
+    if (
+      record.repositoryRoot !== owner.canonicalRoot ||
+      record.paseoProjectId !== owner.paseoProjectId
+    ) {
+      throw new Error("Work Sandbox is not owned by this project capability");
     }
     return record;
   }
@@ -959,7 +1168,8 @@ export class WorkService {
     return workSummarySchema.parse({
       workId: record.workId,
       sandboxId: record.sandboxId,
-      projectId: record.projectId,
+      paseoProjectId: record.paseoProjectId,
+      cubeProjectId: record.cubeProjectId ?? record.projectId,
       repository: record.repository,
       status: record.status,
       idleTimeoutSeconds: record.idleTimeoutSeconds,
@@ -971,6 +1181,7 @@ export class WorkService {
       previewUrls: previewUrls(record),
       pairingUrl,
       lastError: record.lastError,
+      quarantined: isQuarantinedRecord(record) || undefined,
     });
   }
 }

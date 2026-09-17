@@ -47,6 +47,7 @@ function errorResult(error: unknown) {
 export interface CapabilityBinding {
   canonicalRoot: string;
   paseoProjectId?: string;
+  paseoWorkspaceId?: string;
 }
 
 const UNREGISTERED_PROJECT_MESSAGE =
@@ -61,6 +62,9 @@ function createRepositoryToolServer(
   const owner: WorkOwner | null = binding.paseoProjectId
     ? {
         paseoProjectId: binding.paseoProjectId,
+        ...(binding.paseoWorkspaceId
+          ? { paseoWorkspaceId: binding.paseoWorkspaceId }
+          : {}),
         canonicalRoot: binding.canonicalRoot,
       }
     : null;

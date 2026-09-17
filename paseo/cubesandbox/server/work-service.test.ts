@@ -20,13 +20,26 @@ import {
 import { WorkRecordStore, type WorkRecord } from "./work-record.js";
 import { type WorkOwner, WorkService } from "./work-service.js";
 
-function owner(repositoryRoot: string, paseoProjectId = "prj_test"): WorkOwner {
-  return { paseoProjectId, canonicalRoot: repositoryRoot };
+function owner(
+  repositoryRoot: string,
+  paseoProjectId = "prj_test",
+  paseoWorkspaceId?: string,
+): WorkOwner {
+  return {
+    paseoProjectId,
+    ...(paseoWorkspaceId ? { paseoWorkspaceId } : {}),
+    canonicalRoot: repositoryRoot,
+  };
 }
 
-function scope(projectId: string, canonicalRoot: string): ProjectScope {
+function scope(
+  projectId: string,
+  canonicalRoot: string,
+  workspaceId?: string,
+): ProjectScope {
   return {
     projectId,
+    ...(workspaceId ? { workspaceId } : {}),
     displayName: projectId,
     declaredRoot: canonicalRoot,
     canonicalRoot,
@@ -566,6 +579,33 @@ describe("WorkService lifecycle", () => {
     await service.close();
   });
 
+  it("binds Work Sandbox ownership to sibling workspace identities", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+    const work = await service.createAgent(
+      owner(repositoryRoot, "prj_same", "wks_first"),
+      { prompt: "first" },
+    );
+
+    expect((await store.get(work.workId)).paseoWorkspaceId).toBe("wks_first");
+    await expect(
+      service.pause(
+        owner(repositoryRoot, "prj_same", "wks_sibling"),
+        work.workId,
+      ),
+    ).rejects.toThrow("not owned by this project capability");
+    expect(deps.pause).not.toHaveBeenCalled();
+    await service.close();
+  });
+
   it("retains an error record when destroy fails", async () => {
     const repositoryRoot = await projectFixture();
     const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
@@ -987,6 +1027,100 @@ describe("WorkService lifecycle", () => {
     await service.close();
   });
 
+  it("aggregates workspace records under one project summary", async () => {
+    const projectRoot = await projectFixture();
+    const workspaceRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+    const workId = "f4e30d8d-ef62-4b9d-ac62-3c3875660034";
+    await store.save(
+      storedRecord(workId, {
+        repositoryRoot: workspaceRoot,
+        paseoProjectId: "prj_aggregate",
+        paseoWorkspaceId: "wks_aggregate",
+      }),
+    );
+
+    const summaries = await service.projectSummaries(
+      [
+        scope("prj_aggregate", projectRoot),
+        scope("prj_aggregate", workspaceRoot, "wks_aggregate"),
+      ],
+      false,
+    );
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]?.projectId).toBe("prj_aggregate");
+    expect(summaries[0]?.works.map((work) => work.workId)).toEqual([workId]);
+    await service.close();
+  });
+
+  it("resolves UI actions to workspace ownership and rejects archived workspaces", async () => {
+    const projectRoot = await projectFixture();
+    const workspaceRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+    const workId = "f4e30d8d-ef62-4b9d-ac62-3c3875660035";
+    await store.save(
+      storedRecord(workId, {
+        repositoryRoot: workspaceRoot,
+        paseoProjectId: "prj_actions",
+        paseoWorkspaceId: "wks_actions",
+      }),
+    );
+    const activeScopes = [
+      scope("prj_actions", projectRoot),
+      scope("prj_actions", workspaceRoot, "wks_actions"),
+    ];
+
+    await expect(
+      service.resolveWorkOwner(activeScopes, "prj_actions", workId),
+    ).resolves.toEqual({
+      paseoProjectId: "prj_actions",
+      paseoWorkspaceId: "wks_actions",
+      canonicalRoot: workspaceRoot,
+    });
+
+    const archivedWorkspace = scope(
+      "prj_actions",
+      workspaceRoot,
+      "wks_actions",
+    );
+    archivedWorkspace.availability = "removed";
+    archivedWorkspace.error = "Paseo workspace is archived: wks_actions";
+    const archivedScopes = [
+      scope("prj_actions", projectRoot),
+      archivedWorkspace,
+    ];
+    await expect(
+      service.resolveWorkOwner(archivedScopes, "prj_actions", workId),
+    ).rejects.toThrow("archived");
+    await expect(
+      service.resolveWorkOwner(archivedScopes, "prj_actions", workId, {
+        allowRemoved: true,
+      }),
+    ).resolves.toEqual({
+      paseoProjectId: "prj_actions",
+      paseoWorkspaceId: "wks_actions",
+      canonicalRoot: workspaceRoot,
+    });
+    await service.close();
+  });
+
   it("rejects a cross-project work id before resource mutation", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const repositoryRoot = await projectFixture();
@@ -1108,6 +1242,7 @@ describe("WorkService lifecycle", () => {
 
   it("rebuilds project inventory after reload without capability bindings", async () => {
     const repositoryRoot = await projectFixture();
+    const workspaceRoot = await projectFixture();
     const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
     const store = new WorkRecordStore(state);
     const firstDependencies = dependencies();
@@ -1118,7 +1253,7 @@ describe("WorkService lifecycle", () => {
       firstDependencies.loadRuntimeIdentityBundle,
     );
     const work = await firstService.createAgent(
-      owner(repositoryRoot, "prj_reload"),
+      owner(workspaceRoot, "prj_reload", "wks_reload"),
       { prompt: "first" },
     );
     await firstService.close();
@@ -1132,7 +1267,10 @@ describe("WorkService lifecycle", () => {
     );
     await reloadedService.start();
     const summaries = await reloadedService.projectSummaries(
-      [scope("prj_reload", repositoryRoot)],
+      [
+        scope("prj_reload", repositoryRoot),
+        scope("prj_reload", workspaceRoot, "wks_reload"),
+      ],
       false,
     );
 

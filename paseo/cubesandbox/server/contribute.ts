@@ -43,6 +43,7 @@ async function capabilityBindingForCwd(
     return {
       canonicalRoot: scope.canonicalRoot,
       paseoProjectId: scope.projectId,
+      ...(scope.workspaceId ? { paseoWorkspaceId: scope.workspaceId } : {}),
     };
   }
   const gitRoot = await findGitRoot(cwd);

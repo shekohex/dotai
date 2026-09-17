@@ -51,6 +51,7 @@ const workRecordFields = {
   projectId: z.string().min(1),
   cubeProjectId: z.string().min(1).optional(),
   paseoProjectId: z.string().min(1).optional(),
+  paseoWorkspaceId: z.string().min(1).optional(),
   repository: z.string().min(1),
   sandboxDomain: z.string().min(1),
   previewPorts: z.array(z.number().int().min(1).max(65_535)),
@@ -120,6 +121,7 @@ function toMigratedRecord(
     cubeProjectId: canonicalProjectId(record),
     paseoProjectId:
       scope?.projectId ?? `${LEGACY_PROJECT_PREFIX}${record.workId}`,
+    ...(scope?.workspaceId ? { paseoWorkspaceId: scope.workspaceId } : {}),
     ownershipStatus: scope ? "active" : "quarantined",
     ...(scope
       ? {}
@@ -130,6 +132,21 @@ function toMigratedRecord(
               : "Legacy record root is not a registered Paseo project",
         }),
   };
+}
+
+function workspaceScopeForRecord(
+  record: { paseoProjectId?: string },
+  scopes: readonly ProjectScope[],
+  canonicalRoot: string,
+): ProjectScope | undefined {
+  const matches = scopes.filter(
+    (scope) =>
+      scope.availability === "online" &&
+      scope.projectId === record.paseoProjectId &&
+      scope.workspaceId !== undefined &&
+      scope.canonicalRoot === canonicalRoot,
+  );
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 async function writePrivateJson(
@@ -189,9 +206,10 @@ export class WorkRecordStore {
   }
 
   /**
-   * Migrates legacy v1 records to v2 exactly when the canonical root maps to a
-   * single online registered project. Ambiguous or removed roots are quarantined
-   * with a stable synthetic project id so they stay visible for safe cleanup.
+   * Migrates legacy v1 records to v2 and backfills workspace identity for v2
+   * records whose exact root maps to one online managed workspace. Ambiguous or
+   * removed roots are quarantined with a stable synthetic project id so they
+   * stay visible for safe cleanup.
    */
   async migrateLegacy(scopes: readonly ProjectScope[]): Promise<void> {
     await this.initialize();
@@ -203,6 +221,22 @@ export class WorkRecordStore {
       const parsed = workRecordSchema.parse(
         JSON.parse(await readFile(filePath, "utf8")),
       );
+      if (
+        parsed.version === 2 &&
+        parsed.paseoWorkspaceId === undefined &&
+        parsed.paseoProjectId
+      ) {
+        const canonicalRoot = await canonicalizeRoot(parsed.repositoryRoot);
+        const scope = workspaceScopeForRecord(parsed, scopes, canonicalRoot);
+        if (scope) {
+          await writePrivateJson(filePath, {
+            ...parsed,
+            repositoryRoot: canonicalRoot,
+            paseoWorkspaceId: scope.workspaceId,
+          });
+        }
+        continue;
+      }
       if (parsed.version !== 1) continue;
       const canonicalRoot = await canonicalizeRoot(parsed.repositoryRoot);
       await writePrivateJson(

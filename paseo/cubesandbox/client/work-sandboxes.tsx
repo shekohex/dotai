@@ -56,15 +56,19 @@ export function WorkSandboxes({ theme, layout }: PluginSurfaceProps) {
     queryFn: () => listProjects({}),
     refetchInterval: 5_000,
   });
-  useEffect(
-    () =>
-      paseo.projects.subscribe(() => {
-        void queryClient.invalidateQueries({
-          queryKey: ["cubesandbox", "projects"],
-        });
-      }),
-    [paseo, queryClient],
-  );
+  useEffect(() => {
+    const invalidateProjects = () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["cubesandbox", "projects"],
+      });
+    };
+    const unsubscribeProject = paseo.projects.subscribe(invalidateProjects);
+    const unsubscribeWorkspace = paseo.workspaces.subscribe(invalidateProjects);
+    return () => {
+      unsubscribeProject();
+      unsubscribeWorkspace();
+    };
+  }, [paseo, queryClient]);
 
   const projects = query.data?.projects ?? [];
   const selectedProjectId =

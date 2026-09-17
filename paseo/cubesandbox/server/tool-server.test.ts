@@ -24,6 +24,7 @@ describe("CubeToolServer capabilities", () => {
         server.createCapability({
           canonicalRoot: "/repo/first",
           paseoProjectId: "prj_first",
+          paseoWorkspaceId: "wks_first",
         }),
       );
       const secondUrl = new URL(
@@ -36,6 +37,7 @@ describe("CubeToolServer capabilities", () => {
       expect(server.capabilityForToken(firstToken)).toEqual({
         canonicalRoot: "/repo/first",
         paseoProjectId: "prj_first",
+        paseoWorkspaceId: "wks_first",
       });
       expect(server.capabilityForToken(secondToken)).toEqual({
         canonicalRoot: "/repo/second",

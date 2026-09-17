@@ -19,6 +19,7 @@ import {
 } from "./project-config.js";
 import {
   LEGACY_PROJECT_PREFIX,
+  matchScopeForRecord,
   type ProjectScope,
   UNASSIGNED_PROJECT_ID,
 } from "./project-registry.js";
@@ -63,13 +64,25 @@ export type CreateAgentInput = z.infer<typeof createAgentInputSchema>;
 /** A project-bound owner. Both identity fields are required for resource mutations. */
 export interface WorkOwner {
   paseoProjectId: string;
+  paseoWorkspaceId?: string;
   canonicalRoot: string;
 }
 
 export function workOwnerForScope(scope: ProjectScope): WorkOwner {
   return {
     paseoProjectId: scope.projectId,
+    ...(scope.workspaceId ? { paseoWorkspaceId: scope.workspaceId } : {}),
     canonicalRoot: scope.canonicalRoot,
+  };
+}
+
+function workOwnerForRecord(record: WorkRecord): WorkOwner {
+  return {
+    paseoProjectId: record.paseoProjectId ?? "",
+    ...(record.paseoWorkspaceId
+      ? { paseoWorkspaceId: record.paseoWorkspaceId }
+      : {}),
+    canonicalRoot: record.repositoryRoot,
   };
 }
 
@@ -479,7 +492,8 @@ export class WorkService {
           .filter(
             (record) =>
               owner === undefined ||
-              record.paseoProjectId === owner.paseoProjectId,
+              (record.paseoProjectId === owner.paseoProjectId &&
+                record.paseoWorkspaceId === owner.paseoWorkspaceId),
           )
           .map(async (record) =>
             this.withWorkLock(record.workId, async () =>
@@ -500,7 +514,10 @@ export class WorkService {
   ): Promise<CubeProjectSummary[]> {
     return this.trackUnkeyedOperation(async () => {
       const records = await this.records.list();
-      const scopeIds = new Set(scopes.map((scope) => scope.projectId));
+      const projectScopes = scopes.filter(
+        (scope) => scope.workspaceId === undefined,
+      );
+      const scopeIds = new Set(projectScopes.map((scope) => scope.projectId));
       const scopeWorks = new Map<string, WorkRecord[]>();
       const removedWorks = new Map<string, WorkRecord[]>();
       const unassigned: WorkRecord[] = [];
@@ -510,21 +527,20 @@ export class WorkService {
           unassigned.push(record);
           continue;
         }
-        const scope = scopes.find(
-          (candidate) => candidate.projectId === projectId,
-        );
+        const scope = matchScopeForRecord(scopes, record);
         if (!scope) {
+          if (scopeIds.has(projectId!)) unassigned.push(record);
+          else pushGroup(removedWorks, projectId!, record);
+          continue;
+        }
+        if (!scopeIds.has(projectId!)) {
           pushGroup(removedWorks, projectId!, record);
           continue;
         }
-        if (scope.canonicalRoot !== record.repositoryRoot) {
-          unassigned.push(record);
-          continue;
-        }
-        pushGroup(scopeWorks, scope.projectId, record);
+        pushGroup(scopeWorks, projectId!, record);
       }
       const summaries: CubeProjectSummary[] = [];
-      for (const scope of scopes) {
+      for (const scope of projectScopes) {
         summaries.push(
           await this.buildScopeSummary(
             scope,
@@ -580,24 +596,35 @@ export class WorkService {
       if (!isQuarantinedRecord(record)) {
         throw new Error("Work Sandbox is not an unassigned record: " + workId);
       }
-      return {
-        paseoProjectId: record.paseoProjectId ?? "",
-        canonicalRoot: record.repositoryRoot,
-      };
-    }
-    const scope = scopes.find((candidate) => candidate.projectId === projectId);
-    if (scope) return workOwnerForScope(await this.requireOnlineScope(scope));
-    if (!options?.allowRemoved) {
-      throw new Error(`Unknown Paseo project: ${projectId}`);
+      return workOwnerForRecord(record);
     }
     const record = await this.records.get(workId);
     if (record.paseoProjectId !== projectId) {
       throw new Error(`Unknown Paseo project: ${projectId}`);
     }
-    return {
-      paseoProjectId: record.paseoProjectId,
-      canonicalRoot: record.repositoryRoot,
-    };
+    const scope = matchScopeForRecord(scopes, record);
+    if (scope) {
+      if (scope.availability === "online") return workOwnerForScope(scope);
+      if (!options?.allowRemoved) {
+        throw new Error(
+          scope.error ??
+            `Paseo workspace is ${scope.availability}: ${projectId}`,
+        );
+      }
+      return workOwnerForRecord(record);
+    }
+    const projectScope = scopes.find(
+      (candidate) =>
+        candidate.projectId === projectId &&
+        candidate.workspaceId === undefined,
+    );
+    if (projectScope) {
+      throw new Error("Work Sandbox is not owned by this project capability");
+    }
+    if (!options?.allowRemoved) {
+      throw new Error(`Unknown Paseo project: ${projectId}`);
+    }
+    return workOwnerForRecord(record);
   }
 
   async pause(owner: WorkOwner, workId: string): Promise<WorkSummary> {
@@ -722,16 +749,6 @@ export class WorkService {
     );
   }
 
-  private requireOnlineScope(scope: ProjectScope): ProjectScope {
-    if (scope.availability !== "online") {
-      throw new Error(
-        scope.error ??
-          `Paseo project is ${scope.availability}: ${scope.projectId}`,
-      );
-    }
-    return scope;
-  }
-
   private async closeResources(): Promise<void> {
     for (const workId of this.keepAliveTimers.keys()) {
       this.stopKeepAlive(workId);
@@ -782,6 +799,9 @@ export class WorkService {
         projectId: config.project.id,
         cubeProjectId: config.project.id,
         paseoProjectId: owner.paseoProjectId,
+        ...(owner.paseoWorkspaceId
+          ? { paseoWorkspaceId: owner.paseoWorkspaceId }
+          : {}),
         repository: config.project.repository,
         sandboxDomain: config.cube.sandboxDomain,
         previewPorts: config.sandbox.previewPorts,
@@ -1123,7 +1143,8 @@ export class WorkService {
     const record = await this.records.get(workId);
     if (
       record.repositoryRoot !== owner.canonicalRoot ||
-      record.paseoProjectId !== owner.paseoProjectId
+      record.paseoProjectId !== owner.paseoProjectId ||
+      record.paseoWorkspaceId !== owner.paseoWorkspaceId
     ) {
       throw new Error("Work Sandbox is not owned by this project capability");
     }

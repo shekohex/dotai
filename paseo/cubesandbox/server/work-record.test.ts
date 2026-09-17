@@ -87,6 +87,62 @@ describe("WorkRecordStore", () => {
     expect((await store.get(workId)).paseoProjectId).toBe("prj_alpha");
   });
 
+  it("migrates a v1 record with managed workspace ownership", async () => {
+    const stateDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "cube-record-test-"),
+    );
+    const projectRoot = await mkdtemp(
+      path.join(os.tmpdir(), "cube-record-project-root-"),
+    );
+    const workspaceRoot = await mkdtemp(
+      path.join(os.tmpdir(), "cube-record-workspace-root-"),
+    );
+    const store = new WorkRecordStore(stateDirectory);
+    const workId = "f4e30d8d-ef62-4b9d-ac62-3c3875660023";
+    await store.save({
+      ...exampleRecord(workId),
+      repositoryRoot: workspaceRoot,
+    });
+
+    await store.migrateLegacy([
+      scope("prj_alpha", projectRoot),
+      scope("prj_alpha", workspaceRoot, "wks_alpha"),
+    ]);
+
+    const migrated = workRecordV2Schema.parse(await store.get(workId));
+    expect(migrated.paseoProjectId).toBe("prj_alpha");
+    expect(migrated.paseoWorkspaceId).toBe("wks_alpha");
+  });
+
+  it("backfills workspace ownership on an existing v2 record", async () => {
+    const stateDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "cube-record-test-"),
+    );
+    const projectRoot = await mkdtemp(
+      path.join(os.tmpdir(), "cube-record-project-root-"),
+    );
+    const workspaceRoot = await mkdtemp(
+      path.join(os.tmpdir(), "cube-record-workspace-root-"),
+    );
+    const store = new WorkRecordStore(stateDirectory);
+    const workId = "f4e30d8d-ef62-4b9d-ac62-3c3875660024";
+    await store.save({
+      ...exampleRecord(workId),
+      version: 2,
+      cubeProjectId: "widget",
+      paseoProjectId: "prj_alpha",
+      ownershipStatus: "active",
+      repositoryRoot: workspaceRoot,
+    });
+
+    await store.migrateLegacy([
+      scope("prj_alpha", projectRoot),
+      scope("prj_alpha", workspaceRoot, "wks_alpha"),
+    ]);
+
+    expect((await store.get(workId)).paseoWorkspaceId).toBe("wks_alpha");
+  });
+
   it("quarantines v1 records with ambiguous or removed roots", async () => {
     const stateDirectory = await mkdtemp(
       path.join(os.tmpdir(), "cube-record-test-"),
@@ -128,9 +184,14 @@ describe("WorkRecordStore", () => {
   });
 });
 
-function scope(projectId: string, canonicalRoot: string): ProjectScope {
+function scope(
+  projectId: string,
+  canonicalRoot: string,
+  workspaceId?: string,
+): ProjectScope {
   return {
     projectId,
+    ...(workspaceId ? { workspaceId } : {}),
     displayName: projectId,
     declaredRoot: canonicalRoot,
     canonicalRoot,

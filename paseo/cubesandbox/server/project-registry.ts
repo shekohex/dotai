@@ -1,4 +1,4 @@
-import type { PaseoApi, PaseoProject } from "@getpaseo/client";
+import type { PaseoApi, PaseoProject, PaseoWorkspace } from "@getpaseo/client";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -11,6 +11,7 @@ export type ProjectAvailability = "online" | "offline" | "removed";
 
 export interface ProjectScope {
   projectId: string;
+  workspaceId?: string;
   displayName: string;
   declaredRoot: string;
   canonicalRoot: string;
@@ -66,6 +67,58 @@ function markRootCollisions(scopes: ProjectScope[]): void {
   }
 }
 
+async function listAllWorkspaces(paseo: PaseoApi): Promise<PaseoWorkspace[]> {
+  const entries: PaseoWorkspace[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  for (;;) {
+    const result = await paseo.workspaces.list({
+      page: { limit: 100, ...(cursor ? { cursor } : {}) },
+    });
+    entries.push(...result.entries);
+    const nextCursor = result.pageInfo.nextCursor;
+    if (!result.pageInfo.hasMore || !nextCursor) return entries;
+    if (seenCursors.has(nextCursor)) {
+      throw new Error("Paseo workspace inventory repeated a page cursor");
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+}
+
+async function workspaceScope(
+  project: PaseoProject,
+  workspace: PaseoWorkspace,
+): Promise<ProjectScope | undefined> {
+  if (!workspace.workspaceDirectory) return undefined;
+  const canonicalRoot = await canonicalizeExistingDirectory(
+    workspace.workspaceDirectory,
+  );
+  const availability = workspace.archivingAt ? "removed" : "online";
+  if (!canonicalRoot) {
+    return {
+      projectId: project.projectId,
+      workspaceId: workspace.id,
+      displayName: preferredDisplayName(project),
+      declaredRoot: workspace.workspaceDirectory,
+      canonicalRoot: workspace.workspaceDirectory,
+      availability: "offline",
+      error: `Paseo workspace root is unavailable: ${workspace.workspaceDirectory}`,
+    };
+  }
+  return {
+    projectId: project.projectId,
+    workspaceId: workspace.id,
+    displayName: preferredDisplayName(project),
+    declaredRoot: workspace.workspaceDirectory,
+    canonicalRoot,
+    availability,
+    ...(workspace.archivingAt
+      ? { error: `Paseo workspace is archived: ${workspace.id}` }
+      : {}),
+  };
+}
+
 /**
  * Authoritative inventory of every registered Paseo project as an independent
  * Cube scope. Roots are canonicalized and colliding roots are marked offline.
@@ -73,8 +126,11 @@ function markRootCollisions(scopes: ProjectScope[]): void {
 export async function listProjectScopes(
   paseo: PaseoApi,
 ): Promise<ProjectScope[]> {
-  const { projects } = await paseo.projects.list();
-  const scopes = await Promise.all(
+  const [{ projects }, workspaces] = await Promise.all([
+    paseo.projects.list(),
+    listAllWorkspaces(paseo),
+  ]);
+  const projectScopes = await Promise.all(
     projects.map(async (project): Promise<ProjectScope> => {
       const canonicalRoot = await canonicalizeExistingDirectory(
         project.projectRootPath,
@@ -98,6 +154,25 @@ export async function listProjectScopes(
       };
     }),
   );
+  const projectById = new Map(
+    projects.map((project) => [project.projectId, project]),
+  );
+  const workspaceScopes = await Promise.all(
+    workspaces
+      .map((workspace) => {
+        const project = projectById.get(workspace.projectId);
+        return project ? workspaceScope(project, workspace) : undefined;
+      })
+      .filter((scope): scope is Promise<ProjectScope | undefined> =>
+        Boolean(scope),
+      ),
+  );
+  const scopes = [
+    ...projectScopes,
+    ...workspaceScopes.filter(
+      (scope): scope is ProjectScope => scope !== undefined,
+    ),
+  ];
   markRootCollisions(scopes);
   return scopes;
 }
@@ -107,7 +182,10 @@ export function resolveProjectId(
   scopes: readonly ProjectScope[],
   projectId: string,
 ): ProjectScope {
-  const scope = scopes.find((candidate) => candidate.projectId === projectId);
+  const scope = scopes.find(
+    (candidate) =>
+      candidate.projectId === projectId && candidate.workspaceId === undefined,
+  );
   if (!scope) throw new Error(`Unknown Paseo project: ${projectId}`);
   if (scope.availability !== "online") {
     throw new Error(
@@ -125,14 +203,37 @@ export function matchScopeForRoot(
   const matches = scopes
     .filter(
       (scope) =>
-        scope.availability === "online" &&
-        (canonicalRoot === scope.canonicalRoot ||
-          canonicalRoot.startsWith(`${scope.canonicalRoot}${path.sep}`)),
+        canonicalRoot === scope.canonicalRoot ||
+        canonicalRoot.startsWith(`${scope.canonicalRoot}${path.sep}`),
     )
     .sort(
       (left, right) => right.canonicalRoot.length - left.canonicalRoot.length,
     );
-  return matches[0];
+  const match = matches[0];
+  if (!match) return undefined;
+  const longestRootMatches = matches.filter(
+    (candidate) => candidate.canonicalRoot === match.canonicalRoot,
+  );
+  return longestRootMatches.length === 1 && match.availability === "online"
+    ? match
+    : undefined;
+}
+
+/** Finds a scope by its persisted project, workspace, and exact canonical root identity. */
+export function matchScopeForRecord(
+  scopes: readonly ProjectScope[],
+  record: {
+    paseoProjectId?: string;
+    paseoWorkspaceId?: string;
+    repositoryRoot: string;
+  },
+): ProjectScope | undefined {
+  return scopes.find(
+    (scope) =>
+      scope.projectId === record.paseoProjectId &&
+      scope.workspaceId === record.paseoWorkspaceId &&
+      scope.canonicalRoot === record.repositoryRoot,
+  );
 }
 
 /** Resolves the owning project for a working directory, or undefined when unregistered. */

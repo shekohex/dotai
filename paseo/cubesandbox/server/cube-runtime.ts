@@ -4,6 +4,16 @@ import type { CubeProjectConfig } from "../shared/config.js";
 import { Config } from "./vendor/cubesandbox-sdk/config.js";
 import { Sandbox } from "./vendor/cubesandbox-sdk/sandbox.js";
 
+const DEFAULT_CUBE_API_URL = "https://sandbox.0iq.xyz";
+const RUNTIME_SECRET_NAMES = [
+  "ANTHROPIC_API_KEY",
+  "CODEX_API_KEY",
+  "GEMINI_API_KEY",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "OPENAI_API_KEY",
+] as const;
+
 const snapshotSchema = z
   .object({
     snapshotID: z.string().min(1),
@@ -30,6 +40,7 @@ export interface CubeSandboxHandle {
     command: string,
     options?: { cwd?: string; env?: Record<string, string> },
   ): Promise<CubeCommandResult>;
+  keepAlive(): Promise<void>;
   info(): Promise<{ state: string }>;
   pause(): Promise<void>;
   destroy(): Promise<void>;
@@ -50,28 +61,51 @@ export interface CubeRuntime {
   ): Promise<CubeSandboxHandle>;
 }
 
-function connectionConfig(config: CubeProjectConfig) {
+function normalizeCubeApiUrl(value: string, source: string): string {
+  const parsed = new URL(value);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(`${source} must use http or https`);
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error(
+      `${source} must not contain credentials, query, or fragment`,
+    );
+  }
+  return value.replace(/\/+$/, "");
+}
+
+function connectionConfig(
+  config: CubeProjectConfig,
+  environment: NodeJS.ProcessEnv,
+) {
+  const trustedApiUrl = normalizeCubeApiUrl(
+    environment.CUBE_API_URL ?? DEFAULT_CUBE_API_URL,
+    "Trusted Cube API URL",
+  );
+  const configuredApiUrl = normalizeCubeApiUrl(
+    config.cube.apiUrl,
+    "Project cube.apiUrl",
+  );
+  if (configuredApiUrl !== trustedApiUrl) {
+    throw new Error(
+      `Project cube.apiUrl ${JSON.stringify(config.cube.apiUrl)} does not match trusted Cube API URL ${JSON.stringify(trustedApiUrl)}`,
+    );
+  }
   return {
-    apiUrl: config.cube.apiUrl,
-    apiKey: process.env.CUBE_API_KEY,
+    apiUrl: trustedApiUrl,
+    apiKey: environment.CUBE_API_KEY ?? null,
     sandboxDomain: config.cube.sandboxDomain,
     proxyPort: 443,
     proxyScheme: "https",
   };
 }
 
-function runtimeEnvironment(): Record<string, string> {
-  const names = [
-    "ANTHROPIC_API_KEY",
-    "CODEX_API_KEY",
-    "GEMINI_API_KEY",
-    "GH_TOKEN",
-    "GITHUB_TOKEN",
-    "OPENAI_API_KEY",
-  ];
+function runtimeEnvironment(
+  environment: NodeJS.ProcessEnv,
+): Record<string, string> {
   return Object.fromEntries(
-    names.flatMap((name) => {
-      const value = process.env[name];
+    RUNTIME_SECRET_NAMES.flatMap((name) => {
+      const value = environment[name];
       return value ? [[name, value]] : [];
     }),
   );
@@ -98,6 +132,15 @@ function wrapSandbox(sandbox: Sandbox): CubeSandboxHandle {
         .strict()
         .parse(result);
     },
+    keepAlive: async () => {
+      const result = await sandbox.commands.run("true", {
+        timeoutMs: 10_000,
+        user: "coder",
+      });
+      if (result.exitCode !== 0) {
+        throw new Error(`Cube keepalive failed with exit ${result.exitCode}`);
+      }
+    },
     info: async () => {
       const info = sandboxInfoSchema.parse(await sandbox.getInfo());
       return { state: info.state };
@@ -108,12 +151,15 @@ function wrapSandbox(sandbox: Sandbox): CubeSandboxHandle {
 }
 
 export class CubeSdkRuntime implements CubeRuntime {
+  constructor(private readonly environment: NodeJS.ProcessEnv = process.env) {}
+
   async resolveSnapshot(config: CubeProjectConfig): Promise<string> {
+    const trustedConnection = connectionConfig(config, this.environment);
     if (config.snapshot.id) return config.snapshot.id;
     const snapshots = z.array(snapshotSchema).parse(
       await Sandbox.listSnapshots({
         limit: 100,
-        config: connectionConfig(config),
+        config: trustedConnection,
       }),
     );
     const latest = snapshots.find((snapshot) =>
@@ -131,18 +177,21 @@ export class CubeSdkRuntime implements CubeRuntime {
     config: CubeProjectConfig,
     workId: string,
   ): Promise<CubeSandboxHandle> {
-    const snapshotId = await this.resolveSnapshot(config);
+    const trustedConnection = connectionConfig(config, this.environment);
+    const snapshotId = config.snapshot.id
+      ? config.snapshot.id
+      : await this.resolveSnapshot(config);
     return wrapSandbox(
       await Sandbox.create({
         template: snapshotId,
         timeout: config.sandbox.idleTimeoutSeconds,
-        envVars: runtimeEnvironment(),
+        envVars: runtimeEnvironment(this.environment),
         metadata: {
           "paseo.workId": workId,
           "paseo.projectId": config.project.id,
         },
         lifecycle: { onTimeout: "pause", autoResume: false },
-        config: connectionConfig(config),
+        config: trustedConnection,
       }),
     );
   }
@@ -153,7 +202,7 @@ export class CubeSdkRuntime implements CubeRuntime {
   ): Promise<CubeSandboxHandle> {
     return wrapSandbox(
       await Sandbox.connect(sandboxId, {
-        config: connectionConfig(config),
+        config: connectionConfig(config, this.environment),
       }),
     );
   }
@@ -181,7 +230,7 @@ export class CubeSdkRuntime implements CubeRuntime {
   ): Sandbox {
     return new Sandbox(
       { sandboxID: sandboxId },
-      new Config(connectionConfig(config)),
+      new Config(connectionConfig(config, this.environment)),
     );
   }
 }

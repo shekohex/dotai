@@ -142,7 +142,14 @@ async function bootstrapSandbox(
 
 export class WorkService {
   private readonly remoteConnections = new Map<string, RemotePaseoConnection>();
+  private readonly sandboxHandles = new Map<string, CubeSandboxHandle>();
+  private readonly keepAliveTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+  private readonly workOperationTails = new Map<string, Promise<void>>();
   private readonly boundRepositoryRoots = new Set<string>();
+  private closing = false;
 
   constructor(
     private readonly records: WorkRecordStore,
@@ -156,6 +163,12 @@ export class WorkService {
 
   canInitialize(): boolean {
     return this.boundRepositoryRoots.size === 1;
+  }
+
+  async start(): Promise<void> {
+    for (const record of await this.records.list()) {
+      if (record.status === "busy") this.scheduleKeepAlive(record, 0);
+    }
   }
 
   async initializeBoundRepository(): Promise<string> {
@@ -176,9 +189,26 @@ export class WorkService {
     rawInput: CreateAgentInput,
   ): Promise<WorkSummary> {
     const input = createAgentInputSchema.parse(rawInput);
-    const record = input.workId
-      ? await this.requireOwnedRecord(input.workId, repositoryRoot)
-      : await this.createWork(repositoryRoot, input);
+    if (input.workId) {
+      return this.withWorkLock(input.workId, async () =>
+        this.createAgentForRecord(
+          repositoryRoot,
+          input,
+          await this.requireOwnedRecord(input.workId!, repositoryRoot),
+        ),
+      );
+    }
+    const record = await this.createWork(repositoryRoot, input);
+    return this.withWorkLock(record.workId, () =>
+      this.createAgentForRecord(repositoryRoot, input, record),
+    );
+  }
+
+  private async createAgentForRecord(
+    repositoryRoot: string,
+    input: CreateAgentInput,
+    record: WorkRecord,
+  ): Promise<WorkSummary> {
     const readyRecord = await this.ensureReady(record);
     const config = await loadProjectConfig(repositoryRoot);
     const connection = await this.getRemoteConnection(readyRecord);
@@ -205,7 +235,20 @@ export class WorkService {
       "agent-created",
       `Created remote agent ${reference.agentId}`,
     );
-    await this.records.save(updated);
+    try {
+      await this.records.save(updated);
+    } catch (persistError) {
+      try {
+        await connection.discardAgent(reference);
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [persistError, cleanupError],
+          "Remote agent was created, but local persistence and remote cleanup both failed",
+        );
+      }
+      throw persistError;
+    }
+    this.scheduleKeepAlive(updated);
     return this.summary(updated, true);
   }
 
@@ -221,33 +264,41 @@ export class WorkService {
       })
       .strict()
       .parse(input);
-    const record = await this.ensureReady(
-      await this.requireOwnedRecord(parsed.workId, repositoryRoot),
-    );
-    const agentId = parsed.agentId ?? record.agents.at(-1)?.agentId;
-    if (!agentId || !record.agents.some((agent) => agent.agentId === agentId)) {
-      throw new Error("Work Sandbox has no matching managed agent");
-    }
-    await (
-      await this.getRemoteConnection(record)
-    ).sendPrompt(agentId, parsed.prompt);
-    const updated = activity(
-      { ...record, status: "busy", pausedAt: undefined },
-      "prompt-sent",
-      `Sent prompt to ${agentId}`,
-    );
-    await this.records.save(updated);
-    return this.summary(updated, false);
+    return this.withWorkLock(parsed.workId, async () => {
+      const record = await this.ensureReady(
+        await this.requireOwnedRecord(parsed.workId, repositoryRoot),
+      );
+      const agentId = parsed.agentId ?? record.agents.at(-1)?.agentId;
+      if (
+        !agentId ||
+        !record.agents.some((agent) => agent.agentId === agentId)
+      ) {
+        throw new Error("Work Sandbox has no matching managed agent");
+      }
+      await (
+        await this.getRemoteConnection(record)
+      ).sendPrompt(agentId, parsed.prompt);
+      const updated = activity(
+        { ...record, status: "busy", pausedAt: undefined },
+        "prompt-sent",
+        `Sent prompt to ${agentId}`,
+      );
+      await this.records.save(updated);
+      this.scheduleKeepAlive(updated);
+      return this.summary(updated, false);
+    });
   }
 
   async getStatus(
     repositoryRoot: string,
     workId: string,
   ): Promise<WorkSummary> {
-    const record = await this.refreshStatus(
-      await this.requireOwnedRecord(workId, repositoryRoot),
-    );
-    return this.summary(record, false);
+    return this.withWorkLock(workId, async () => {
+      const record = await this.refreshStatus(
+        await this.requireOwnedRecord(workId, repositoryRoot),
+      );
+      return this.summary(record, false);
+    });
   }
 
   async getActivity(repositoryRoot: string, workId: string, limit = 20) {
@@ -261,7 +312,9 @@ export class WorkService {
   ): Promise<WorkSummary[]> {
     return Promise.all(
       (await this.records.list(repositoryRoot)).map(async (record) =>
-        this.summary(await this.refreshStatus(record), includePairing),
+        this.withWorkLock(record.workId, async () =>
+          this.summary(await this.refreshStatus(record), includePairing),
+        ),
       ),
     );
   }
@@ -270,49 +323,65 @@ export class WorkService {
     repositoryRoot: string | undefined,
     workId: string,
   ): Promise<WorkSummary> {
-    const record = repositoryRoot
-      ? await this.requireOwnedRecord(workId, repositoryRoot)
-      : await this.records.get(workId);
-    const config = await loadProjectConfig(record.repositoryRoot);
-    const pausing = { ...record, status: "pausing" as const };
-    await this.records.save(pausing);
-    await this.cube.pause(config, record.sandboxId);
-    await this.closeRemoteConnection(record.workId);
-    const pausedAt = new Date().toISOString();
-    const paused = activity(
-      { ...pausing, status: "paused", pausedAt },
-      "paused",
-      "Paused Work Sandbox",
-    );
-    await this.records.save(paused);
-    return this.summary(paused, repositoryRoot === undefined);
+    return this.withWorkLock(workId, async () => {
+      this.stopKeepAlive(workId);
+      const record = repositoryRoot
+        ? await this.requireOwnedRecord(workId, repositoryRoot)
+        : await this.records.get(workId);
+      const config = await loadProjectConfig(record.repositoryRoot);
+      const pausing = { ...record, status: "pausing" as const };
+      await this.records.save(pausing);
+      await this.cube.pause(config, record.sandboxId);
+      this.sandboxHandles.delete(workId);
+      await this.closeRemoteConnection(record.workId);
+      const pausedAt = new Date().toISOString();
+      const paused = activity(
+        { ...pausing, status: "paused", pausedAt },
+        "paused",
+        "Paused Work Sandbox",
+      );
+      await this.records.save(paused);
+      return this.summary(paused, repositoryRoot === undefined);
+    });
   }
 
   async resume(
     repositoryRoot: string | undefined,
     workId: string,
   ): Promise<WorkSummary> {
-    const record = repositoryRoot
-      ? await this.requireOwnedRecord(workId, repositoryRoot)
-      : await this.records.get(workId);
-    const resumed = await this.ensureReady(record);
-    return this.summary(resumed, repositoryRoot === undefined);
+    return this.withWorkLock(workId, async () => {
+      const record = repositoryRoot
+        ? await this.requireOwnedRecord(workId, repositoryRoot)
+        : await this.records.get(workId);
+      const resumed = await this.ensureReady(record);
+      return this.summary(resumed, repositoryRoot === undefined);
+    });
   }
 
   async destroy(
     repositoryRoot: string | undefined,
     workId: string,
   ): Promise<void> {
-    const record = repositoryRoot
-      ? await this.requireOwnedRecord(workId, repositoryRoot)
-      : await this.records.get(workId);
-    const config = await loadProjectConfig(record.repositoryRoot);
-    await this.cube.destroy(config, record.sandboxId);
-    await this.closeRemoteConnection(workId);
-    await this.records.remove(workId);
+    await this.withWorkLock(workId, async () => {
+      this.stopKeepAlive(workId);
+      const record = repositoryRoot
+        ? await this.requireOwnedRecord(workId, repositoryRoot)
+        : await this.records.get(workId);
+      const config = await loadProjectConfig(record.repositoryRoot);
+      await this.cube.destroy(config, record.sandboxId);
+      this.sandboxHandles.delete(workId);
+      await this.closeRemoteConnection(workId);
+      await this.records.remove(workId);
+    });
   }
 
   async close(): Promise<void> {
+    this.closing = true;
+    for (const workId of this.keepAliveTimers.keys()) {
+      this.stopKeepAlive(workId);
+    }
+    await Promise.allSettled(this.workOperationTails.values());
+    this.sandboxHandles.clear();
     await Promise.all(
       [...this.remoteConnections.keys()].map((workId) =>
         this.closeRemoteConnection(workId),
@@ -327,6 +396,7 @@ export class WorkService {
     const config = await loadProjectConfig(repositoryRoot);
     const workId = randomUUID();
     const sandbox = await this.cube.create(config, workId);
+    this.sandboxHandles.set(workId, sandbox);
     const timestamp = new Date().toISOString();
     let record: WorkRecord = {
       version: 1,
@@ -383,10 +453,12 @@ export class WorkService {
     const info = await this.cube.inspect(config, record.sandboxId);
     if (info.state !== "paused") {
       await this.getRemoteConnection(record);
+      if (record.status === "busy") this.scheduleKeepAlive(record);
       return record;
     }
     await this.records.save({ ...record, status: "resuming" });
-    await this.cube.connect(config, record.sandboxId);
+    const sandbox = await this.cube.connect(config, record.sandboxId);
+    this.sandboxHandles.set(record.workId, sandbox);
     await this.getRemoteConnection(record, true);
     const resumed = activity(
       { ...record, status: "ready", pausedAt: undefined, lastError: undefined },
@@ -404,6 +476,8 @@ export class WorkService {
     try {
       const info = await this.cube.inspect(config, record.sandboxId);
       if (info.state === "paused") {
+        this.stopKeepAlive(record.workId);
+        this.sandboxHandles.delete(record.workId);
         await this.closeRemoteConnection(record.workId);
         if (record.status === "paused") return record;
         const paused = activity(
@@ -419,6 +493,14 @@ export class WorkService {
         return paused;
       }
       const status = await this.remoteStatus(record);
+      if (status === "busy") {
+        this.scheduleKeepAlive({ ...record, status });
+      } else {
+        if (record.status === "busy") {
+          await (await this.getSandboxHandle(config, record)).keepAlive();
+        }
+        this.stopKeepAlive(record.workId);
+      }
       if (status === record.status) return record;
       const updated = {
         ...record,
@@ -441,6 +523,112 @@ export class WorkService {
     ))
       ? "busy"
       : "ready";
+  }
+
+  private keepAliveInterval(record: WorkRecord): number {
+    return Math.max(
+      250,
+      Math.min(60_000, Math.floor((record.idleTimeoutSeconds * 1_000) / 3)),
+    );
+  }
+
+  private scheduleKeepAlive(record: WorkRecord, delay?: number): void {
+    if (this.closing || record.status !== "busy") return;
+    if (this.keepAliveTimers.has(record.workId)) return;
+    const timer = setTimeout(
+      async () => {
+        this.keepAliveTimers.delete(record.workId);
+        await this.withWorkLock(record.workId, () =>
+          this.runKeepAliveCheck(record.workId),
+        ).catch(async () => {
+          console.warn("CubeSandbox keepalive check failed; retrying");
+          if (this.closing) return;
+          const current = await this.records
+            .get(record.workId)
+            .catch(() => null);
+          if (current?.status === "busy") {
+            this.scheduleKeepAlive(current, this.keepAliveInterval(current));
+          }
+        });
+      },
+      delay ?? this.keepAliveInterval(record),
+    );
+    this.keepAliveTimers.set(record.workId, timer);
+  }
+
+  private stopKeepAlive(workId: string): void {
+    const timer = this.keepAliveTimers.get(workId);
+    if (timer) clearTimeout(timer);
+    this.keepAliveTimers.delete(workId);
+  }
+
+  private async runKeepAliveCheck(workId: string): Promise<void> {
+    if (this.closing) return;
+    const record = await this.records.get(workId);
+    if (record.status !== "busy") return;
+    const config = await loadProjectConfig(record.repositoryRoot);
+    const info = await this.cube.inspect(config, record.sandboxId);
+    if (info.state === "paused") {
+      this.sandboxHandles.delete(workId);
+      await this.closeRemoteConnection(workId);
+      const paused = activity(
+        {
+          ...record,
+          status: "paused",
+          pausedAt: new Date().toISOString(),
+        },
+        "paused",
+        "Cube idle timeout paused Work Sandbox",
+      );
+      await this.records.save(paused);
+      return;
+    }
+
+    await (await this.getSandboxHandle(config, record)).keepAlive();
+    if ((await this.remoteStatus(record)) === "busy") {
+      this.scheduleKeepAlive(record);
+      return;
+    }
+
+    const ready = {
+      ...record,
+      status: "ready" as const,
+      pausedAt: undefined,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.records.save(ready);
+  }
+
+  private async getSandboxHandle(
+    config: CubeProjectConfig,
+    record: WorkRecord,
+  ): Promise<CubeSandboxHandle> {
+    const existing = this.sandboxHandles.get(record.workId);
+    if (existing) return existing;
+    const sandbox = await this.cube.connect(config, record.sandboxId);
+    this.sandboxHandles.set(record.workId, sandbox);
+    return sandbox;
+  }
+
+  private async withWorkLock<T>(
+    workId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.workOperationTails.get(workId) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.workOperationTails.set(workId, current);
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.workOperationTails.get(workId) === current) {
+        this.workOperationTails.delete(workId);
+      }
+    }
   }
 
   private async requireOwnedRecord(

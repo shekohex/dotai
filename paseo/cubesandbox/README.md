@@ -21,7 +21,10 @@ npm run build
 ```
 
 Do not place Cube credentials in project files. Set optional `CUBE_API_KEY` in the daemon's runtime
-environment. Cube API and sandbox-domain defaults are `https://sandbox.0iq.xyz` and `sbx.0iq.xyz`.
+environment. Trusted Cube control endpoint comes from daemon `CUBE_API_URL`, defaulting to
+`https://sandbox.0iq.xyz`; project `cube.apiUrl` only documents expected endpoint and must match it
+exactly (apart from trailing slash) before plugin reads any Cube/provider/Git secret. Sandbox-domain
+default is `sbx.0iq.xyz`.
 
 ## Project `.cube` contract
 
@@ -33,7 +36,9 @@ Project owns:
 
 `cube_init_config` finds the Git root, derives repository/default branch from Git, creates `.cube`
 when absent, and writes only `.cube/config.json`. Existing config is never overwritten. Plugin never
-creates or edits Dockerfile or Python. Bundled schema lives at `shared/cube-config.schema.json`.
+creates or edits Dockerfile or Python. Default branch comes from local `origin/HEAD` or origin's
+advertised symbolic HEAD; initialization fails with repair guidance when neither is available.
+Bundled schema lives at `shared/cube-config.schema.json`.
 
 Configuration contains deployment intent only: project identity, Cube endpoint, template inputs and
 resources, idle pause policy, preview ports, and manual snapshot selection. No task state, runtime
@@ -60,10 +65,13 @@ Supplying `workId` reuses Sandbox and creates another isolated Paseo worktree ag
 share Sandbox compute, not working directories. Work IDs are internal UUIDs; optional external task
 metadata is descriptive only.
 
-Cube idle timeout defaults to 300 seconds with `onTimeout: pause`. Prompt sends and new agents
-auto-resume paused sandboxes and wait for remote Paseo relay readiness. Pause is immediate on request.
-Destroy is explicit, immediate, and has no confirmation. Undestroyed work remains paused. Plugin
-does no GitHub polling; Paseo owns merged-PR worktree cleanup.
+Cube idle timeout defaults to 300 seconds with `onTimeout: pause`. While any remote Paseo agent is
+running, plugin checks remote status and sends bounded CubeProxy command activity to prevent timeout.
+When all agents become idle, one final activity starts configured idle grace and keepalive stops.
+Prompt sends and new agents auto-resume paused sandboxes and wait for remote Paseo relay readiness.
+Pause is immediate on request. Destroy is explicit, immediate, and has no confirmation. Pause,
+destroy, and plugin shutdown cancel keepalive. Undestroyed work remains paused. Plugin does no GitHub
+polling; Paseo owns merged-PR worktree cleanup.
 
 ## Agent tools
 

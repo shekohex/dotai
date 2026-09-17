@@ -42,6 +42,49 @@ export function repositoryFromRemote(remote: string): string {
   }
 }
 
+async function validateDefaultRef(
+  root: string,
+  candidate: string,
+): Promise<string> {
+  if (!candidate) throw new Error("Git default branch is empty");
+  await git(root, ["check-ref-format", "--branch", candidate]);
+  return candidate;
+}
+
+async function resolveDefaultRef(root: string): Promise<string> {
+  try {
+    const symbolic = await git(root, [
+      "symbolic-ref",
+      "--short",
+      "refs/remotes/origin/HEAD",
+    ]);
+    if (!symbolic.startsWith("origin/")) {
+      throw new Error("origin/HEAD does not target origin");
+    }
+    return await validateDefaultRef(root, symbolic.slice("origin/".length));
+  } catch {
+    try {
+      const remoteHead = await git(root, [
+        "ls-remote",
+        "--symref",
+        "origin",
+        "HEAD",
+      ]);
+      const symbolicLine = remoteHead
+        .split("\n")
+        .find((line) => line.startsWith("ref: "));
+      const match = symbolicLine?.match(/^ref: refs\/heads\/([^\t]+)\tHEAD$/);
+      if (!match?.[1])
+        throw new Error("origin did not advertise symbolic HEAD");
+      return await validateDefaultRef(root, match[1]);
+    } catch {
+      throw new Error(
+        "Cannot determine origin default branch. Ensure origin advertises symbolic HEAD or run `git remote set-head origin --auto`.",
+      );
+    }
+  }
+}
+
 export async function discoverGitProject(
   startPath: string,
 ): Promise<GitProjectMetadata> {
@@ -52,18 +95,7 @@ export async function discoverGitProject(
   if (!repositoryName)
     throw new Error(`Cannot derive repository name from origin: ${remote}`);
 
-  let defaultRef: string;
-  try {
-    const symbolic = await git(root, [
-      "symbolic-ref",
-      "--short",
-      "refs/remotes/origin/HEAD",
-    ]);
-    defaultRef = symbolic.replace(/^origin\//, "");
-  } catch {
-    defaultRef = await git(root, ["branch", "--show-current"]);
-  }
-  if (!defaultRef) throw new Error("Cannot derive default Git ref");
+  const defaultRef = await resolveDefaultRef(root);
   return { root, repository, repositoryName, defaultRef };
 }
 

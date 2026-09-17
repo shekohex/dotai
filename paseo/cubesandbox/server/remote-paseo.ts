@@ -61,6 +61,7 @@ export interface RemoteAgentReference {
 export interface RemotePaseoConnection {
   readonly serverId: string;
   createAgent(input: RemoteAgentInput): Promise<RemoteAgentReference>;
+  discardAgent(reference: RemoteAgentReference): Promise<void>;
   sendPrompt(agentId: string, prompt: string): Promise<void>;
   hasBusyAgent(agentIds: string[]): Promise<boolean>;
   close(): Promise<void>;
@@ -68,6 +69,10 @@ export interface RemotePaseoConnection {
 
 export interface RemotePaseoConnector {
   connect(pairingUrl: string): Promise<RemotePaseoConnection>;
+}
+
+export function remoteBranchName(workId: string, ordinal: number): string {
+  return `cube/${workId}/${ordinal}`;
 }
 
 async function selectProvider(
@@ -120,7 +125,7 @@ class PaseoSdkConnection implements RemotePaseoConnection {
         cwd: input.workspacePath,
         action: "branch-off",
         refName: input.defaultRef,
-        branchName: `cube/${input.workId}/${input.ordinal}`,
+        branchName: remoteBranchName(input.workId, input.ordinal),
       },
     });
     const agent = await workspace.agents.create({
@@ -139,6 +144,15 @@ class PaseoSdkConnection implements RemotePaseoConnection {
     const current = await agent.refresh();
     if (!current) throw new Error(`Remote agent not found: ${agentId}`);
     await agent.send(prompt);
+  }
+
+  async discardAgent(reference: RemoteAgentReference): Promise<void> {
+    const result = await this.client.workspaces.archive(reference.workspaceId);
+    if (result.error) {
+      throw new Error(
+        `Failed to archive remote workspace ${reference.workspaceId}: ${result.error}`,
+      );
+    }
   }
 
   async hasBusyAgent(agentIds: string[]): Promise<boolean> {

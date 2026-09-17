@@ -32,7 +32,10 @@ export function contributeServer(server: PluginServerContext) {
     new PaseoSdkConnector(),
   );
   const tools = new CubeToolServer(works);
-  const ready = Promise.all([records.initialize(), tools.start()]);
+  const ready = (async () => {
+    await records.initialize();
+    await Promise.all([works.start(), tools.start()]);
+  })();
 
   server.before("agent.create", async ({ request }) => {
     await ready;

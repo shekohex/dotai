@@ -1,3 +1,6 @@
+import { createServer } from "node:http";
+import { once } from "node:events";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,7 +10,10 @@ import {
 import { CubeSdkRuntime } from "./cube-runtime.js";
 import { Sandbox } from "./vendor/cubesandbox-sdk/sandbox.js";
 
-function projectConfig(snapshotId?: string) {
+function projectConfig(
+  snapshotId?: string,
+  apiUrl = "https://sandbox.0iq.xyz",
+) {
   return cubeProjectConfigSchema.parse({
     $schema: CUBE_CONFIG_SCHEMA_URL,
     version: 1,
@@ -18,7 +24,7 @@ function projectConfig(snapshotId?: string) {
       workspacePath: "/workspace/widget",
     },
     cube: {
-      apiUrl: "https://sandbox.example.test",
+      apiUrl,
       sandboxDomain: "sbx.example.test",
     },
     template: {
@@ -83,5 +89,43 @@ describe("CubeSdkRuntime", () => {
     expect(pause).toHaveBeenCalledOnce();
     expect(kill).toHaveBeenCalledOnce();
     expect(connect).not.toHaveBeenCalled();
+  });
+
+  it("rejects a repository-controlled API endpoint before requests or secret reads", async () => {
+    let requestCount = 0;
+    const server = createServer((_request, response) => {
+      requestCount += 1;
+      response.writeHead(500).end();
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Test server did not bind an IP port");
+    }
+    const secretReads: string[] = [];
+    const environment = new Proxy({} as NodeJS.ProcessEnv, {
+      get(target, property, receiver) {
+        if (typeof property === "string" && property !== "CUBE_API_URL") {
+          secretReads.push(property);
+        }
+        return Reflect.get(target, property, receiver) as string | undefined;
+      },
+    });
+
+    try {
+      const runtime = new CubeSdkRuntime(environment);
+      await expect(
+        runtime.create(
+          projectConfig("pinned", `http://127.0.0.1:${address.port}`),
+          "f4e30d8d-ef62-4b9d-ac62-3c3875660018",
+        ),
+      ).rejects.toThrow("does not match trusted Cube API URL");
+      expect(requestCount).toBe(0);
+      expect(secretReads).toEqual([]);
+    } finally {
+      server.close();
+      await once(server, "close");
+    }
   });
 });

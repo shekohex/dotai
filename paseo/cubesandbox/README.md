@@ -71,8 +71,9 @@ allowlisted SSH auth/signing pairs, and only GitHub `known_hosts` entries for SS
 Cube file transfer.
 Private files are pre-created and verified mode `0600`; public keys use `0644`; directories use
 `0700`. Effective host Git name/email, SSH signing, and signing-key path are reproduced. SSH clone
-uses `IdentitiesOnly=yes` and `StrictHostKeyChecking=yes`; token-backed gh/HTTPS bootstrap does not
-require or transfer GitHub `known_hosts`.
+uses `IdentitiesOnly=yes` and `StrictHostKeyChecking=yes`; token-backed gh/HTTPS bootstrap uses
+`GH_TOKEN`, `GITHUB_TOKEN`, or authenticated `gh auth token` credentials in that order, and does not
+require or transfer GitHub `known_hosts`. CLI credentials remain memory-only.
 
 `CUBE_SSH_AUTH_KEY` selects auth private key and defaults to `~/.ssh/id_ed25519`.
 `CUBE_SSH_KNOWN_HOSTS_FILE` selects host file and defaults to `~/.ssh/known_hosts`. Every SSH source

@@ -244,6 +244,9 @@ function dependencies() {
           ? {}
           : { knownHostsPath: "/home/coder/.ssh/known_hosts" }),
       },
+      ...(tokenBacked
+        ? { githubToken: process.env.GH_TOKEN || process.env.GITHUB_TOKEN }
+        : {}),
     };
   });
   const remote: RemotePaseoConnection = {

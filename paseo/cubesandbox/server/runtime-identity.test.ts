@@ -93,8 +93,21 @@ async function hostFixture() {
     environment: {
       CUBE_SSH_AUTH_KEY: "~/.ssh/auth/id_ed25519",
       CUBE_SSH_KNOWN_HOSTS_FILE: "~/.ssh/known_hosts",
+      PATH: path.join(homeDirectory, "no-gh"),
     },
   };
+}
+
+async function fakeGithubCli(
+  homeDirectory: string,
+  script: string,
+): Promise<string> {
+  const binDirectory = path.join(homeDirectory, "bin");
+  const executable = path.join(binDirectory, "gh");
+  await mkdir(binDirectory, { recursive: true });
+  await writeFile(executable, `#!/bin/sh\n${script}\n`);
+  await chmod(executable, 0o700);
+  return binDirectory;
 }
 
 describe("loadRuntimeIdentityBundle", () => {
@@ -110,6 +123,7 @@ describe("loadRuntimeIdentityBundle", () => {
       environment: { ...fixture.environment, GH_TOKEN: "runtime-token" },
     });
 
+    expect(bundle.githubToken).toBe("runtime-token");
     expect(bundle.git.knownHostsPath).toBeUndefined();
     expect(bundle.files.map(({ destination }) => destination)).not.toContain(
       "/home/coder/.ssh/known_hosts",
@@ -121,6 +135,62 @@ describe("loadRuntimeIdentityBundle", () => {
       ]),
     );
   });
+
+  it("prefers GH_TOKEN over GITHUB_TOKEN", async () => {
+    const fixture = await hostFixture();
+    const bundle = await loadRuntimeIdentityBundle(fixture.repositoryRoot, {
+      homeDirectory: fixture.homeDirectory,
+      environment: {
+        ...fixture.environment,
+        GH_TOKEN: "gh-token",
+        GITHUB_TOKEN: "github-token",
+      },
+    });
+
+    expect(bundle.githubToken).toBe("gh-token");
+    expect(bundle.git.knownHostsPath).toBeUndefined();
+  });
+
+  it(
+    "uses authenticated GitHub CLI credentials when environment tokens are absent",
+    async () => {
+      const fixture = await hostFixture();
+      const cliDirectory = await fakeGithubCli(
+        fixture.homeDirectory,
+        "printf 'cli-token\\n'",
+      );
+      const bundle = await loadRuntimeIdentityBundle(fixture.repositoryRoot, {
+        homeDirectory: fixture.homeDirectory,
+        environment: { ...fixture.environment, PATH: cliDirectory },
+      });
+
+      expect(bundle.githubToken).toBe("cli-token");
+      expect(bundle.git.knownHostsPath).toBeUndefined();
+      expect(JSON.stringify(bundle.files)).not.toContain("cli-token");
+    },
+  );
+
+  it.each([
+    ["missing", "no-gh"],
+    ["failed", "printf 'cli-secret\\n' >&2; exit 1"],
+  ])(
+    "falls back to strict SSH when GitHub CLI is %s",
+    async (mode, script) => {
+      const fixture = await hostFixture();
+      const cliDirectory =
+        mode === "missing"
+          ? path.join(fixture.homeDirectory, "missing-bin")
+          : await fakeGithubCli(fixture.homeDirectory, script);
+      const bundle = await loadRuntimeIdentityBundle(fixture.repositoryRoot, {
+        homeDirectory: fixture.homeDirectory,
+        environment: { ...fixture.environment, PATH: cliDirectory },
+      });
+
+      expect(bundle.githubToken).toBeUndefined();
+      expect(bundle.git.knownHostsPath).toBe("/home/coder/.ssh/known_hosts");
+      expect(JSON.stringify(bundle.files)).not.toContain("cli-secret");
+    },
+  );
 
   it("requires GitHub known_hosts for SSH bootstrap", async () => {
     const fixture = await hostFixture();

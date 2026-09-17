@@ -273,12 +273,14 @@ async function bootstrapSandbox(
     "test ! -e /home/coder/.config/gh/hosts.yml",
   ].join("\n");
   const runtimeEnvironment = sandboxRuntimeEnvironment(process.env);
-  const githubEnvironment = Object.fromEntries(
-    ["GH_TOKEN", "GITHUB_TOKEN"].flatMap((name) => {
-      const value = runtimeEnvironment[name];
-      return value ? [[name, value]] : [];
-    }),
-  );
+  delete runtimeEnvironment.GH_TOKEN;
+  delete runtimeEnvironment.GITHUB_TOKEN;
+  const githubEnvironment = runtimeIdentity.githubToken
+    ? { GH_TOKEN: runtimeIdentity.githubToken }
+    : {};
+  if (runtimeIdentity.githubToken) {
+    runtimeEnvironment.GH_TOKEN = runtimeIdentity.githubToken;
+  }
   await runChecked(sandbox, cloneCommand, { env: githubEnvironment });
   await runChecked(
     sandbox,

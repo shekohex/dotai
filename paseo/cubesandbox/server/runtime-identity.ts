@@ -28,6 +28,7 @@ export interface RuntimeGitIdentity {
 export interface RuntimeIdentityBundle {
   files: RuntimeIdentityFile[];
   git: RuntimeGitIdentity;
+  githubToken?: string;
 }
 
 interface LoadRuntimeIdentityOptions {
@@ -41,8 +42,35 @@ interface IdentityFileSpec {
   destination: string;
 }
 
-function hasGithubToken(environment: NodeJS.ProcessEnv): boolean {
-  return Boolean(environment.GH_TOKEN || environment.GITHUB_TOKEN);
+async function resolveGithubToken(
+  environment: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  for (const name of ["GH_TOKEN", "GITHUB_TOKEN"] as const) {
+    const token = environment[name]?.trim();
+    if (token) return token;
+  }
+  try {
+    const cliEnvironment: NodeJS.ProcessEnv = {
+      PATH: environment.PATH ?? process.env.PATH,
+      HOME: environment.HOME ?? os.homedir(),
+      ...(environment.GH_CONFIG_DIR
+        ? { GH_CONFIG_DIR: environment.GH_CONFIG_DIR }
+        : {}),
+      ...(environment.XDG_CONFIG_HOME
+        ? { XDG_CONFIG_HOME: environment.XDG_CONFIG_HOME }
+        : {}),
+    };
+    const { stdout } = await executeFile("gh", ["auth", "token"], {
+      env: cliEnvironment,
+      timeout: 5_000,
+      killSignal: "SIGTERM",
+      maxBuffer: 64 * 1024,
+    });
+    const token = stdout.trim();
+    return token || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 const identityFileSpecs: IdentityFileSpec[] = [
@@ -330,6 +358,7 @@ export async function loadRuntimeIdentityBundle(
   const authKey = environment.CUBE_SSH_AUTH_KEY ?? "~/.ssh/id_ed25519";
   const knownHosts =
     environment.CUBE_SSH_KNOWN_HOSTS_FILE ?? "~/.ssh/known_hosts";
+  const githubToken = await resolveGithubToken(environment);
   const [jsonFiles, authFiles, signingFiles, knownHostsFile] =
     await Promise.all([
       Promise.all(
@@ -339,7 +368,7 @@ export async function loadRuntimeIdentityBundle(
       ),
       loadSshKeyPair(authKey, homeDirectory, "SSH auth"),
       loadSshKeyPair(signingKey, homeDirectory, "Git signing"),
-      hasGithubToken(environment)
+      githubToken
         ? Promise.resolve(undefined)
         : loadGithubKnownHosts(knownHosts, homeDirectory),
     ]);
@@ -360,5 +389,6 @@ export async function loadRuntimeIdentityBundle(
       signingKeyPath: privateSigningFile.destination,
       ...(knownHostsFile ? { knownHostsPath: knownHostsFile.destination } : {}),
     },
+    ...(githubToken ? { githubToken } : {}),
   };
 }

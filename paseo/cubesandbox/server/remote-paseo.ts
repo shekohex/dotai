@@ -128,14 +128,28 @@ class PaseoSdkConnection implements RemotePaseoConnection {
         branchName: remoteBranchName(input.workId, input.ordinal),
       },
     });
-    const agent = await workspace.agents.create({
-      config: {
-        provider,
-        ...(input.mode ? { modeId: input.mode } : {}),
-        ...(input.thinking ? { thinkingOptionId: input.thinking } : {}),
-      },
-      prompt: input.prompt,
-    });
+    let agent;
+    try {
+      agent = await workspace.agents.create({
+        config: {
+          provider,
+          ...(input.mode ? { modeId: input.mode } : {}),
+          ...(input.thinking ? { thinkingOptionId: input.thinking } : {}),
+        },
+        prompt: input.prompt,
+      });
+    } catch (creationError) {
+      try {
+        const result = await this.client.workspaces.archive(workspace.id);
+        if (result.error) throw new Error(result.error);
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [creationError, rollbackError],
+          "Remote agent creation and workspace rollback both failed",
+        );
+      }
+      throw creationError;
+    }
     return { agentId: agent.id, workspaceId: workspace.id };
   }
 
@@ -175,6 +189,13 @@ class PaseoSdkConnection implements RemotePaseoConnection {
   }
 }
 
+export function createRemotePaseoConnection(
+  serverId: string,
+  client: PaseoClient,
+): RemotePaseoConnection {
+  return new PaseoSdkConnection(serverId, client);
+}
+
 export class PaseoSdkConnector implements RemotePaseoConnector {
   async connect(pairingUrl: string): Promise<RemotePaseoConnection> {
     const offer = parseConnectionOfferFromUrl(pairingUrl);
@@ -195,6 +216,6 @@ export class PaseoSdkConnector implements RemotePaseoConnector {
       e2ee: { enabled: true, daemonPublicKeyB64: offer.daemonPublicKeyB64 },
     });
     await client.connect();
-    return new PaseoSdkConnection(offer.serverId, client);
+    return createRemotePaseoConnection(offer.serverId, client);
   }
 }

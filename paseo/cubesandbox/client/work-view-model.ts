@@ -14,6 +14,7 @@ export function primaryLifecycleAction(
 
 export function idleLabel(work: WorkSummaryView, now = Date.now()): string {
   if (work.status === "paused") return "Paused";
+  if (work.status === "busy") return "Keepalive active";
   const idleSeconds = Math.max(
     0,
     Math.floor((now - Date.parse(work.updatedAt)) / 1_000),

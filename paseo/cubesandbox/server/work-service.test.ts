@@ -86,17 +86,22 @@ function dependencies() {
   const pause = vi.fn(async () => undefined);
   const destroy = vi.fn(async () => undefined);
   const keepAlive = vi.fn(async () => undefined);
-  const run = vi.fn(async (command: string) => ({
-    stdout: command.includes("daemon pair")
-      ? JSON.stringify({
-          relayEnabled: true,
-          url: "https://app.paseo.sh/#offer=test",
-          qr: null,
-        })
-      : "",
-    stderr: "",
-    exitCode: 0,
-  }));
+  const run = vi.fn(
+    async (
+      command: string,
+      _options?: { cwd?: string; env?: Record<string, string> },
+    ) => ({
+      stdout: command.includes("daemon pair")
+        ? JSON.stringify({
+            relayEnabled: true,
+            url: "https://app.paseo.sh/#offer=test",
+            qr: null,
+          })
+        : "",
+      stderr: "",
+      exitCode: 0,
+    }),
+  );
   const sandbox: CubeSandboxHandle = {
     sandboxId: "sandbox-1",
     run,
@@ -142,7 +147,10 @@ function dependencies() {
   };
 }
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 describe("WorkService lifecycle", () => {
   it("creates one sandbox, then adds isolated remote worktree agents", async () => {
@@ -171,6 +179,33 @@ describe("WorkService lifecycle", () => {
       "/workspace/widget",
     ]);
     expect(deps.run).toHaveBeenCalledTimes(4);
+  });
+
+  it("configures gh credentials only during runtime bootstrap", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    vi.stubEnv("GH_TOKEN", "runtime-token");
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+    );
+
+    await service.createAgent(repositoryRoot, { prompt: "first" });
+
+    const [cloneCommand, cloneOptions] = deps.run.mock.calls[0]!;
+    expect(cloneCommand).toContain("gh repo clone");
+    expect(cloneCommand.indexOf("gh auth setup-git")).toBeGreaterThan(
+      cloneCommand.indexOf("gh repo clone"),
+    );
+    expect(cloneCommand).toContain("npm ci --prefix '/workspace/widget'/agent");
+    expect(cloneCommand).toContain(
+      "test ! -e /home/coder/.config/gh/hosts.yml",
+    );
+    expect(cloneOptions?.env).toMatchObject({ GH_TOKEN: "runtime-token" });
+    expect(cloneCommand).not.toContain("runtime-token");
+    await service.close();
   });
 
   it("pauses immediately and destroys without confirmation", async () => {
@@ -228,6 +263,48 @@ describe("WorkService lifecycle", () => {
     await expect(service.pause(otherRoot, work.workId)).rejects.toThrow(
       "not owned by this repository capability",
     );
+  });
+
+  it("authorizes repository ownership before stopping keepalive", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const repositoryRoot = await projectFixture();
+    const otherRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    vi.mocked(deps.remote.hasBusyAgent).mockResolvedValue(true);
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+    );
+    const work = await service.createAgent(repositoryRoot, { prompt: "long" });
+
+    expect(vi.getTimerCount()).toBe(1);
+    await expect(service.pause(otherRoot, work.workId)).rejects.toThrow(
+      "not owned by this repository capability",
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    await service.close();
+  });
+
+  it("retains an error record when destroy fails", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    vi.mocked(deps.cube.destroy).mockRejectedValueOnce(
+      new Error("simulated destroy failure"),
+    );
+    const service = new WorkService(store, deps.cube, deps.paseo);
+    const work = await service.createAgent(repositoryRoot, { prompt: "first" });
+
+    await expect(service.destroy(repositoryRoot, work.workId)).rejects.toThrow(
+      "simulated destroy failure",
+    );
+    const retained = await store.get(work.workId);
+    expect(retained.status).toBe("error");
+    expect(retained.lastError).toContain("simulated destroy failure");
+    await service.close();
   });
 
   it("serializes concurrent agent creation for one work", async () => {
@@ -464,5 +541,78 @@ describe("WorkService lifecycle", () => {
     expect(await store.list()).toEqual([]);
     expect(() => service.list()).toThrow("CubeSandbox service is closed");
     expect(service.close()).toBe(closing);
+  });
+
+  it("retains creation ownership and rejects close when shutdown destroy fails", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    const pairingStarted = deferred<void>();
+    const releasePairing = deferred<void>();
+    deps.run.mockImplementation(async (command: string) => {
+      if (!command.includes("daemon pair")) {
+        return { stdout: "", stderr: "", exitCode: 0 };
+      }
+      pairingStarted.resolve();
+      await releasePairing.promise;
+      return {
+        stdout: JSON.stringify({
+          relayEnabled: true,
+          url: "https://app.paseo.sh/#offer=test",
+          qr: null,
+        }),
+        stderr: "",
+        exitCode: 0,
+      };
+    });
+    deps.sandbox.destroy = vi.fn(async () => {
+      throw new Error("shutdown destroy failed");
+    });
+    const service = new WorkService(store, deps.cube, deps.paseo);
+
+    const creation = service.createAgent(repositoryRoot, { prompt: "first" });
+    await pairingStarted.promise;
+    const closing = service.close();
+    releasePairing.resolve();
+    await expect(creation).rejects.toThrow();
+    await expect(closing).rejects.toThrow(
+      "CubeSandbox WorkService cleanup failed",
+    );
+
+    const records = await store.list();
+    expect(records).toHaveLength(1);
+    expect(records[0]?.status).toBe("error");
+    expect(records[0]?.lastError).toContain("shutdown destroy failed");
+  });
+
+  it("propagates shutdown-time remote workspace rollback failure", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    const agentStarted = deferred<void>();
+    const releaseAgent = deferred<void>();
+    vi.mocked(deps.remote.createAgent).mockImplementationOnce(async () => {
+      agentStarted.resolve();
+      await releaseAgent.promise;
+      return { agentId: "agent-late", workspaceId: "workspace-late" };
+    });
+    vi.mocked(deps.remote.discardAgent).mockRejectedValueOnce(
+      new Error("archive failed"),
+    );
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+    );
+
+    const creation = service.createAgent(repositoryRoot, { prompt: "first" });
+    await agentStarted.promise;
+    const closing = service.close();
+    releaseAgent.resolve();
+    await expect(creation).rejects.toThrow();
+    await expect(closing).rejects.toThrow(
+      "CubeSandbox WorkService cleanup failed",
+    );
   });
 });

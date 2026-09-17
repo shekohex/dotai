@@ -39,7 +39,11 @@
           "format": "uri",
           "description": "Expected Cube control endpoint. Runtime trusts CUBE_API_URL or the fixed default and rejects a mismatch before reading secrets."
         },
-        "sandboxDomain": { "type": "string", "minLength": 1 }
+        "sandboxDomain": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Expected data-plane domain. Runtime trusts CUBE_SANDBOX_DOMAIN or fixed default and rejects project/response mismatch before runtime credentials."
+        }
       }
     },
     "template": {

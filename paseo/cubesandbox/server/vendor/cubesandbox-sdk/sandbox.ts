@@ -72,6 +72,11 @@ export class Sandbox {
     return String(this.data.domain ?? this.config.sandboxDomain);
   }
 
+  get responseDomain(): string | undefined {
+    const value = this.data.domain;
+    return typeof value === "string" ? value : undefined;
+  }
+
   get envdAccessToken(): string | undefined {
     const value = this.data.envdAccessToken;
     return typeof value === "string" ? value : undefined;

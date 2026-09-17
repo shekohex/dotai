@@ -32,4 +32,8 @@ describe("work view model", () => {
       "Idle pause in 4m",
     );
   });
+
+  it("shows keepalive instead of an idle countdown while busy", () => {
+    expect(idleLabel({ ...work, status: "busy" })).toBe("Keepalive active");
+  });
 });

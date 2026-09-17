@@ -25,7 +25,7 @@ function projectConfig(
     },
     cube: {
       apiUrl,
-      sandboxDomain: "sbx.example.test",
+      sandboxDomain: "sbx.0iq.xyz",
     },
     template: {
       alias: "widget",
@@ -128,4 +128,73 @@ describe("CubeSdkRuntime", () => {
       await once(server, "close");
     }
   });
+
+  it("rejects a repository-controlled sandbox domain before requests or secret reads", async () => {
+    const secretReads: string[] = [];
+    const environment = new Proxy(
+      {
+        CUBE_API_URL: "https://sandbox.0iq.xyz",
+        CUBE_SANDBOX_DOMAIN: "sbx.0iq.xyz",
+      } as NodeJS.ProcessEnv,
+      {
+        get(target, property, receiver) {
+          if (
+            typeof property === "string" &&
+            property !== "CUBE_API_URL" &&
+            property !== "CUBE_SANDBOX_DOMAIN"
+          ) {
+            secretReads.push(property);
+          }
+          return Reflect.get(target, property, receiver) as string | undefined;
+        },
+      },
+    );
+    const create = vi.spyOn(Sandbox, "create");
+    const config = projectConfig("pinned");
+    config.cube.sandboxDomain = "attacker.example";
+
+    await expect(
+      new CubeSdkRuntime(environment).create(config, "work-1"),
+    ).rejects.toThrow("does not match trusted Cube sandbox domain");
+    expect(create).not.toHaveBeenCalled();
+    expect(secretReads).toEqual([]);
+  });
+
+  it.each([undefined, "attacker.example"])(
+    "rejects response domain %s before forwarding runtime secrets",
+    async (domain) => {
+      const create = vi.spyOn(Sandbox, "create").mockResolvedValue(
+        new Sandbox(
+          {
+            sandboxID: "sandbox-hostile",
+            ...(domain ? { domain } : {}),
+          },
+          new (await import("./vendor/cubesandbox-sdk/config.js")).Config({
+            apiUrl: "https://sandbox.0iq.xyz",
+            sandboxDomain: "sbx.0iq.xyz",
+          }),
+        ),
+      );
+      const kill = vi
+        .spyOn(Sandbox.prototype, "kill")
+        .mockResolvedValue(undefined);
+      const runtime = new CubeSdkRuntime({
+        CUBE_API_URL: "https://sandbox.0iq.xyz",
+        CUBE_SANDBOX_DOMAIN: "sbx.0iq.xyz",
+        CUBE_API_KEY: "control-secret",
+        OPENAI_API_KEY: "never-forward-this-secret",
+      });
+
+      await expect(
+        runtime.create(projectConfig("pinned"), "work-1"),
+      ).rejects.toThrow("response domain");
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ envVars: {} }),
+      );
+      expect(JSON.stringify(create.mock.calls)).not.toContain(
+        "never-forward-this-secret",
+      );
+      expect(kill).toHaveBeenCalledOnce();
+    },
+  );
 });

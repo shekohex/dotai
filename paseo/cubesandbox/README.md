@@ -20,11 +20,12 @@ npm test
 npm run build
 ```
 
-Do not place Cube credentials in project files. Set optional `CUBE_API_KEY` in the daemon's runtime
-environment. Trusted Cube control endpoint comes from daemon `CUBE_API_URL`, defaulting to
-`https://sandbox.0iq.xyz`; project `cube.apiUrl` only documents expected endpoint and must match it
-exactly (apart from trailing slash) before plugin reads any Cube/provider/Git secret. Sandbox-domain
-default is `sbx.0iq.xyz`.
+Do not place Cube credentials in project files. Set optional `CUBE_API_KEY` in daemon runtime.
+Trusted control endpoint comes from `CUBE_API_URL`, default `https://sandbox.0iq.xyz`; trusted
+data-plane domain comes from `CUBE_SANDBOX_DOMAIN`, default `sbx.0iq.xyz`. Project `cube.apiUrl` and
+`cube.sandboxDomain` are assertions and must match before plugin reads Cube/provider/Git secrets.
+Cube create uses empty environment; missing/mismatched response domain destroys new Sandbox before
+runtime provider/Git credentials are resolved or sent.
 
 ## Project `.cube` contract
 
@@ -47,19 +48,23 @@ state, or secrets belong there.
 Snapshot preparation stays explicit and project-owned:
 
 ```bash
-uv run .cube/sandbox.py prepare-snapshot <sandbox-id> --name <template-alias>
+uv run .cube/sandbox.py prepare-snapshot --name <template-alias>
 ```
 
 Set `snapshot.id` to pin a prepared snapshot. Otherwise plugin consumes newest API result whose
 names include configured template alias. It never infers a snapshot from lockfiles and never creates
-snapshots. Prepare snapshots before injecting secrets, cloning project source, or initializing a
-Paseo identity.
+snapshots. Project CLI uses dedicated empty-environment source, verifies repository, Git/GitHub
+auth, Pi/Codex auth, API-key environment, and Paseo identity paths are absent, snapshots it, then
+destroys source on success or failure.
 
 ## Lifecycle
 
-`cube_create_agent` without `workId` creates Sandbox from prepared snapshot, injects runtime-only
-provider/Git environment credentials, clones configured repository, installs Paseo CLI v0.8 when
-missing, starts remote daemon, enables relay, and creates first Paseo-owned worktree agent.
+`cube_create_agent` without `workId` creates Sandbox from prepared snapshot with no credentials,
+validates trusted response domain, then supplies runtime-only provider/Git credentials. Bootstrap
+clones configured repository, runs `gh auth setup-git` with runtime token, installs agent
+dependencies, installs Paseo CLI v0.8 with Bun when missing, starts remote daemon, enables relay, and
+creates first Paseo-owned worktree agent. Runtime Git helper stores no token; image and snapshot
+contain no `hosts.yml`, Git credential, or Paseo identity.
 
 Supplying `workId` reuses Sandbox and creates another isolated Paseo worktree agent. Multiple agents
 share Sandbox compute, not working directories. Work IDs are internal UUIDs; optional external task
@@ -76,7 +81,9 @@ polling; Paseo owns merged-PR worktree cleanup.
 Plugin shutdown first rejects new MCP, RPC, and lifecycle operations, then drains accepted tool
 requests and tracked work operations before closing relay connections. A Sandbox whose initial
 bootstrap is still in flight is destroyed and its incomplete local record removed; established work
-records survive reload so busy-agent keepalive can recover on startup.
+records survive reload so busy-agent keepalive can recover on startup. Failed destruction retains
+owned error record for explicit retry. Agent-create rollback archives created remote workspace;
+rollback failures propagate through shutdown.
 
 ## Agent tools
 
@@ -103,7 +110,8 @@ repair guidance instead of silently omitting the tool.
 
 **Cube Sandboxes** sidebar surface works in desktop, browser, iOS, and Android. It shows lifecycle,
 project, worktree/agent counts, idle grace, preview links, pairing, pause/resume, and immediate
-destroy. Busy/success/error states use native Paseo toasts.
+destroy. Busy work says **Keepalive active**; only idle/ready work shows pause countdown.
+Busy/success/error states use native Paseo toasts.
 
 Remote daemon runs relay-only. Plugin server connects through Paseo's supported encrypted relay
 client protocol. **Pair / open agent** opens manual pairing offer in app/browser. Seamless host

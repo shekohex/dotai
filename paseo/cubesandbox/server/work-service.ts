@@ -4,7 +4,11 @@ import { z } from "zod";
 
 import type { CubeProjectConfig } from "../shared/config.js";
 import { workStatusSchema, workSummarySchema } from "../shared/contracts.js";
-import { type CubeRuntime, type CubeSandboxHandle } from "./cube-runtime.js";
+import {
+  sandboxRuntimeEnvironment,
+  type CubeRuntime,
+  type CubeSandboxHandle,
+} from "./cube-runtime.js";
 import {
   initializeProjectConfig,
   loadProjectConfig,
@@ -104,15 +108,6 @@ async function runChecked(
   return result.stdout;
 }
 
-function gitRuntimeEnvironment(): Record<string, string> {
-  return Object.fromEntries(
-    ["GH_TOKEN", "GITHUB_TOKEN"].flatMap((name) => {
-      const value = process.env[name];
-      return value ? [[name, value]] : [];
-    }),
-  );
-}
-
 async function bootstrapSandbox(
   sandbox: CubeSandboxHandle,
   config: CubeProjectConfig,
@@ -124,17 +119,28 @@ async function bootstrapSandbox(
   const workspacePath = shellQuote(config.project.workspacePath);
   const defaultRef = shellQuote(config.project.defaultRef);
   const cloneCommand = [
-    "set -eu",
+    "set -euo pipefail",
     `test ! -e ${workspacePath}`,
     `mkdir -p ${shellQuote(config.project.workspacePath.replace(/\/[^/]+$/, ""))}`,
-    `if command -v gh >/dev/null 2>&1; then gh repo clone ${repository} ${workspacePath} -- --branch ${defaultRef}; else git clone --branch ${defaultRef} ${remoteUrl} ${workspacePath}; fi`,
+    `if command -v gh >/dev/null 2>&1 && { test -n "\${GH_TOKEN:-}" || test -n "\${GITHUB_TOKEN:-}"; }; then`,
+    `  gh repo clone ${repository} ${workspacePath} -- --branch ${defaultRef}`,
+    `  cd ${workspacePath}`,
+    "  gh auth setup-git",
+    "else",
+    `  git clone --branch ${defaultRef} ${remoteUrl} ${workspacePath}`,
+    "fi",
+    `npm ci --prefix ${workspacePath}/agent`,
+    "test ! -e /home/coder/.config/gh/hosts.yml",
   ].join("\n");
-  await runChecked(sandbox, cloneCommand, { env: gitRuntimeEnvironment() });
+  const runtimeEnvironment = sandboxRuntimeEnvironment(process.env);
+  await runChecked(sandbox, cloneCommand, { env: runtimeEnvironment });
   await runChecked(
     sandbox,
-    "command -v paseo >/dev/null 2>&1 || npm install --global @getpaseo/cli@0.8.0",
+    "command -v paseo >/dev/null 2>&1 || bun add --global @getpaseo/cli@0.8.0",
   );
-  await runChecked(sandbox, "paseo daemon start --json --timeout 120");
+  await runChecked(sandbox, "paseo daemon start --json --timeout 120", {
+    env: runtimeEnvironment,
+  });
   const pairingOutput = await runChecked(
     sandbox,
     "paseo daemon pair --relay --json",
@@ -224,6 +230,9 @@ export class WorkService {
         return summary;
       } catch (error) {
         if (this.lifecycle === "accepting") throw error;
+        if (error instanceof AggregateError) {
+          this.shutdownCleanupFailures.push(error);
+        }
         await this.cleanupCreatingWork(record.workId, error);
         throw this.lifecycleError();
       }
@@ -379,10 +388,10 @@ export class WorkService {
   ): Promise<WorkSummary> {
     this.assertAccepting();
     return this.withWorkLock(workId, async () => {
-      this.stopKeepAlive(workId);
       const record = repositoryRoot
         ? await this.requireOwnedRecord(workId, repositoryRoot)
         : await this.records.get(workId);
+      this.stopKeepAlive(workId);
       const config = await loadProjectConfig(record.repositoryRoot);
       const pausing = { ...record, status: "pausing" as const };
       await this.records.save(pausing);
@@ -420,12 +429,24 @@ export class WorkService {
   ): Promise<void> {
     this.assertAccepting();
     await this.withWorkLock(workId, async () => {
-      this.stopKeepAlive(workId);
       const record = repositoryRoot
         ? await this.requireOwnedRecord(workId, repositoryRoot)
         : await this.records.get(workId);
+      this.stopKeepAlive(workId);
       const config = await loadProjectConfig(record.repositoryRoot);
-      await this.cube.destroy(config, record.sandboxId);
+      try {
+        await this.cube.destroy(config, record.sandboxId);
+      } catch (error) {
+        try {
+          await this.saveCleanupError(record, error);
+        } catch (persistenceError) {
+          throw new AggregateError(
+            [error, persistenceError],
+            "Sandbox destruction failed and cleanup ownership could not be persisted",
+          );
+        }
+        throw error;
+      }
       this.sandboxHandles.delete(workId);
       await this.closeRemoteConnection(workId);
       await this.records.remove(workId);
@@ -784,17 +805,27 @@ export class WorkService {
   ): Promise<void> {
     this.stopKeepAlive(workId);
     const sandbox = providedSandbox ?? this.sandboxHandles.get(workId);
-    this.sandboxHandles.delete(workId);
     const connection = this.remoteConnections.get(workId);
     this.remoteConnections.delete(workId);
     const results = await Promise.allSettled([
       connection?.close(),
       sandbox?.destroy(),
-      this.records.remove(workId),
     ]);
+    const destroyResult = results[1];
     const failures = results.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : [],
     );
+    try {
+      if (!sandbox || destroyResult?.status === "fulfilled") {
+        this.sandboxHandles.delete(workId);
+        await this.records.remove(workId);
+      } else {
+        const record = await this.records.get(workId);
+        await this.saveCleanupError(record, destroyResult.reason);
+      }
+    } catch (error) {
+      failures.push(error);
+    }
     if (failures.length > 0) {
       const cleanupError = new AggregateError(
         [cause, ...failures],
@@ -805,6 +836,20 @@ export class WorkService {
       }
       throw cleanupError;
     }
+  }
+
+  private async saveCleanupError(
+    record: WorkRecord,
+    error: unknown,
+  ): Promise<void> {
+    const detail = error instanceof Error ? error.message : String(error);
+    await this.records.save(
+      activity(
+        { ...record, status: "error", lastError: detail },
+        "error",
+        `Cleanup failed: ${detail}`,
+      ),
+    );
   }
 
   private async requireOwnedRecord(

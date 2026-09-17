@@ -100,6 +100,22 @@ describe("CubeSandbox server contribution", () => {
     try {
       const tools = await client.listTools();
       expect(tools.tools).toHaveLength(9);
+      expect(tools.tools.map((tool) => tool.name)).toContain(
+        "cube_get_work_events",
+      );
+      const activityTool = tools.tools.find(
+        (tool) => tool.name === "cube_get_activity",
+      );
+      expect(activityTool?.description).toContain(
+        "remote Paseo agent timeline",
+      );
+      expect(activityTool?.inputSchema).toMatchObject({
+        properties: {
+          agentId: expect.any(Object),
+          cursor: expect.any(Object),
+          direction: expect.any(Object),
+        },
+      });
       const result = await client.callTool({
         name: "cube_list_work",
         arguments: {},

@@ -1,5 +1,7 @@
 import {
   createPaseoClient,
+  type PaseoAgentHandle,
+  type PaseoAgentTimelineRefetchOptions,
   type PaseoApi,
   type PaseoClient,
 } from "@getpaseo/client";
@@ -49,8 +51,9 @@ export interface RemoteAgentInput {
   ordinal: number;
   provider?: string;
   model?: string;
-  mode?: string;
-  thinking?: string;
+  modeId?: string;
+  thinkingOptionId?: string;
+  featureValues?: Record<string, unknown>;
 }
 
 export interface RemoteAgentReference {
@@ -58,11 +61,20 @@ export interface RemoteAgentReference {
   workspaceId: string;
 }
 
+export type RemoteAgentTimeline = Awaited<
+  ReturnType<PaseoAgentHandle["timeline"]["refetch"]>
+>;
+export type RemoteAgentTimelineOptions = PaseoAgentTimelineRefetchOptions;
+
 export interface RemotePaseoConnection {
   readonly serverId: string;
   createAgent(input: RemoteAgentInput): Promise<RemoteAgentReference>;
   discardAgent(reference: RemoteAgentReference): Promise<void>;
   sendPrompt(agentId: string, prompt: string): Promise<void>;
+  getAgentTimeline(
+    agentId: string,
+    options: RemoteAgentTimelineOptions,
+  ): Promise<RemoteAgentTimeline>;
   hasBusyAgent(agentIds: string[]): Promise<boolean>;
   close(): Promise<void>;
 }
@@ -78,7 +90,7 @@ export function remoteBranchName(workId: string, ordinal: number): string {
 async function selectProvider(
   paseo: PaseoApi,
   input: Pick<RemoteAgentInput, "provider" | "model" | "workspacePath">,
-): Promise<string> {
+): Promise<{ configValue: string; provider: string }> {
   const snapshot = providerSnapshotSchema.parse(
     await paseo.providers.waitForReady({
       cwd: input.workspacePath,
@@ -107,7 +119,10 @@ async function selectProvider(
     throw new Error(
       `Requested model is unavailable: ${input.model ?? "default"}`,
     );
-  return `${selectedEntry.provider}/${selectedModel.id}`;
+  return {
+    configValue: `${selectedEntry.provider}/${selectedModel.id}`,
+    provider: selectedEntry.provider,
+  };
 }
 
 class PaseoSdkConnection implements RemotePaseoConnection {
@@ -117,7 +132,23 @@ class PaseoSdkConnection implements RemotePaseoConnection {
   ) {}
 
   async createAgent(input: RemoteAgentInput): Promise<RemoteAgentReference> {
-    const provider = await selectProvider(this.client, input);
+    const selectedProvider = await selectProvider(this.client, input);
+    if (input.modeId) {
+      const modes = await this.client.providers.listModes(
+        selectedProvider.provider,
+        { cwd: input.workspacePath },
+      );
+      if (modes.error) {
+        throw new Error(
+          `Unable to discover modes for Paseo provider ${selectedProvider.provider}: ${modes.error}`,
+        );
+      }
+      if (!modes.modes?.some((mode) => mode.id === input.modeId)) {
+        throw new Error(
+          `Requested mode is unavailable for Paseo provider ${selectedProvider.provider}: ${input.modeId}`,
+        );
+      }
+    }
     const workspace = await this.client.workspaces.create({
       title: `${input.projectId} · ${input.workId.slice(0, 8)} · ${input.ordinal}`,
       source: {
@@ -132,9 +163,14 @@ class PaseoSdkConnection implements RemotePaseoConnection {
     try {
       agent = await workspace.agents.create({
         config: {
-          provider,
-          ...(input.mode ? { modeId: input.mode } : {}),
-          ...(input.thinking ? { thinkingOptionId: input.thinking } : {}),
+          provider: selectedProvider.configValue,
+          ...(input.modeId ? { modeId: input.modeId } : {}),
+          ...(input.thinkingOptionId
+            ? { thinkingOptionId: input.thinkingOptionId }
+            : {}),
+          ...(input.featureValues
+            ? { featureValues: input.featureValues }
+            : {}),
         },
         prompt: input.prompt,
       });
@@ -158,6 +194,13 @@ class PaseoSdkConnection implements RemotePaseoConnection {
     const current = await agent.refresh();
     if (!current) throw new Error(`Remote agent not found: ${agentId}`);
     await agent.send(prompt);
+  }
+
+  getAgentTimeline(
+    agentId: string,
+    options: RemoteAgentTimelineOptions,
+  ): Promise<RemoteAgentTimeline> {
+    return this.client.agents.ref(agentId).timeline.refetch(options);
   }
 
   async discardAgent(reference: RemoteAgentReference): Promise<void> {

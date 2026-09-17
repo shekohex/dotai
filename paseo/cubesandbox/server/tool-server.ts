@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import {
   createAgentInputSchema,
+  type GetActivityInput,
   type WorkOwner,
   type WorkService,
 } from "./work-service.js";
@@ -20,10 +21,25 @@ const sendPromptSchema = z
     agentId: z.string().min(1).optional(),
   })
   .strict();
-const activitySchema = z
+const workEventsSchema = z
   .object({
     workId: z.string().uuid(),
     limit: z.number().int().min(1).max(100).optional(),
+  })
+  .strict();
+const activitySchema = z
+  .object({
+    workId: z.string().uuid(),
+    agentId: z.string().min(1).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+    cursor: z
+      .object({
+        epoch: z.string().min(1),
+        seq: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
+    direction: z.enum(["tail", "before", "after"]).optional(),
   })
   .strict();
 
@@ -78,7 +94,7 @@ function createRepositoryToolServer(
     "cube_create_agent",
     {
       description:
-        "Create a Work Sandbox and first remote Paseo worktree agent, or add another isolated worktree agent to an existing workId.",
+        "Create a Work Sandbox and first remote Paseo worktree agent, or add another isolated worktree agent to an existing workId. Optional provider, model, modeId, thinkingOptionId, and featureValues settings are passed to Paseo.",
       inputSchema: createAgentInputSchema.shape,
     },
     async (input) => {
@@ -148,14 +164,30 @@ function createRepositoryToolServer(
     "cube_get_activity",
     {
       description:
-        "Get recent local lifecycle activity for a managed Work Sandbox.",
+        "Fetch a fresh projected activity page from a managed remote Paseo agent timeline. This is a request/response read; use returned cursors for pagination.",
       inputSchema: activitySchema.shape,
     },
     async (input) => {
       try {
-        const { workId, limit } = activitySchema.parse(input);
+        const parsed = activitySchema.parse(input) as GetActivityInput;
+        return toolResult(await works.getActivity(requireOwner(), parsed));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+  server.registerTool(
+    "cube_get_work_events",
+    {
+      description:
+        "Get recent persisted local CubeSandbox lifecycle events for a managed Work Sandbox.",
+      inputSchema: workEventsSchema.shape,
+    },
+    async (input) => {
+      try {
+        const { workId, limit } = workEventsSchema.parse(input);
         return toolResult({
-          activity: await works.getActivity(requireOwner(), workId, limit),
+          events: await works.getWorkEvents(requireOwner(), workId, limit),
         });
       } catch (error) {
         return errorResult(error);

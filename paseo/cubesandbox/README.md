@@ -86,6 +86,31 @@ Supplying `workId` reuses Sandbox and creates another isolated Paseo worktree ag
 share Sandbox compute, not working directories. Work IDs are internal UUIDs; optional external task
 metadata is descriptive only.
 
+Runtime settings use Paseo names. `provider` and `model` are discovered remotely; a supplied
+`modeId` is checked against that provider's modes. No Pi or Codex mode list is hardcoded. Pi mode is
+optional and omitted when the remote Pi provider exposes no modes. Agent profiles are decomposed
+settings, not modes:
+
+```json
+{
+  "prompt": "Inspect repository and summarize risks.",
+  "provider": "pi"
+}
+```
+
+Fast Build-equivalent Codex settings:
+
+```json
+{
+  "prompt": "Implement requested change.",
+  "provider": "codex",
+  "model": "gpt-5.6-luna",
+  "modeId": "full-access",
+  "thinkingOptionId": "xhigh",
+  "featureValues": { "fast_mode": true }
+}
+```
+
 Cube idle timeout defaults to 300 seconds with `onTimeout: pause`. While any remote Paseo agent is
 running, plugin checks remote status and sends bounded CubeProxy command activity to prevent timeout.
 When all agents become idle, one final activity starts configured idle grace and keepalive stops.
@@ -103,17 +128,27 @@ rollback failures propagate through shutdown.
 
 ## Agent tools
 
-| Tool                | Purpose                                                    |
-| ------------------- | ---------------------------------------------------------- |
-| `cube_create_agent` | Create/reuse Work Sandbox and create isolated remote agent |
-| `cube_init_config`  | Create project `.cube/config.json` only                    |
-| `cube_send_prompt`  | Resume if needed and prompt managed remote agent           |
-| `cube_get_status`   | Read managed lifecycle/agent status                        |
-| `cube_get_activity` | Read local lifecycle activity                              |
-| `cube_list_work`    | List work owned by the bound Paseo project                 |
-| `cube_get_ports`    | Return configured preview URLs                             |
-| `cube_pause_work`   | Pause immediately                                          |
-| `cube_destroy_work` | Destroy immediately, without confirmation                  |
+| Tool                   | Purpose                                                    |
+| ---------------------- | ---------------------------------------------------------- |
+| `cube_create_agent`    | Create/reuse Work Sandbox and create isolated remote agent |
+| `cube_init_config`     | Create project `.cube/config.json` only                    |
+| `cube_send_prompt`     | Resume if needed and prompt managed remote agent           |
+| `cube_get_status`      | Read managed lifecycle/agent status                        |
+| `cube_get_activity`    | Fetch current projected remote agent timeline page         |
+| `cube_get_work_events` | Read persisted local CubeSandbox lifecycle events          |
+| `cube_list_work`       | List work owned by the bound Paseo project                 |
+| `cube_get_ports`       | Return configured preview URLs                             |
+| `cube_pause_work`      | Pause immediately                                          |
+| `cube_destroy_work`    | Destroy immediately, without confirmation                  |
+
+`cube_get_activity` accepts `workId`, optional managed `agentId` (default newest), `limit`, cursor
+`{ "epoch": "...", "seq": 42 }`, and direction `tail`, `before`, or `after`. It performs one fresh
+request/response read with projected timeline data; it does not stream. Response fields are
+`workId`, `workspaceId`, `agentId`, `agent`, `direction`, `projection`, `entries`, `startCursor`,
+`endCursor`, `hasOlder`, `hasNewer`, `epoch`, `reset`, `gap`, `staleCursor`, `window`, and `error`.
+SDK may also return `mergeWindow`. Keep `epoch`, cursor, and reset/gap/staleCursor values when
+paginating. `cube_get_work_events` returns local journal entries under `events` and does not replace
+remote activity.
 
 Paseo v0.8 public plugin API cannot register tools. Server starts loopback-only Streamable HTTP MCP
 and injects opaque per-agent capability URL through `server.before("agent.create")`. The capability
@@ -160,6 +195,7 @@ disabled control as enabled:
 Work cards show lifecycle, worktree/agent counts, idle grace, preview links, pairing, pause/resume,
 and immediate destroy. Busy work says **Keepalive active**; only idle/ready work shows pause
 countdown. Busy/success/error states use native Paseo toasts. There is no nested sidebar.
+Current Cube UI consumes lifecycle/status data only; it does not subscribe to remote agent timelines.
 
 Remote daemon runs relay-only. Plugin server connects through Paseo's supported encrypted relay
 client protocol. **Pair / open agent** opens manual pairing offer in app/browser. Seamless host

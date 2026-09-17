@@ -24,6 +24,8 @@ import {
   UNASSIGNED_PROJECT_ID,
 } from "./project-registry.js";
 import {
+  type RemoteAgentTimeline,
+  type RemoteAgentTimelineOptions,
   type RemoteAgentReference,
   type RemotePaseoConnection,
   type RemotePaseoConnector,
@@ -45,8 +47,9 @@ export const createAgentInputSchema = z
     workId: z.string().uuid().optional(),
     provider: z.string().min(1).optional(),
     model: z.string().min(1).optional(),
-    mode: z.string().min(1).optional(),
-    thinking: z.string().min(1).optional(),
+    modeId: z.string().min(1).optional(),
+    thinkingOptionId: z.string().min(1).optional(),
+    featureValues: z.record(z.string(), z.json()).optional(),
     task: z
       .object({
         source: z.string().min(1),
@@ -105,6 +108,14 @@ export interface WorkSummary {
   pairingUrl?: string;
   lastError?: string;
   quarantined?: boolean;
+}
+
+export interface GetActivityInput {
+  workId: string;
+  agentId?: string;
+  limit?: number;
+  cursor?: RemoteAgentTimelineOptions["cursor"];
+  direction?: RemoteAgentTimelineOptions["direction"];
 }
 
 type WorkServiceLifecycle = "accepting" | "closing" | "closed";
@@ -387,8 +398,9 @@ export class WorkService {
       ordinal: readyRecord.agents.length + 1,
       provider: input.provider,
       model: input.model,
-      mode: input.mode,
-      thinking: input.thinking,
+      modeId: input.modeId,
+      thinkingOptionId: input.thinkingOptionId,
+      featureValues: input.featureValues,
     });
     try {
       this.assertAccepting();
@@ -486,12 +498,44 @@ export class WorkService {
     });
   }
 
-  getActivity(owner: WorkOwner, workId: string, limit = 20) {
+  getWorkEvents(
+    owner: WorkOwner,
+    workId: string,
+    limit = 20,
+  ): Promise<WorkRecord["activity"]> {
     return this.trackUnkeyedOperation(async () => {
       const record = await this.requireOwnedRecord(owner, workId);
       return record.activity
         .slice(-Math.max(1, Math.min(limit, 100)))
         .reverse();
+    });
+  }
+
+  getActivity(
+    owner: WorkOwner,
+    input: GetActivityInput,
+  ): Promise<RemoteAgentTimeline & { workId: string; workspaceId: string }> {
+    return this.trackUnkeyedOperation(async () => {
+      const record = await this.requireOwnedRecord(owner, input.workId);
+      const agent = input.agentId
+        ? record.agents.find((entry) => entry.agentId === input.agentId)
+        : record.agents.at(-1);
+      if (!agent) {
+        throw new Error("Work Sandbox has no matching managed agent");
+      }
+      const timeline = await (
+        await this.getRemoteConnection(record)
+      ).getAgentTimeline(agent.agentId, {
+        ...(input.direction ? { direction: input.direction } : {}),
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+        ...(input.limit ? { limit: input.limit } : {}),
+        projection: "projected",
+      });
+      return {
+        ...timeline,
+        workId: input.workId,
+        workspaceId: agent.workspaceId,
+      };
     });
   }
 

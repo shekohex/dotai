@@ -18,7 +18,11 @@ import {
   type RemotePaseoConnector,
 } from "./remote-paseo.js";
 import { WorkRecordStore, type WorkRecord } from "./work-record.js";
-import { type WorkOwner, WorkService } from "./work-service.js";
+import {
+  createAgentInputSchema,
+  type WorkOwner,
+  WorkService,
+} from "./work-service.js";
 
 function owner(
   repositoryRoot: string,
@@ -260,6 +264,24 @@ function dependencies() {
     }),
     discardAgent: vi.fn(async () => undefined),
     sendPrompt: vi.fn(async () => undefined),
+    getAgentTimeline: vi.fn(async (agentId, options) => ({
+      requestId: "request-1",
+      agentId,
+      agent: null,
+      direction: options.direction ?? "tail",
+      projection: options.projection ?? "projected",
+      epoch: "epoch-1",
+      reset: false,
+      staleCursor: false,
+      gap: false,
+      window: { minSeq: 1, maxSeq: 1, nextSeq: 2 },
+      startCursor: null,
+      endCursor: null,
+      hasOlder: false,
+      hasNewer: false,
+      entries: [],
+      error: null,
+    })),
     hasBusyAgent: vi.fn(async () => false),
     close: vi.fn(async () => undefined),
   };
@@ -570,6 +592,174 @@ describe("WorkService lifecycle", () => {
     await expect(
       service.pause(owner(otherRoot, "prj_other"), work.workId),
     ).rejects.toThrow("not owned by this project capability");
+  });
+
+  it("forwards runtime settings using Paseo terminology", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+
+    await service.createAgent(owner(repositoryRoot), {
+      prompt: "build quickly",
+      provider: "codex",
+      model: "gpt-5.6-luna",
+      modeId: "full-access",
+      thinkingOptionId: "xhigh",
+      featureValues: { fast_mode: true },
+    });
+
+    expect(deps.createdAgents[0]).toMatchObject({
+      provider: "codex",
+      model: "gpt-5.6-luna",
+      modeId: "full-access",
+      thinkingOptionId: "xhigh",
+      featureValues: { fast_mode: true },
+    });
+    await service.close();
+  });
+
+  it("rejects legacy runtime-setting names", () => {
+    expect(() =>
+      createAgentInputSchema.parse({
+        prompt: "build",
+        mode: "full-access",
+        thinking: "xhigh",
+      }),
+    ).toThrow();
+  });
+
+  it("returns current projected remote activity for newest managed agent", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+    const first = await service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
+    await service.createAgent(owner(repositoryRoot), {
+      prompt: "second",
+      workId: first.workId,
+    });
+    const timeline = {
+      requestId: "request-2",
+      agentId: "agent-2",
+      agent: null,
+      direction: "before" as const,
+      projection: "projected" as const,
+      epoch: "epoch-2",
+      reset: false,
+      staleCursor: true,
+      gap: true,
+      window: { minSeq: 11, maxSeq: 20, nextSeq: 21 },
+      startCursor: { epoch: "epoch-2", seq: 11 },
+      endCursor: { epoch: "epoch-2", seq: 20 },
+      hasOlder: true,
+      hasNewer: false,
+      entries: [],
+      error: null,
+    };
+    vi.mocked(deps.remote.getAgentTimeline).mockResolvedValue(timeline);
+
+    await expect(
+      service.getActivity(owner(repositoryRoot), {
+        workId: first.workId,
+        limit: 10,
+        cursor: { epoch: "epoch-2", seq: 20 },
+        direction: "before",
+      }),
+    ).resolves.toMatchObject({
+      workId: first.workId,
+      agentId: "agent-2",
+      workspaceId: "workspace-2",
+      projection: "projected",
+      startCursor: { epoch: "epoch-2", seq: 11 },
+      endCursor: { epoch: "epoch-2", seq: 20 },
+      hasOlder: true,
+      hasNewer: false,
+      epoch: "epoch-2",
+      reset: false,
+      gap: true,
+      staleCursor: true,
+    });
+    expect(deps.remote.getAgentTimeline).toHaveBeenCalledWith("agent-2", {
+      direction: "before",
+      cursor: { epoch: "epoch-2", seq: 20 },
+      limit: 10,
+      projection: "projected",
+    });
+    await service.close();
+  });
+
+  it("checks activity ownership and agent membership before remote access", async () => {
+    const repositoryRoot = await projectFixture();
+    const otherRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
+    vi.clearAllMocks();
+
+    await expect(
+      service.getActivity(owner(otherRoot, "prj_other"), {
+        workId: work.workId,
+      }),
+    ).rejects.toThrow("not owned by this project capability");
+    await expect(
+      service.getActivity(owner(repositoryRoot), {
+        workId: work.workId,
+        agentId: "agent-not-managed",
+      }),
+    ).rejects.toThrow("no matching managed agent");
+    expect(deps.paseo.connect).not.toHaveBeenCalled();
+    expect(deps.remote.getAgentTimeline).not.toHaveBeenCalled();
+    await service.close();
+  });
+
+  it("returns persisted lifecycle events separately from remote activity", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+    const work = await service.createAgent(owner(repositoryRoot), {
+      prompt: "first",
+    });
+
+    await expect(
+      service.getWorkEvents(owner(repositoryRoot), work.workId),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        type: "created",
+        detail: "Created Work Sandbox",
+      }),
+      expect.objectContaining({
+        type: "agent-created",
+        detail: "Created remote agent agent-1",
+      }),
+    ]);
+    await service.close();
   });
 
   it("authorizes repository ownership before stopping keepalive", async () => {

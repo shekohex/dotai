@@ -44,7 +44,7 @@ never an enclosing Git top level. The same action is available from the UI for a
 project without opening an agent. Bundled schema lives at `shared/cube-config.schema.json`.
 
 Configuration contains deployment intent only: project identity, Cube endpoint, template inputs and
-resources, idle pause policy, preview ports, and manual snapshot selection. No task state, runtime
+resources, idle pause policy, preview ports, and optional snapshot selection. No task state, runtime
 state, or secrets belong there.
 
 Snapshot preparation stays explicit and project-owned:
@@ -54,16 +54,17 @@ uv run .cube/sandbox.py prepare-snapshot --name <template-alias>
 ```
 
 Set `snapshot.id` to pin a prepared snapshot. Otherwise plugin consumes newest API result whose
-names include configured template alias. It never infers a snapshot from lockfiles and never creates
-snapshots. Project CLI uses dedicated empty-environment source, verifies repository, Git/GitHub/SSH
+names include configured template alias when available, then creates directly from the configured
+template alias. It never infers a snapshot from lockfiles and never creates snapshots. Project CLI
+uses dedicated empty-environment source, verifies repository, Git/GitHub/SSH
 auth, Git signing config, Pi/Codex auth, API-key environment, and Paseo identity paths are absent,
 snapshots it, then destroys source on success or failure.
 
 ## Lifecycle
 
-`cube_create_agent` without `workId` creates Sandbox from prepared snapshot with no credentials,
-validates trusted response domain, then resolves runtime-only provider/Git credentials and local
-identity files. Bootstrap clones configured repository, runs `gh auth setup-git` with runtime token,
+`cube_create_agent` without `workId` creates Sandbox from the selected snapshot or configured
+template alias with no credentials, validates trusted response domain, then resolves runtime-only
+provider/Git credentials and local identity files. Bootstrap clones configured repository, runs `gh auth setup-git` with runtime token,
 runs project `./install.sh --yes`, installs agent dependencies, and installs Paseo CLI v0.8 with Bun
 when missing. Before clone or daemon start, it copies local Pi/Codex auth JSON, Paseo config JSON,
 allowlisted SSH auth/signing pairs, and only GitHub `known_hosts` entries through Cube file transfer.

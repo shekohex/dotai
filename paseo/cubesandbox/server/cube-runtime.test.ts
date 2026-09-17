@@ -8,6 +8,8 @@ import {
   cubeProjectConfigSchema,
 } from "../shared/config.js";
 import { CubeSdkRuntime } from "./cube-runtime.js";
+import { Config } from "./vendor/cubesandbox-sdk/config.js";
+import { TemplateNotFoundError } from "./vendor/cubesandbox-sdk/exceptions.js";
 import { Filesystem } from "./vendor/cubesandbox-sdk/filesystem.js";
 import { Sandbox } from "./vendor/cubesandbox-sdk/sandbox.js";
 
@@ -50,6 +52,29 @@ function projectConfig(
 afterEach(() => vi.restoreAllMocks());
 
 describe("CubeSdkRuntime", () => {
+  it("creates from the configured template when no snapshot is available", async () => {
+    vi.spyOn(Sandbox, "listSnapshots").mockResolvedValue([]);
+    const create = vi.spyOn(Sandbox, "create").mockResolvedValue(
+      new Sandbox(
+        { sandboxID: "sandbox-template", domain: "sbx.0iq.xyz" },
+        new Config({
+          apiUrl: "https://sandbox.0iq.xyz",
+          sandboxDomain: "sbx.0iq.xyz",
+        }),
+      ),
+    );
+
+    const sandbox = await new CubeSdkRuntime().create(
+      projectConfig(),
+      "work-template",
+    );
+
+    expect(sandbox.sandboxId).toBe("sandbox-template");
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ template: "widget" }),
+    );
+  });
+
   it("uses a pinned snapshot or newest matching alias", async () => {
     const listSnapshots = vi.spyOn(Sandbox, "listSnapshots").mockResolvedValue([
       { snapshotID: "latest", names: ["widget"] },
@@ -64,6 +89,42 @@ describe("CubeSdkRuntime", () => {
       runtime.resolveSnapshot(projectConfig("pinned")),
     ).resolves.toBe("pinned");
     expect(listSnapshots).toHaveBeenCalledOnce();
+  });
+
+  it("uses an available snapshot before falling back to the template", async () => {
+    const listSnapshots = vi
+      .spyOn(Sandbox, "listSnapshots")
+      .mockResolvedValue([{ snapshotID: "latest", names: ["widget"] }]);
+    const create = vi.spyOn(Sandbox, "create").mockResolvedValue(
+      new Sandbox(
+        { sandboxID: "sandbox-snapshot", domain: "sbx.0iq.xyz" },
+        new Config({
+          apiUrl: "https://sandbox.0iq.xyz",
+          sandboxDomain: "sbx.0iq.xyz",
+        }),
+      ),
+    );
+    const runtime = new CubeSdkRuntime();
+
+    await runtime.create(projectConfig(), "work-snapshot");
+    await runtime.create(projectConfig("pinned"), "work-pinned");
+
+    expect(listSnapshots).toHaveBeenCalledOnce();
+    expect(create.mock.calls.map(([options]) => options.template)).toEqual([
+      "latest",
+      "pinned",
+    ]);
+  });
+
+  it("surfaces a missing template without snapshot guidance", async () => {
+    vi.spyOn(Sandbox, "listSnapshots").mockResolvedValue([]);
+    vi.spyOn(Sandbox, "create").mockRejectedValue(
+      new TemplateNotFoundError('Template "widget" was not found', 404),
+    );
+
+    await expect(
+      new CubeSdkRuntime().create(projectConfig(), "work-missing-template"),
+    ).rejects.toThrow('Template "widget" was not found');
   });
 
   it("inspects, pauses, and destroys without calling auto-resuming connect", async () => {

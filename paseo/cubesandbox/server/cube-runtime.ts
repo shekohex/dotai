@@ -49,7 +49,7 @@ export interface CubeSandboxHandle {
 }
 
 export interface CubeRuntime {
-  resolveSnapshot(config: CubeProjectConfig): Promise<string>;
+  resolveSnapshot(config: CubeProjectConfig): Promise<string | undefined>;
   create(config: CubeProjectConfig, workId: string): Promise<CubeSandboxHandle>;
   inspect(
     config: CubeProjectConfig,
@@ -204,7 +204,9 @@ function wrapSandbox(
 export class CubeSdkRuntime implements CubeRuntime {
   constructor(private readonly environment: NodeJS.ProcessEnv = process.env) {}
 
-  async resolveSnapshot(config: CubeProjectConfig): Promise<string> {
+  async resolveSnapshot(
+    config: CubeProjectConfig,
+  ): Promise<string | undefined> {
     const trustedConnection = connectionConfig(config, this.environment);
     if (config.snapshot.id) return config.snapshot.id;
     const snapshots = z.array(snapshotSchema).parse(
@@ -216,12 +218,7 @@ export class CubeSdkRuntime implements CubeRuntime {
     const latest = snapshots.find((snapshot) =>
       snapshot.names.includes(config.template.alias),
     );
-    if (!latest) {
-      throw new Error(
-        `No prepared snapshot named ${JSON.stringify(config.template.alias)}. Run .cube/sandbox.py prepare-snapshot first.`,
-      );
-    }
-    return latest.snapshotID;
+    return latest?.snapshotID;
   }
 
   async create(
@@ -229,11 +226,9 @@ export class CubeSdkRuntime implements CubeRuntime {
     workId: string,
   ): Promise<CubeSandboxHandle> {
     const trustedConnection = connectionConfig(config, this.environment);
-    const snapshotId = config.snapshot.id
-      ? config.snapshot.id
-      : await this.resolveSnapshot(config);
+    const snapshotId = await this.resolveSnapshot(config);
     const sandbox = await Sandbox.create({
-      template: snapshotId,
+      template: snapshotId ?? config.template.alias,
       timeout: config.sandbox.idleTimeoutSeconds,
       envVars: {},
       metadata: {

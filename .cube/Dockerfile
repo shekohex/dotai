@@ -45,12 +45,22 @@ RUN test -x "$(command -v pi)" && \
     test ! -e /home/coder/.pi/agent/auth.json && \
     test ! -e /home/coder/.codex/auth.json && \
     test ! -e /home/coder/.paseo && \
+    test -z "$(find /home/coder/.ssh -type f -print -quit 2>/dev/null || true)" && \
     test -z "$(git config --global --get credential.helper || true)" && \
     test -z "$(git config --global --get user.name || true)" && \
     test -z "$(git config --global --get user.email || true)" && \
+    test -z "$(git config --global --get gpg.format || true)" && \
+    test -z "$(git config --global --get commit.gpgsign || true)" && \
+    test -z "$(git config --global --get user.signingkey || true)" && \
+    test -z "$(git config --global --get core.sshCommand || true)" && \
     test -z "${ANTHROPIC_API_KEY:-}${CODEX_API_KEY:-}${GEMINI_API_KEY:-}${GH_TOKEN:-}${GITHUB_TOKEN:-}${OPENAI_API_KEY:-}"
 
 USER root
+RUN test -z "$(find /home/coder/.ssh /root/.ssh -type f -print -quit 2>/dev/null || true)" && \
+    test ! -e /root/.gitconfig && \
+    test ! -e /root/.git-credentials && \
+    test ! -e /root/.config/gh/hosts.yml
+
 WORKDIR /workspace
 
 # Cube adapter health remains on inherited port 49983. It is not an app preview.

@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -60,6 +61,8 @@ class ProjectSettings:
     pi_auth_file: str
     codex_auth_file: str
     paseo_config_file: str
+    ssh_auth_key: str
+    ssh_known_hosts_file: str
     dockerfile: str
     build_context: str
     cpu_millicores: int
@@ -68,6 +71,28 @@ class ProjectSettings:
     idle_timeout_seconds: int
     on_timeout: str
     preview_ports: list[int]
+
+
+@dataclass(frozen=True)
+class RuntimeFile:
+    destination: str
+    contents: str
+    mode: int
+
+
+@dataclass(frozen=True)
+class RuntimeGitIdentity:
+    user_name: str
+    user_email: str
+    auth_key_path: str
+    signing_key_path: str
+    known_hosts_path: str
+
+
+@dataclass(frozen=True)
+class RuntimeIdentityBundle:
+    files: tuple[RuntimeFile, ...]
+    git: RuntimeGitIdentity
 
 
 @dataclass(frozen=True)
@@ -350,6 +375,16 @@ def load_project_settings(args: argparse.Namespace) -> ProjectSettings:
             "CUBE_PASEO_CONFIG_FILE",
             "~/.paseo/config.json",
         ),
+        ssh_auth_key=resolve_string(
+            args.ssh_auth_key,
+            "CUBE_SSH_AUTH_KEY",
+            "~/.ssh/id_ed25519",
+        ),
+        ssh_known_hosts_file=resolve_string(
+            args.ssh_known_hosts_file,
+            "CUBE_SSH_KNOWN_HOSTS_FILE",
+            "~/.ssh/known_hosts",
+        ),
         dockerfile=required_config_value(template, "dockerfile", str),
         build_context=required_config_value(template, "buildContext", str),
         cpu_millicores=required_config_value(resources, "cpuMillicores", int),
@@ -468,17 +503,33 @@ def resolve_github_token() -> str:
     return token
 
 
-def required_git_identity(key: str) -> str:
+def optional_github_token() -> str | None:
+    try:
+        return resolve_github_token()
+    except RuntimeError:
+        return None
+
+
+def required_git_config(key: str, *, boolean: bool = False) -> str:
+    command = ["git", "-C", str(PROJECT_ROOT), "config"]
+    if boolean:
+        command.append("--type=bool")
+    command.extend(["--get", key])
     try:
         result = subprocess.run(
-            ["git", "config", "--global", "--get", key],
+            command,
             check=True,
             capture_output=True,
             text=True,
         )
     except (FileNotFoundError, subprocess.CalledProcessError) as error:
-        raise RuntimeError(f"global Git identity is missing: {key}") from error
-    return result.stdout.strip()
+        raise RuntimeError(
+            f"effective Git configuration is missing or invalid: {key}"
+        ) from error
+    value = result.stdout.strip()
+    if not value:
+        raise RuntimeError(f"effective Git configuration is empty: {key}")
+    return value
 
 
 def required_json_file(path_value: str, label: str) -> str:
@@ -495,19 +546,171 @@ def required_json_file(path_value: str, label: str) -> str:
     return contents
 
 
-def runtime_identity_files(settings: ProjectSettings) -> tuple[tuple[str, str], ...]:
+def expand_configured_path(path_value: str, label: str) -> Path:
+    if ".." in PurePosixPath(path_value.replace("\\", "/")).parts:
+        raise RuntimeError(f"{label} must not contain path traversal")
+    if path_value == "~":
+        return Path.home()
+    if path_value.startswith("~/"):
+        return Path.home() / path_value[2:]
+    configured_path = Path(path_value)
+    if not configured_path.is_absolute():
+        raise RuntimeError(f"{label} must use an absolute path or ~/ prefix")
+    return configured_path
+
+
+def read_allowlisted_ssh_file(path_value: str, label: str) -> tuple[Path, str, str]:
+    ssh_directory = Path.home() / ".ssh"
+    source_path = expand_configured_path(path_value, label)
+    try:
+        ssh_directory_metadata = ssh_directory.lstat()
+    except FileNotFoundError as error:
+        raise RuntimeError(f"SSH directory does not exist: {ssh_directory}") from error
+    if stat.S_ISLNK(ssh_directory_metadata.st_mode):
+        raise RuntimeError(
+            f"SSH directory must not be a symbolic link: {ssh_directory}"
+        )
+    if not stat.S_ISDIR(ssh_directory_metadata.st_mode):
+        raise RuntimeError(f"SSH directory must be a directory: {ssh_directory}")
+    try:
+        relative_path = source_path.relative_to(ssh_directory)
+    except ValueError as error:
+        raise RuntimeError(f"{label} must be inside {ssh_directory}") from error
+    if not relative_path.parts:
+        raise RuntimeError(f"{label} must name a file inside {ssh_directory}")
+    if relative_path.name in {"authorized_keys", "known_hosts.old"}:
+        raise RuntimeError(
+            f"{label} must not use disallowed SSH file {relative_path.name}"
+        )
+    current_path = ssh_directory
+    for part in relative_path.parts:
+        current_path /= part
+        try:
+            metadata = current_path.lstat()
+        except FileNotFoundError as error:
+            raise RuntimeError(f"{label} does not exist: {source_path}") from error
+        if stat.S_ISLNK(metadata.st_mode):
+            raise RuntimeError(f"{label} must not be a symbolic link: {current_path}")
+    if not source_path.is_file():
+        raise RuntimeError(f"{label} must be a regular file")
+    return source_path, relative_path.as_posix(), source_path.read_text()
+
+
+def load_ssh_key_pair(
+    private_key_value: str, label: str
+) -> tuple[RuntimeFile, RuntimeFile]:
+    private_path, private_relative, private_contents = read_allowlisted_ssh_file(
+        private_key_value, f"{label} private key"
+    )
+    _, public_relative, public_contents = read_allowlisted_ssh_file(
+        f"{private_key_value}.pub", f"{label} public key"
+    )
+    if stat.S_IMODE(private_path.stat().st_mode) & 0o077:
+        raise RuntimeError(
+            f"{label} private key permissions must not grant group or other access"
+        )
+    if not private_contents.startswith("-----BEGIN OPENSSH PRIVATE KEY-----"):
+        raise RuntimeError(f"{label} private key must use OpenSSH private-key format")
+    public_fields = public_contents.strip().split()[:2]
+    if len(public_fields) != 2 or not public_fields[0].startswith("ssh-"):
+        raise RuntimeError(f"{label} public key is invalid")
+    try:
+        derived_fields = (
+            subprocess.run(
+                ["ssh-keygen", "-y", "-f", str(private_path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            .stdout.strip()
+            .split()[:2]
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        raise RuntimeError(f"{label} private key could not be validated") from error
+    if derived_fields != public_fields:
+        raise RuntimeError(f"{label} private and public keys do not match")
     return (
-        (
+        RuntimeFile(f"/home/coder/.ssh/{private_relative}", private_contents, 0o600),
+        RuntimeFile(f"/home/coder/.ssh/{public_relative}", public_contents, 0o644),
+    )
+
+
+def load_github_known_hosts(path_value: str) -> RuntimeFile:
+    source_path, _, _ = read_allowlisted_ssh_file(path_value, "GitHub known_hosts")
+    try:
+        output = subprocess.run(
+            ["ssh-keygen", "-F", "github.com", "-f", str(source_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        raise RuntimeError(
+            f"GitHub known_hosts has no usable github.com entry: {source_path}"
+        ) from error
+    github_entries = [
+        line for line in output.splitlines() if line and not line.startswith("#")
+    ]
+    if not github_entries:
+        raise RuntimeError(
+            f"GitHub known_hosts has no usable github.com entry: {source_path}"
+        )
+    return RuntimeFile(
+        "/home/coder/.ssh/known_hosts", "\n".join(github_entries) + "\n", 0o600
+    )
+
+
+def runtime_identity_bundle(settings: ProjectSettings) -> RuntimeIdentityBundle:
+    user_name = required_git_config("user.name")
+    user_email = required_git_config("user.email")
+    if required_git_config("gpg.format") != "ssh":
+        raise RuntimeError("effective Git gpg.format must be ssh")
+    if required_git_config("commit.gpgsign", boolean=True) != "true":
+        raise RuntimeError("effective Git commit.gpgsign must be true")
+    signing_key = required_git_config("user.signingkey")
+    if signing_key.endswith(".pub"):
+        raise RuntimeError(
+            "effective Git user.signingkey must point to a private key because ssh-agent signing is unavailable"
+        )
+    auth_files = load_ssh_key_pair(settings.ssh_auth_key, "SSH auth")
+    signing_files = load_ssh_key_pair(signing_key, "Git signing")
+    known_hosts = load_github_known_hosts(settings.ssh_known_hosts_file)
+    files = (
+        RuntimeFile(
             "/home/coder/.pi/agent/auth.json",
             required_json_file(settings.pi_auth_file, "Pi auth"),
+            0o600,
         ),
-        (
+        RuntimeFile(
             "/home/coder/.codex/auth.json",
             required_json_file(settings.codex_auth_file, "Codex auth"),
+            0o600,
         ),
-        (
+        RuntimeFile(
             "/home/coder/.paseo/config.json",
             required_json_file(settings.paseo_config_file, "Paseo config"),
+            0o600,
+        ),
+        *auth_files,
+        *signing_files,
+        known_hosts,
+    )
+    unique_files = {file.destination: file for file in files}
+    if len(unique_files) != len(files):
+        for file in files:
+            existing = unique_files[file.destination]
+            if existing.contents != file.contents or existing.mode != file.mode:
+                raise RuntimeError(
+                    f"runtime identity destinations conflict: {file.destination}"
+                )
+    return RuntimeIdentityBundle(
+        tuple(unique_files.values()),
+        RuntimeGitIdentity(
+            user_name=user_name,
+            user_email=user_email,
+            auth_key_path=auth_files[0].destination,
+            signing_key_path=signing_files[0].destination,
+            known_hosts_path=known_hosts.destination,
         ),
     )
 
@@ -656,10 +859,11 @@ def run_sandbox_command(
     cwd: str | None = None,
     timeout: int = 300,
     environment: dict[str, str] | None = None,
+    user: str = "coder",
 ) -> None:
     result = sandbox.commands.run(
         command,
-        user="coder",
+        user=user,
         cwd=cwd,
         envs=environment or {},
         timeout=timeout,
@@ -677,23 +881,67 @@ def bootstrap_repository(
     settings: ProjectSettings,
     runtime_environment: dict[str, str],
 ) -> None:
-    git_name = required_git_identity("user.name")
-    git_email = required_git_identity("user.email")
+    runtime_identity = runtime_identity_bundle(settings)
     workspace = shlex.quote(settings.workspace)
     repository = shlex.quote(settings.repository)
     git_ref = shlex.quote(settings.git_ref)
+    ssh_repository = shlex.quote(f"git@github.com:{settings.repository}.git")
+
+    runtime_directories = sorted(
+        {str(PurePosixPath(file.destination).parent) for file in runtime_identity.files}
+    )
+    prepare_commands = [
+        "set -euo pipefail",
+        "install -d -m 0700 "
+        + " ".join(shlex.quote(directory) for directory in runtime_directories),
+        *(
+            f"install -m {file.mode:04o} /dev/null {shlex.quote(file.destination)}"
+            for file in runtime_identity.files
+        ),
+    ]
+    run_sandbox_command(sandbox, "\n".join(prepare_commands))
+    for file in runtime_identity.files:
+        sandbox.files.write(file.destination, file.contents, user="coder")
+
+    ssh_command = (
+        f"ssh -i {runtime_identity.git.auth_key_path} "
+        "-o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "
+        f"-o UserKnownHostsFile={runtime_identity.git.known_hosts_path}"
+    )
+    configuration_commands = [
+        "set -euo pipefail",
+        *(
+            f"chmod {file.mode:04o} {shlex.quote(file.destination)}"
+            for file in runtime_identity.files
+        ),
+        f"git config --global user.name {shlex.quote(runtime_identity.git.user_name)}",
+        f"git config --global user.email {shlex.quote(runtime_identity.git.user_email)}",
+        "git config --global gpg.format ssh",
+        "git config --global commit.gpgsign true",
+        "git config --global user.signingkey "
+        + shlex.quote(runtime_identity.git.signing_key_path),
+        f"git config --global core.sshCommand {shlex.quote(ssh_command)}",
+        *(
+            f'test "$(stat -c %a {shlex.quote(file.destination)})" = {file.mode:o}'
+            for file in runtime_identity.files
+        ),
+    ]
+    run_sandbox_command(sandbox, "\n".join(configuration_commands))
 
     run_sandbox_command(
         sandbox,
         " && ".join(
             [
                 "set -euo pipefail",
-                "install -d -m 0700 /home/coder/.pi/agent",
-                f"git config --global user.name {shlex.quote(git_name)}",
-                f"git config --global user.email {shlex.quote(git_email)}",
                 f"test ! -e {workspace}",
-                f"gh repo clone {repository} {workspace} -- --branch {git_ref}",
-                "gh auth setup-git",
+                'if command -v gh >/dev/null 2>&1 && { test -n "${GH_TOKEN:-}" || test -n "${GITHUB_TOKEN:-}"; }; then',
+                f"  gh repo clone {repository} {workspace} -- --branch {git_ref}",
+                f"  cd {workspace}",
+                "  gh auth setup-git",
+                "else",
+                f"  git clone --branch {git_ref} {ssh_repository} {workspace}",
+                "fi",
+                f"cd {workspace}",
                 "./install.sh --yes",
                 "sed -i 's#/home/coder/dotai#/workspace/dotai#g' /home/coder/.codex/config.toml",
                 f"npm ci --prefix {workspace}/agent",
@@ -705,16 +953,7 @@ def bootstrap_repository(
     )
     run_sandbox_command(
         sandbox,
-        "install -d -m 0700 /home/coder/.pi/agent /home/coder/.codex /home/coder/.paseo",
-    )
-    for destination, contents in runtime_identity_files(settings):
-        sandbox.files.write(destination, contents, user="coder")
-    run_sandbox_command(
-        sandbox,
-        "chmod 0600 /home/coder/.pi/agent/auth.json "
-        "/home/coder/.codex/auth.json /home/coder/.paseo/config.json && "
-        "git status --short --branch && "
-        "gh auth status",
+        "git status --short --branch",
         cwd=settings.workspace,
         environment=runtime_environment,
     )
@@ -802,7 +1041,9 @@ def provision_sandbox(
     except Exception as error:
         destroy_invalid_sandbox(sandbox, error)
     runtime_environment = forwarded_environment(forwarded_names)
-    runtime_environment["GH_TOKEN"] = resolve_github_token()
+    github_token = optional_github_token()
+    if github_token:
+        runtime_environment["GH_TOKEN"] = github_token
     print(f"sandbox_id={sandbox.sandbox_id}")
     return sandbox, service_ports, runtime_environment
 
@@ -820,9 +1061,23 @@ def bootstrap_and_report(
         print(f"port_{port}=https://{sandbox.get_host(port)}")
 
 
+def destroy_failed_bootstrap(sandbox: Sandbox, bootstrap_error: Exception) -> None:
+    try:
+        sandbox.kill()
+    except Exception as cleanup_error:
+        raise ExceptionGroup(
+            "sandbox bootstrap and cleanup both failed",
+            [bootstrap_error, cleanup_error],
+        ) from bootstrap_error
+    raise bootstrap_error
+
+
 def create_sandbox(args: argparse.Namespace, settings: ProjectSettings) -> str:
     sandbox, service_ports, runtime_environment = provision_sandbox(args, settings)
-    bootstrap_and_report(sandbox, settings, service_ports, runtime_environment)
+    try:
+        bootstrap_and_report(sandbox, settings, service_ports, runtime_environment)
+    except Exception as error:
+        destroy_failed_bootstrap(sandbox, error)
     return sandbox.sandbox_id
 
 
@@ -892,6 +1147,9 @@ def run_task(args: argparse.Namespace, settings: ProjectSettings) -> None:
     sandbox_id = sandbox.sandbox_id
     try:
         bootstrap_and_report(sandbox, settings, service_ports, runtime_environment)
+    except Exception as error:
+        destroy_failed_bootstrap(sandbox, error)
+    try:
         run_pi_in_sandbox(
             sandbox,
             ensure_pi_print_mode(resolve_pi_arguments(args)),
@@ -967,12 +1225,14 @@ def assert_clean_snapshot_source(sandbox: Sandbox) -> None:
         [
             "set -euo pipefail",
             f'for path in {quoted_paths}; do test ! -e "$path" || {{ echo "forbidden snapshot path: $path" >&2; exit 1; }}; done',
+            'test -z "$(find /home/coder/.ssh /root/.ssh -type f -print -quit 2>/dev/null || true)"',
             "test -z \"$(git config --global --get-regexp '^user\\.' || true)\"",
+            "test -z \"$(git config --global --get-regexp '^(gpg\\.|commit\\.gpgsign|core\\.sshCommand)' || true)\"",
             "test -z \"$(git config --global --get-regexp '^credential\\.' || true)\"",
             f"! env | grep -Eq {shlex.quote(secret_pattern)}",
         ]
     )
-    run_sandbox_command(sandbox, command)
+    run_sandbox_command(sandbox, command, user="root")
 
 
 def prepare_snapshot(args: argparse.Namespace, settings: ProjectSettings) -> None:
@@ -1223,6 +1483,8 @@ def add_global_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pi-auth-file")
     parser.add_argument("--codex-auth-file")
     parser.add_argument("--paseo-config-file")
+    parser.add_argument("--ssh-auth-key")
+    parser.add_argument("--ssh-known-hosts-file")
 
 
 def add_create_arguments(parser: argparse.ArgumentParser) -> None:

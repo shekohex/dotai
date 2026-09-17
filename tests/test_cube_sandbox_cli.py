@@ -84,6 +84,8 @@ def test_config_maps_project_defaults(cli: ModuleType) -> None:
     assert settings.pi_auth_file == "~/.pi/agent/auth.json"
     assert settings.codex_auth_file == "~/.codex/auth.json"
     assert settings.paseo_config_file == "~/.paseo/config.json"
+    assert settings.ssh_auth_key == "~/.ssh/id_ed25519"
+    assert settings.ssh_known_hosts_file == "~/.ssh/known_hosts"
 
 
 @pytest.mark.parametrize(
@@ -183,22 +185,68 @@ def test_runtime_clone_configures_gh_after_clone_and_installs_dependencies(
             writes.append((path, contents, user))
 
     sandbox = SimpleNamespace(commands=FakeCommands(), files=FakeFiles())
-    monkeypatch.setattr(cli, "required_git_identity", lambda key: f"test-{key}")
     monkeypatch.setattr(
         cli,
-        "runtime_identity_files",
-        lambda settings: (
-            ("/home/coder/.pi/agent/auth.json", '{"pi":true}'),
-            ("/home/coder/.codex/auth.json", '{"codex":true}'),
-            ("/home/coder/.paseo/config.json", '{"paseo":true}'),
+        "runtime_identity_bundle",
+        lambda settings: cli.RuntimeIdentityBundle(
+            files=(
+                cli.RuntimeFile(
+                    "/home/coder/.pi/agent/auth.json", '{"pi":true}', 0o600
+                ),
+                cli.RuntimeFile(
+                    "/home/coder/.codex/auth.json", '{"codex":true}', 0o600
+                ),
+                cli.RuntimeFile(
+                    "/home/coder/.paseo/config.json", '{"paseo":true}', 0o600
+                ),
+                cli.RuntimeFile(
+                    "/home/coder/.ssh/id_ed25519", "AUTH_PRIVATE_FIXTURE", 0o600
+                ),
+                cli.RuntimeFile(
+                    "/home/coder/.ssh/id_ed25519.pub",
+                    "ssh-ed25519 AUTH_PUBLIC_FIXTURE",
+                    0o644,
+                ),
+                cli.RuntimeFile(
+                    "/home/coder/.ssh/git-commit-signing/coder",
+                    "SIGNING_PRIVATE_FIXTURE",
+                    0o600,
+                ),
+                cli.RuntimeFile(
+                    "/home/coder/.ssh/git-commit-signing/coder.pub",
+                    "ssh-ed25519 SIGNING_PUBLIC_FIXTURE",
+                    0o644,
+                ),
+                cli.RuntimeFile(
+                    "/home/coder/.ssh/known_hosts",
+                    "github.com ssh-ed25519 HOST_FIXTURE\n",
+                    0o600,
+                ),
+            ),
+            git=cli.RuntimeGitIdentity(
+                user_name="Runtime User",
+                user_email="runtime@example.test",
+                auth_key_path="/home/coder/.ssh/id_ed25519",
+                signing_key_path="/home/coder/.ssh/git-commit-signing/coder",
+                known_hosts_path="/home/coder/.ssh/known_hosts",
+            ),
         ),
     )
     settings = cli.load_project_settings(parse(cli, "create"))
 
     cli.bootstrap_repository(sandbox, settings, {"GH_TOKEN": "runtime-only"})
 
-    bootstrap, environment = commands[0]
+    prepare = commands[0][0]
+    git_configuration = commands[1][0]
+    bootstrap, environment = commands[2]
+    assert "install -m 0600 /dev/null" in prepare
+    assert "install -m 0644 /dev/null" in prepare
+    assert "git config --global gpg.format ssh" in git_configuration
+    assert "git config --global commit.gpgsign true" in git_configuration
+    assert "StrictHostKeyChecking=yes" in git_configuration
+    assert "StrictHostKeyChecking=no" not in git_configuration
     assert bootstrap.index("gh auth setup-git") > bootstrap.index("gh repo clone")
+    assert "git clone --branch main git@github.com:shekohex/dotai.git" in bootstrap
     assert "./install.sh --yes" in bootstrap
     assert "npm ci --prefix /workspace/dotai/agent" in bootstrap
     assert "sed -i 's#/home/coder/dotai#/workspace/dotai#g'" in bootstrap
@@ -209,12 +257,33 @@ def test_runtime_clone_configures_gh_after_clone_and_installs_dependencies(
         ("/home/coder/.pi/agent/auth.json", '{"pi":true}', "coder"),
         ("/home/coder/.codex/auth.json", '{"codex":true}', "coder"),
         ("/home/coder/.paseo/config.json", '{"paseo":true}', "coder"),
+        ("/home/coder/.ssh/id_ed25519", "AUTH_PRIVATE_FIXTURE", "coder"),
+        (
+            "/home/coder/.ssh/id_ed25519.pub",
+            "ssh-ed25519 AUTH_PUBLIC_FIXTURE",
+            "coder",
+        ),
+        (
+            "/home/coder/.ssh/git-commit-signing/coder",
+            "SIGNING_PRIVATE_FIXTURE",
+            "coder",
+        ),
+        (
+            "/home/coder/.ssh/git-commit-signing/coder.pub",
+            "ssh-ed25519 SIGNING_PUBLIC_FIXTURE",
+            "coder",
+        ),
+        (
+            "/home/coder/.ssh/known_hosts",
+            "github.com ssh-ed25519 HOST_FIXTURE\n",
+            "coder",
+        ),
     ]
     assert '"pi":true' not in json.dumps(commands)
     assert '"codex":true' not in json.dumps(commands)
     assert '"paseo":true' not in json.dumps(commands)
-    assert "install -d -m 0700" in commands[1][0]
-    assert "chmod 0600" in commands[2][0]
+    assert "AUTH_PRIVATE_FIXTURE" not in json.dumps(commands)
+    assert "SIGNING_PRIVATE_FIXTURE" not in json.dumps(commands)
 
 
 def test_runtime_identity_files_require_valid_json(
@@ -229,10 +298,141 @@ def test_runtime_identity_files_require_valid_json(
     monkeypatch.setenv("CUBE_PI_AUTH_FILE", str(pi_auth))
     monkeypatch.setenv("CUBE_CODEX_AUTH_FILE", str(codex_auth))
     monkeypatch.setenv("CUBE_PASEO_CONFIG_FILE", str(paseo_config))
+    with pytest.raises(RuntimeError, match="Codex auth file is not valid JSON"):
+        cli.required_json_file(str(codex_auth), "Codex auth")
+
+
+def test_runtime_identity_bundle_uses_effective_git_and_allowlisted_ssh_files(
+    cli: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = tmp_path / "home"
+    ssh_directory = home / ".ssh"
+    auth_key = ssh_directory / "auth" / "id_ed25519"
+    signing_key = ssh_directory / "git-commit-signing" / "coder"
+    for key in (auth_key, signing_key):
+        key.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)],
+            check=True,
+        )
+    auth_public = auth_key.with_suffix(".pub").read_text().split()[:2]
+    (ssh_directory / "known_hosts").write_text(
+        f"github.com {' '.join(auth_public)}\nexample.com {' '.join(auth_public)}\n"
+    )
+    identity_files = {
+        "CUBE_PI_AUTH_FILE": tmp_path / "pi.json",
+        "CUBE_CODEX_AUTH_FILE": tmp_path / "codex.json",
+        "CUBE_PASEO_CONFIG_FILE": tmp_path / "paseo.json",
+    }
+    for environment_name, identity_path in identity_files.items():
+        identity_path.write_text('{"fixture":true}\n')
+        monkeypatch.setenv(environment_name, str(identity_path))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CUBE_SSH_AUTH_KEY", "~/.ssh/auth/id_ed25519")
+    monkeypatch.setenv("CUBE_SSH_KNOWN_HOSTS_FILE", "~/.ssh/known_hosts")
     settings = cli.load_project_settings(parse(cli, "create"))
 
-    with pytest.raises(RuntimeError, match="Codex auth file is not valid JSON"):
-        cli.runtime_identity_files(settings)
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    for key, value in (
+        ("user.name", "Runtime Fixture"),
+        ("user.email", "runtime@example.test"),
+        ("gpg.format", "ssh"),
+        ("commit.gpgsign", "true"),
+        ("user.signingkey", "~/.ssh/git-commit-signing/coder"),
+    ):
+        subprocess.run(["git", "config", key, value], cwd=repository, check=True)
+    monkeypatch.setattr(cli, "PROJECT_ROOT", repository)
+
+    bundle = cli.runtime_identity_bundle(settings)
+
+    assert bundle.git == cli.RuntimeGitIdentity(
+        user_name="Runtime Fixture",
+        user_email="runtime@example.test",
+        auth_key_path="/home/coder/.ssh/auth/id_ed25519",
+        signing_key_path="/home/coder/.ssh/git-commit-signing/coder",
+        known_hosts_path="/home/coder/.ssh/known_hosts",
+    )
+    assert [(file.destination, file.mode) for file in bundle.files][-5:] == [
+        ("/home/coder/.ssh/auth/id_ed25519", 0o600),
+        ("/home/coder/.ssh/auth/id_ed25519.pub", 0o644),
+        ("/home/coder/.ssh/git-commit-signing/coder", 0o600),
+        ("/home/coder/.ssh/git-commit-signing/coder.pub", 0o644),
+        ("/home/coder/.ssh/known_hosts", 0o600),
+    ]
+    known_hosts = bundle.files[-1].contents
+    assert "github.com " in known_hosts
+    assert "example.com" not in known_hosts
+
+
+def test_runtime_ssh_sources_reject_traversal_symlinks_and_missing_files(
+    cli: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = tmp_path / "home"
+    ssh_directory = home / ".ssh"
+    ssh_directory.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.write_text("not-a-key")
+    (ssh_directory / "linked").symlink_to(outside)
+    monkeypatch.setenv("HOME", str(home))
+
+    with pytest.raises(RuntimeError, match="path traversal"):
+        cli.read_allowlisted_ssh_file("~/.ssh/../outside", "SSH auth private key")
+    with pytest.raises(RuntimeError, match="must be inside"):
+        cli.read_allowlisted_ssh_file(str(outside), "SSH auth private key")
+    with pytest.raises(RuntimeError, match="must not be a symbolic link"):
+        cli.read_allowlisted_ssh_file("~/.ssh/linked", "SSH auth private key")
+    with pytest.raises(RuntimeError, match="does not exist"):
+        cli.read_allowlisted_ssh_file("~/.ssh/missing", "SSH auth private key")
+    for disallowed_name in ("authorized_keys", "known_hosts.old"):
+        with pytest.raises(RuntimeError, match="must not use disallowed SSH file"):
+            cli.read_allowlisted_ssh_file(
+                f"~/.ssh/{disallowed_name}", "SSH auth private key"
+            )
+    real_ssh_directory = home / ".ssh-real"
+    ssh_directory.rename(real_ssh_directory)
+    ssh_directory.symlink_to(real_ssh_directory, target_is_directory=True)
+    with pytest.raises(RuntimeError, match="SSH directory must not be a symbolic link"):
+        cli.read_allowlisted_ssh_file("~/.ssh/linked", "SSH auth private key")
+
+
+@pytest.mark.parametrize("cleanup_fails", (False, True))
+def test_runtime_bootstrap_failure_destroys_key_bearing_sandbox(
+    cli: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    cleanup_fails: bool,
+) -> None:
+    events: list[str] = []
+
+    class FakeSandbox:
+        sandbox_id = "sandbox-runtime"
+
+        def kill(self):
+            events.append("destroy")
+            if cleanup_fails:
+                raise RuntimeError("cleanup failed")
+
+    sandbox = FakeSandbox()
+    monkeypatch.setattr(
+        cli,
+        "provision_sandbox",
+        lambda args, settings: (sandbox, [], {}),
+    )
+    monkeypatch.setattr(
+        cli,
+        "bootstrap_and_report",
+        lambda *args: (_ for _ in ()).throw(RuntimeError("transfer failed")),
+    )
+    settings = cli.load_project_settings(parse(cli, "create"))
+
+    if cleanup_fails:
+        with pytest.raises(ExceptionGroup, match="bootstrap and cleanup both failed"):
+            cli.create_sandbox(parse(cli, "create"), settings)
+    else:
+        with pytest.raises(RuntimeError, match="transfer failed"):
+            cli.create_sandbox(parse(cli, "create"), settings)
+    assert events == ["destroy"]
 
 
 @pytest.mark.parametrize("snapshot_fails", (False, True))
@@ -294,6 +494,10 @@ def test_prepare_snapshot_uses_clean_source_and_always_destroys(
         assert forbidden_path in hygiene_command
     assert "GITHUB_TOKEN" in hygiene_command
     assert "^credential\\." in hygiene_command
+    assert "/home/coder/.ssh" in hygiene_command
+    assert "/root/.ssh" in hygiene_command
+    assert "commit\\.gpgsign" in hygiene_command
+    assert "core\\.sshCommand" in hygiene_command
 
 
 def test_prepare_snapshot_reports_cleanup_failure(
@@ -398,6 +602,10 @@ def test_dockerfile_pins_tools_and_excludes_identity() -> None:
     assert "github.com/cli/cli/releases/download" not in dockerfile
     assert "test ! -e /home/coder/.config/gh/hosts.yml" in dockerfile
     assert "test ! -e /home/coder/.paseo" in dockerfile
+    assert "find /home/coder/.ssh /root/.ssh -type f" in dockerfile
+    assert "git config --global --get commit.gpgsign" in dockerfile
+    assert "git config --global --get user.signingkey" in dockerfile
+    assert "git config --global --get core.sshCommand" in dockerfile
     assert "test ! -e /workspace/dotai" in dockerfile
     assert "gh auth setup-git" not in dockerfile
     assert "git init /home/coder/.dotai" not in dockerfile

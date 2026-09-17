@@ -65,8 +65,22 @@ Manual CLI-created sandboxes carry `owner=operator-cli`. Paseo plugin owns only 
 in private plugin state and never adopts manual sandboxes. Runtime bootstrap clones `shekohex/dotai`
 `main` into `/workspace/dotai`, runs `gh auth setup-git`, `./install.sh --yes`, and `npm ci` in
 `agent`. Before Paseo daemon starts, it copies local `~/.pi/agent/auth.json`, `~/.codex/auth.json`,
-and `~/.paseo/config.json` into runtime sandbox with mode `0600`. Override manual CLI sources with
-`CUBE_PI_AUTH_FILE`, `CUBE_CODEX_AUTH_FILE`, and `CUBE_PASEO_CONFIG_FILE`. These runtime files and
-GitHub token never enter image or prepared snapshot.
+and `~/.paseo/config.json` into runtime sandbox with mode `0600`.
+
+Runtime also transfers only configured SSH auth pair, effective Git `user.signingkey` pair, and the
+`github.com` entries selected from `known_hosts`. `CUBE_SSH_AUTH_KEY` defaults to
+`~/.ssh/id_ed25519`; `CUBE_SSH_KNOWN_HOSTS_FILE` defaults to `~/.ssh/known_hosts`. Sources must be
+regular non-symlink files inside host `~/.ssh`; traversal and missing/mismatched pairs fail before
+clone. Relative subdirectories are preserved under sandbox `/home/coder/.ssh`. Runtime config copies
+effective `user.name`, `user.email`, `gpg.format=ssh`, `commit.gpgsign=true`, and `user.signingkey`,
+and enforces `StrictHostKeyChecking=yes`. With no GitHub token, clone uses SSH; token-backed gh/HTTPS
+flow remains available.
+
+Override manual CLI JSON sources with `CUBE_PI_AUTH_FILE`, `CUBE_CODEX_AUTH_FILE`, and
+`CUBE_PASEO_CONFIG_FILE`. Private material uses Cube file transfer, never environment variables or
+command arguments. Sandboxed code can read copied keys: a Work Sandbox is trusted for explicitly
+authorized coding. Never snapshot, publish, or adopt key-bearing state outside its owning Work
+Sandbox. Image and prepared snapshot contain no SSH key, Git signing configuration, runtime identity,
+or GitHub token.
 
 No Android tooling/support included.

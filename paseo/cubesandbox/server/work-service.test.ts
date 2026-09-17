@@ -86,7 +86,9 @@ function dependencies() {
   const pause = vi.fn(async () => undefined);
   const destroy = vi.fn(async () => undefined);
   const keepAlive = vi.fn(async () => undefined);
-  const writeFile = vi.fn(async () => undefined);
+  const writeFile = vi.fn(
+    async (_path: string, _contents: string) => undefined,
+  );
   const run = vi.fn(
     async (
       command: string,
@@ -121,20 +123,57 @@ function dependencies() {
     connect: vi.fn(async () => sandbox),
   };
   const createdAgents: RemoteAgentInput[] = [];
-  const loadRuntimeIdentityFiles = vi.fn(async () => [
-    {
-      destination: "/home/coder/.pi/agent/auth.json",
-      contents: '{"pi":true}\n',
+  const loadRuntimeIdentityBundle = vi.fn(async () => ({
+    files: [
+      {
+        destination: "/home/coder/.pi/agent/auth.json",
+        contents: '{"pi":true}\n',
+        mode: 0o600 as const,
+      },
+      {
+        destination: "/home/coder/.codex/auth.json",
+        contents: '{"codex":true}\n',
+        mode: 0o600 as const,
+      },
+      {
+        destination: "/home/coder/.paseo/config.json",
+        contents: '{"paseo":true}\n',
+        mode: 0o600 as const,
+      },
+      {
+        destination: "/home/coder/.ssh/id_ed25519",
+        contents: "AUTH_PRIVATE_FIXTURE",
+        mode: 0o600 as const,
+      },
+      {
+        destination: "/home/coder/.ssh/id_ed25519.pub",
+        contents: "ssh-ed25519 AUTH_PUBLIC_FIXTURE",
+        mode: 0o644 as const,
+      },
+      {
+        destination: "/home/coder/.ssh/git-commit-signing/coder",
+        contents: "SIGNING_PRIVATE_FIXTURE",
+        mode: 0o600 as const,
+      },
+      {
+        destination: "/home/coder/.ssh/git-commit-signing/coder.pub",
+        contents: "ssh-ed25519 SIGNING_PUBLIC_FIXTURE",
+        mode: 0o644 as const,
+      },
+      {
+        destination: "/home/coder/.ssh/known_hosts",
+        contents: "github.com ssh-ed25519 HOST_FIXTURE\n",
+        mode: 0o600 as const,
+      },
+    ],
+    git: {
+      userName: "Runtime User",
+      userEmail: "runtime@example.test",
+      authKeyPath: "/home/coder/.ssh/id_ed25519",
+      signingKeyPath: "/home/coder/.ssh/git-commit-signing/coder",
+      knownHostsPath: "/home/coder/.ssh/known_hosts",
     },
-    {
-      destination: "/home/coder/.codex/auth.json",
-      contents: '{"codex":true}\n',
-    },
-    {
-      destination: "/home/coder/.paseo/config.json",
-      contents: '{"paseo":true}\n',
-    },
-  ]);
+  }));
   const remote: RemotePaseoConnection = {
     serverId: "remote-1",
     createAgent: vi.fn(async (input) => {
@@ -158,7 +197,7 @@ function dependencies() {
     destroy,
     keepAlive,
     writeFile,
-    loadRuntimeIdentityFiles,
+    loadRuntimeIdentityBundle,
     run,
     remote,
     createdAgents,
@@ -179,7 +218,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
 
     const first = await service.createAgent(repositoryRoot, {
@@ -200,21 +239,35 @@ describe("WorkService lifecycle", () => {
     expect(deps.run).toHaveBeenCalledTimes(6);
   });
 
-  it("configures gh credentials only during runtime bootstrap", async () => {
+  it("transfers runtime identities before strict SSH clone and daemon start", async () => {
     const repositoryRoot = await projectFixture();
     const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
     const deps = dependencies();
     vi.stubEnv("GH_TOKEN", "runtime-token");
     const service = new WorkService(
-      new WorkRecordStore(state),
+      store,
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
 
     await service.createAgent(repositoryRoot, { prompt: "first" });
 
-    const [cloneCommand, cloneOptions] = deps.run.mock.calls[0]!;
+    const [prepareCommand] = deps.run.mock.calls[0]!;
+    const [gitConfigCommand] = deps.run.mock.calls[1]!;
+    const [cloneCommand, cloneOptions] = deps.run.mock.calls[2]!;
+    expect(prepareCommand).toContain("install -m 0600 /dev/null");
+    expect(prepareCommand).toContain("install -m 0644 /dev/null");
+    expect(gitConfigCommand).toContain("git config --global gpg.format ssh");
+    expect(gitConfigCommand).toContain(
+      "git config --global commit.gpgsign true",
+    );
+    expect(gitConfigCommand).toContain(
+      "user.signingkey '/home/coder/.ssh/git-commit-signing/coder'",
+    );
+    expect(gitConfigCommand).toContain("StrictHostKeyChecking=yes");
+    expect(gitConfigCommand).not.toContain("StrictHostKeyChecking=no");
     expect(cloneCommand).toContain("gh repo clone");
     expect(cloneCommand.indexOf("gh auth setup-git")).toBeGreaterThan(
       cloneCommand.indexOf("gh repo clone"),
@@ -226,18 +279,151 @@ describe("WorkService lifecycle", () => {
     );
     expect(cloneOptions?.env).toMatchObject({ GH_TOKEN: "runtime-token" });
     expect(cloneCommand).not.toContain("runtime-token");
-    expect(deps.loadRuntimeIdentityFiles).toHaveBeenCalledOnce();
-    expect(deps.writeFile.mock.calls).toEqual([
-      ["/home/coder/.pi/agent/auth.json", '{"pi":true}\n'],
-      ["/home/coder/.codex/auth.json", '{"codex":true}\n'],
-      ["/home/coder/.paseo/config.json", '{"paseo":true}\n'],
+    expect(deps.loadRuntimeIdentityBundle).toHaveBeenCalledWith(repositoryRoot);
+    expect(deps.writeFile).toHaveBeenCalledTimes(8);
+    expect(
+      deps.writeFile.mock.calls.map(([destination]) => destination),
+    ).toEqual([
+      "/home/coder/.pi/agent/auth.json",
+      "/home/coder/.codex/auth.json",
+      "/home/coder/.paseo/config.json",
+      "/home/coder/.ssh/id_ed25519",
+      "/home/coder/.ssh/id_ed25519.pub",
+      "/home/coder/.ssh/git-commit-signing/coder",
+      "/home/coder/.ssh/git-commit-signing/coder.pub",
+      "/home/coder/.ssh/known_hosts",
     ]);
     expect(JSON.stringify(deps.run.mock.calls)).not.toContain('"pi":true');
     expect(JSON.stringify(deps.run.mock.calls)).not.toContain('"codex":true');
     expect(JSON.stringify(deps.run.mock.calls)).not.toContain('"paseo":true');
-    const identityCommand = deps.run.mock.calls[2]?.[0];
-    expect(identityCommand).toContain("chmod 0600");
+    expect(JSON.stringify(deps.run.mock.calls)).not.toContain(
+      "AUTH_PRIVATE_FIXTURE",
+    );
+    expect(JSON.stringify(deps.run.mock.calls)).not.toContain(
+      "SIGNING_PRIVATE_FIXTURE",
+    );
+    expect(JSON.stringify(await store.list())).not.toContain("PRIVATE_FIXTURE");
     expect(deps.run.mock.calls[4]?.[0]).toContain("paseo daemon start");
+    await service.close();
+  });
+
+  it("uses SSH clone without disabling host verification when GitHub token is absent", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+
+    await service.createAgent(repositoryRoot, { prompt: "first" });
+
+    const [gitConfigCommand] = deps.run.mock.calls[1]!;
+    const [cloneCommand, cloneOptions] = deps.run.mock.calls[2]!;
+    expect(gitConfigCommand).toContain("StrictHostKeyChecking=yes");
+    expect(cloneCommand).toContain(
+      "git clone --branch 'main' 'git@github.com:acme/widget.git'",
+    );
+    expect(cloneOptions?.env).toEqual({});
+    expect(JSON.stringify(deps.run.mock.calls)).not.toContain(
+      "StrictHostKeyChecking=no",
+    );
+    await service.close();
+  });
+
+  it("destroys partial runtime identity transfer before starting Paseo", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    deps.writeFile.mockRejectedValueOnce(
+      new Error("simulated file transfer failure"),
+    );
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+
+    await expect(
+      service.createAgent(repositoryRoot, { prompt: "first" }),
+    ).rejects.toThrow("simulated file transfer failure");
+
+    expect(deps.sandbox.destroy).toHaveBeenCalledOnce();
+    expect(await store.list()).toEqual([]);
+    expect(
+      deps.run.mock.calls.some(([command]) =>
+        command.includes("paseo daemon start"),
+      ),
+    ).toBe(false);
+    await service.close();
+  });
+
+  it("destroys transferred identities when Git configuration fails", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    deps.run.mockImplementation(async (command: string) => ({
+      stdout: "",
+      stderr: command.includes("git config --global gpg.format")
+        ? "simulated Git configuration failure"
+        : "",
+      exitCode: command.includes("git config --global gpg.format") ? 1 : 0,
+    }));
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+
+    await expect(
+      service.createAgent(repositoryRoot, { prompt: "first" }),
+    ).rejects.toThrow("simulated Git configuration failure");
+
+    expect(deps.writeFile).toHaveBeenCalledTimes(8);
+    expect(deps.sandbox.destroy).toHaveBeenCalledOnce();
+    expect(await store.list()).toEqual([]);
+    expect(
+      deps.run.mock.calls.some(([command]) =>
+        command.includes("paseo daemon start"),
+      ),
+    ).toBe(false);
+    await service.close();
+  });
+
+  it("retains ownership when partial transfer cleanup fails", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    deps.writeFile.mockRejectedValueOnce(
+      new Error("simulated file transfer failure"),
+    );
+    vi.mocked(deps.sandbox.destroy).mockRejectedValueOnce(
+      new Error("simulated cleanup failure"),
+    );
+    const service = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+    );
+
+    await expect(
+      service.createAgent(repositoryRoot, { prompt: "first" }),
+    ).rejects.toThrow("Failed to clean up Work Sandbox creation");
+
+    const records = await store.list();
+    expect(records).toHaveLength(1);
+    expect(records[0]?.status).toBe("error");
+    expect(records[0]?.lastError).toContain("simulated cleanup failure");
+    expect(JSON.stringify(records)).not.toContain("PRIVATE_FIXTURE");
+    expect(deps.paseo.connect).not.toHaveBeenCalled();
     await service.close();
   });
 
@@ -249,7 +435,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
 
@@ -272,7 +458,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
     vi.mocked(deps.cube.inspect).mockResolvedValue({ state: "paused" });
@@ -292,7 +478,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
 
@@ -312,7 +498,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "long" });
 
@@ -336,7 +522,7 @@ describe("WorkService lifecycle", () => {
       store,
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
 
@@ -358,7 +544,7 @@ describe("WorkService lifecycle", () => {
       store,
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
 
@@ -401,7 +587,7 @@ describe("WorkService lifecycle", () => {
       store,
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "first" });
     vi.spyOn(store, "save").mockRejectedValueOnce(
@@ -433,7 +619,7 @@ describe("WorkService lifecycle", () => {
       store,
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "long" });
 
@@ -469,7 +655,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
     const work = await service.createAgent(repositoryRoot, { prompt: "long" });
 
@@ -498,7 +684,7 @@ describe("WorkService lifecycle", () => {
         new WorkRecordStore(state),
         deps.cube,
         deps.paseo,
-        deps.loadRuntimeIdentityFiles,
+        deps.loadRuntimeIdentityBundle,
       );
       const work = await service.createAgent(repositoryRoot, {
         prompt: "long",
@@ -526,7 +712,7 @@ describe("WorkService lifecycle", () => {
       store,
       firstDependencies.cube,
       firstDependencies.paseo,
-      firstDependencies.loadRuntimeIdentityFiles,
+      firstDependencies.loadRuntimeIdentityBundle,
     );
     await firstService.createAgent(repositoryRoot, { prompt: "long" });
     await firstService.close();
@@ -537,7 +723,7 @@ describe("WorkService lifecycle", () => {
       store,
       reloadedDependencies.cube,
       reloadedDependencies.paseo,
-      reloadedDependencies.loadRuntimeIdentityFiles,
+      reloadedDependencies.loadRuntimeIdentityBundle,
     );
     await reloadedService.start();
     await vi.advanceTimersToNextTimerAsync();
@@ -578,7 +764,7 @@ describe("WorkService lifecycle", () => {
       store,
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
 
     const creation = service.createAgent(repositoryRoot, { prompt: "first" });
@@ -639,7 +825,7 @@ describe("WorkService lifecycle", () => {
       store,
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
 
     const creation = service.createAgent(repositoryRoot, { prompt: "first" });
@@ -675,7 +861,7 @@ describe("WorkService lifecycle", () => {
       new WorkRecordStore(state),
       deps.cube,
       deps.paseo,
-      deps.loadRuntimeIdentityFiles,
+      deps.loadRuntimeIdentityBundle,
     );
 
     const creation = service.createAgent(repositoryRoot, { prompt: "first" });

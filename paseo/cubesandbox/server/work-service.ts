@@ -18,7 +18,7 @@ import {
   type RemotePaseoConnection,
   type RemotePaseoConnector,
 } from "./remote-paseo.js";
-import type { RuntimeIdentityFile } from "./runtime-identity.js";
+import type { RuntimeIdentityBundle } from "./runtime-identity.js";
 import { type WorkRecord, WorkRecordStore } from "./work-record.js";
 
 const pairingOutputSchema = z
@@ -112,14 +112,62 @@ async function runChecked(
 async function bootstrapSandbox(
   sandbox: CubeSandboxHandle,
   config: CubeProjectConfig,
-  loadRuntimeIdentityFiles: () => Promise<RuntimeIdentityFile[]>,
+  repositoryRoot: string,
+  loadRuntimeIdentityBundle: (
+    repositoryRoot: string,
+  ) => Promise<RuntimeIdentityBundle>,
 ): Promise<string> {
   const repository = shellQuote(config.project.repository);
   const remoteUrl = shellQuote(
-    `https://github.com/${config.project.repository}.git`,
+    `git@github.com:${config.project.repository}.git`,
   );
   const workspacePath = shellQuote(config.project.workspacePath);
   const defaultRef = shellQuote(config.project.defaultRef);
+  const runtimeIdentity = await loadRuntimeIdentityBundle(repositoryRoot);
+  const runtimeDirectories = [
+    ...new Set([
+      "/home/coder/.ssh",
+      ...runtimeIdentity.files.map((file) =>
+        file.destination.replace(/\/[^/]+$/, ""),
+      ),
+    ]),
+  ].sort((left, right) => left.length - right.length);
+  await runChecked(
+    sandbox,
+    [
+      "set -euo pipefail",
+      `install -d -m 0700 ${runtimeDirectories.map(shellQuote).join(" ")}`,
+      ...runtimeIdentity.files.map(
+        (file) =>
+          `install -m ${file.mode.toString(8).padStart(4, "0")} /dev/null ${shellQuote(file.destination)}`,
+      ),
+    ].join("\n"),
+  );
+  for (const { destination, contents } of runtimeIdentity.files) {
+    await sandbox.writeFile(destination, contents);
+  }
+  await runChecked(
+    sandbox,
+    [
+      "set -euo pipefail",
+      ...runtimeIdentity.files.map(
+        (file) =>
+          `chmod ${file.mode.toString(8).padStart(4, "0")} ${shellQuote(file.destination)}`,
+      ),
+      `git config --global user.name ${shellQuote(runtimeIdentity.git.userName)}`,
+      `git config --global user.email ${shellQuote(runtimeIdentity.git.userEmail)}`,
+      "git config --global gpg.format ssh",
+      "git config --global commit.gpgsign true",
+      `git config --global user.signingkey ${shellQuote(runtimeIdentity.git.signingKeyPath)}`,
+      `git config --global core.sshCommand ${shellQuote(
+        `ssh -i ${runtimeIdentity.git.authKeyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${runtimeIdentity.git.knownHostsPath}`,
+      )}`,
+      ...runtimeIdentity.files.map(
+        (file) =>
+          `test "$(stat -c %a ${shellQuote(file.destination)})" = ${file.mode.toString(8)}`,
+      ),
+    ].join("\n"),
+  );
   const cloneCommand = [
     "set -euo pipefail",
     `test ! -e ${workspacePath}`,
@@ -144,19 +192,7 @@ async function bootstrapSandbox(
       return value ? [[name, value]] : [];
     }),
   );
-  const runtimeIdentityFiles = await loadRuntimeIdentityFiles();
   await runChecked(sandbox, cloneCommand, { env: githubEnvironment });
-  await runChecked(
-    sandbox,
-    "install -d -m 0700 /home/coder/.pi/agent /home/coder/.codex /home/coder/.paseo",
-  );
-  for (const { destination, contents } of runtimeIdentityFiles) {
-    await sandbox.writeFile(destination, contents);
-  }
-  await runChecked(
-    sandbox,
-    "chmod 0600 /home/coder/.pi/agent/auth.json /home/coder/.codex/auth.json /home/coder/.paseo/config.json",
-  );
   await runChecked(
     sandbox,
     "command -v paseo >/dev/null 2>&1 || bun add --global @getpaseo/cli@0.8.0",
@@ -190,9 +226,9 @@ export class WorkService {
     private readonly records: WorkRecordStore,
     private readonly cube: CubeRuntime,
     private readonly paseo: RemotePaseoConnector,
-    private readonly loadRuntimeIdentityFiles: () => Promise<
-      RuntimeIdentityFile[]
-    >,
+    private readonly loadRuntimeIdentityBundle: (
+      repositoryRoot: string,
+    ) => Promise<RuntimeIdentityBundle>,
   ) {}
 
   bindRepositoryRoot(repositoryRoot: string): void {
@@ -558,7 +594,8 @@ export class WorkService {
       const pairingUrl = await bootstrapSandbox(
         sandbox,
         config,
-        this.loadRuntimeIdentityFiles,
+        repositoryRoot,
+        this.loadRuntimeIdentityBundle,
       );
       this.assertAccepting();
       await this.records.saveSecrets(workId, { pairingUrl });
@@ -580,19 +617,8 @@ export class WorkService {
         throw this.lifecycleError();
       }
       if (!record) throw error;
-      const failed = activity(
-        {
-          ...record,
-          status: "error",
-          lastError: error instanceof Error ? error.message : String(error),
-        },
-        "error",
-        "Sandbox bootstrap failed",
-      );
-      await this.records.save(failed);
-      if (this.lifecycle !== "accepting") {
-        if (sandbox) await this.cleanupCreatingWork(workId, error, sandbox);
-        throw this.lifecycleError();
+      if (sandbox) {
+        await this.cleanupCreatingWork(workId, error, sandbox);
       }
       throw error;
     }

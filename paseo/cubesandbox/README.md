@@ -53,9 +53,9 @@ uv run .cube/sandbox.py prepare-snapshot --name <template-alias>
 
 Set `snapshot.id` to pin a prepared snapshot. Otherwise plugin consumes newest API result whose
 names include configured template alias. It never infers a snapshot from lockfiles and never creates
-snapshots. Project CLI uses dedicated empty-environment source, verifies repository, Git/GitHub
-auth, Pi/Codex auth, API-key environment, and Paseo identity paths are absent, snapshots it, then
-destroys source on success or failure.
+snapshots. Project CLI uses dedicated empty-environment source, verifies repository, Git/GitHub/SSH
+auth, Git signing config, Pi/Codex auth, API-key environment, and Paseo identity paths are absent,
+snapshots it, then destroys source on success or failure.
 
 ## Lifecycle
 
@@ -63,10 +63,18 @@ destroys source on success or failure.
 validates trusted response domain, then resolves runtime-only provider/Git credentials and local
 identity files. Bootstrap clones configured repository, runs `gh auth setup-git` with runtime token,
 runs project `./install.sh --yes`, installs agent dependencies, and installs Paseo CLI v0.8 with Bun
-when missing. It then copies local Pi/Codex auth JSON and Paseo config JSON with mode `0600` before
-starting remote daemon, enabling relay, and creating first Paseo-owned worktree agent. Runtime Git
-helper stores no token; image and prepared snapshot contain no `hosts.yml`, Git credential, auth, or
-Paseo identity.
+when missing. Before clone or daemon start, it copies local Pi/Codex auth JSON, Paseo config JSON,
+allowlisted SSH auth/signing pairs, and only GitHub `known_hosts` entries through Cube file transfer.
+Private files are pre-created and verified mode `0600`; public keys use `0644`; directories use
+`0700`. Effective host Git name/email, SSH signing, and signing-key path are reproduced. SSH clone
+uses `IdentitiesOnly=yes` and `StrictHostKeyChecking=yes`; existing token-backed gh/HTTPS remains.
+
+`CUBE_SSH_AUTH_KEY` selects auth private key and defaults to `~/.ssh/id_ed25519`.
+`CUBE_SSH_KNOWN_HOSTS_FILE` selects host file and defaults to `~/.ssh/known_hosts`. Every SSH source
+must be regular, non-symlink, inside daemon user's `~/.ssh`, with matching `.pub`; signing source is
+effective Git `user.signingkey`. No ssh-agent dependency. Runtime Git helper stores no token. Image
+and prepared snapshot contain no `hosts.yml`, Git credential, SSH key, signing config, auth, or Paseo
+identity.
 
 Supplying `workId` reuses Sandbox and creates another isolated Paseo worktree agent. Multiple agents
 share Sandbox compute, not working directories. Work IDs are internal UUIDs; optional external task
@@ -126,6 +134,11 @@ host mutation. Treat pairing links as passwords.
 - Cube/API/provider/Git tokens stay in process or sandbox runtime. Pi/Codex auth and Paseo config are
   transferred through validated Cube data plane only after response-domain validation. Project
   config and WorkRecord never contain them.
+- SSH private keys never enter environment variables, commands, logs, WorkRecords, RPC/MCP output,
+  image, or prepared snapshot. Partial transfer/config failure destroys new Sandbox; failed destroy
+  retains ownership record for retry.
+- Sandboxed code can read copied runtime keys. Work Sandbox is trusted only for user-authorized
+  coding. Never snapshot, publish, or adopt key-bearing state outside its owning Work Sandbox.
 - Private state defaults to `~/.paseo/cubesandbox-plugin/cubesandbox`: directories mode `0700`, files
   mode `0600`. WorkRecord stores work/sandbox/task/relay/workspace/agent references and lifecycle
   timestamps/status. Pairing offers are separate private secret files and are returned only through

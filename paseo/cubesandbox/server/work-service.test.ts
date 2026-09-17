@@ -381,7 +381,8 @@ describe("WorkService lifecycle", () => {
       "SIGNING_PRIVATE_FIXTURE",
     );
     expect(JSON.stringify(await store.list())).not.toContain("PRIVATE_FIXTURE");
-    expect(deps.run.mock.calls[4]?.[0]).toContain("paseo daemon start");
+    expect(deps.run.mock.calls[4]?.[0]).toContain("paseo daemon start --json");
+    expect(deps.run.mock.calls[4]?.[0]).not.toContain("--timeout");
     await service.close();
   });
 

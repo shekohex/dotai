@@ -10,6 +10,7 @@ const executeFile = promisify(execFile);
 const jsonObjectSchema = z.record(z.string(), z.unknown());
 const nonEmptyStringSchema = z.string().trim().min(1);
 const sandboxHome = "/home/coder";
+const githubAuthTokenArguments = ["auth", "token"] as const;
 
 export interface RuntimeIdentityFile {
   destination: string;
@@ -60,7 +61,8 @@ async function resolveGithubToken(
         ? { XDG_CONFIG_HOME: environment.XDG_CONFIG_HOME }
         : {}),
     };
-    const { stdout } = await executeFile("gh", ["auth", "token"], {
+    const { stdout } = await executeFile("gh", githubAuthTokenArguments, {
+      // gh has no timeout flag; bound the child process here.
       env: cliEnvironment,
       timeout: 5_000,
       killSignal: "SIGTERM",

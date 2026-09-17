@@ -286,7 +286,7 @@ async function bootstrapSandbox(
     sandbox,
     "command -v paseo >/dev/null 2>&1 || bun add --global @getpaseo/cli@0.8.0",
   );
-  await runChecked(sandbox, "paseo daemon start --json --timeout 120", {
+  await runChecked(sandbox, "paseo daemon start --json", {
     env: runtimeEnvironment,
   });
   const pairingOutput = await runChecked(

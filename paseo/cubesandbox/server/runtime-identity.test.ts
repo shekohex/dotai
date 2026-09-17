@@ -105,7 +105,10 @@ async function fakeGithubCli(
   const binDirectory = path.join(homeDirectory, "bin");
   const executable = path.join(binDirectory, "gh");
   await mkdir(binDirectory, { recursive: true });
-  await writeFile(executable, `#!/bin/sh\n${script}\n`);
+  await writeFile(
+    executable,
+    `#!/bin/sh\ntest "$#" -eq 2 && test "$1" = auth && test "$2" = token || exit 2\n${script}\n`,
+  );
   await chmod(executable, 0o700);
   return binDirectory;
 }
@@ -173,6 +176,7 @@ describe("loadRuntimeIdentityBundle", () => {
   it.each([
     ["missing", "no-gh"],
     ["failed", "printf 'cli-secret\\n' >&2; exit 1"],
+    ["timed out", "sleep 10"],
   ])(
     "falls back to strict SSH when GitHub CLI is %s",
     async (mode, script) => {
@@ -190,6 +194,7 @@ describe("loadRuntimeIdentityBundle", () => {
       expect(bundle.git.knownHostsPath).toBe("/home/coder/.ssh/known_hosts");
       expect(JSON.stringify(bundle.files)).not.toContain("cli-secret");
     },
+    10_000,
   );
 
   it("requires GitHub known_hosts for SSH bootstrap", async () => {

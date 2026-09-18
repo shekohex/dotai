@@ -16,7 +16,7 @@ export const defaultModes = {
   modes: {
     rush: {
       provider: "opencode-go",
-      modelId: "deepseek-v4-flash",
+      modelId: "deepseek-v4.1-flash",
       thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
@@ -122,7 +122,7 @@ export const defaultModes = {
     },
     "fast-review": {
       provider: "opencode-go",
-      modelId: "deepseek-v4-pro",
+      modelId: "deepseek-v4.1-pro",
       thinkingLevel: "high",
       color: "muted",
       tmuxTarget: "window",
@@ -153,7 +153,7 @@ export const defaultModes = {
     },
     search: {
       provider: "opencode-go",
-      modelId: "deepseek-v4-flash",
+      modelId: "deepseek-v4.1-flash",
       color: "borderMuted",
       thinkingLevel: "high",
       tmuxTarget: "window",
@@ -217,7 +217,7 @@ export const defaultModes = {
     },
     poke: {
       provider: "opencode-go",
-      modelId: "deepseek-v4-flash",
+      modelId: "deepseek-v4.1-flash",
       thinkingLevel: "high",
       tmuxTarget: "window",
       tools: ["*"],

@@ -58,7 +58,7 @@ function markRootCollisions(scopes: ProjectScope[]): void {
     byRoot.set(scope.canonicalRoot, group);
   }
   for (const group of byRoot.values()) {
-    if (group.length < 2) continue;
+    if (new Set(group.map((scope) => scope.projectId)).size < 2) continue;
     for (const scope of group) {
       scope.availability = "offline";
       scope.error =
@@ -121,7 +121,8 @@ async function workspaceScope(
 
 /**
  * Authoritative inventory of every registered Paseo project as an independent
- * Cube scope. Roots are canonicalized and colliding roots are marked offline.
+ * Cube scope. Roots are canonicalized and cross-project collisions are marked
+ * offline.
  */
 export async function listProjectScopes(
   paseo: PaseoApi,
@@ -214,9 +215,23 @@ export function matchScopeForRoot(
   const longestRootMatches = matches.filter(
     (candidate) => candidate.canonicalRoot === match.canonicalRoot,
   );
-  return longestRootMatches.length === 1 && match.availability === "online"
-    ? match
-    : undefined;
+  if (
+    longestRootMatches.some((candidate) => candidate.availability !== "online")
+  ) {
+    return undefined;
+  }
+  if (
+    new Set(longestRootMatches.map((candidate) => candidate.projectId)).size > 1
+  ) {
+    return undefined;
+  }
+  return longestRootMatches.sort((left, right) => {
+    if (left.workspaceId === undefined) {
+      return right.workspaceId === undefined ? 0 : -1;
+    }
+    if (right.workspaceId === undefined) return 1;
+    return left.workspaceId.localeCompare(right.workspaceId);
+  })[0];
 }
 
 /** Finds a scope by its persisted project, workspace, and exact canonical root identity. */

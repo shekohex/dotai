@@ -930,7 +930,7 @@ def bootstrap_repository(
 
     run_sandbox_command(
         sandbox,
-        " && ".join(
+        "\n".join(
             [
                 "set -euo pipefail",
                 f"test ! -e {workspace}",

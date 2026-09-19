@@ -12,6 +12,7 @@ import type {
   BackgroundLaunchResult,
   BackgroundShellBackend,
 } from "./background-bash-backend.js";
+import { writeKilledExitFile } from "./background-bash-kill.js";
 import type { BackgroundShellRun } from "./background-bash-types.js";
 
 const execFileAsync = promisify(execFile);
@@ -70,6 +71,7 @@ export class HerdrBackgroundShellBackend implements BackgroundShellBackend {
     } catch (error) {
       if (!isMissingHerdrTarget(error)) throw error;
     }
+    await writeKilledExitFile(run);
   }
 
   formatInspectHint(run: BackgroundShellRun): string {

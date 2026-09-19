@@ -7,6 +7,7 @@ import type {
   BackgroundLaunchResult,
   BackgroundShellBackend,
 } from "./background-bash-backend.js";
+import { writeKilledExitFile } from "./background-bash-kill.js";
 import type { BackgroundShellRun } from "./background-bash-types.js";
 
 const execFileAsync = promisify(execFile);
@@ -76,6 +77,7 @@ export class TmuxBackgroundShellBackend implements BackgroundShellBackend {
     } catch (error) {
       if (!isMissingTargetError(error)) throw error;
     }
+    await writeKilledExitFile(run);
   }
 
   formatInspectHint(run: BackgroundShellRun): string {
@@ -109,7 +111,9 @@ function isMissingTargetError(error: unknown): boolean {
     .filter((value) => value !== undefined)
     .join("\n")
     .toLowerCase();
-  return text.includes("can't find") || text.includes("not found");
+  return (
+    text.includes("can't find") || text.includes("not found") || text.includes("no server running")
+  );
 }
 
 export const TAGGED_TMUX_WINDOW_FORMAT = [

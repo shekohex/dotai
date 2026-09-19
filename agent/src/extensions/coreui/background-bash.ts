@@ -425,7 +425,7 @@ async function handleExitFile(pi: ExtensionAPI, exitFile: string): Promise<void>
           targetLabel: run.targetLabel,
         },
       },
-      { deliverAs: "followUp", triggerTurn: true },
+      { deliverAs: "steer", triggerTurn: true },
     );
   } finally {
     state.completingExitFiles.delete(exitFile);
@@ -494,7 +494,7 @@ async function sendPollMessage(
         targetLabel: run.targetLabel,
       },
     },
-    { deliverAs: "followUp", triggerTurn: true },
+    { deliverAs: "steer", triggerTurn: true },
   );
 }
 

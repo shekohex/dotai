@@ -199,6 +199,27 @@ describe("project registry inventory", () => {
     expect(() => resolveProjectId(scopes, "prj_a")).toThrow("ambiguous");
   });
 
+  it("resolves same-project duplicate roots to the project scope", async () => {
+    const root = await tempRoot("cube-registry-same-project-");
+    const { paseo } = fakePaseo(
+      [fakeProject("prj_same", root)],
+      [
+        fakeWorkspace("wks_zeta", "prj_same", root, root),
+        fakeWorkspace("wks_alpha", "prj_same", root, root),
+      ],
+    );
+
+    const scopes = await listProjectScopes(paseo);
+
+    expect(scopes.every((scope) => scope.availability === "online")).toBe(true);
+    const scope = await resolveProjectForCwd(scopes, root);
+    expect(scope).toMatchObject({
+      projectId: "prj_same",
+      canonicalRoot: root,
+    });
+    expect(scope).not.toHaveProperty("workspaceId");
+  });
+
   it("marks a missing root offline and rejects unknown projects", async () => {
     const root = await tempRoot("cube-registry-missing-");
     const { paseo } = fakePaseo([

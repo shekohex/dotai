@@ -244,6 +244,7 @@ def test_runtime_clone_configures_gh_after_clone_and_installs_dependencies(
     prepare = commands[0][0]
     git_configuration = commands[1][0]
     bootstrap, environment = commands[2]
+    subprocess.run(["bash", "-n"], input=bootstrap, text=True, check=True)
     assert "install -m 0600 /dev/null" in prepare
     assert "install -m 0644 /dev/null" in prepare
     assert "git config --global gpg.format ssh" in git_configuration
@@ -289,6 +290,49 @@ def test_runtime_clone_configures_gh_after_clone_and_installs_dependencies(
     assert '"paseo":true' not in json.dumps(commands)
     assert "AUTH_PRIVATE_FIXTURE" not in json.dumps(commands)
     assert "SIGNING_PRIVATE_FIXTURE" not in json.dumps(commands)
+
+
+def test_runtime_clone_ssh_fallback_generates_valid_shell(
+    cli: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commands: list[tuple[str, dict[str, object]]] = []
+
+    class FakeCommands:
+        def run(self, command, **kwargs):
+            commands.append((command, kwargs))
+            return SimpleNamespace(stdout="", stderr="", exit_code=0)
+
+    class FakeFiles:
+        def write(self, path, contents, *, user):
+            pytest.fail("SSH fallback should not write runtime identity files")
+
+    monkeypatch.setattr(
+        cli,
+        "runtime_identity_bundle",
+        lambda settings: cli.RuntimeIdentityBundle(
+            files=(),
+            git=cli.RuntimeGitIdentity(
+                user_name="Runtime User",
+                user_email="runtime@example.test",
+                auth_key_path="/home/coder/.ssh/id_ed25519",
+                signing_key_path="/home/coder/.ssh/git-commit-signing/coder",
+                known_hosts_path="/home/coder/.ssh/known_hosts",
+            ),
+        ),
+    )
+    settings = cli.load_project_settings(parse(cli, "create"))
+
+    cli.bootstrap_repository(
+        SimpleNamespace(commands=FakeCommands(), files=FakeFiles()),
+        settings,
+        {},
+    )
+
+    bootstrap = commands[2][0]
+    subprocess.run(["bash", "-n"], input=bootstrap, text=True, check=True)
+    assert "git clone --branch main git@github.com:shekohex/dotai.git" in bootstrap
+    assert "gh repo clone" in bootstrap
+    assert "StrictHostKeyChecking=yes" in commands[1][0]
 
 
 def test_runtime_identity_files_require_valid_json(

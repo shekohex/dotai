@@ -58,7 +58,6 @@ describe("remote Paseo agent creation", () => {
         thinkingOptionId: "xhigh",
         featureValues: { fast_mode: true },
       },
-      prompt: "build quickly",
     });
   });
 
@@ -98,7 +97,107 @@ describe("remote Paseo agent creation", () => {
 
     expect(agentCreate).toHaveBeenCalledWith({
       config: { provider: "pi/default" },
-      prompt: "inspect repository",
+    });
+  });
+
+  it("delivers one terminal callback with the latest assistant message", async () => {
+    let timelineHandler: ((event: unknown) => void) | undefined;
+    const unsubscribeTimeline = vi.fn();
+    const unsubscribeAgent = vi.fn();
+    const refetch = vi.fn(async () => ({
+      entries: [
+        {
+          seq: 1,
+          timestamp: "2026-09-20T00:00:00.000Z",
+          item: { type: "assistant_message", text: "Final answer" },
+        },
+      ],
+    }));
+    const client = {
+      agents: {
+        ref: vi.fn(() => ({
+          timeline: {
+            subscribe: vi.fn((handler) => {
+              timelineHandler = handler;
+              return Object.assign(unsubscribeTimeline, {
+                ready: Promise.resolve(),
+              });
+            }),
+            refetch,
+          },
+          subscribe: vi.fn(() => unsubscribeAgent),
+          refresh: vi.fn(async () => null),
+        })),
+      },
+    };
+    const connection = createRemotePaseoConnection("server-1", client as never);
+    const completion = vi.fn(async () => undefined);
+    await connection.watchAgent("agent-1", completion);
+
+    timelineHandler?.({
+      agentId: "agent-1",
+      event: { type: "turn_started", provider: "codex", turnId: "turn-1" },
+    });
+    timelineHandler?.({
+      agentId: "agent-1",
+      event: { type: "turn_completed", provider: "codex", turnId: "turn-1" },
+    });
+    await vi.waitFor(() => {
+      expect(completion).toHaveBeenCalledWith({
+        status: "idle",
+        lastAssistantMessage: "Final answer",
+      });
+    });
+    timelineHandler?.({
+      agentId: "agent-1",
+      event: {
+        type: "attention_required",
+        provider: "codex",
+        reason: "finished",
+        timestamp: "2026-09-20T00:00:01.000Z",
+        shouldNotify: true,
+      },
+    });
+    expect(completion).toHaveBeenCalledTimes(1);
+    expect(unsubscribeTimeline).toHaveBeenCalledOnce();
+    expect(unsubscribeAgent).toHaveBeenCalledOnce();
+  });
+
+  it("delivers completion from agent status when timeline start is missed", async () => {
+    let agentHandler: ((update: unknown) => void) | undefined;
+    const refetch = vi.fn(async () => ({ entries: [] }));
+    const client = {
+      agents: {
+        ref: vi.fn(() => ({
+          timeline: {
+            subscribe: vi.fn(() =>
+              Object.assign(vi.fn(), { ready: Promise.resolve() }),
+            ),
+            refetch,
+          },
+          subscribe: vi.fn((handler) => {
+            agentHandler = handler;
+            return vi.fn();
+          }),
+          refresh: vi.fn(async () => null),
+        })),
+      },
+    };
+    const connection = createRemotePaseoConnection("server-1", client as never);
+    const completion = vi.fn(async () => undefined);
+    await connection.watchAgent("agent-1", completion);
+
+    agentHandler?.({
+      kind: "upsert",
+      agent: { id: "agent-1", status: "running", activeTurn: { id: "turn-1" } },
+    });
+    agentHandler?.({
+      kind: "upsert",
+      agent: { id: "agent-1", status: "idle", activeTurn: null },
+    });
+
+    await vi.waitFor(() => {
+      expect(completion).toHaveBeenCalledWith({ status: "idle" });
     });
   });
 

@@ -64,6 +64,7 @@ export interface CapabilityBinding {
   canonicalRoot: string;
   paseoProjectId?: string;
   paseoWorkspaceId?: string;
+  coordinatorAgentId?: string;
 }
 
 const UNREGISTERED_PROJECT_MESSAGE =
@@ -88,6 +89,14 @@ function createRepositoryToolServer(
     if (!owner) throw new Error(UNREGISTERED_PROJECT_MESSAGE);
     return owner;
   };
+  const requireCoordinatorAgentId = (): string => {
+    if (!binding.coordinatorAgentId) {
+      throw new Error(
+        "CubeSandbox capability is not bound to its initiating Paseo agent. Restart this agent session.",
+      );
+    }
+    return binding.coordinatorAgentId;
+  };
   const server = new McpServer({ name: "cubesandbox-paseo", version: "0.1.0" });
 
   server.registerTool(
@@ -103,6 +112,7 @@ function createRepositoryToolServer(
           await works.createAgent(
             requireOwner(),
             createAgentInputSchema.parse(input),
+            requireCoordinatorAgentId(),
           ),
         );
       } catch (error) {
@@ -138,7 +148,11 @@ function createRepositoryToolServer(
     async (input) => {
       try {
         return toolResult(
-          await works.sendPrompt(requireOwner(), sendPromptSchema.parse(input)),
+          await works.sendPrompt(
+            requireOwner(),
+            sendPromptSchema.parse(input),
+            requireCoordinatorAgentId(),
+          ),
         );
       } catch (error) {
         return errorResult(error);
@@ -312,6 +326,18 @@ export class CubeToolServer {
 
   capabilityForToken(token: string): CapabilityBinding | undefined {
     return this.capabilities.get(token);
+  }
+
+  bindCapabilityCoordinator(
+    url: string,
+    coordinatorAgentId: string,
+    resolvedBinding?: Omit<CapabilityBinding, "coordinatorAgentId">,
+  ): void {
+    const token = new URL(url).pathname.split("/").at(-1);
+    const binding = token ? this.capabilities.get(token) : undefined;
+    if (!binding) throw new Error("Unknown CubeSandbox capability");
+    if (resolvedBinding) Object.assign(binding, resolvedBinding);
+    binding.coordinatorAgentId = z.string().min(1).parse(coordinatorAgentId);
   }
 
   stopAccepting(): void {

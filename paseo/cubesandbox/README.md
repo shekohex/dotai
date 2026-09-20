@@ -39,9 +39,10 @@ Project owns:
 writes only `.cube/config.json`. Existing config is never overwritten. Plugin never creates or edits
 Dockerfile or Python. Default branch comes from local `origin/HEAD` or origin's advertised symbolic
 HEAD; initialization fails with repair guidance when neither is available. Initialization targets
-the selected registered project root exactly (a worktree or nested project keeps its own config),
-never an enclosing Git top level. The same action is available from the UI for any registered
-project without opening an agent. Bundled schema lives at `shared/cube-config.schema.json`.
+the canonical Git top level discovered from the selected registered project or agent cwd. Nested
+launches therefore reuse the repository's root `.cube/config.json`; no nested duplicate is needed.
+The same action is available from the UI for any registered project without opening an agent.
+Bundled schema lives at `shared/cube-config.schema.json`.
 
 Configuration contains deployment intent only: project identity, Cube endpoint, template inputs and
 resources, idle pause policy, preview ports, and optional snapshot selection. No task state, runtime
@@ -124,6 +125,24 @@ Pause is immediate on request. Destroy is explicit, immediate, and has no confir
 destroy, and plugin shutdown cancel keepalive. Undestroyed work remains paused. Plugin does no GitHub
 polling; Paseo owns merged-PR worktree cleanup.
 
+Each `cube_create_agent` or `cube_send_prompt` turn subscribes to the managed remote Paseo agent
+timeline before sending the prompt. Completion is delivered to the initiating local Paseo agent as
+an event-driven callback message with stable deduplication id. Payload contract:
+
+```json
+{
+  "type": "cubesandbox.agent_completion",
+  "workId": "...",
+  "agentId": "...",
+  "status": "idle | error | stopped | closed",
+  "lastAssistantMessage": "present when available"
+}
+```
+
+Pending/ready delivery state is persisted per managed agent. Reconnect restores timeline demand;
+plugin restart restores pending watches and retries ready callbacks with the same message id. No
+pairing URL, credential, or runtime secret is included in callback payloads or callback logs.
+
 Plugin shutdown first rejects new MCP, RPC, and lifecycle operations, then drains accepted tool
 requests and tracked work operations before closing relay connections. A Sandbox whose initial
 bootstrap is still in flight is destroyed and its incomplete local record removed; established work
@@ -158,7 +177,8 @@ remote activity.
 Paseo v0.8 public plugin API cannot register tools. Server starts loopback-only Streamable HTTP MCP
 and injects opaque per-agent capability URL through `server.before("agent.create")`. The capability
 binds the longest registered Paseo project root that contains the agent's cwd, so it carries both
-the Paseo project id and canonical root. Nested registered projects stay separate. Tool inputs
+the Paseo project id, project/workspace scope, canonical Git root, and initiating agent id. Nested
+registered projects stay separate even when they share one canonical Git root and config. Tool inputs
 accept no project path, and work ids from another project id or root are rejected before any timer
 or resource mutation. An unregistered Git root receives only the initialization capability;
 Work Sandbox tools refuse until the directory is a registered Paseo project. `cube_init_config`
@@ -168,13 +188,15 @@ plugin version must be recreated (or restarted) before they can call the tools.
 
 ## Projects and identity
 
-Every registered Paseo project root is an independent Cube scope, including feature worktrees and
-nested registered roots. Identity is the Paseo project id plus the canonical root; the plugin never
-collapses scopes by Git remote, Git top level, Paseo `projectKey`, or Cube config project id. The
+Every registered Paseo project root is an independent Cube ownership scope, including feature
+worktrees and nested registered roots. Identity is the Paseo project/workspace id plus canonical Git
+root. Multiple scopes may intentionally share one Git root and `.cube/config.json`; the plugin never
+collapses their work ownership by Git remote, Git top level, Paseo `projectKey`, or Cube config id. The
 authoritative inventory comes from the authenticated Paseo `projects.list()` API and is refreshed
 from the public `project.update` stream, so it never depends on an agent capability map and survives
-plugin reload. Roots that are missing, not directories, or that canonicalize to the same directory
-as another scope are marked unavailable or ambiguous and cannot be mutated. UI RPCs
+plugin reload. Missing and non-directory roots are unavailable. Exact duplicate roots remain
+ambiguous during cwd-only capability injection; `agent.session_open` uses the concrete workspace id
+to bind the initiating scope when available. UI RPCs
 (`cube.list-projects`, `cube.init-config`, `cube.pause-work`, `cube.resume-work`,
 `cube.destroy-work`) accept only project ids and work ids, and the server resolves and canonicalizes
 the registered root before touching the filesystem or Cube.
@@ -221,7 +243,9 @@ host mutation. Treat pairing links as passwords.
 - Private state defaults to `~/.paseo/cubesandbox-plugin/cubesandbox`: directories mode `0700`, files
   mode `0600`. WorkRecord v2 stores the Paseo project id, canonical repository root, Cube project id,
   repository, and ownership status alongside work/sandbox/task/relay/workspace/agent references and
-  lifecycle timestamps. Legacy v1 records migrate only when their canonical root maps to exactly one
+  lifecycle timestamps. It also stores callback target ids, stable notification ids, delivery state,
+  and the last assistant message when available. Pairing URLs and credentials remain excluded. Legacy
+  v1 records migrate only when their canonical root maps to exactly one
   online registered project; ambiguous or removed roots are quarantined with a stable synthetic id
   and stay visible for safe cleanup instead of being silently adopted. Pairing offers are separate
   private secret files and are returned only through authenticated plugin UI RPC or project-bound

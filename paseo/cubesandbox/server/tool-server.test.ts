@@ -15,6 +15,41 @@ function deferred<T>() {
 }
 
 describe("CubeToolServer capabilities", () => {
+  it("passes the bound initiating agent into managed agent creation", async () => {
+    const createAgent = vi.fn(async () => ({ created: true }));
+    const works = { createAgent } as unknown as WorkService;
+    const server = new CubeToolServer(works);
+    await server.start();
+    const capabilityUrl = server.createCapability({
+      canonicalRoot: "/repo/first",
+      paseoProjectId: "prj_first",
+    });
+    server.bindCapabilityCoordinator(capabilityUrl, "coordinator-1");
+    const client = new Client({ name: "callback-test", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(capabilityUrl)),
+    );
+    try {
+      const result = await client.callTool({
+        name: "cube_create_agent",
+        arguments: { prompt: "finish task" },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(createAgent).toHaveBeenCalledWith(
+        {
+          paseoProjectId: "prj_first",
+          canonicalRoot: "/repo/first",
+        },
+        { prompt: "finish task" },
+        "coordinator-1",
+      );
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("binds opaque capabilities to exactly one initiating project scope", async () => {
     const works = {} as unknown as WorkService;
     const server = new CubeToolServer(works);

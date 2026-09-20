@@ -14,6 +14,7 @@ import {
 } from "../shared/contracts.js";
 import { cubeSandboxSettings } from "../shared/settings.js";
 import { CubeSdkRuntime } from "./cube-runtime.js";
+import { PaseoCompletionNotifier } from "./completion-notifier.js";
 import { findGitRoot } from "./project-config.js";
 import {
   canonicalizeRoot,
@@ -28,6 +29,8 @@ import { CubeToolServer, type CapabilityBinding } from "./tool-server.js";
 import { WorkRecordStore } from "./work-record.js";
 import { WorkService } from "./work-service.js";
 
+const CAPABILITY_URL_ENV = "CUBESANDBOX_PASEO_CAPABILITY_URL";
+
 function resolveStateDirectory(): string {
   const configured = process.env.CUBESANDBOX_PASEO_STATE_DIR;
   if (configured) return z.string().min(1).parse(configured);
@@ -41,7 +44,7 @@ async function capabilityBindingForCwd(
   const scope = await resolveProjectForCwd(scopes, cwd);
   if (scope) {
     return {
-      canonicalRoot: scope.canonicalRoot,
+      canonicalRoot: scope.repositoryRoot ?? scope.canonicalRoot,
       paseoProjectId: scope.projectId,
       ...(scope.workspaceId ? { paseoWorkspaceId: scope.workspaceId } : {}),
     };
@@ -53,11 +56,13 @@ async function capabilityBindingForCwd(
 
 export function contributeServer(server: PluginServerContext) {
   const records = new WorkRecordStore(resolveStateDirectory());
+  const completionNotifier = new PaseoCompletionNotifier();
   const works = new WorkService(
     records,
     new CubeSdkRuntime(),
     new PaseoSdkConnector(),
     loadRuntimeIdentityBundle,
+    completionNotifier,
   );
   const tools = new CubeToolServer(works);
   server.registerSettings(cubeSandboxSettings);
@@ -86,9 +91,19 @@ export function contributeServer(server: PluginServerContext) {
       return [];
     }
   };
+  const usePaseo = (paseo: PaseoApi | undefined): void => {
+    if (!paseo) return;
+    completionNotifier.setPaseo(paseo);
+    void works.flushNotifications().catch(() => undefined);
+  };
+
+  server.on("agent.turn_ended", (_event, context) => {
+    usePaseo(context.paseo);
+  });
 
   server.before("agent.create", async ({ request }, context) => {
     await ready;
+    usePaseo(context?.paseo);
     const binding = await capabilityBindingForCwd(
       await bestEffortInventory(context?.paseo),
       request.config.cwd,
@@ -97,6 +112,7 @@ export function contributeServer(server: PluginServerContext) {
     const url = tools.createCapability(binding);
     return {
       ...request,
+      env: { ...request.env, [CAPABILITY_URL_ENV]: url },
       config: {
         ...request.config,
         mcpServers: {
@@ -107,21 +123,54 @@ export function contributeServer(server: PluginServerContext) {
     };
   });
 
+  server.before("agent.session_open", async ({ request }, context) => {
+    await ready;
+    usePaseo(context.paseo);
+    const capabilityUrl = request.env[CAPABILITY_URL_ENV];
+    if (!capabilityUrl) return request;
+    const scopes = await bestEffortInventory(context.paseo);
+    const scope = request.workspaceId
+      ? scopes.find(
+          (candidate) => candidate.workspaceId === request.workspaceId,
+        )
+      : await resolveProjectForCwd(scopes, request.cwd);
+    tools.bindCapabilityCoordinator(
+      capabilityUrl,
+      request.agentId,
+      scope
+        ? {
+            canonicalRoot: scope.repositoryRoot ?? scope.canonicalRoot,
+            paseoProjectId: scope.projectId,
+            ...(scope.workspaceId
+              ? { paseoWorkspaceId: scope.workspaceId }
+              : {}),
+          }
+        : undefined,
+    );
+    const { [CAPABILITY_URL_ENV]: _capabilityUrl, ...env } = request.env;
+    return { ...request, env };
+  });
+
   server.handle(listProjectsRpc, async (_input, { paseo }) => {
     await ready;
+    usePaseo(paseo);
     const scopes = await inventory(paseo);
     return { projects: await works.projectSummaries(scopes, true) };
   });
   server.handle(initConfigRpc, async ({ projectId }, { paseo }) => {
     await ready;
+    usePaseo(paseo);
     const scope = resolveProjectId(await inventory(paseo), projectId);
     return {
-      path: await works.initializeConfig(scope.canonicalRoot),
+      path: await works.initializeConfig(
+        scope.repositoryRoot ?? scope.canonicalRoot,
+      ),
       created: true as const,
     };
   });
   server.handle(pauseWorkRpc, async ({ projectId, workId }, { paseo }) => {
     await ready;
+    usePaseo(paseo);
     const owner = await works.resolveWorkOwner(
       await inventory(paseo),
       projectId,
@@ -131,6 +180,7 @@ export function contributeServer(server: PluginServerContext) {
   });
   server.handle(resumeWorkRpc, async ({ projectId, workId }, { paseo }) => {
     await ready;
+    usePaseo(paseo);
     const owner = await works.resolveWorkOwner(
       await inventory(paseo),
       projectId,
@@ -140,6 +190,7 @@ export function contributeServer(server: PluginServerContext) {
   });
   server.handle(destroyWorkRpc, async ({ projectId, workId }, { paseo }) => {
     await ready;
+    usePaseo(paseo);
     const owner = await works.resolveWorkOwner(
       await inventory(paseo),
       projectId,

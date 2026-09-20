@@ -91,7 +91,7 @@ describe("initializeProjectConfig", () => {
     );
   });
 
-  it("initializes at a nested registered root instead of the Git top level", async () => {
+  it("initializes at the Git top level from a nested launch path", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "cube-nested-test-"));
     await executeFile("git", ["init", "-b", "main", root]);
     await executeFile("git", [
@@ -114,9 +114,9 @@ describe("initializeProjectConfig", () => {
 
     const configPath = await initializeProjectConfigAtProjectRoot(nested);
 
-    expect(configPath).toBe(path.join(nested, ".cube", "config.json"));
-    expect((await stat(path.join(nested, ".cube"))).isDirectory()).toBe(true);
-    await expect(stat(path.join(root, ".cube"))).rejects.toThrow();
+    expect(configPath).toBe(path.join(root, ".cube", "config.json"));
+    expect((await stat(path.join(root, ".cube"))).isDirectory()).toBe(true);
+    await expect(stat(path.join(nested, ".cube"))).rejects.toThrow();
   });
 
   it("resolves advertised remote HEAD instead of the current feature branch", async () => {

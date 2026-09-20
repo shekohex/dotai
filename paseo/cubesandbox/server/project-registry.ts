@@ -2,6 +2,8 @@ import type { PaseoApi, PaseoProject, PaseoWorkspace } from "@getpaseo/client";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { findGitRoot } from "./project-config.js";
+
 /** Synthetic project id used to surface records that cannot be mapped to a live project. */
 export const UNASSIGNED_PROJECT_ID = "cubesandbox:unassigned";
 /** Prefix for migrated records whose original project mapping was ambiguous or removed. */
@@ -15,6 +17,7 @@ export interface ProjectScope {
   displayName: string;
   declaredRoot: string;
   canonicalRoot: string;
+  repositoryRoot?: string;
   availability: ProjectAvailability;
   error?: string;
 }
@@ -49,22 +52,11 @@ export async function canonicalizeRoot(target: string): Promise<string> {
   return (await canonicalizeExistingDirectory(target)) ?? path.resolve(target);
 }
 
-function markRootCollisions(scopes: ProjectScope[]): void {
-  const byRoot = new Map<string, ProjectScope[]>();
-  for (const scope of scopes) {
-    if (scope.availability !== "online") continue;
-    const group = byRoot.get(scope.canonicalRoot) ?? [];
-    group.push(scope);
-    byRoot.set(scope.canonicalRoot, group);
-  }
-  for (const group of byRoot.values()) {
-    if (new Set(group.map((scope) => scope.projectId)).size < 2) continue;
-    for (const scope of group) {
-      scope.availability = "offline";
-      scope.error =
-        "Project roots resolve to the same directory; this scope is ambiguous";
-    }
-  }
+async function resolveRepositoryRoot(
+  canonicalRoot: string,
+): Promise<string | undefined> {
+  const gitRoot = await findGitRoot(canonicalRoot);
+  return gitRoot ? canonicalizeRoot(gitRoot) : undefined;
 }
 
 async function listAllWorkspaces(paseo: PaseoApi): Promise<PaseoWorkspace[]> {
@@ -106,12 +98,14 @@ async function workspaceScope(
       error: `Paseo workspace root is unavailable: ${workspace.workspaceDirectory}`,
     };
   }
+  const repositoryRoot = await resolveRepositoryRoot(canonicalRoot);
   return {
     projectId: project.projectId,
     workspaceId: workspace.id,
     displayName: preferredDisplayName(project),
     declaredRoot: workspace.workspaceDirectory,
     canonicalRoot,
+    ...(repositoryRoot ? { repositoryRoot } : {}),
     availability,
     ...(workspace.archivingAt
       ? { error: `Paseo workspace is archived: ${workspace.id}` }
@@ -121,8 +115,8 @@ async function workspaceScope(
 
 /**
  * Authoritative inventory of every registered Paseo project as an independent
- * Cube scope. Roots are canonicalized and cross-project collisions are marked
- * offline.
+ * Cube scope. Project roots and their containing Git roots are canonicalized
+ * independently so multiple Paseo scopes can share one repository config.
  */
 export async function listProjectScopes(
   paseo: PaseoApi,
@@ -146,11 +140,13 @@ export async function listProjectScopes(
           error: `Project root is unavailable: ${project.projectRootPath}`,
         };
       }
+      const repositoryRoot = await resolveRepositoryRoot(canonicalRoot);
       return {
         projectId: project.projectId,
         displayName: preferredDisplayName(project),
         declaredRoot: project.projectRootPath,
         canonicalRoot,
+        ...(repositoryRoot ? { repositoryRoot } : {}),
         availability: "online",
       };
     }),
@@ -174,7 +170,6 @@ export async function listProjectScopes(
       (scope): scope is ProjectScope => scope !== undefined,
     ),
   ];
-  markRootCollisions(scopes);
   return scopes;
 }
 
@@ -247,7 +242,7 @@ export function matchScopeForRecord(
     (scope) =>
       scope.projectId === record.paseoProjectId &&
       scope.workspaceId === record.paseoWorkspaceId &&
-      scope.canonicalRoot === record.repositoryRoot,
+      (scope.repositoryRoot ?? scope.canonicalRoot) === record.repositoryRoot,
   );
 }
 

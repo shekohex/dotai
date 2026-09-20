@@ -160,16 +160,11 @@ export async function initializeProjectConfig(
   return writeProjectConfig(metadata.root, metadata);
 }
 
-/**
- * Creates config at exactly one registered Paseo project root. Git metadata is
- * still derived from the repository, but the config directory never escapes the
- * provided root (for example a worktree or a nested registered project).
- */
+/** Creates config at the canonical Git root discovered from a Paseo project path. */
 export async function initializeProjectConfigAtProjectRoot(
   projectRoot: string,
 ): Promise<string> {
-  const metadata = await discoverGitProject(projectRoot);
-  return writeProjectConfig(projectRoot, { ...metadata, root: projectRoot });
+  return initializeProjectConfig(projectRoot);
 }
 
 async function writeProjectConfig(

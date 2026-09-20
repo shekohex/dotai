@@ -1,7 +1,9 @@
 import type { PaseoApi, PaseoProject, PaseoWorkspace } from "@getpaseo/client";
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,6 +13,8 @@ import {
   resolveProjectForCwd,
   resolveProjectId,
 } from "./project-registry.js";
+
+const executeFile = promisify(execFile);
 
 function fakeProject(
   projectId: string,
@@ -184,7 +188,34 @@ describe("project registry inventory", () => {
     expect(await resolveProjectForCwd(scopes, os.tmpdir())).toBeUndefined();
   });
 
-  it("marks colliding canonical roots offline and rejects them", async () => {
+  it("keeps distinct Paseo projects scoped while sharing one Git root", async () => {
+    const repositoryRoot = await tempRoot("cube-registry-shared-git-");
+    await executeFile("git", ["init", "-b", "main", repositoryRoot]);
+    const firstProjectRoot = path.join(repositoryRoot, "agent");
+    const secondProjectRoot = path.join(repositoryRoot, "paseo");
+    await Promise.all([mkdir(firstProjectRoot), mkdir(secondProjectRoot)]);
+    const { paseo } = fakePaseo([
+      fakeProject("prj_agent", firstProjectRoot),
+      fakeProject("prj_paseo", secondProjectRoot),
+    ]);
+
+    const scopes = await listProjectScopes(paseo);
+
+    expect(scopes).toHaveLength(2);
+    expect(scopes.every((scope) => scope.availability === "online")).toBe(true);
+    expect(scopes.map((scope) => scope.repositoryRoot)).toEqual([
+      repositoryRoot,
+      repositoryRoot,
+    ]);
+    expect(
+      (await resolveProjectForCwd(scopes, firstProjectRoot))?.projectId,
+    ).toBe("prj_agent");
+    expect(
+      (await resolveProjectForCwd(scopes, secondProjectRoot))?.projectId,
+    ).toBe("prj_paseo");
+  });
+
+  it("keeps colliding project roots addressable while cwd lookup stays ambiguous", async () => {
     const root = await tempRoot("cube-registry-collision-");
     const { paseo } = fakePaseo([
       fakeProject("prj_a", root),
@@ -193,10 +224,9 @@ describe("project registry inventory", () => {
 
     const scopes = await listProjectScopes(paseo);
 
-    expect(scopes.every((scope) => scope.availability === "offline")).toBe(
-      true,
-    );
-    expect(() => resolveProjectId(scopes, "prj_a")).toThrow("ambiguous");
+    expect(scopes.every((scope) => scope.availability === "online")).toBe(true);
+    expect(resolveProjectId(scopes, "prj_a").canonicalRoot).toBe(root);
+    expect(await resolveProjectForCwd(scopes, root)).toBeUndefined();
   });
 
   it("resolves same-project duplicate roots to the project scope", async () => {

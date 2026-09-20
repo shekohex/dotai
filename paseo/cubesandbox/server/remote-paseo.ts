@@ -1,6 +1,8 @@
 import {
   createPaseoClient,
   type PaseoAgentHandle,
+  type PaseoAgentTimelineEvent,
+  type PaseoAgentUpdate,
   type PaseoAgentTimelineRefetchOptions,
   type PaseoApi,
   type PaseoClient,
@@ -61,6 +63,15 @@ export interface RemoteAgentReference {
   workspaceId: string;
 }
 
+export interface RemoteAgentCompletion {
+  status: "idle" | "error" | "stopped" | "closed";
+  lastAssistantMessage?: string;
+}
+
+export interface RemoteAgentWatchOptions {
+  recoverCurrent?: boolean;
+}
+
 export type RemoteAgentTimeline = Awaited<
   ReturnType<PaseoAgentHandle["timeline"]["refetch"]>
 >;
@@ -75,6 +86,11 @@ export interface RemotePaseoConnection {
     agentId: string,
     options: RemoteAgentTimelineOptions,
   ): Promise<RemoteAgentTimeline>;
+  watchAgent(
+    agentId: string,
+    handler: (completion: RemoteAgentCompletion) => Promise<void>,
+    options?: RemoteAgentWatchOptions,
+  ): Promise<() => void>;
   hasBusyAgent(agentIds: string[]): Promise<boolean>;
   close(): Promise<void>;
 }
@@ -172,7 +188,6 @@ class PaseoSdkConnection implements RemotePaseoConnection {
             ? { featureValues: input.featureValues }
             : {}),
         },
-        prompt: input.prompt,
       });
     } catch (creationError) {
       try {
@@ -203,6 +218,109 @@ class PaseoSdkConnection implements RemotePaseoConnection {
     return this.client.agents.ref(agentId).timeline.refetch(options);
   }
 
+  async watchAgent(
+    agentId: string,
+    handler: (completion: RemoteAgentCompletion) => Promise<void>,
+    options: RemoteAgentWatchOptions = {},
+  ): Promise<() => void> {
+    const agent = this.client.agents.ref(agentId);
+    let turnStarted = options.recoverCurrent === true;
+    let settled = false;
+    let streamedAssistantMessage = "";
+    let unsubscribe = () => undefined;
+
+    const finish = async (
+      status: RemoteAgentCompletion["status"],
+    ): Promise<void> => {
+      if (!turnStarted || settled) return;
+      settled = true;
+      const lastAssistantMessage =
+        (await this.latestAssistantMessage(agent).catch(() => undefined)) ??
+        (streamedAssistantMessage || undefined);
+      try {
+        await handler({
+          status,
+          ...(lastAssistantMessage ? { lastAssistantMessage } : {}),
+        });
+        unsubscribe();
+      } catch {
+        settled = false;
+      }
+    };
+    const onTimeline = (event: PaseoAgentTimelineEvent): void => {
+      if (event.event.type === "turn_started") {
+        turnStarted = true;
+        streamedAssistantMessage = "";
+        return;
+      }
+      if (
+        event.event.type === "timeline" &&
+        event.event.item.type === "assistant_message"
+      ) {
+        streamedAssistantMessage += event.event.item.text;
+        return;
+      }
+      if (event.event.type === "turn_completed") {
+        void finish("idle");
+        return;
+      }
+      if (event.event.type === "turn_failed") {
+        void finish("error");
+        return;
+      }
+      if (event.event.type === "turn_canceled") {
+        void finish("stopped");
+        return;
+      }
+      if (
+        event.event.type === "attention_required" &&
+        event.event.reason !== "permission"
+      ) {
+        void finish(event.event.reason === "error" ? "error" : "idle");
+      }
+    };
+    const onAgentUpdate = (update: PaseoAgentUpdate): void => {
+      if (update.kind !== "upsert" || update.agent.id !== agentId) return;
+      if (
+        update.agent.activeTurn != null ||
+        update.agent.status === "initializing" ||
+        update.agent.status === "running"
+      ) {
+        turnStarted = true;
+        return;
+      }
+      if (update.agent.status === "idle") void finish("idle");
+      if (update.agent.status === "error") {
+        turnStarted = true;
+        void finish("error");
+      }
+      if (update.agent.status === "closed") {
+        turnStarted = true;
+        void finish("closed");
+      }
+    };
+    const timelineSubscription = agent.timeline.subscribe(onTimeline);
+    const unsubscribeAgent = agent.subscribe(onAgentUpdate);
+    unsubscribe = () => {
+      timelineSubscription();
+      unsubscribeAgent();
+    };
+    try {
+      await timelineSubscription.ready;
+      if (options.recoverCurrent) {
+        const current = await agent.refresh();
+        const status = current?.agent.status;
+        if (status === "idle" || status === "error" || status === "closed") {
+          void finish(status);
+        }
+      }
+    } catch (error) {
+      unsubscribe();
+      throw error;
+    }
+    return unsubscribe;
+  }
+
   async discardAgent(reference: RemoteAgentReference): Promise<void> {
     const result = await this.client.workspaces.archive(reference.workspaceId);
     if (result.error) {
@@ -229,6 +347,26 @@ class PaseoSdkConnection implements RemotePaseoConnection {
 
   close(): Promise<void> {
     return this.client.close();
+  }
+
+  private async latestAssistantMessage(
+    agent: PaseoAgentHandle,
+  ): Promise<string | undefined> {
+    const timeline = await agent.timeline.refetch({
+      direction: "tail",
+      limit: 100,
+      projection: "projected",
+    });
+    const chunks: string[] = [];
+    for (let index = timeline.entries.length - 1; index >= 0; index -= 1) {
+      const item = timeline.entries[index]?.item;
+      if (item?.type !== "assistant_message") {
+        if (chunks.length > 0) break;
+        continue;
+      }
+      chunks.push(item.text);
+    }
+    return chunks.length > 0 ? chunks.reverse().join("") : undefined;
   }
 }
 

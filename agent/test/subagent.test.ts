@@ -509,15 +509,15 @@ timedTest("lite subagent replace mode keeps generated tool prompt tail", async (
       const result = await session.extensionRunner.emitBeforeAgentStart(
         "Inspect code",
         undefined,
-        session.systemPrompt,
-        { cwd },
+        session.extensionRunner.createCommandContext().getSystemPromptOptions(),
       );
+      const systemPrompt = result.systemPromptOptions.forceSystemPrompt;
 
-      expect(result?.systemPrompt).toContain("Review only\n\nAvailable tools:\n");
-      expect(result?.systemPrompt).toContain("- read:");
-      expect(result?.systemPrompt).toContain("- bash:");
-      expect(result?.systemPrompt).toContain("Current working directory:");
-      expect(result?.systemPrompt?.match(/Review only/g)?.length).toBe(1);
+      expect(systemPrompt).toContain("Review only\n\n<tools>\n");
+      expect(systemPrompt).toContain("- read:");
+      expect(systemPrompt).toContain("- bash:");
+      expect(systemPrompt).toContain("<cwd>\n");
+      expect(systemPrompt?.match(/Review only/g)?.length).toBe(1);
     } finally {
       session.dispose();
     }

@@ -857,8 +857,7 @@ function createEnabledSubagentExtension(options?: Parameters<typeof createSubage
 }
 
 function getCurrentSystemPrompt(testSession: TestSession): string {
-  return (testSession.session as { agent: { state: { systemPrompt: string } } }).agent.state
-    .systemPrompt;
+  return (testSession.session as { systemPrompt: string }).systemPrompt;
 }
 
 function estimatePromptTokenCount(prompt: string): number {
@@ -2503,35 +2502,38 @@ timedTest("LiteLLM provider registrations route deepseek via LiteLLM v1", () => 
   expect(deepSeekRegistration.config.api).toBe("openai-completions");
   expect(Array.isArray(deepSeekRegistration.config.models)).toBeTruthy();
   expect(
-    deepSeekRegistration.config.models!.some((model) => model.id === "deepseek-v4-flash"),
+    deepSeekRegistration.config.models!.some((model) => model.id === "deepseek-flash"),
   ).toBeTruthy();
 });
 
-timedTest("modes extension applies mode systemPrompt to active session on next turn", async () => {
-  const cwd = await createTempDir("agent-mode-system-prompt-state-");
-  let session: TestSession | undefined;
-  const providers = createHandoffTestProviders("ok");
+timedTest(
+  "modes extension does not persist its forced systemPrompt in the transcript",
+  async () => {
+    const cwd = await createTempDir("agent-mode-system-prompt-state-");
+    let session: TestSession | undefined;
+    const providers = createHandoffTestProviders("ok");
 
-  await writeSharedSelectionModesFile(cwd);
+    await writeSharedSelectionModesFile(cwd);
 
-  try {
-    session = await createTestSession({
-      cwd,
-      extensionFactories: [modesExtension, providers.extensionFactory],
-    });
+    try {
+      session = await createTestSession({
+        cwd,
+        extensionFactories: [modesExtension, providers.extensionFactory],
+      });
 
-    await session.session.prompt("/mode review");
-    await session.session.agent.waitForIdle();
-    await session.session.prompt("hello");
-    await session.session.agent.waitForIdle();
+      await session.session.prompt("/mode review");
+      await session.session.agent.waitForIdle();
+      await session.session.prompt("hello");
+      await session.session.agent.waitForIdle();
 
-    expect(getCurrentSystemPrompt(session)).toContain("Review mode");
-  } finally {
-    session?.dispose();
-    providers.dispose();
-    await rm(cwd, { recursive: true, force: true });
-  }
-});
+      expect(getCurrentSystemPrompt(session)).not.toContain("Review mode");
+    } finally {
+      session?.dispose();
+      providers.dispose();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("modes extension injects selected mode systemPrompt into next agent turn", async () => {
   const cwd = await createTempDir("agent-mode-system-prompt-turn-");

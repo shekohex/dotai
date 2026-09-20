@@ -1,8 +1,8 @@
 diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
-index bf979d4..0b0223b 100644
+index dfdb6ec..31746eb 100644
 --- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
 +++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
-@@ -173,6 +173,9 @@ export const stream = (model, context, options) => {
+@@ -175,6 +175,9 @@ export const stream = (model, context, options) => {
              if (nextBody !== undefined) {
                  body = nextBody;
              }
@@ -12,7 +12,7 @@ index bf979d4..0b0223b 100644
              const websocketRequestId = codexSessionId || uuidv7();
              const sseHeaders = buildSSEHeaders(model.headers, options?.headers, accountId, apiKey, codexSessionId);
              const websocketHeaders = buildWebSocketHeaders(model.headers, options?.headers, accountId, apiKey, websocketRequestId);
-@@ -198,7 +201,7 @@ export const stream = (model, context, options) => {
+@@ -200,7 +203,7 @@ export const stream = (model, context, options) => {
                                  startEmitted = true;
                                  stream.push({ type: "start", partial: output });
                              }
@@ -21,7 +21,7 @@ index bf979d4..0b0223b 100644
                          if (options?.signal?.aborted) {
                              throw new Error("Request was aborted");
                          }
-@@ -327,7 +330,7 @@ export const stream = (model, context, options) => {
+@@ -329,7 +332,7 @@ export const stream = (model, context, options) => {
                  startEmitted = true;
                  stream.push({ type: "start", partial: output });
              }
@@ -30,7 +30,7 @@ index bf979d4..0b0223b 100644
              if (options?.signal?.aborted) {
                  throw new Error("Request was aborted");
              }
-@@ -1271,7 +1274,8 @@ function buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token)
+@@ -1274,7 +1277,8 @@ function buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token)
      }
      headers.set("Authorization", `Bearer ${token}`);
      headers.set("chatgpt-account-id", accountId);
@@ -41,10 +41,10 @@ index bf979d4..0b0223b 100644
      return headers;
  }
 diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
-index 52fcb30..de20d94 100644
+index 1396c8d..2ab2512 100644
 --- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
 +++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
-@@ -130,6 +130,7 @@ export const stream = (model, context, options) => {
+@@ -129,6 +129,7 @@ export const stream = (model, context, options) => {
              await processResponsesStream(openaiStream, output, stream, model, {
                  serviceTier: options?.serviceTier,
                  grammarToolInputProperties,
@@ -52,7 +52,7 @@ index 52fcb30..de20d94 100644
                  applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
              });
              if (options?.signal?.aborted) {
-@@ -285,6 +286,11 @@ function getServiceTierCostMultiplier(model, serviceTier) {
+@@ -280,6 +281,11 @@ function getServiceTierCostMultiplier(model, serviceTier) {
              return 1;
      }
  }
@@ -65,7 +65,7 @@ index 52fcb30..de20d94 100644
      const multiplier = getServiceTierCostMultiplier(model, serviceTier);
      if (multiplier === 1)
 diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
-index 216a45f..f81f025 100644
+index 216a45f..feee0ee 100644
 --- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
 +++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
 @@ -13,6 +13,7 @@ export function buildBaseOptions(model, context, options, apiKey) {
@@ -77,10 +77,10 @@ index 216a45f..f81f025 100644
          maxTokens: clampMaxTokensToContext(model, context, options?.maxTokens ?? model.maxTokens),
          signal: options?.signal,
 diff --git a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-index ce8c4cb..589ba67 100644
+index 6538c63..6461102 100644
 --- a/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
 +++ b/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-@@ -44,6 +44,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -46,6 +46,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "connection.?lost",
      "other side closed",
      "fetch failed",
@@ -90,7 +90,7 @@ index ce8c4cb..589ba67 100644
      "getaddrinfo",
      "ENOTFOUND",
      "EAI_AGAIN",
-@@ -57,11 +60,13 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -59,11 +62,13 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      // WebSocket transports can report close/error text instead of HTTP/fetch text.
      "websocket.?closed",
      "websocket.?error",
@@ -104,7 +104,7 @@ index ce8c4cb..589ba67 100644
      "stream ended before a terminal response event",
      "http2 request did not get a response",
      // Provider-requested retry delay cap failures should flow through the outer
-@@ -69,6 +74,10 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -71,6 +76,10 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "retry delay",
      // Explicit retry guidance emitted mid-stream by OpenAI Responses and Bedrock
      // stream exceptions (#6019).

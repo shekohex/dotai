@@ -489,7 +489,9 @@ describe("search_tools", () => {
         ?.messages.find(
           (message) => message.role === "toolResult" && message.toolName === "search_tools",
         );
-      expect(searchResult?.addedToolNames).toEqual(["subagent"]);
+      expect((searchResult?.details as { added?: string[] } | undefined)?.added).toEqual([
+        "subagent",
+      ]);
       expect(testSession.session.getActiveToolNames()).toEqual(["search_tools", "subagent"]);
     } finally {
       testSession.dispose();

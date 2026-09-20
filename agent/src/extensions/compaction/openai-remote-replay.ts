@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { normalizeContext, type Api, type Model } from "@earendil-works/pi-ai";
 import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
 import { convertToLlm, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { asRecord } from "../../utils/unknown-data.js";
@@ -148,7 +148,7 @@ function serializeMessages(model: Model<Api>, messages: AgentMessage[]): Respons
   return normalizeResponseItemsForPrompt(
     convertResponsesMessages(
       model,
-      { messages: convertToLlm(messages) },
+      normalizeContext({ messages: convertToLlm(messages) }),
       CODEX_TOOL_CALL_PROVIDERS,
       { includeSystemPrompt: false },
     ),

@@ -319,7 +319,7 @@ timedTest(
     expect(collapsedLines).toHaveLength(1);
     expect(collapsedText).toMatch(/viewed miss-minutes\.png/);
     expect(collapsedText).toMatch(/image\/png · .* · viewed directly · took \d+s/);
-    expect(expandedText).toMatch(/path: .*miss-minutes\.png/);
+    expect(expandedText).toMatch(/path:\s+[\s\S]*miss-minutes\.png/);
     expect(expandedText).toMatch(/byteSize: 12345/);
     expect(errorText).toMatch(/view image failed miss-minutes\.png/);
     expect(errorText).toMatch(/view_image expected an image file: notes\.txt/);
@@ -493,7 +493,7 @@ timedTest("subagent previews render representative action summaries and expanded
   expect(startExpandedText).toMatch(
     /The subagent will return with a summary automatically when it.*finishes/is,
   );
-  expect(startExpandedText).toMatch(/sessionPath: .*2d2c7b0c\.jsonl/);
+  expect(startExpandedText.replaceAll(/\s/g, "")).toMatch(/sessionPath:.*2d2c7b0c\.jsonl/);
 
   expect(messagePartialCollapsedText).toMatch(/1 line so far \(0s\) · message followUp/);
   expect(messagePartialExpandedText).toMatch(/Ping/);

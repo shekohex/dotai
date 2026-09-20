@@ -1,6 +1,10 @@
-const promptMarker = "Available tools:\n";
+const promptMarkers = ["<tools>\n", "Available tools:\n"];
 
 export function extractPiDynamicTail(systemPrompt: string): string {
-  const markerIndex = systemPrompt.indexOf(promptMarker);
-  return markerIndex === -1 ? systemPrompt : systemPrompt.slice(markerIndex);
+  const markerIndex = promptMarkers
+    .map((marker) => systemPrompt.indexOf(marker))
+    .filter((index) => index >= 0)
+    .toSorted((left, right) => left - right)[0];
+  if (markerIndex === undefined) return systemPrompt;
+  return systemPrompt.slice(markerIndex);
 }

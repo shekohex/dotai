@@ -2,6 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { describe, expect, test, vi } from "vitest";
 import openWikiExtension, {
   __openWikiExtensionInternalsForTests as internals,
@@ -230,7 +231,7 @@ describe("openwiki extension", () => {
         context,
         options,
       ) => {
-        capturedSystemPrompt = context.systemPrompt;
+        capturedSystemPrompt = getCurrentSystemPrompt(context.messages);
         return playbook.streamFn(model, context, options);
       };
 

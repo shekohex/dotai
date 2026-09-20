@@ -13,10 +13,10 @@ An explicit `--model` takes precedence over the active mode's primary model for 
 - **Candidate priority** (first healthy wins): `lan` (`192.168.1.116:4000`) → `tail` (`100.100.1.116:4000`) → `public` (`ai-gateway.0iq.xyz`). Probed via `GET /health/readiness` with a 1s timeout; the result is cached.
 - When a gateway is alive it registers, through the gateway:
   - `codex-openai` — `openai-responses` API, models copied from `getBuiltinModels("openai-codex")` (with `gpt-5.6-luna`/`sol`/`terra` overridden to a 372k context window), key from `AuthStorage("litellm")` or `$LITELLM_API_KEY`.
-  - `zai-coding-plan`, `deepseek` — proxied through the gateway, litellm key.
+  - `zai-coding-plan`, `deepseek` — proxied through the gateway, litellm key. `zai-coding-plan` serves the upstream `zai` builtin model catalog verbatim (no catalog overrides).
   - `gemini` — retained only for the `websearch` grounding tool, proxied to `<gateway>/v1beta` via `google-generative-ai`.
 - **Responses WebSocket transport** — the gateway `codex-openai` registration routes `openai-responses` streaming through a custom `streamSimple` (`src/extensions/litellm/openai-responses.ts` + `responses-websocket.ts`): request URLs are rewritten `http(s)://` → `ws(s)://?model=…`, connections are reused per session, and `previous_response_id` continuation sends input deltas instead of the full context. Connection-limit errors retry once on a fresh connection; any other WebSocket failure emits a `provider_transport_failure` diagnostic and flips the session to plain SSE fallback. The top-level `transport` setting controls it — `"sse"` forces SSE passthrough, `"auto"` (default) uses WebSocket; proxy env (`http_proxy`/`https_proxy`/`no_proxy`) is honored when dialing (`responses-websocket-proxy.ts`).
-- `zai` is **never proxied** — it always uses its native `https://api.z.ai/api/coding/paas/v4` URL with `$ZAI_API_KEY`.
+- `zai` is **never touched** by this extension — it uses the upstream builtin (`https://api.z.ai/api/coding/paas/v4`, `$ZAI_API_KEY`).
 - `opencode-go` is **never touched** by this extension — it always uses the upstream builtin with `$OPENCODE_API_KEY`.
 
 If no gateway is healthy, this extension registers nothing and upstream builtins serve everything directly.
@@ -27,7 +27,7 @@ If no gateway is healthy, this extension registers nothing and upstream builtins
 | ------------------ | ------------------------------- | -------------------------------------- | -------------------------------------- |
 | `codex-openai`     | litellm (proxy when gateway up) | `openai-codex` (builtin models copied) | litellm key / `$LITELLM_API_KEY`       |
 | `opencode-go`      | upstream builtin                | `opencode-go`                          | `$OPENCODE_API_KEY` (not via `/login`) |
-| `zai`              | litellm (native URL) or builtin | `zai`                                  | `$ZAI_API_KEY`                         |
+| `zai`              | upstream builtin                | `zai`                                  | `$ZAI_API_KEY`                         |
 | `zai-coding-plan`  | litellm only (synthesized)      | —                                      | litellm key                            |
 | `deepseek`         | litellm (proxy) or builtin      | `deepseek`                             | litellm key, or `$DEEPSEEK_API_KEY`    |
 | `gemini`           | litellm websearch only          | `google`                               | litellm key                            |

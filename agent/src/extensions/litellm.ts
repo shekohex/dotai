@@ -30,14 +30,9 @@ const DEEPSEEK_PROVIDER = "deepseek";
 const GEMINI_PROVIDER = "gemini";
 const ZAI_PROVIDER = "zai";
 const ZAI_CODING_PLAN_PROVIDER = "zai-coding-plan";
-const ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
-const ZAI_API_KEY_ENV = "$ZAI_API_KEY";
 const LITELLM_AUTH_PROVIDER = "litellm";
 export const LITELLM_API_KEY_ENV = "LITELLM_API_KEY";
 const LITELLM_READINESS_PATH = "/health/readiness";
-const ZAI_GLM_5_1_MODEL_ID = "glm-5.1";
-const ZAI_GLM_5_2_MODEL_ID = "glm-5.2";
-const ZAI_GLM_5_3_MODEL_ID = "glm-5.3";
 // Pi's context count excludes provider instructions and tool schemas serialized by LiteLLM.
 const CODEX_OPENAI_CONTEXT_WINDOW = 240_000;
 
@@ -76,15 +71,6 @@ export function createLiteLLMProviderRegistrations(
         api: "openai-responses",
         streamSimple: streamLiteLLMOpenAIResponses,
         models: createCodexOpenAIModels(state),
-      },
-    },
-    {
-      provider: ZAI_PROVIDER,
-      config: {
-        baseUrl: ZAI_BASE_URL,
-        apiKey: ZAI_API_KEY_ENV,
-        api: "openai-completions",
-        models: createZaiModels(state),
       },
     },
     {
@@ -184,7 +170,7 @@ async function probeLiteLLMCandidate(candidate: LiteLLMCandidate): Promise<{
 }
 
 function createZaiModels(_state: LiteLLMState): ProviderModelConfig[] {
-  const models = getBuiltinModels(ZAI_PROVIDER).map((model) => ({
+  return getBuiltinModels(ZAI_PROVIDER).map((model) => ({
     id: model.id,
     name: model.name,
     api: model.api,
@@ -195,31 +181,8 @@ function createZaiModels(_state: LiteLLMState): ProviderModelConfig[] {
     maxTokens: model.maxTokens,
     compat: model.compat,
     headers: model.headers,
-    thinkingLevelMap:
-      model.id === ZAI_GLM_5_3_MODEL_ID ? { high: "high", max: "max" } : model.thinkingLevelMap,
+    thinkingLevelMap: model.thinkingLevelMap,
   }));
-  const glm51 = models.find((model) => model.id === ZAI_GLM_5_1_MODEL_ID);
-  let augmentedModels = models;
-  if (glm51 !== undefined && !models.some((model) => model.id === ZAI_GLM_5_2_MODEL_ID)) {
-    augmentedModels = [
-      ...models,
-      {
-        ...glm51,
-        id: ZAI_GLM_5_2_MODEL_ID,
-        name: "GLM-5.2",
-        contextWindow: 1_000_000,
-        thinkingLevelMap: {
-          low: "high",
-          medium: "high",
-          high: "high",
-          xhigh: "max",
-          max: "max",
-        },
-      },
-    ];
-  }
-
-  return augmentedModels;
 }
 
 function createCodexOpenAIModels(state: LiteLLMState): ProviderModelConfig[] {

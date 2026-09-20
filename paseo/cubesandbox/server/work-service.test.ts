@@ -23,6 +23,7 @@ import {
 } from "./remote-paseo.js";
 import { WorkRecordStore, type WorkRecord } from "./work-record.js";
 import {
+  type CubeAgentCompletionNotification,
   createAgentInputSchema,
   type WorkOwner,
   WorkService,
@@ -187,6 +188,13 @@ function dependencies() {
     connect: vi.fn(async () => sandbox),
   };
   const createdAgents: RemoteAgentInput[] = [];
+  const completionHandlers = new Map<
+    string,
+    (completion: {
+      status: "idle" | "error" | "stopped" | "closed";
+      lastAssistantMessage?: string;
+    }) => Promise<void>
+  >();
   const loadRuntimeIdentityBundle = vi.fn(async () => {
     const tokenBacked = Boolean(
       process.env.GH_TOKEN || process.env.GITHUB_TOKEN,
@@ -252,7 +260,7 @@ function dependencies() {
         : {}),
     };
   });
-  const remote: RemotePaseoConnection = {
+  const remote = {
     serverId: "remote-1",
     createAgent: vi.fn(async (input) => {
       createdAgents.push(input);
@@ -281,8 +289,14 @@ function dependencies() {
       entries: [],
       error: null,
     })),
+    watchAgent: vi.fn(async (agentId, handler) => {
+      completionHandlers.set(agentId, handler);
+      return () => completionHandlers.delete(agentId);
+    }),
     hasBusyAgent: vi.fn(async () => false),
     close: vi.fn(async () => undefined),
+  } as unknown as RemotePaseoConnection & {
+    watchAgent: ReturnType<typeof vi.fn>;
   };
   const paseo: RemotePaseoConnector = { connect: vi.fn(async () => remote) };
   return {
@@ -297,6 +311,17 @@ function dependencies() {
     run,
     remote,
     createdAgents,
+    completeAgent: async (
+      agentId: string,
+      completion: {
+        status: "idle" | "error" | "stopped" | "closed";
+        lastAssistantMessage?: string;
+      },
+    ) => {
+      const handler = completionHandlers.get(agentId);
+      if (!handler) throw new Error(`No completion watcher for ${agentId}`);
+      await handler(completion);
+    },
   };
 }
 
@@ -306,6 +331,153 @@ afterEach(() => {
 });
 
 describe("WorkService lifecycle", () => {
+  it("delivers one scoped completion callback with final assistant output", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    const notify = vi.fn(
+      async (_notification: CubeAgentCompletionNotification) => undefined,
+    );
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+      { notify },
+    );
+
+    const work = await service.createAgent(
+      owner(repositoryRoot),
+      { prompt: "finish this" },
+      "coordinator-1",
+    );
+    await deps.completeAgent("agent-1", {
+      status: "idle",
+      lastAssistantMessage: "Implemented and verified.",
+    });
+    await waitForCondition(() => notify.mock.calls.length === 1);
+
+    expect(notify).toHaveBeenCalledWith({
+      notificationId: expect.any(String),
+      coordinatorAgentId: "coordinator-1",
+      workId: work.workId,
+      agentId: "agent-1",
+      status: "idle",
+      lastAssistantMessage: "Implemented and verified.",
+    });
+    await deps.completeAgent("agent-1", {
+      status: "idle",
+      lastAssistantMessage: "Implemented and verified.",
+    });
+    expect(notify).toHaveBeenCalledTimes(1);
+    await service.close();
+  });
+
+  it("keeps completion callbacks scoped across Works and agents", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const deps = dependencies();
+    const notify = vi.fn(
+      async (_notification: CubeAgentCompletionNotification) => undefined,
+    );
+    const service = new WorkService(
+      new WorkRecordStore(state),
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+      { notify },
+    );
+
+    const first = await service.createAgent(
+      owner(repositoryRoot),
+      { prompt: "first" },
+      "coordinator-1",
+    );
+    const second = await service.createAgent(
+      owner(repositoryRoot),
+      { prompt: "second" },
+      "coordinator-2",
+    );
+    await deps.completeAgent("agent-2", { status: "error" });
+    await deps.completeAgent("agent-1", { status: "idle" });
+
+    expect(notify.mock.calls.map(([notification]) => notification)).toEqual([
+      expect.objectContaining({
+        coordinatorAgentId: "coordinator-2",
+        workId: second.workId,
+        agentId: "agent-2",
+        status: "error",
+      }),
+      expect.objectContaining({
+        coordinatorAgentId: "coordinator-1",
+        workId: first.workId,
+        agentId: "agent-1",
+        status: "idle",
+      }),
+    ]);
+    await service.close();
+  });
+
+  it("retries an undelivered completion after plugin restart", async () => {
+    const repositoryRoot = await projectFixture();
+    const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
+    const store = new WorkRecordStore(state);
+    const deps = dependencies();
+    const failedNotify = vi.fn(
+      async (_notification: CubeAgentCompletionNotification) => {
+        throw new Error("local Paseo unavailable");
+      },
+    );
+    const firstService = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+      { notify: failedNotify },
+    );
+    const work = await firstService.createAgent(
+      owner(repositoryRoot),
+      { prompt: "finish before restart" },
+      "coordinator-1",
+    );
+    await deps.completeAgent("agent-1", {
+      status: "idle",
+      lastAssistantMessage: "Persisted result",
+    });
+    expect(
+      (await store.get(work.workId)).completionNotifications?.[0]?.state,
+    ).toBe("ready");
+    const notificationId = failedNotify.mock.calls[0]?.[0].notificationId;
+    await firstService.close();
+
+    const deliveredNotify = vi.fn(
+      async (_notification: CubeAgentCompletionNotification) => undefined,
+    );
+    const reloadedService = new WorkService(
+      store,
+      deps.cube,
+      deps.paseo,
+      deps.loadRuntimeIdentityBundle,
+      { notify: deliveredNotify },
+    );
+    await reloadedService.start();
+
+    expect(deliveredNotify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notificationId,
+        coordinatorAgentId: "coordinator-1",
+        workId: work.workId,
+        agentId: "agent-1",
+        status: "idle",
+        lastAssistantMessage: "Persisted result",
+      }),
+    );
+    expect(
+      (await store.get(work.workId)).completionNotifications?.[0]?.state,
+    ).toBe("delivered");
+    await reloadedService.close();
+  });
+
   it("creates one sandbox, then adds isolated remote worktree agents", async () => {
     const repositoryRoot = await projectFixture();
     const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
@@ -413,6 +585,8 @@ describe("WorkService lifecycle", () => {
   });
 
   it("uses SSH clone without disabling host verification when GitHub token is absent", async () => {
+    vi.stubEnv("GH_TOKEN", "");
+    vi.stubEnv("GITHUB_TOKEN", "");
     const repositoryRoot = await projectFixture();
     const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
     const deps = dependencies();
@@ -468,6 +642,8 @@ describe("WorkService lifecycle", () => {
   });
 
   it("destroys transferred identities when Git configuration fails", async () => {
+    vi.stubEnv("GH_TOKEN", "");
+    vi.stubEnv("GITHUB_TOKEN", "");
     const repositoryRoot = await projectFixture();
     const state = await mkdtemp(path.join(os.tmpdir(), "cube-work-state-"));
     const store = new WorkRecordStore(state);
@@ -796,12 +972,12 @@ describe("WorkService lifecycle", () => {
       service.getWorkEvents(owner(repositoryRoot), work.workId),
     ).resolves.toEqual([
       expect.objectContaining({
-        type: "created",
-        detail: "Created Work Sandbox",
-      }),
-      expect.objectContaining({
         type: "agent-created",
         detail: "Created remote agent agent-1",
+      }),
+      expect.objectContaining({
+        type: "created",
+        detail: "Created Work Sandbox",
       }),
     ]);
     await service.close();

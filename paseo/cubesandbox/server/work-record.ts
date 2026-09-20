@@ -29,6 +29,19 @@ const taskMetadataSchema = z
   })
   .strict();
 
+export const completionNotificationSchema = z
+  .object({
+    agentId: z.string().min(1),
+    coordinatorAgentId: z.string().min(1),
+    generation: z.number().int().positive(),
+    notificationId: z.string().min(1),
+    state: z.enum(["pending", "ready", "delivered"]),
+    status: z.enum(["idle", "error", "stopped", "closed"]).optional(),
+    lastAssistantMessage: z.string().min(1).optional(),
+    deliveredAt: z.string().datetime().optional(),
+  })
+  .strict();
+
 export const activityEntrySchema = z
   .object({
     at: z.string().datetime(),
@@ -62,6 +75,7 @@ const workRecordFields = {
     .strict()
     .optional(),
   agents: z.array(agentReferenceSchema),
+  completionNotifications: z.array(completionNotificationSchema).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastActivityAt: z.string().datetime(),
@@ -111,7 +125,8 @@ function toMigratedRecord(
 ): WorkRecordV2 {
   const matches = scopes.filter(
     (scope) =>
-      scope.availability === "online" && scope.canonicalRoot === canonicalRoot,
+      scope.availability === "online" &&
+      (scope.repositoryRoot ?? scope.canonicalRoot) === canonicalRoot,
   );
   const scope = matches.length === 1 ? matches[0] : undefined;
   return {
@@ -144,7 +159,8 @@ function workspaceScopeForRecord(
       scope.availability === "online" &&
       scope.projectId === record.paseoProjectId &&
       scope.workspaceId !== undefined &&
-      scope.canonicalRoot === canonicalRoot,
+      (scope.canonicalRoot === canonicalRoot ||
+        scope.repositoryRoot === canonicalRoot),
   );
   return matches.length === 1 ? matches[0] : undefined;
 }
@@ -221,18 +237,33 @@ export class WorkRecordStore {
       const parsed = workRecordSchema.parse(
         JSON.parse(await readFile(filePath, "utf8")),
       );
-      if (
-        parsed.version === 2 &&
-        parsed.paseoWorkspaceId === undefined &&
-        parsed.paseoProjectId
-      ) {
+      if (parsed.version === 2 && parsed.paseoProjectId) {
         const canonicalRoot = await canonicalizeRoot(parsed.repositoryRoot);
-        const scope = workspaceScopeForRecord(parsed, scopes, canonicalRoot);
+        const scope = parsed.paseoWorkspaceId
+          ? scopes.find(
+              (candidate) =>
+                candidate.availability === "online" &&
+                candidate.projectId === parsed.paseoProjectId &&
+                candidate.workspaceId === parsed.paseoWorkspaceId &&
+                (candidate.canonicalRoot === canonicalRoot ||
+                  candidate.repositoryRoot === canonicalRoot),
+            )
+          : (workspaceScopeForRecord(parsed, scopes, canonicalRoot) ??
+            scopes.find(
+              (candidate) =>
+                candidate.availability === "online" &&
+                candidate.projectId === parsed.paseoProjectId &&
+                candidate.workspaceId === undefined &&
+                (candidate.canonicalRoot === canonicalRoot ||
+                  candidate.repositoryRoot === canonicalRoot),
+            ));
         if (scope) {
           await writePrivateJson(filePath, {
             ...parsed,
-            repositoryRoot: canonicalRoot,
-            paseoWorkspaceId: scope.workspaceId,
+            repositoryRoot: scope.repositoryRoot ?? canonicalRoot,
+            ...(scope.workspaceId
+              ? { paseoWorkspaceId: scope.workspaceId }
+              : {}),
           });
         }
         continue;

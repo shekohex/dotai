@@ -25,6 +25,7 @@ import {
   UNASSIGNED_PROJECT_ID,
 } from "./project-registry.js";
 import {
+  type RemoteAgentCompletion,
   type RemoteAgentTimeline,
   type RemoteAgentTimelineOptions,
   type RemoteAgentReference,
@@ -82,7 +83,7 @@ export function workOwnerForScope(scope: ProjectScope): WorkOwner {
   return {
     paseoProjectId: scope.projectId,
     ...(scope.workspaceId ? { paseoWorkspaceId: scope.workspaceId } : {}),
-    canonicalRoot: scope.canonicalRoot,
+    canonicalRoot: scope.repositoryRoot ?? scope.canonicalRoot,
   };
 }
 
@@ -115,6 +116,19 @@ export interface WorkSummary {
   pairingUrl?: string;
   lastError?: string;
   quarantined?: boolean;
+}
+
+export interface CubeAgentCompletionNotification {
+  notificationId: string;
+  coordinatorAgentId: string;
+  workId: string;
+  agentId: string;
+  status: RemoteAgentCompletion["status"];
+  lastAssistantMessage?: string;
+}
+
+export interface CubeAgentCompletionNotifier {
+  notify(notification: CubeAgentCompletionNotification): Promise<void>;
 }
 
 export interface GetActivityInput {
@@ -188,6 +202,37 @@ function pushGroup(
   const group = groups.get(key) ?? [];
   group.push(record);
   groups.set(key, group);
+}
+
+function completionWatcherKey(workId: string, agentId: string): string {
+  return `${workId}:${agentId}`;
+}
+
+function pendingCompletionNotification(
+  record: WorkRecord,
+  agentId: string,
+  coordinatorAgentId: string,
+): WorkRecord {
+  const previous = record.completionNotifications?.find(
+    (notification) => notification.agentId === agentId,
+  );
+  const generation = (previous?.generation ?? 0) + 1;
+  const notification = {
+    agentId,
+    coordinatorAgentId,
+    generation,
+    notificationId: `cubesandbox:${record.workId}:${agentId}:${generation}`,
+    state: "pending" as const,
+  };
+  return {
+    ...record,
+    completionNotifications: [
+      ...(record.completionNotifications ?? []).filter(
+        (entry) => entry.agentId !== agentId,
+      ),
+      notification,
+    ],
+  };
 }
 
 async function runChecked(
@@ -298,7 +343,7 @@ async function bootstrapSandbox(
   const runtimeEnvironment = sandboxRuntimeEnvironment(process.env);
   delete runtimeEnvironment.GH_TOKEN;
   delete runtimeEnvironment.GITHUB_TOKEN;
-  const githubEnvironment = runtimeIdentity.githubToken
+  const githubEnvironment: Record<string, string> = runtimeIdentity.githubToken
     ? { GH_TOKEN: runtimeIdentity.githubToken }
     : {};
   if (runtimeIdentity.githubToken) {
@@ -335,6 +380,7 @@ export class WorkService {
   >();
   private readonly workOperationTails = new Map<string, Promise<void>>();
   private readonly unkeyedOperations = new Set<Promise<unknown>>();
+  private readonly completionWatchers = new Map<string, () => void>();
   private readonly shutdownCleanupFailures: unknown[] = [];
   private lifecycle: WorkServiceLifecycle = "accepting";
   private closePromise: Promise<void> | undefined;
@@ -346,13 +392,16 @@ export class WorkService {
     private readonly loadRuntimeIdentityBundle: (
       repositoryRoot: string,
     ) => Promise<RuntimeIdentityBundle>,
+    private readonly completionNotifier?: CubeAgentCompletionNotifier,
   ) {}
 
   async start(): Promise<void> {
     this.assertAccepting();
     for (const record of await this.records.list()) {
       if (record.status === "busy") this.scheduleKeepAlive(record, 0);
+      await this.restoreCompletionWatchers(record).catch(() => undefined);
     }
+    await this.flushNotifications();
   }
 
   /** Creates `.cube/config.json` for exactly one registered project root. */
@@ -369,6 +418,7 @@ export class WorkService {
   async createAgent(
     owner: WorkOwner,
     rawInput: CreateAgentInput,
+    coordinatorAgentId?: string,
   ): Promise<WorkSummary> {
     this.assertAccepting();
     const input = createAgentInputSchema.parse(rawInput);
@@ -378,6 +428,7 @@ export class WorkService {
           owner,
           input,
           await this.requireOwnedRecord(owner, input.workId!),
+          coordinatorAgentId,
         ),
       );
     }
@@ -385,7 +436,12 @@ export class WorkService {
     return this.withWorkLock(workId, async () => {
       const record = await this.createWork(owner, input, workId);
       try {
-        const summary = await this.createAgentForRecord(owner, input, record);
+        const summary = await this.createAgentForRecord(
+          owner,
+          input,
+          record,
+          coordinatorAgentId,
+        );
         this.assertAccepting();
         return summary;
       } catch (error) {
@@ -403,6 +459,7 @@ export class WorkService {
     owner: WorkOwner,
     input: CreateAgentInput,
     record: WorkRecord,
+    coordinatorAgentId?: string,
   ): Promise<WorkSummary> {
     const readyRecord = await this.ensureReady(record);
     const config = await loadProjectConfig(owner.canonicalRoot);
@@ -427,7 +484,7 @@ export class WorkService {
       throw error;
     }
     const createdAt = new Date().toISOString();
-    const updated = activity(
+    let updated = activity(
       {
         ...readyRecord,
         status: "busy",
@@ -437,12 +494,34 @@ export class WorkService {
       "agent-created",
       `Created remote agent ${reference.agentId}`,
     );
+    if (coordinatorAgentId) {
+      updated = pendingCompletionNotification(
+        updated,
+        reference.agentId,
+        coordinatorAgentId,
+      );
+    }
     let persisted = false;
     try {
       await this.records.save(updated);
       persisted = true;
       this.assertAccepting();
+      if (coordinatorAgentId) {
+        const notification = updated.completionNotifications?.find(
+          (entry) => entry.agentId === reference.agentId,
+        );
+        if (notification) {
+          await this.watchAgentCompletion(
+            updated,
+            reference.agentId,
+            notification.generation,
+            false,
+          );
+        }
+      }
+      await connection.sendPrompt(reference.agentId, input.prompt);
     } catch (persistError) {
+      this.stopCompletionWatcher(updated.workId, reference.agentId);
       const cleanupErrors: unknown[] = [];
       try {
         await connection.discardAgent(reference);
@@ -471,6 +550,7 @@ export class WorkService {
   async sendPrompt(
     owner: WorkOwner,
     input: { workId: string; prompt: string; agentId?: string },
+    coordinatorAgentId?: string,
   ): Promise<WorkSummary> {
     this.assertAccepting();
     const parsed = z
@@ -492,17 +572,62 @@ export class WorkService {
       ) {
         throw new Error("Work Sandbox has no matching managed agent");
       }
-      await (
-        await this.getRemoteConnection(record)
-      ).sendPrompt(agentId, parsed.prompt);
-      const updated = activity(
+      let updated = activity(
         { ...record, status: "busy", pausedAt: undefined },
         "prompt-sent",
         `Sent prompt to ${agentId}`,
       );
+      if (coordinatorAgentId) {
+        updated = pendingCompletionNotification(
+          updated,
+          agentId,
+          coordinatorAgentId,
+        );
+      }
       await this.records.save(updated);
+      const connection = await this.getRemoteConnection(record);
+      try {
+        if (coordinatorAgentId) {
+          const notification = updated.completionNotifications?.find(
+            (entry) => entry.agentId === agentId,
+          );
+          if (notification) {
+            await this.watchAgentCompletion(
+              updated,
+              agentId,
+              notification.generation,
+              false,
+            );
+          }
+        }
+        await connection.sendPrompt(agentId, parsed.prompt);
+      } catch (error) {
+        this.stopCompletionWatcher(record.workId, agentId);
+        await this.records.save(record);
+        throw error;
+      }
       this.scheduleKeepAlive(updated);
       return this.summary(updated, false);
+    });
+  }
+
+  flushNotifications(): Promise<void> {
+    return this.trackUnkeyedOperation(async () => {
+      for (const record of await this.records.list()) {
+        for (const notification of record.completionNotifications ?? []) {
+          if (notification.state === "pending") {
+            await this.restoreCompletionWatchers(record).catch(() => undefined);
+            continue;
+          }
+          if (notification.state === "ready") {
+            await this.deliverCompletionNotification(
+              record.workId,
+              notification.agentId,
+              notification.generation,
+            );
+          }
+        }
+      }
     });
   }
 
@@ -778,7 +903,7 @@ export class WorkService {
       projectId: scope.projectId,
       displayName: scope.displayName,
       availability: scope.availability,
-      canonicalRoot: scope.canonicalRoot,
+      canonicalRoot: scope.repositoryRoot ?? scope.canonicalRoot,
       ...(await this.configState(scope)),
       counts: countWorks(works),
       works,
@@ -797,7 +922,9 @@ export class WorkService {
       return { configStatus: "unavailable" };
     }
     try {
-      const config = await loadProjectConfig(scope.canonicalRoot);
+      const config = await loadProjectConfig(
+        scope.repositoryRoot ?? scope.canonicalRoot,
+      );
       return {
         configStatus: "ready",
         cubeProjectId: config.project.id,
@@ -822,7 +949,157 @@ export class WorkService {
     );
   }
 
+  private async watchAgentCompletion(
+    record: WorkRecord,
+    agentId: string,
+    generation: number,
+    recoverCurrent: boolean,
+  ): Promise<void> {
+    const key = completionWatcherKey(record.workId, agentId);
+    this.completionWatchers.get(key)?.();
+    this.completionWatchers.delete(key);
+    const connection = await this.getRemoteConnection(record);
+    const unsubscribe = await connection.watchAgent(
+      agentId,
+      async (completion) => {
+        this.completionWatchers.delete(key);
+        await this.handleAgentCompletion(
+          record.workId,
+          agentId,
+          generation,
+          completion,
+        );
+      },
+      { recoverCurrent },
+    );
+    const current = await this.records.get(record.workId);
+    const notification = current.completionNotifications?.find(
+      (entry) => entry.agentId === agentId,
+    );
+    if (
+      notification?.generation === generation &&
+      notification.state === "pending"
+    ) {
+      this.completionWatchers.set(key, unsubscribe);
+    } else {
+      unsubscribe();
+    }
+  }
+
+  private async restoreCompletionWatchers(record: WorkRecord): Promise<void> {
+    for (const notification of record.completionNotifications ?? []) {
+      if (notification.state !== "pending") continue;
+      const key = completionWatcherKey(record.workId, notification.agentId);
+      if (this.completionWatchers.has(key)) continue;
+      await this.watchAgentCompletion(
+        record,
+        notification.agentId,
+        notification.generation,
+        true,
+      );
+    }
+  }
+
+  private async handleAgentCompletion(
+    workId: string,
+    agentId: string,
+    generation: number,
+    completion: RemoteAgentCompletion,
+  ): Promise<void> {
+    await this.withWorkLock(workId, async () => {
+      const record = await this.records.get(workId);
+      const notifications = record.completionNotifications ?? [];
+      const notification = notifications.find(
+        (entry) => entry.agentId === agentId,
+      );
+      if (
+        notification?.generation !== generation ||
+        notification.state !== "pending"
+      ) {
+        return;
+      }
+      await this.records.save({
+        ...record,
+        completionNotifications: notifications.map((entry) =>
+          entry.agentId === agentId
+            ? {
+                ...entry,
+                state: "ready" as const,
+                status: completion.status,
+                ...(completion.lastAssistantMessage
+                  ? { lastAssistantMessage: completion.lastAssistantMessage }
+                  : {}),
+              }
+            : entry,
+        ),
+      });
+    });
+    await this.deliverCompletionNotification(workId, agentId, generation);
+  }
+
+  private async deliverCompletionNotification(
+    workId: string,
+    agentId: string,
+    generation: number,
+  ): Promise<void> {
+    if (!this.completionNotifier) return;
+    await this.withWorkLock(workId, async () => {
+      const record = await this.records.get(workId);
+      const notifications = record.completionNotifications ?? [];
+      const notification = notifications.find(
+        (entry) => entry.agentId === agentId,
+      );
+      if (
+        notification?.generation !== generation ||
+        notification.state !== "ready" ||
+        !notification.status
+      ) {
+        return;
+      }
+      try {
+        await this.completionNotifier!.notify({
+          notificationId: notification.notificationId,
+          coordinatorAgentId: notification.coordinatorAgentId,
+          workId,
+          agentId,
+          status: notification.status,
+          ...(notification.lastAssistantMessage
+            ? { lastAssistantMessage: notification.lastAssistantMessage }
+            : {}),
+        });
+      } catch {
+        return;
+      }
+      const deliveredAt = new Date().toISOString();
+      await this.records.save({
+        ...record,
+        completionNotifications: notifications.map((entry) =>
+          entry.agentId === agentId
+            ? { ...entry, state: "delivered" as const, deliveredAt }
+            : entry,
+        ),
+      });
+    });
+  }
+
+  private stopCompletionWatcher(workId: string, agentId: string): void {
+    const key = completionWatcherKey(workId, agentId);
+    this.completionWatchers.get(key)?.();
+    this.completionWatchers.delete(key);
+  }
+
+  private stopWorkCompletionWatchers(workId: string): void {
+    const prefix = `${workId}:`;
+    for (const [key, unsubscribe] of this.completionWatchers) {
+      if (!key.startsWith(prefix)) continue;
+      unsubscribe();
+      this.completionWatchers.delete(key);
+    }
+  }
+
   private async closeResources(): Promise<void> {
+    for (const unsubscribe of this.completionWatchers.values()) unsubscribe();
+    this.completionWatchers.clear();
     for (const workId of this.keepAliveTimers.keys()) {
       this.stopKeepAlive(workId);
     }
@@ -933,6 +1210,7 @@ export class WorkService {
     const info = await this.cube.inspect(config, record.sandboxId);
     if (info.state !== "paused") {
       await this.getRemoteConnection(record);
+      await this.restoreCompletionWatchers(record);
       if (record.status === "busy") this.scheduleKeepAlive(record);
       return record;
     }
@@ -940,6 +1218,7 @@ export class WorkService {
     const sandbox = await this.cube.connect(config, record.sandboxId);
     this.sandboxHandles.set(record.workId, sandbox);
     await this.getRemoteConnection(record, true);
+    await this.restoreCompletionWatchers(record);
     const resumed = activity(
       { ...record, status: "ready", pausedAt: undefined, lastError: undefined },
       "resumed",
@@ -1242,6 +1521,7 @@ export class WorkService {
     workId: string,
     suppressErrors = true,
   ): Promise<void> {
+    this.stopWorkCompletionWatchers(workId);
     const connection = this.remoteConnections.get(workId);
     this.remoteConnections.delete(workId);
     if (!connection) return;

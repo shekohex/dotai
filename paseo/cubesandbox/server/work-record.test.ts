@@ -143,6 +143,32 @@ describe("WorkRecordStore", () => {
     expect((await store.get(workId)).paseoWorkspaceId).toBe("wks_alpha");
   });
 
+  it("migrates a nested v2 scope root to its canonical Git root", async () => {
+    const stateDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "cube-record-test-"),
+    );
+    const repositoryRoot = await mkdtemp(
+      path.join(os.tmpdir(), "cube-record-repository-root-"),
+    );
+    const nestedProjectRoot = path.join(repositoryRoot, "agent");
+    const store = new WorkRecordStore(stateDirectory);
+    const workId = "f4e30d8d-ef62-4b9d-ac62-3c3875660025";
+    await store.save({
+      ...exampleRecord(workId),
+      version: 2,
+      cubeProjectId: "widget",
+      paseoProjectId: "prj_alpha",
+      ownershipStatus: "active",
+      repositoryRoot: nestedProjectRoot,
+    });
+
+    await store.migrateLegacy([
+      scope("prj_alpha", nestedProjectRoot, undefined, repositoryRoot),
+    ]);
+
+    expect((await store.get(workId)).repositoryRoot).toBe(repositoryRoot);
+  });
+
   it("quarantines v1 records with ambiguous or removed roots", async () => {
     const stateDirectory = await mkdtemp(
       path.join(os.tmpdir(), "cube-record-test-"),
@@ -188,6 +214,7 @@ function scope(
   projectId: string,
   canonicalRoot: string,
   workspaceId?: string,
+  repositoryRoot?: string,
 ): ProjectScope {
   return {
     projectId,
@@ -195,6 +222,7 @@ function scope(
     displayName: projectId,
     declaredRoot: canonicalRoot,
     canonicalRoot,
+    ...(repositoryRoot ? { repositoryRoot } : {}),
     availability: "online",
   };
 }

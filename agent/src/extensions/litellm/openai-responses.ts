@@ -2,6 +2,8 @@ import {
   appendAssistantMessageDiagnostic,
   createAssistantMessageDiagnostic,
   createAssistantMessageEventStream,
+  getDeclaredTools,
+  normalizeContext,
   type Api,
   type AssistantMessage,
   type Context,
@@ -91,14 +93,20 @@ function responseItemsForContinuation(
   context: Context,
   message: AssistantMessage,
 ): unknown[] {
+  const transcript = normalizeContext(context);
   const grammarToolInputProperties = createGrammarToolInputProperties(
-    context.tools,
+    getDeclaredTools(transcript.messages),
     model.compat?.supportsOpenAIGrammarTools ?? false,
   );
-  return convertResponsesMessages(model, { messages: [message] }, OPENAI_TOOL_CALL_PROVIDERS, {
-    includeSystemPrompt: false,
-    grammarToolInputProperties,
-  }).filter(
+  return convertResponsesMessages(
+    model,
+    normalizeContext({ messages: [message] }),
+    OPENAI_TOOL_CALL_PROVIDERS,
+    {
+      includeSystemPrompt: false,
+      grammarToolInputProperties,
+    },
+  ).filter(
     (item) => item.type !== "function_call_output" && item.type !== "custom_tool_call_output",
   );
 }
@@ -179,11 +187,12 @@ export function streamLiteLLMOpenAIResponses(
     throw new Error(`LiteLLM Responses stream does not support API ${model.api}`);
   }
   const responsesModel = model;
+  const transcript = normalizeContext(context);
   const effectiveOptions = isSessionFastModeActive(options?.sessionId)
     ? { ...options, serviceTier: "priority" as const }
     : options;
   if ((effectiveOptions?.transport ?? "auto") === "sse") {
-    return streamOpenAIResponses(responsesModel, context, effectiveOptions);
+    return streamOpenAIResponses(responsesModel, transcript, effectiveOptions);
   }
 
   let operation: LiteLLMWebSocketOperation | undefined;
@@ -198,7 +207,7 @@ export function streamLiteLLMOpenAIResponses(
       diagnostics.push(diagnostic);
     },
   });
-  const inner = streamOpenAIResponses(responsesModel, context, { ...effectiveOptions, fetch });
+  const inner = streamOpenAIResponses(responsesModel, transcript, { ...effectiveOptions, fetch });
   const outer = createAssistantMessageEventStream();
 
   void (async () => {
@@ -209,7 +218,7 @@ export function streamLiteLLMOpenAIResponses(
         }
         completeLiteLLMWebSocketOperation(
           operation,
-          responseItemsForContinuation(responsesModel, context, event.message),
+          responseItemsForContinuation(responsesModel, transcript, event.message),
         );
       } else if (event.type === "error") {
         for (const diagnostic of diagnostics) {

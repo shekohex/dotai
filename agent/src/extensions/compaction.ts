@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   clampThinkingLevel,
+  normalizeContext,
   type Api,
   type Model,
   type ModelThinkingLevel,
@@ -516,7 +517,7 @@ async function createRemoteCompaction(params: {
     normalizeResponseItemsForPrompt(
       convertResponsesMessages(
         params.model,
-        { messages: convertToLlm(branchMessages) },
+        normalizeContext({ messages: convertToLlm(branchMessages) }),
         CODEX_TOOL_CALL_PROVIDERS,
         { includeSystemPrompt: false },
       ),

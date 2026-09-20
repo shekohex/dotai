@@ -22,7 +22,7 @@ export type ToolCallContentLike = ToolCall & {
   toolCallId?: string;
 };
 
-export type ToolResultMessageWithUnknownDetails = ToolResultMessage<unknown>;
+export type ToolResultMessageWithUnknownDetails = ToolResultMessage;
 
 export type PruneFrontierData = Partial<PruneFrontier> & {
   lastAttemptedToolCallId: string;
@@ -60,18 +60,13 @@ export function isToolCallContent(value: unknown): value is ToolCallContentLike 
 export function isAssistantMessage(
   message: AgentMessage,
 ): message is Extract<Message, { role: "assistant" }> {
-  return isRecord(message) && message.role === "assistant" && Array.isArray(message.content);
+  return message.role === "assistant";
 }
 
 export function isToolResultMessage(
   message: AgentMessage,
 ): message is ToolResultMessageWithUnknownDetails {
-  return (
-    isRecord(message) &&
-    message.role === "toolResult" &&
-    typeof message.toolCallId === "string" &&
-    Array.isArray(message.content)
-  );
+  return message.role === "toolResult";
 }
 
 export function textFromContent(content: unknown): string {

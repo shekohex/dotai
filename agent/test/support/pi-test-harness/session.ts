@@ -236,7 +236,12 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
         propagateErrors,
         runner,
       );
-      (session.agent as any).setTools(interceptedTools);
+      const toolRegistry = (session as unknown as { _toolRegistry: Map<string, AgentTool> })
+        ._toolRegistry;
+      for (const tool of interceptedTools) {
+        toolRegistry.set(tool.name, tool);
+      }
+      session.agent.state.tools = interceptedTools;
 
       // Run each turn
       for (const turn of turns) {

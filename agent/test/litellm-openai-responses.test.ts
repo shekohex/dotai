@@ -104,7 +104,7 @@ describe("LiteLLM OpenAI Responses provider", () => {
       name: "GLM-5.3-Flash",
       reasoning: true,
       input: ["text", "image"],
-      cost: { input: 0.075, output: 0.25, cacheRead: 0.015, cacheWrite: 0 },
+      cost: { input: 0.15, output: 0.5, cacheRead: 0.03, cacheWrite: 0 },
       contextWindow: 1_000_000,
       maxTokens: 131_072,
     });

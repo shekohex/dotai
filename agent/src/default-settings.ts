@@ -15,6 +15,7 @@ import { defaultSubagentsSettings } from "./extensions/subagent/settings.js";
 import { defaultAiAutocompleteSettings } from "./extensions/coreui/ai-autocomplete-settings.js";
 import { defaultRecapSettings } from "./extensions/recap/settings.js";
 import { defaultLiveSettings } from "./extensions/live/settings.js";
+import { defaultObservationalMemorySettings } from "./extensions/observational-memory/settings.js";
 
 type AgentSettings = Parameters<SettingsManager["applyOverrides"]>[0];
 type TerminalSettings = NonNullable<AgentSettings["terminal"]> & { titleSpinner: boolean };
@@ -42,6 +43,7 @@ export type DefaultSettings = Omit<AgentSettings, "terminal"> & {
   openaiBetter: typeof defaultOpenAIBetterSettings;
   recap: typeof defaultRecapSettings;
   live: typeof defaultLiveSettings;
+  observationalMemory: typeof defaultObservationalMemorySettings;
 };
 
 export const defaultSettings = {
@@ -85,6 +87,7 @@ export const defaultSettings = {
   openaiBetter: defaultOpenAIBetterSettings,
   recap: defaultRecapSettings,
   live: defaultLiveSettings,
+  observationalMemory: defaultObservationalMemorySettings,
 } as const satisfies DefaultSettings;
 
 export { defaultModes, defaultModesSchema };

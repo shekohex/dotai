@@ -7,6 +7,7 @@ import debugProviderRequestExtension from "./debug-provider-request.js";
 import dynamicWorkflowsExtension from "./dynamic-workflows/extension.js";
 import filesExtension from "./files.js";
 import handoffExtension from "./handoff.js";
+import observationalMemoryExtension from "./observational-memory/index.js";
 import referencesExtension from "./references/index.js";
 import recapExtension from "./recap/index.js";
 import reviewExtension from "./review.js";
@@ -23,6 +24,7 @@ export const groupedExtensionsB: GroupedExtensionDefinition[] = [
   { id: "agents-md", factory: agentsMdExtension },
   { id: "branch-summary", factory: branchSummaryExtension },
   { id: "compaction", factory: compactionExtension },
+  { id: "observational-memory", factory: observationalMemoryExtension },
   { id: "handoff", factory: handoffExtension },
   { id: "debug-provider-request", factory: debugProviderRequestExtension },
   { id: "dynamic-workflows", factory: dynamicWorkflowsExtension },

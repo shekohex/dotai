@@ -196,8 +196,10 @@ async function handleSessionBeforeCompact(
       signal,
       preparation.tokensBefore,
     );
+    // Undefined (not {}) so the observational-memory fold — registered after this
+    // extension — stays the winning compaction result on non-remote models.
     return summary === undefined
-      ? {}
+      ? undefined
       : buildCompactionResult(summary, preparation, sanitizedPreparation.details);
   }
 

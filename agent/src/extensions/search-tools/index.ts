@@ -13,6 +13,7 @@ export const DEFERRED_TOOL_NAMES = new Set([
   "execute",
   "generate_image",
   "goal",
+  "recall",
   "session_query",
   "subagent",
   "view_image",
@@ -32,6 +33,15 @@ export const SEARCH_TOOL_ALIASES: Readonly<Record<string, readonly string[]>> = 
     "edit image",
   ],
   goal: ["durable goal", "autonomous goal", "continue until complete"],
+  recall: [
+    "memory",
+    "remembered",
+    "memory evidence",
+    "compacted memory",
+    "memory id",
+    "observation evidence",
+    "why we decided",
+  ],
   session_query: [
     "previous session",
     "previous pi session",

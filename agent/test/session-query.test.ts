@@ -177,10 +177,10 @@ describe("session-query extension", () => {
         },
       ],
       [
-        "opencode-go/deepseek-v4-flash",
+        "opencode-go/deepseek-v4.1-flash",
         {
           provider: "opencode-go",
-          id: "deepseek-v4-flash",
+          id: "deepseek-v4.1-flash",
           api: "openai-completions",
           baseUrl: "https://litellm.example.test/v1",
         },
@@ -218,7 +218,7 @@ describe("session-query extension", () => {
 
     expect(vi.mocked(streamModel).mock.calls.map(([model]) => model.id)).toEqual([
       "gpt-5.6-luna",
-      "deepseek-v4-flash",
+      "deepseek-v4.1-flash",
     ]);
     expect(vi.mocked(streamModel).mock.calls.map(([model]) => model.api)).toEqual([
       "openai-responses",

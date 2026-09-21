@@ -3,10 +3,10 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export const DEFAULT_MODEL_FALLBACKS = [
   { provider: "codex-openai", model: "gpt-5.6-luna" },
-  { provider: "zai", model: "glm-5.2" },
-  { provider: "zai-coding-plan", model: "glm-5.2" },
-  { provider: "opencode-go", model: "deepseek-v4-flash" },
-  { provider: "deepseek", model: "deepseek-v4-flash" },
+  { provider: "zai", model: "glm-5.3" },
+  { provider: "zai-coding-plan", model: "glm-5.3" },
+  { provider: "opencode-go", model: "deepseek-v4.1-flash" },
+  { provider: "deepseek", model: "deepseek-flash" },
 ] as const;
 
 export type ModelFallbackCandidate = {

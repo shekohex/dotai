@@ -2274,4 +2274,186 @@ Ship it`);
 
     expect(harness.sentMessages).toHaveLength(0);
   });
+
+  test("manual compaction after assistant error does not resume goal", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("error", { input: 30, output: 0 })],
+    });
+    await emitBeforeCompact(harness, "manual", false);
+    harness.setContextUsage(null);
+    await emitSessionCompact(harness, "manual", false);
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
+  test("context compaction after assistant error resumes goal once", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("error", { input: 30, output: 0 })],
+    });
+    await emitBeforeCompact(harness, "overflow", false);
+    harness.setContextUsage(100, 1000);
+    await emitSessionCompact(harness, "overflow", false);
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("compaction resume proceeds when context usage stays near limit", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "threshold", false);
+    await emitSessionCompact(harness, "threshold", false);
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("failed compaction re-evaluates pending goal continuation", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "threshold", false);
+    harness.setContextUsage(null);
+    await harness.emit("session_compact_failed", {
+      type: "session_compact_failed",
+      reason: "threshold",
+      aborted: true,
+      willRetry: false,
+      fromExtension: false,
+    });
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("failed compaction retry keeps goal continuation paused", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "overflow", true);
+    harness.setContextUsage(null);
+    await harness.emit("session_compact_failed", {
+      type: "session_compact_failed",
+      reason: "overflow",
+      aborted: false,
+      willRetry: true,
+      fromExtension: false,
+    });
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(0);
+    const pausedEvents = harness.emittedEvents.filter(
+      (event) =>
+        event.eventName === "notify:publish" &&
+        (event.data as { title?: string }).title === "Goal paused",
+    );
+    expect(pausedEvents).toHaveLength(0);
+  });
+
+  test("failed compaction with active goal publishes a paused notification", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "threshold", false);
+    harness.setContextUsage(null);
+    await harness.emit("session_compact_failed", {
+      type: "session_compact_failed",
+      reason: "threshold",
+      aborted: false,
+      willRetry: false,
+      fromExtension: false,
+    });
+    await waitForCompactionResume();
+
+    const pausedEvent = harness.emittedEvents.find(
+      (event) =>
+        event.eventName === "notify:publish" &&
+        (event.data as { title?: string }).title === "Goal paused",
+    );
+    expect(pausedEvent).toBeDefined();
+    const payload = pausedEvent?.data as { message?: string; tags?: string[] };
+    expect(payload.message).toContain("failed (threshold)");
+    expect(payload.tags).toEqual(["goal", "compaction"]);
+  });
+
+  test("cancelled compaction with active goal reports cancellation, not failure", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "threshold", false);
+    harness.setContextUsage(null);
+    await harness.emit("session_compact_failed", {
+      type: "session_compact_failed",
+      reason: "threshold",
+      aborted: true,
+      willRetry: false,
+      fromExtension: false,
+    });
+    await waitForCompactionResume();
+
+    const pausedEvent = harness.emittedEvents.find(
+      (event) =>
+        event.eventName === "notify:publish" &&
+        (event.data as { title?: string }).title === "Goal paused",
+    );
+    expect(pausedEvent).toBeDefined();
+    const payload = pausedEvent?.data as { message?: string };
+    expect(payload.message).toContain("was cancelled");
+  });
 });

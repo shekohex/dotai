@@ -1,3 +1,5 @@
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ContextEventResult } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { continuationGoalIdFromPrompt } from "./prompts.js";
@@ -79,4 +81,51 @@ export function queuedGoalWorkMessageId(message: GoalCustomMessageLike): string 
   }
 
   return continuationGoalIdFromPrompt(message.content);
+}
+
+/**
+ * Replace queued goal-continuation custom messages that reference a stale goal so the model is told
+ * they are no longer active instead of acting on them.
+ *
+ * @param {AgentMessage[]} messages Messages about to enter the LLM context.
+ * @param {ThreadGoal | null} goal Current runtime goal, if any.
+ * @returns {ContextEventResult | undefined} Replacement event payload, or undefined when every
+ *   queued continuation is still current.
+ */
+export function staleContinuationContextOverride(
+  messages: AgentMessage[],
+  goal: ThreadGoal | null,
+): ContextEventResult | undefined {
+  let changed = false;
+  const overridden = messages.map((message) => {
+    if (message.role !== "custom") {
+      return message;
+    }
+
+    const queuedMessage = message as GoalCustomMessageLike;
+    const queuedGoalId = queuedGoalWorkMessageId(queuedMessage);
+    const isCurrentActiveGoal =
+      queuedGoalId !== null &&
+      goal?.goalId === queuedGoalId &&
+      goal.status === "active" &&
+      goal.workflow === undefined;
+    if (queuedGoalId === null || isCurrentActiveGoal) {
+      return message;
+    }
+
+    changed = true;
+    return {
+      ...message,
+      content: staleGoalContinuationMessage(queuedGoalId, goal),
+      display: false,
+      details: {
+        kind: "stale_continuation",
+        goalId: queuedGoalId,
+        currentGoalId: goal?.goalId ?? null,
+        currentStatus: goal?.status ?? null,
+      },
+    };
+  });
+
+  return changed ? { messages: overridden } : undefined;
 }

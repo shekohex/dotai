@@ -5,16 +5,19 @@ import { emitNotifyPublish } from "../notify/index.js";
 import { NOTIFY_DEFAULT_TOPIC } from "../notify/settings.js";
 import { getContextPruneAPI } from "../context-prune/public-api.js";
 import { registerGoalCommand } from "./commands.js";
-import { completionUsageReport, formatFooterStatus } from "./format.js";
+import { formatFooterStatus } from "./format.js";
+import goalCompletionNotificationMessage from "./goal-completion-message.js";
 import {
   assistantTurnTokens,
   isAbortedAssistantMessage,
   isErrorAssistantMessage,
-  lastAssistantMessageText,
   type AssistantMessageLike,
 } from "./messages.js";
 import { continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
-import { queuedGoalWorkMessageId, staleGoalContinuationMessage } from "./queued-messages.js";
+import {
+  staleContinuationContextOverride,
+  staleGoalContinuationMessage,
+} from "./queued-messages.js";
 import {
   branchContainsEntry,
   canResumeFromCompactionAnchor,
@@ -58,15 +61,6 @@ const GOAL_STATUS_REFRESH_INTERVAL_MS = 1_000;
 const CONTINUATION_CONTEXT_USAGE_PERCENT_LIMIT = 95;
 const COMPACTION_RESUME_DELAY_MS = 150;
 const POST_AGENT_SETTLE_DELAY_MS = 150;
-
-function goalCompletionNotificationMessage(goal: ThreadGoal, ctx: ExtensionContext): string {
-  const parts = [lastAssistantMessageText(ctx) ?? "Goal complete"];
-  const usageReport = completionUsageReport(goal);
-  if (usageReport !== null) {
-    parts.push(usageReport);
-  }
-  return parts.join("\n\n");
-}
 
 const CONTINUATION_RETRY_MS = 50;
 
@@ -223,6 +217,15 @@ class GoalRuntime {
     this.clearContinuationTimer();
     this.clearCompactionResumeTimer();
     this.clearPostAgentSettleTimer();
+  }
+
+  /**
+   * Whether a non-workflow goal is present and active right now.
+   *
+   * @returns {boolean} True when an active, non-workflow goal exists.
+   */
+  private get hasActiveNonWorkflowGoal(): boolean {
+    return this.goal !== null && this.goal.status === "active" && this.goal.workflow === undefined;
   }
 
   private suppressCompactionResumeIfPending(): boolean {
@@ -473,12 +476,7 @@ class GoalRuntime {
   }
 
   private maybeContinue(ctx: ExtensionContext, options: MaybeContinueOptions = {}): void {
-    if (
-      this.goal === null ||
-      this.goal.status !== "active" ||
-      this.goal.workflow !== undefined ||
-      this.continuationQueuedFor === this.goal.goalId
-    ) {
+    if (!this.hasActiveNonWorkflowGoal || this.continuationQueuedFor === this.goal?.goalId) {
       return;
     }
 
@@ -495,7 +493,11 @@ class GoalRuntime {
       return;
     }
 
-    if (this.isCompacting || this.isContextNearLimit(ctx, options.allowUnknownContext === true)) {
+    if (
+      this.isCompacting ||
+      (options.resumeAnchor === undefined &&
+        this.isContextNearLimit(ctx, options.allowUnknownContext === true))
+    ) {
       this.continuationPendingAfterCompaction = true;
       this.blockedContinuationPosition ??= sessionPosition(ctx);
       return;
@@ -503,7 +505,7 @@ class GoalRuntime {
 
     this.clearPendingCompactionContinuation();
 
-    const goalId = this.goal.goalId;
+    const goalId = this.goal?.goalId ?? null;
     const goalPosition = sessionPosition(ctx);
     if (!ctx.isIdle() || ctx.hasPendingMessages()) {
       if (this.continuationScheduledFor === goalId) {
@@ -523,11 +525,17 @@ class GoalRuntime {
     }
 
     this.clearContinuationTimer();
-    if (this.goal === null || this.goal.status !== "active" || this.goal.goalId !== goalId) {
+    const goal = this.goal;
+    if (
+      goalId === null ||
+      goal === null ||
+      goal.goalId !== goalId ||
+      !this.hasActiveNonWorkflowGoal
+    ) {
       return;
     }
 
-    this.sendContinuation(this.goal);
+    this.sendContinuation(goal);
   }
 
   private scheduleContinuationAfterAgentSettles(ctx: ExtensionContext): void {
@@ -741,6 +749,21 @@ class GoalRuntime {
     }
     if (this.continuationPendingAfterCompaction) {
       this.scheduleContinuationAfterCompaction(event, ctx);
+      return;
+    }
+    // A threshold/overflow compaction materially changes the context, so an assistant
+    // error from before it — often the overflow error that triggered it — is stale.
+    // Allow one compaction-anchored continuation attempt; if that attempt errors too,
+    // the error block applies again and prevents a continuation loop.
+    if (
+      this.continuationBlockedByAssistantError &&
+      (event.reason === "overflow" || event.reason === "threshold") &&
+      this.hasActiveNonWorkflowGoal
+    ) {
+      this.continuationBlockedByAssistantError = false;
+      this.continuationPendingAfterCompaction = true;
+      this.blockedContinuationPosition ??= sessionPosition(ctx);
+      this.scheduleContinuationAfterCompaction(event, ctx);
     }
   }
 
@@ -752,39 +775,7 @@ class GoalRuntime {
   }
 
   private registerEventHandlers(): void {
-    this.pi.on("context", (event) => {
-      let changed = false;
-      const messages = event.messages.map((message) => {
-        if (message.role !== "custom") {
-          return message;
-        }
-
-        const queuedGoalId = queuedGoalWorkMessageId(message);
-        const isCurrentActiveGoal =
-          queuedGoalId !== null &&
-          this.goal?.goalId === queuedGoalId &&
-          this.goal.status === "active" &&
-          this.goal.workflow === undefined;
-        if (queuedGoalId === null || isCurrentActiveGoal) {
-          return message;
-        }
-
-        changed = true;
-        return {
-          ...message,
-          content: staleGoalContinuationMessage(queuedGoalId, this.goal),
-          display: false,
-          details: {
-            kind: "stale_continuation",
-            goalId: queuedGoalId,
-            currentGoalId: this.goal?.goalId ?? null,
-            currentStatus: this.goal?.status ?? null,
-          },
-        };
-      });
-
-      return changed ? { messages } : undefined;
-    });
+    this.pi.on("context", (event) => staleContinuationContextOverride(event.messages, this.goal));
     this.pi.on("session_start", (event, ctx) => {
       this.restoreToolState(ctx);
       return this.handleSessionStart(event, ctx);
@@ -816,6 +807,32 @@ class GoalRuntime {
     });
     this.pi.on("session_compact", (event, ctx) => {
       this.handleSessionCompact(event, ctx);
+    });
+    this.pi.on("session_compact_failed", (event, ctx) => {
+      // The compaction the continuation was deferred for did not happen. Without
+      // this, isCompacting stays latched and every future maybeContinue defers
+      // forever with no session_compact left to resume it.
+      this.isCompacting = false;
+      if (event.willRetry) {
+        return;
+      }
+      if (this.hasActiveNonWorkflowGoal && this.goal !== null) {
+        // No session_compact follows a failure, so the continuation silently waits
+        // for the next successful compaction. Surface that instead of hiding it.
+        const cause = event.aborted ? "was cancelled" : `failed (${event.reason})`;
+        emitNotifyPublish(this.pi, {
+          topic: NOTIFY_DEFAULT_TOPIC,
+          title: "Goal paused",
+          message: `Compaction ${cause}; goal ${this.goal.goalId} will resume when context allows.`,
+          tags: ["goal", "compaction"],
+          meta: {
+            sourceExtension: "goal",
+            eventName: "goal:compaction-failed",
+            correlationId: this.goal.goalId,
+          },
+        });
+      }
+      this.maybeContinue(ctx, { allowUnknownContext: true });
     });
     this.pi.on("session_shutdown", (event, ctx) => {
       this.handleSessionShutdown(event, ctx);

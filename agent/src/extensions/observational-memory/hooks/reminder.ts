@@ -127,6 +127,7 @@ export function registerCompactionReminder(pi: ExtensionAPI, runtime: Runtime): 
           "</observational-memory-reminder>",
         ].join("\n");
 
+        const tokenCount = estimateStringTokens(content);
         pi.sendMessage(
           {
             customType: REMINDER_CUSTOM_TYPE,
@@ -140,6 +141,12 @@ export function registerCompactionReminder(pi: ExtensionAPI, runtime: Runtime): 
           },
           { triggerTurn: false, deliverAs: "steer" },
         );
+        if (hasUI) {
+          ui?.notify(
+            `Observational memory: re-injected ${memory.reflectionCount} reflections and ${memory.observationCount} observations (~${tokenCount} tokens) after compaction`,
+            "info",
+          );
+        }
       } catch (error) {
         if (hasUI)
           ui?.notify(`Observational memory: reminder failed: ${errorMessage(error)}`, "warning");

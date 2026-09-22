@@ -1,6 +1,6 @@
 # OpenWiki quickstart
 
-`@shekohex/agent` is a TypeScript wrapper around [`@earendil-works/pi-coding-agent`](https://github.com/earendil-works/pi) (currently `0.84.1`). It keeps the upstream `pi` command, the `.pi` project folder, and the `~/.pi` user config unchanged, then layers on team defaults: a bundled model/provider setup (LiteLLM gateway + several providers), ~48 extensions, themes, system prompts, skills, dynamic workflows, a self-update path, and alternative ways to drive a session (subagents, remote TCP mode, and ACP stdio).
+`@shekohex/agent` is a TypeScript wrapper around [`@earendil-works/pi-coding-agent`](https://github.com/earendil-works/pi) (currently `0.87.1`). It keeps the upstream `pi` command, the `.pi` project folder, and the `~/.pi` user config unchanged, then layers on team defaults: a bundled model/provider setup (LiteLLM gateway + several providers), ~48 extensions, themes, system prompts, skills, dynamic workflows, a self-update path, and alternative ways to drive a session (subagents, remote TCP mode, and ACP stdio).
 
 The package is published to GitHub Packages and installs a single `pi` binary.
 

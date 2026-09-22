@@ -63,7 +63,7 @@ export const defaultModes = {
     },
     build: {
       provider: "codex-openai",
-      modelId: "gpt-5.6-sol",
+      modelId: "gpt-6-sol",
       thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
@@ -74,7 +74,7 @@ export const defaultModes = {
 
     "fast-build": {
       provider: "codex-openai",
-      modelId: "gpt-5.6-luna",
+      modelId: "gpt-6-luna",
       thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
@@ -95,7 +95,7 @@ export const defaultModes = {
 
     review: {
       provider: "codex-openai",
-      modelId: "gpt-5.6-sol",
+      modelId: "gpt-6-sol",
       thinkingLevel: "xhigh",
       color: "muted",
       tmuxTarget: "window",
@@ -140,7 +140,7 @@ export const defaultModes = {
     },
     commiter: {
       provider: "codex-openai",
-      modelId: "gpt-5.6-luna",
+      modelId: "gpt-6-luna",
       thinkingLevel: "low",
       color: "muted",
       tmuxTarget: "window",
@@ -184,7 +184,7 @@ export const defaultModes = {
     },
     ask: {
       provider: "codex-openai",
-      modelId: "gpt-5.6-luna",
+      modelId: "gpt-6-luna",
       thinkingLevel: "max",
       tmuxTarget: "window",
       tools: ["read", "grep", "find", "bash", "websearch", "search_tools"],
@@ -233,7 +233,7 @@ export const defaultModes = {
     },
     live: {
       provider: "codex-openai",
-      modelId: "gpt-5.6-sol",
+      modelId: "gpt-6-sol",
       thinkingLevel: "high",
       color: "accent",
       tmuxTarget: "window",

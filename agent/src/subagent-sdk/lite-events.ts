@@ -32,13 +32,7 @@ export function forwardLiteChildEvent(
       });
       return;
     case "turn_end":
-      eventBus.emitChildEvent(sessionId, {
-        type: "turn_end",
-        turnIndex:
-          "turnIndex" in event && typeof event.turnIndex === "number" ? event.turnIndex : 0,
-        message: event.message,
-        toolResults: event.toolResults,
-      });
+      eventBus.emitChildEvent(sessionId, event);
       return;
     case "auto_retry_end":
     case "auto_retry_start":

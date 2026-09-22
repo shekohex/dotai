@@ -2,10 +2,12 @@ import net, { type Server, type Socket } from "node:net";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
-import type { ExtensionEvent } from "@earendil-works/pi-coding-agent";
+import type { AgentSessionEvent, ExtensionEvent } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { SubagentParentMessageSchema, type SubagentParentMessage } from "./parent-message-types.js";
+
+type LiteTurnEndEvent = Extract<AgentSessionEvent, { type: "turn_end" }>;
 
 export const SubagentIpcConfigSchema = Type.Object(
   {
@@ -20,7 +22,7 @@ export const SubagentChildEventFrameSchema = Type.Object(
     kind: Type.Literal("child_event"),
     sessionId: Type.String(),
     token: Type.String(),
-    event: Type.Unsafe<ExtensionEvent>(
+    event: Type.Unsafe<ExtensionEvent | LiteTurnEndEvent>(
       Type.Object({ type: Type.String() }, { additionalProperties: true }),
     ),
   },
@@ -37,7 +39,7 @@ export const SubagentParentMessageFrameSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export type SubagentChildIpcEvent = ExtensionEvent;
+export type SubagentChildIpcEvent = ExtensionEvent | LiteTurnEndEvent;
 export type SubagentIpcConfig = Static<typeof SubagentIpcConfigSchema>;
 export type SubagentChildEventFrame = Omit<
   Static<typeof SubagentChildEventFrameSchema>,

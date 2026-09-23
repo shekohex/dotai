@@ -75,11 +75,11 @@ export const defaultModes = {
     "fast-build": {
       provider: "codex-openai",
       modelId: "gpt-6-luna",
-      thinkingLevel: "high",
+      thinkingLevel: "xhigh",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
-      description: "Like build mode, but faster",
+      description: "Like build mode, but faster, and cheaper.",
     },
 
     deep: {

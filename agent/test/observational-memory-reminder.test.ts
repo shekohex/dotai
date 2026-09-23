@@ -77,6 +77,7 @@ function setup(options: SetupOptions) {
 
   const runtime = new Runtime();
   runtime.ensureConfig("/tmp");
+  runtime.config.enabled = true;
   runtime.config.passive = options.passive ?? false;
 
   const ctx = {

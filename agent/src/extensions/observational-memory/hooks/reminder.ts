@@ -98,7 +98,7 @@ export function registerCompactionReminder(pi: ExtensionAPI, runtime: Runtime): 
     const timer = setTimeout(() => {
       try {
         runtime.ensureConfig(cwd);
-        if (runtime.config.passive) return;
+        if (!runtime.config.enabled || runtime.config.passive) return;
 
         const remoteSession =
           supportsOpenAIRemoteCompaction(model) ||

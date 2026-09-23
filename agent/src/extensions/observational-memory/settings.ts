@@ -12,6 +12,7 @@ const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "ma
 
 export const ObservationalMemorySettingsSchema = Type.Object(
   {
+    enabled: Type.Optional(Type.Boolean()),
     observeAfterTokens: Type.Optional(Type.Integer({ minimum: 1 })),
     reflectAfterTokens: Type.Optional(Type.Integer({ minimum: 1 })),
     observerChunkMaxTokens: Type.Optional(Type.Integer({ minimum: 1 })),
@@ -65,7 +66,7 @@ export type ObservationalMemorySettings = Static<typeof ObservationalMemorySetti
  * Memory work is high-volume but low-stakes compression, so a fast cheap model is preferred over
  * the session model. Switch per project via settings:
  *
- * - `codex-openai/gpt-5.6-luna` (default) — fast, cheap, always-on summarization quality; the safest
+ * - `codex-openai/gpt-6-luna` (default) — fast, cheap, always-on summarization quality; the safest
  *   default for continuous observation.
  * - `zai/glm-5.3-flash` — cheapest useful option for high-frequency observing on long-running
  *   background threads.
@@ -74,8 +75,8 @@ export type ObservationalMemorySettings = Static<typeof ObservationalMemorySetti
  */
 export const defaultObservationalMemoryModel = {
   provider: "codex-openai",
-  id: "gpt-5.6-luna",
-  thinking: "low",
+  id: "gpt-6-luna",
+  thinking: "medium",
 } as const;
 
 /**
@@ -138,6 +139,7 @@ export const defaultObservationalMemoryFallbackModels = [
  * - `debugLog` — write structured om worker logs to `.pi/om-debug/` for diagnosis.
  */
 export const defaultObservationalMemorySettings = {
+  enabled: false,
   observeAfterTokens: 10_000,
   reflectAfterTokens: 20_000,
   compactAfterTokens: 81_000,

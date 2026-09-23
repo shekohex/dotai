@@ -75,6 +75,7 @@ function handleBeforeCompact(
       if (reconstructRemoteCompactionState(event.branchEntries) !== undefined) return undefined;
 
       runtime.ensureConfig(ctx.cwd);
+      if (!runtime.config.enabled) return undefined;
       const { preparation, branchEntries } = event;
       const { firstKeptEntryId, tokensBefore } = preparation;
       const projection = buildCompactionProjection(branchEntries as Entry[], firstKeptEntryId, {

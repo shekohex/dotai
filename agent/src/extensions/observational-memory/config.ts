@@ -26,6 +26,7 @@ export interface ConfiguredModel {
 export type CompactAfterTokensMode = "calibrated" | "ratio";
 
 export interface Config {
+  enabled: boolean;
   observeAfterTokens: number;
   reflectAfterTokens: number;
   /**

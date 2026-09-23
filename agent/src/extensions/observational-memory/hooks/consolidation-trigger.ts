@@ -303,7 +303,7 @@ function debugSessionMetadata(ctx: ConsolidationCtx): { sessionId?: string; sess
 
 function maybeLaunchConsolidation(pi: ExtensionAPI, runtime: Runtime, ctx: ConsolidationCtx): void {
   runtime.ensureConfig(ctx.cwd);
-  if (runtime.config.passive) return;
+  if (!runtime.config.enabled || runtime.config.passive) return;
   if (runtime.consolidationInFlight) return;
 
   const entries: Entry[] = ctx.sessionManager.getBranch();

@@ -3,7 +3,6 @@
   "ignorePatterns": [
     "dist/**",
     "vendor/**",
-    "src/resources/plannotator/*.html",
     ".tmp/**",
     "tmp/**",
     "*.jsonl"

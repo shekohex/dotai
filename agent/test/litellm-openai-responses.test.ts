@@ -83,7 +83,6 @@ describe("LiteLLM OpenAI Responses provider", () => {
     expect(registration?.config.streamSimple).toBe(streamLiteLLMOpenAIResponses);
   });
 
-
   it("adds the selected model to the LiteLLM WebSocket URL", () => {
     expect(
       liteLLMResponsesTest.resolveWebSocketUrl(

@@ -516,7 +516,11 @@ class GoalRuntime {
       this.continuationTimer = setTimeout(() => {
         this.continuationTimer = null;
         this.continuationScheduledFor = null;
-        if (isCurrentSessionPosition(ctx, goalPosition)) {
+        if (
+          isCurrentSessionPosition(ctx, goalPosition) ||
+          (options.resumeAnchor !== undefined &&
+            canResumeFromCompactionAnchor(ctx, options.resumeAnchor))
+        ) {
           this.maybeContinue(ctx, options);
         }
       }, CONTINUATION_RETRY_MS);

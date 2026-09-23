@@ -2086,6 +2086,89 @@ Ship it`);
     });
   });
 
+  test("compaction resumes goal after observational-memory reminder is appended", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "threshold", false);
+    await emitSessionCompact(harness, "threshold", false);
+    harness.entries.push({
+      type: "custom_message",
+      id: "om-reminder-1",
+      parentId: harness.entries.at(-1)?.id ?? null,
+      timestamp: new Date(0).toISOString(),
+      customType: "om.memory.reminder",
+      content: "memory",
+      display: false,
+    } as never);
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.sentMessages[0]?.message.details).toEqual({
+      kind: "continuation",
+      goalId: harness.snapshot().goal?.goalId,
+    });
+  });
+
+  test("compaction resume survives reminder appended while waiting for idle", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "threshold", false);
+    await emitSessionCompact(harness, "threshold", false);
+    harness.setIdle(false);
+    await waitForCompactionResume();
+    harness.entries.push({
+      type: "custom_message",
+      id: "om-reminder-1",
+      parentId: harness.entries.at(-1)?.id ?? null,
+      timestamp: new Date(0).toISOString(),
+      customType: "om.memory.reminder",
+      content: "memory",
+      display: false,
+    } as never);
+    harness.setIdle(true);
+    await waitForContinuationRetry();
+
+    expect(harness.sentMessages).toHaveLength(1);
+  });
+
+  test("compaction resume does not override a new user message", async () => {
+    const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    await emitBeforeCompact(harness, "threshold", false);
+    await emitSessionCompact(harness, "threshold", false);
+    harness.entries.push({
+      type: "message",
+      id: "user-message-1",
+      parentId: harness.entries.at(-1)?.id ?? null,
+      timestamp: new Date(0).toISOString(),
+      message: { role: "user", content: "stop" },
+    } as never);
+    await waitForCompactionResume();
+
+    expect(harness.sentMessages).toHaveLength(0);
+  });
+
   test("goal can continue after retry compaction turn completes", async () => {
     const harness = createGoalHarness({ contextUsagePercent: 100, contextUsageTokens: 1000 });
     await harness.runCommand("ship it");

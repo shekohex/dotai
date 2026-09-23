@@ -58,11 +58,22 @@ export function canResumeFromCompactionAnchor(
   anchor: GoalCompactionResumeAnchor,
 ): boolean {
   try {
+    const branch = ctx.sessionManager.getBranch();
+    const leafId = ctx.sessionManager.getLeafId();
+    const anchorIndex = branch.findIndex((entry) => entry.id === anchor.leafId);
+    // Silent extension reminders can append after compaction without starting a turn.
+    const onlySilentMessagesAppended =
+      anchorIndex >= 0 &&
+      branch.at(-1)?.id === leafId &&
+      branch
+        .slice(anchorIndex + 1)
+        .every((entry) => entry.type === "custom_message" && !entry.display);
     return (
       ctx.sessionManager.getSessionId() === anchor.sessionId &&
-      ctx.sessionManager.getLeafId() === anchor.leafId &&
-      branchContainsEntry(ctx, anchor.blockedLeafId) &&
-      branchContainsEntry(ctx, anchor.compactionEntryId)
+      (leafId === anchor.leafId || onlySilentMessagesAppended) &&
+      (anchor.blockedLeafId === null ||
+        branch.some((entry) => entry.id === anchor.blockedLeafId)) &&
+      branch.some((entry) => entry.id === anchor.compactionEntryId)
     );
   } catch {
     return false;

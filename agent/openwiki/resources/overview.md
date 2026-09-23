@@ -4,10 +4,10 @@ Bundled assets under `src/resources/` (copied to `dist/resources/` at build by `
 
 ## system/ — model-family system prompts
 
-Base system prompts selected per model family by `src/extensions/model-family-system-prompt.ts`, which patches `AgentSession.prototype` (`bindExtensions`, `setModel`, `setActiveToolsByName`, `reload`) and the `before_agent_start` hook to reapply the right prompt whenever the model changes.
+Base system prompts selected per model family by `src/extensions/model-family-system-prompt.ts`, which uses the `before_agent_start` hook to choose the right prompt for each turn's model.
 
-- Files: `default.md`, `codex.md`, `gpt.md`, `kimi.md`.
-- `resolveModelFamilySystemPrompt(modelId)` maps by substring: `codex`→`codex`, `gpt-5`→`gpt`, `kimi`→`kimi`, else `default`. The chosen prompt **replaces** the base system prompt; the upstream dynamic tail is appended back.
+- Files: `default.md`, `gpt.md`, `kimi.md`.
+- `resolveModelFamilySystemPrompt(modelId)` maps `gpt-*`→`gpt` first, then by substring: `kimi`→`kimi`, else `default`. The chosen prompt **replaces** the base system prompt; the upstream dynamic tail is appended back.
 
 ## modes/ — mode system prompts
 

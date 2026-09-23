@@ -30,6 +30,10 @@ import {
 } from "../src/extensions/available-modes.ts";
 import { resolveSubagentMode, resolveModeTools } from "../src/subagent-sdk/modes.ts";
 import { applyModeSystemPrompt } from "../src/mode-system-prompt.ts";
+import {
+  buildModelFamilySystemPrompt,
+  resolveModelFamilySystemPrompt,
+} from "../src/extensions/model-family-system-prompt.ts";
 import { createLiteSessionResources } from "../src/subagent-sdk/lite-session-resources.ts";
 import type { ResolvedSubagentMode } from "../src/subagent-sdk/modes.ts";
 import { FallbackMuxAdapter } from "../src/subagent-sdk/fallback-mux.ts";
@@ -460,6 +464,18 @@ timedTest("applyModeSystemPrompt preserves pi dynamic tail for replace modes", (
       systemPromptMode: "replace",
     }),
   ).toBe("Review only\n\nAvailable tools:\n- read: Read files\n\nCurrent date: 2026-06-03");
+});
+
+timedTest("routes every GPT model to the GPT system prompt", () => {
+  for (const modelId of ["gpt-5.6-sol", "gpt-6-sol", "gpt-6-astra", "GPT-6-LUNA"]) {
+    expect(resolveModelFamilySystemPrompt(modelId)).toBe("gpt");
+  }
+  expect(resolveModelFamilySystemPrompt("codex-mini")).toBe("default");
+  expect(resolveModelFamilySystemPrompt("kimi-k2.7-code")).toBe("kimi");
+  expect(resolveModelFamilySystemPrompt("unknown")).toBe("default");
+  expect(buildModelFamilySystemPrompt("Original\n\n<tools>\n- read", "gpt-6-sol")).toMatch(
+    /^You are a deeply pragmatic, effective software engineer\..*\n\n<tools>\n- read$/s,
+  );
 });
 
 timedTest("lite subagent replace mode keeps generated tool prompt tail", async () => {

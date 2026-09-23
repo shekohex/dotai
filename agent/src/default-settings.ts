@@ -48,10 +48,10 @@ export type DefaultSettings = Omit<AgentSettings, "terminal"> & {
 
 export const defaultSettings = {
   defaultProvider: "openai-codex",
-  defaultModel: "gpt-5.6-sol",
-  hideThinkingBlock: true,
+  defaultModel: "gpt-6-sol",
+  hideThinkingBlock: false,
   defaultThinkingLevel: "high",
-  transport: "auto",
+  transport: "websocket-cached",
   quietStartup: true,
   editorPaddingX: 0,
   collapseChangelog: true,
@@ -68,6 +68,7 @@ export const defaultSettings = {
     reserveTokens: 27_200,
     keepRecentTokens: 20_000,
   },
+  tuiMode: "fullscreen",
   terminal: {
     showImages: true,
     clearOnShrink: false,

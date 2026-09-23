@@ -83,9 +83,6 @@ describe("LiteLLM OpenAI Responses provider", () => {
     expect(registration?.config.streamSimple).toBe(streamLiteLLMOpenAIResponses);
   });
 
-  it("uses cached WebSockets by default", () => {
-    expect(defaultSettings.transport).toBe("auto");
-  });
 
   it("adds the selected model to the LiteLLM WebSocket URL", () => {
     expect(

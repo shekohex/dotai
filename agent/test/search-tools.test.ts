@@ -413,9 +413,46 @@ describe("search_tools", () => {
     registerTool(fakePi, "bash", "Run commands");
     fakePi.activeTools = ["read", "bash"];
 
-    syncModeTools(fakePi as unknown as ExtensionAPI, {} as never, { tools: ["*"] });
+    syncModeTools(
+      fakePi as unknown as ExtensionAPI,
+      {} as never,
+      { tools: ["*"] },
+      {
+        preserveActiveDeferredTools: false,
+      },
+    );
 
     expect(fakePi.activeTools).toEqual(["bash", "read"]);
+  });
+
+  test("preserves runtime-loaded tool order on later mode syncs", async () => {
+    const fakePi = new SearchToolsPi();
+    registerTool(fakePi, "read", "Read files");
+    registerTool(fakePi, "goal", "Manage durable autonomous objectives");
+    searchToolsExtension(fakePi as unknown as ExtensionAPI);
+    fakePi.activeTools = ["read", "search_tools"];
+    const searchTool = fakePi.tools.get("search_tools");
+    if (searchTool === undefined) throw new Error("search_tools was not registered");
+
+    await searchTool.execute(
+      "search-order",
+      { query: "durable goal" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    const callsAfterLoading = fakePi.setActiveToolsCalls;
+    syncModeTools(
+      fakePi as unknown as ExtensionAPI,
+      {} as never,
+      { tools: ["*"] },
+      {
+        preserveActiveDeferredTools: true,
+      },
+    );
+
+    expect(fakePi.activeTools).toEqual(["read", "search_tools", "goal"]);
+    expect(fakePi.setActiveToolsCalls).toBe(callsAfterLoading);
   });
 
   test("does not resurrect a deferred tool removed by a restrictive mode", async () => {

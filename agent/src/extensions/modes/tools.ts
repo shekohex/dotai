@@ -141,7 +141,13 @@ export function syncModeTools(
   }
   const activeTools = pi.getActiveTools();
 
-  if (!sameToolSet(activeTools, nextTools)) {
+  if (
+    !sameToolSet(activeTools, nextTools) &&
+    !(
+      options.preserveActiveDeferredTools !== false &&
+      sameToolSet(activeTools.toSorted(compareToolNames), nextTools)
+    )
+  ) {
     pi.setActiveTools(nextTools);
   }
 }

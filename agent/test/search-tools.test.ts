@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { Context } from "@earendil-works/pi-ai";
+import { resolveTranscriptTools, type Context } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { describe, expect, test } from "vitest";
 import { calls, createTestSession, says, when } from "@support/pi-test-harness";
@@ -541,6 +541,69 @@ describe("search_tools", () => {
         "subagent",
       ]);
       expect(testSession.session.getActiveToolNames()).toEqual(["search_tools", "subagent"]);
+    } finally {
+      testSession.dispose();
+    }
+  });
+
+  test("keeps dynamically loaded tools anchored with a forced system prompt", async () => {
+    const testSession = await createTestSession({
+      extensionFactories: [
+        (pi) => {
+          pi.registerTool({
+            name: "goal",
+            label: "Goal",
+            description: "Manage durable autonomous objectives",
+            parameters: Type.Object({}),
+            execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+          });
+          pi.on("before_agent_start", (event) => ({
+            systemPrompt: `Custom\n\n${event.systemPrompt}`,
+          }));
+        },
+        searchToolsExtension,
+      ],
+    });
+
+    try {
+      const agent = testSession.session.agent as {
+        state: { tools: unknown[] };
+        setTools?: (tools: unknown[]) => void;
+      };
+      agent.setTools ??= (tools) => {
+        agent.state.tools = tools;
+      };
+      testSession.session.setActiveToolsByName(["search_tools"]);
+      const turn = when("load durable goal", [
+        calls("search_tools", { query: "durable goal" }),
+        says("loaded"),
+      ]);
+      const { streamFn } = createPlaybookStreamFn([turn]);
+      const providerContexts: Context[] = [];
+      (testSession.session.agent as any).streamFunction = (
+        model: any,
+        context: Context,
+        options: any,
+      ) => {
+        providerContexts.push(context);
+        return streamFn(model, context, options);
+      };
+      (testSession.session.agent as any).getApiKey = () => "test-key";
+
+      await testSession.session.prompt(turn.prompt);
+      await (testSession.session.agent as any).waitForIdle();
+
+      const context = providerContexts.at(-1);
+      expect(context).toBeDefined();
+      if (context === undefined) throw new Error("Expected provider context");
+      const tools = resolveTranscriptTools(context.messages, true);
+      expect(tools.requestTools.map((tool) => tool.name)).toEqual(["search_tools"]);
+      expect(
+        context.messages.some(
+          (message) =>
+            message.role === "system" && message.toolsAdded?.some((tool) => tool.name === "goal"),
+        ),
+      ).toBe(true);
     } finally {
       testSession.dispose();
     }

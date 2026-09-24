@@ -1,3 +1,53 @@
+diff --git a/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js b/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js
+index 36fdb31..b3f394d 100644
+--- a/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js
++++ b/node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js
+@@ -1037,8 +1037,8 @@ export class AgentSession {
+      * A `before_agent_start` handler that returns `systemPrompt` needs that exact text at the
+      * head of the request; a mid-conversation system message would leave the original prompt
+      * in place. The forced text is a rendering of the current prompt, so the transcript keeps
+-     * its structured sections and the request is projected instead: the system messages
+-     * collapse into one head holding the forced text and the current tools. Runs after the
++     * its structured sections and the request is projected instead: prompt sections
++     * collapse into the leading text while tool changes keep their transcript positions. Runs after the
+      * `context` extension handlers.
+      */
+     _installAgentForcedPromptProjection() {
+@@ -1049,13 +1049,32 @@ export class AgentSession {
+             if (forced === undefined)
+                 return transformed;
+             const current = getCurrentSystemMessage(transformed);
++            const initial = transformed.find((message) => message.role === "system");
+             const head = {
+                 role: "system",
+                 content: forced,
+-                ...(current?.toolsAdded ? { toolsAdded: current.toolsAdded } : {}),
++                ...(initial?.toolsAdded ? { toolsAdded: initial.toolsAdded } : {}),
+                 timestamp: current?.timestamp ?? Date.now(),
+             };
+-            return [head, ...transformed.filter((message) => message.role !== "system")];
++            let skippedInitial = false;
++            const history = transformed.flatMap((message) => {
++                if (message.role !== "system")
++                    return [message];
++                if (!skippedInitial) {
++                    skippedInitial = true;
++                    return [];
++                }
++                if (!message.toolsAdded?.length && !message.toolsRemoved?.length)
++                    return [];
++                return [{
++                        role: "system",
++                        content: "",
++                        ...(message.toolsAdded ? { toolsAdded: message.toolsAdded } : {}),
++                        ...(message.toolsRemoved ? { toolsRemoved: message.toolsRemoved } : {}),
++                        timestamp: message.timestamp,
++                    }];
++            });
++            return [head, ...history];
+         };
+     }
+     /** Restore the active tool loadout declared by the session transcript, if it declares one. */
 diff --git a/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js b/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js
 index 6d0356c..e7b2230 100644
 --- a/node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js

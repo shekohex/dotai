@@ -139,7 +139,7 @@ export function syncModeTools(
     nextTools.push(STRUCTURED_OUTPUT_TOOL_NAME);
     nextTools.sort(compareToolNames);
   }
-  const activeTools = pi.getActiveTools().slice().toSorted(compareToolNames);
+  const activeTools = pi.getActiveTools();
 
   if (!sameToolSet(activeTools, nextTools)) {
     pi.setActiveTools(nextTools);

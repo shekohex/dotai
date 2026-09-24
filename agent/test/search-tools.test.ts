@@ -407,6 +407,17 @@ describe("search_tools", () => {
     expect(fakePi.activeTools).toEqual(["read", "search_tools", "subagent"]);
   });
 
+  test("normalizes active tool order without changing the tool set", () => {
+    const fakePi = new SearchToolsPi();
+    registerTool(fakePi, "read", "Read files");
+    registerTool(fakePi, "bash", "Run commands");
+    fakePi.activeTools = ["read", "bash"];
+
+    syncModeTools(fakePi as unknown as ExtensionAPI, {} as never, { tools: ["*"] });
+
+    expect(fakePi.activeTools).toEqual(["bash", "read"]);
+  });
+
   test("does not resurrect a deferred tool removed by a restrictive mode", async () => {
     const fakePi = new SearchToolsPi();
     registerTool(fakePi, "read", "Read files");

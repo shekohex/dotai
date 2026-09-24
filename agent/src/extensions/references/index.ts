@@ -44,20 +44,19 @@ export default function referencesExtension(pi: ExtensionAPI): void {
     const context = buildReferencesSystemContext(state);
     const mentions = resolveReferenceMentions(event.prompt, state);
     const content = buildReferenceExpansionContent(mentions);
-    const result = {
-      ...(context.length === 0 ? {} : { systemPrompt: `${event.systemPrompt}\n\n${context}` }),
-      ...(content.length === 0
-        ? {}
-        : {
-            message: {
-              customType: REFERENCE_EXPANSION_MESSAGE,
-              content,
-              display: false,
-              details: { mentions },
-            },
-          }),
-    };
-    return result;
+    if (context.length > 0) {
+      event.systemPromptOptions.sections.references = context;
+    }
+    return content.length === 0
+      ? undefined
+      : {
+          message: {
+            customType: REFERENCE_EXPANSION_MESSAGE,
+            content,
+            display: false,
+            details: { mentions },
+          },
+        };
   });
 }
 

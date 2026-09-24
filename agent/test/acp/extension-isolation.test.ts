@@ -89,8 +89,11 @@ describe("ACP extension isolation", () => {
 
 function createModeSession(prompts: string[]): Promise<TestSession> {
   const capturePromptExtension = (pi: ExtensionAPI): void => {
-    pi.on("before_agent_start", (event) => {
-      prompts.push(event.systemPrompt);
+    pi.on("context_with_system", (event) => {
+      const systemMessage = event.messages.find((message) => message.role === "system");
+      if (systemMessage?.role === "system") {
+        prompts.push(systemMessage.sections?.preamble ?? systemMessage.content.toString());
+      }
     });
   };
   return createTestSession({ extensionFactories: [modesExtension, capturePromptExtension] });

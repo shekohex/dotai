@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { extractPiDynamicTail } from "../system-prompt-tail.js";
 
 export type ModelFamilySystemPrompt = "gpt" | "kimi" | "default";
 
@@ -34,17 +33,15 @@ export function resolveModelFamilySystemPrompt(
   return "default";
 }
 
-export function buildModelFamilySystemPrompt(
-  systemPrompt: string,
-  modelId: string | undefined,
-): string {
-  const family = resolveModelFamilySystemPrompt(modelId);
-  const tail = extractPiDynamicTail(systemPrompt).trimStart();
-  return tail.length > 0 ? `${promptTexts[family]}\n\n${tail}` : promptTexts[family];
-}
-
 export default function modelFamilySystemPromptExtension(pi: ExtensionAPI): void {
-  pi.on("before_agent_start", (event, ctx) => ({
-    systemPrompt: buildModelFamilySystemPrompt(event.systemPrompt, ctx.model?.id),
-  }));
+  pi.on("context_with_system", (event, ctx) => {
+    const familyPrompt = promptTexts[resolveModelFamilySystemPrompt(ctx.model?.id)];
+    return {
+      messages: event.messages.map((message) =>
+        message.role === "system" && message.sections?.preamble !== undefined
+          ? { ...message, sections: { ...message.sections, preamble: familyPrompt } }
+          : message,
+      ),
+    };
+  });
 }

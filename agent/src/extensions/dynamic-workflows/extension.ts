@@ -103,11 +103,9 @@ export default function extension(pi: ExtensionAPI) {
     manager.setExtensionContext(ctx);
   });
   pi.on("before_agent_start", (event) => {
-    if (!workflowToolEnabled) {
-      return { systemPrompt: event.systemPrompt };
+    if (workflowToolEnabled && workflowSystemPrompt.length > 0) {
+      event.systemPromptOptions.sections.workflows = workflowSystemPrompt;
     }
-    if (workflowSystemPrompt.length === 0) return { systemPrompt: event.systemPrompt };
-    return { systemPrompt: `${event.systemPrompt}\n\n${workflowSystemPrompt}` };
   });
   pi.on("session_tree", (_event: unknown, ctx: ExtensionContext) => {
     setWorkflowStatusContext(ctx);

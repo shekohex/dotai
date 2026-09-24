@@ -491,12 +491,16 @@ describe("references extension", () => {
 
     expect(handlers.has("input")).toBe(false);
 
+    const systemPromptOptions = { sections: {} };
     const promptResult = handlers.get("before_agent_start")?.[0]?.({
       systemPrompt: "Base",
       prompt: "read @docs/a.md",
+      systemPromptOptions,
+    });
+    expect(systemPromptOptions.sections).toMatchObject({
+      references: expect.stringContaining("<available_references>"),
     });
     expect(promptResult).toMatchObject({
-      systemPrompt: expect.stringContaining("<available_references>"),
       message: {
         customType: "reference-expansion",
         content: expect.stringContaining(`@docs/a.md -> ${join(docs, "a.md")}`),

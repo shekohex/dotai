@@ -2,6 +2,8 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   ExtensionFactory,
+  ContextWithSystemEvent,
+  ContextEventResult,
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { fuzzyFilter, type AutocompleteItem } from "@earendil-works/pi-tui";
@@ -39,7 +41,6 @@ import {
   syncModeTools,
   toModeFlagName,
 } from "./orchestration.js";
-import { applyModeSystemPrompt } from "../../mode-system-prompt.js";
 import {
   createModeFailoverRuntime,
   handleModeAssistantMessageEnd,
@@ -464,6 +465,9 @@ function createModeLifecycleDeps(
     },
     restoreMode: async (extensionApi, ctx) => {
       runtime.lastContext = ctx;
+      runtime.toolsInitialized = ctx.sessionManager
+        .getBranch()
+        .some((entry) => entry.type === "message" && entry.message.role === "system");
       restoreSessionModeOverrides(runtime, ctx);
       await restoreMode(extensionApi, ctx);
     },
@@ -631,8 +635,31 @@ function registerModeAgentHandlers(
   pi.on("before_agent_start", (event) => {
     const activeMode = runtime.activeMode;
     const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(runtime, activeMode);
-    const systemPrompt = applyModeSystemPrompt(event.systemPrompt, spec);
-    return systemPrompt === undefined ? undefined : { systemPrompt };
+    if (
+      spec?.systemPrompt !== undefined &&
+      spec.systemPrompt.length > 0 &&
+      spec.systemPromptMode !== "replace"
+    ) {
+      event.systemPromptOptions.sections.mode_instructions = spec.systemPrompt;
+    }
+  });
+  pi.on("context_with_system", (event: ContextWithSystemEvent): ContextEventResult | void => {
+    const activeMode = runtime.activeMode;
+    const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(runtime, activeMode);
+    if (
+      spec?.systemPrompt === undefined ||
+      spec.systemPrompt.length === 0 ||
+      spec.systemPromptMode !== "replace"
+    )
+      return;
+    const modePrompt = spec.systemPrompt;
+    return {
+      messages: event.messages.map((message) =>
+        message.role === "system" && message.sections?.preamble !== undefined
+          ? { ...message, sections: { ...message.sections, preamble: modePrompt } }
+          : message,
+      ),
+    };
   });
   pi.on("before_agent_start", async (_event, ctx) => {
     runtime.lastContext = ctx;

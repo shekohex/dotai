@@ -1,11 +1,21 @@
 import { rmSync } from "node:fs";
 
 import { afterEach, expect, test, vi } from "vitest";
-import { createTestSession, says, when, type TestSession } from "@support/pi-test-harness";
+import { calls, createTestSession, says, when, type TestSession } from "@support/pi-test-harness";
+import { createPlaybookStreamFn } from "@support/pi-test-harness/playbook";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  resolveTranscriptTools,
+  type Context,
+} from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 import modesExtension from "../src/extensions/modes.js";
+import modelFamilySystemPromptExtension from "../src/extensions/model-family-system-prompt.js";
+import dynamicWorkflowsExtension from "../src/extensions/dynamic-workflows/extension.js";
+import searchToolsExtension from "../src/extensions/search-tools.js";
 import { registerPiAiProvider } from "../src/extensions/pi-ai-models.js";
 import {
   defineModesFile,
@@ -25,16 +35,20 @@ test("RPC controller model and thinking selection overrides restored persisted m
   const provider = createRpcTestProvider();
   let session: TestSession | undefined;
   const systemPrompts: string[] = [];
+  const forcedPrompts: Array<string | undefined> = [];
 
   registerBuildMode();
 
   try {
     session = await createTestSession({
       extensionFactories: [
+        modelFamilySystemPromptExtension,
         modesExtension,
+        dynamicWorkflowsExtension,
         (pi) => {
           pi.on("before_agent_start", (event) => {
             systemPrompts.push(event.systemPrompt);
+            forcedPrompts.push(event.systemPromptOptions.forceSystemPrompt);
           });
         },
         provider.extensionFactory,
@@ -63,11 +77,98 @@ test("RPC controller model and thinking selection overrides restored persisted m
     expect(session.session.model.id).toBe("external-model");
     expect(session.session.thinkingLevel).toBe("low");
     expect(systemPrompts.at(-1)).toContain("BUILD MODE PROMPT");
+    expect(forcedPrompts.at(-1)).toBeUndefined();
     expect(
       session.events
         .uiCallsFor("notify")
         .some((call) => String(call.args[0]).includes("primary model restored")),
     ).toBe(false);
+  } finally {
+    session?.dispose();
+    provider.dispose();
+  }
+});
+
+test("replace mode changes only preamble while preserving Pi sections and tool history", async () => {
+  const provider = createRpcTestProvider();
+  let session: TestSession | undefined;
+  const projectedContexts: Array<
+    Array<{ role: string; sections?: Record<string, string>; toolsAdded?: unknown[] }>
+  > = [];
+  registerBuildMode("replace", ["*"]);
+
+  try {
+    session = await createTestSession({
+      extensionFactories: [
+        modelFamilySystemPromptExtension,
+        modesExtension,
+        dynamicWorkflowsExtension,
+        (pi) => {
+          pi.registerTool({
+            name: "goal",
+            label: "Goal",
+            description: "Manage durable autonomous objectives",
+            parameters: Type.Object({}),
+            execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+          });
+        },
+        searchToolsExtension,
+        (pi) => {
+          pi.on("context_with_system", (event) => {
+            projectedContexts.push(event.messages);
+          });
+        },
+        provider.extensionFactory,
+      ],
+    });
+    patchHarnessAgent(session);
+    await session.session.bindExtensions({ mode: "rpc" });
+    const turn = when("load durable goal", [
+      calls("search_tools", { query: "durable goal" }),
+      says("loaded"),
+    ]);
+    const { streamFn } = createPlaybookStreamFn([turn]);
+    const providerContexts: Context[] = [];
+    (session.session.agent as any).streamFunction = (
+      model: any,
+      context: Context,
+      options: any,
+    ) => {
+      providerContexts.push(context);
+      return streamFn(model, context, options);
+    };
+    (session.session.agent as any).getApiKey = () => "test-key";
+    await session.session.prompt(turn.prompt);
+    await session.session.agent.waitForIdle();
+
+    const initial = projectedContexts.at(-1)?.find((message) => message.role === "system");
+    expect(initial?.sections?.preamble).toBe("BUILD MODE PROMPT");
+    expect(initial?.sections?.tools).toBeTruthy();
+    expect(initial?.sections?.rules).toBeTruthy();
+    expect(initial?.sections?.docs).toBeTruthy();
+    expect(initial?.toolsAdded?.length).toBeGreaterThan(0);
+    const messages = providerContexts.at(-1)?.messages;
+    expect(messages).toBeDefined();
+    if (messages === undefined) throw new Error("Expected provider context");
+    expect(messages[0]?.role).toBe("system");
+    if (messages[0]?.role === "system") {
+      expect(messages[0].sections?.preamble).toBe("BUILD MODE PROMPT");
+      expect(messages[0].sections?.tools).toBeTruthy();
+    }
+    expect(resolveTranscriptTools(messages, true).requestTools.map((tool) => tool.name)).toContain(
+      "search_tools",
+    );
+    expect(
+      resolveTranscriptTools(messages, true).requestTools.map((tool) => tool.name),
+    ).not.toContain("goal");
+    expect(
+      messages.some(
+        (message) =>
+          message.role === "system" && message.toolsAdded?.some((tool) => tool.name === "goal"),
+      ),
+    ).toBe(true);
+    await session.session.extensionRunner.emit({ type: "session_start", reason: "resume" });
+    expect(session.session.getActiveToolNames()).toContain("goal");
   } finally {
     session?.dispose();
     provider.dispose();
@@ -233,7 +334,10 @@ test("failover remains active after explicit RPC mode activation", async () => {
   }
 });
 
-function registerBuildMode(): void {
+function registerBuildMode(
+  systemPromptMode: "append" | "replace" = "append",
+  tools?: string[],
+): void {
   registerBuiltInModes(
     MODE_SOURCE,
     defineModesFile({
@@ -244,7 +348,8 @@ function registerBuildMode(): void {
           modelId: "build-model",
           thinkingLevel: "high",
           systemPrompt: "BUILD MODE PROMPT",
-          systemPromptMode: "append",
+          systemPromptMode,
+          tools,
           fallbacks: [{ provider: "rpc-test", modelId: "fallback-model", thinkingLevel: "low" }],
         },
       },

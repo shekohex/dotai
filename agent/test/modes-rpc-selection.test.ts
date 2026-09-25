@@ -175,6 +175,68 @@ test("replace mode changes only preamble while preserving Pi sections and tool h
   }
 });
 
+for (const systemPromptMode of ["append", "replace"] as const) {
+  for (const control of ["env", "flag", "default"] as const) {
+    test(`RPC external system prompt with ${systemPromptMode} mode and ${control} control`, async () => {
+      if (control === "env") vi.stubEnv("PI_PRESERVE_SYSTEM_PROMPT", "1");
+      const provider = createRpcTestProvider();
+      let session: TestSession | undefined;
+      const systemMessages: Array<{ sections?: Record<string, string> }> = [];
+      registerBuildMode(systemPromptMode, ["read"]);
+
+      try {
+        session = await createTestSession({
+          systemPrompt: "EXTERNAL SYSTEM PROMPT",
+          extensionFactories: [
+            modelFamilySystemPromptExtension,
+            modesExtension,
+            (pi) => {
+              pi.on("context_with_system", (event) => {
+                systemMessages.push(
+                  ...event.messages.filter((message) => message.role === "system"),
+                );
+              });
+            },
+            provider.extensionFactory,
+          ],
+        });
+        patchHarnessAgent(session);
+        await session.session.bindExtensions({ mode: "rpc" });
+        if (control === "flag") {
+          expect(
+            session.session.extensionRunner.getFlags().get("preserve-system-prompt")?.type,
+          ).toBe("boolean");
+          session.session.extensionRunner.setFlagValue("preserve-system-prompt", true);
+        }
+
+        await session.run(when("hello", [says("ok")]));
+
+        const system = systemMessages.at(-1);
+        expect(system).toBeDefined();
+        if (control === "default") {
+          if (systemPromptMode === "append") {
+            expect(system?.sections?.preamble).not.toBe("EXTERNAL SYSTEM PROMPT");
+            expect(system?.sections?.mode_instructions).toContain("BUILD MODE PROMPT");
+          } else {
+            expect(system?.sections?.preamble).toBe("BUILD MODE PROMPT");
+            expect(system?.sections?.mode_instructions).toBeUndefined();
+          }
+        } else {
+          expect(system?.sections?.preamble).toBe("EXTERNAL SYSTEM PROMPT");
+          expect(system?.sections?.mode_instructions).toBeUndefined();
+        }
+        expect(session.session.model.id).toBe("build-model");
+        expect(session.session.thinkingLevel).toBe("high");
+        expect(session.session.getActiveToolNames()).toContain("read");
+        expect(session.session.getActiveToolNames()).not.toContain("write");
+      } finally {
+        session?.dispose();
+        provider.dispose();
+      }
+    });
+  }
+}
+
 test("RPC controller thinking-only override survives prompt startup", async () => {
   const provider = createRpcTestProvider();
   let session: TestSession | undefined;

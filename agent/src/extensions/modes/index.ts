@@ -8,6 +8,7 @@ import type {
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { fuzzyFilter, type AutocompleteItem } from "@earendil-works/pi-tui";
 
+import { shouldPreserveSystemPrompt } from "../model-family-system-prompt.js";
 import type { ModeModelCandidate, ModesFile, ModeSpec } from "../../mode-utils.js";
 import { getModeArgumentCompletions as getModeCommandCompletions } from "./completions.js";
 import {
@@ -632,7 +633,8 @@ function registerModeAgentHandlers(
   runtime: ModeRuntime,
   failoverRuntime: ReturnType<typeof createModeFailoverRuntime>,
 ): void {
-  pi.on("before_agent_start", (event) => {
+  pi.on("before_agent_start", (event, ctx) => {
+    if (shouldPreserveSystemPrompt(ctx)) return;
     const activeMode = runtime.activeMode;
     const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(runtime, activeMode);
     if (
@@ -643,7 +645,8 @@ function registerModeAgentHandlers(
       event.systemPromptOptions.sections.mode_instructions = spec.systemPrompt;
     }
   });
-  pi.on("context_with_system", (event: ContextWithSystemEvent): ContextEventResult | void => {
+  pi.on("context_with_system", (event: ContextWithSystemEvent, ctx): ContextEventResult | void => {
+    if (shouldPreserveSystemPrompt(ctx)) return;
     const activeMode = runtime.activeMode;
     const spec = activeMode === undefined ? undefined : getEffectiveModeSpec(runtime, activeMode);
     if (

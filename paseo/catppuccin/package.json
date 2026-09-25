@@ -1,0 +1,13 @@
+{
+  "name": "@shekohex/paseo-plugin-catppuccin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.9.0",
+    "typescript": "^5.9.2"
+  }
+}

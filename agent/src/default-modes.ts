@@ -63,7 +63,7 @@ export const defaultModes = {
     },
     build: {
       provider: "codex-openai",
-      modelId: "gpt-6-sol",
+      modelId: "gpt-6.1-sol",
       thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
@@ -85,7 +85,7 @@ export const defaultModes = {
     deep: {
       provider: "codex-openai",
       modelId: "gpt-6-astra",
-      thinkingLevel: "medium",
+      thinkingLevel: "high",
       color: "warning",
       tmuxTarget: "window",
       tools: ["*"],
@@ -233,7 +233,7 @@ export const defaultModes = {
     },
     live: {
       provider: "codex-openai",
-      modelId: "gpt-6-sol",
+      modelId: "gpt-6.1-sol",
       thinkingLevel: "high",
       color: "accent",
       tmuxTarget: "window",

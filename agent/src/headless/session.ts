@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { installBundledResourcePaths } from "../extensions/bundled-resources.js";
 import { createBundledExtensionFactories } from "../extensions/index.js";
+import { createNativeToolExtensions } from "../extensions/native-tool-extensions.js";
 import {
   registerCoreUIToolOverrides,
   type CoreUIToolOverrides,
@@ -44,6 +45,7 @@ export async function createHeadlessSession(
   installBundledResourcePaths();
   const settingsManager = SettingsManager.create(options.cwd, options.agentDir);
   const extensionFactories = [
+    ...createNativeToolExtensions(),
     ...createBundledExtensionFactories({}),
     ...(options.extraExtensionFactories ?? []),
   ];

@@ -1,4 +1,14 @@
 import type { BashToolDetails } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+
+export const BackgroundBashOutputSchema = Type.Object({
+  output: Type.String(),
+  background: Type.Literal(true),
+  id: Type.String(),
+  status: Type.Literal("running"),
+  output_file: Type.String(),
+  wall_time_seconds: Type.Number(),
+});
 
 export const BACKGROUND_SHELL_WIDGET_KEY = "coreui-background-shells";
 export const BACKGROUND_SHELL_COMPLETION_MESSAGE = "background-bash-completion";

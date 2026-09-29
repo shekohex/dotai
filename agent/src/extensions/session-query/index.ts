@@ -12,6 +12,7 @@ import { SESSION_QUERY_TOOL_NAME } from "./state.js";
 
 export const sessionQueryTool = defineTool({
   name: SESSION_QUERY_TOOL_NAME,
+  exposure: "deferred",
   label: "query",
   renderShell: "self",
   description:

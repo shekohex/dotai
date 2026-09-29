@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { initTheme, InteractiveMode, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { setKeybindings } from "@earendil-works/pi-tui";
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
@@ -25,6 +25,156 @@ const previewPi = { sendMessage() {} } as unknown as ExtensionAPI;
 
 const timedTest: typeof test = ((name: string, fn: (...args: any[]) => any) =>
   test(name, { timeout: TEST_TIMEOUT_MS }, fn)) as typeof test;
+
+timedTest("native tools use CoreUI rails and preserve expanded native output", () => {
+  for (const [id, pending, success, expandedMarker] of [
+    ["codemode:native", "running codemode", "ran codemode", "Promise.allSettled"],
+    [
+      "tool-search:native",
+      "searching tools projects",
+      "searched tools projects",
+      "mcp__executor__list_projects",
+    ],
+    ["mcp:native", "calling executor/list_projects", "called executor/list_projects", '"owner"'],
+  ]) {
+    const scenario = getToolPreviewScenarios().find((item) => item.id === id)!;
+    const panels = getToolPreviewPanels(scenario);
+    const render = (panelId: string) =>
+      stripAnsi(renderPreviewText(scenario, panels.find((panel) => panel.id === panelId)!, 120));
+    expect(render("call-collapsed")).toContain(`▏${pending}`);
+    expect(render("success-collapsed")).toContain(`▏${success}`);
+    expect(render("success-expanded")).toContain(expandedMarker);
+    expect(render("error-expanded")).toContain("↳");
+    for (const width of [40, 80, 120]) {
+      for (const panel of panels)
+        assertVisibleWidths(renderPreviewLines(scenario, panel, width), width);
+      for (const panelId of ["call-collapsed", "success-collapsed", "error-collapsed"]) {
+        const panel = panels.find((item) => item.id === panelId)!;
+        const lines = renderPreviewLines(scenario, panel, width)
+          .map(stripAnsi)
+          .filter((line) => line.trim());
+        expect(lines, `${id} ${panelId} width ${width}`).toHaveLength(1);
+      }
+    }
+  }
+});
+
+timedTest("codemode preview preserves nested progress, errors, costs and saved output", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "codemode:native")!;
+  const panels = getToolPreviewPanels(scenario);
+  const render = (panelId: string) =>
+    stripAnsi(renderPreviewText(scenario, panels.find((panel) => panel.id === panelId)!, 120));
+  const collapsed = render("success-collapsed");
+  const expanded = render("success-expanded");
+  expect(expanded).toContain("✓ mcp__executor__list_projects");
+  expect(expanded).toContain("Model calls: $0.0050");
+  expect(collapsed).not.toContain("mcp__executor__list_projects");
+  expect(collapsed).not.toContain("Model calls:");
+  expect(collapsed).not.toContain("Full output:");
+  expect(collapsed).not.toContain("Script completed");
+  expect(collapsed).not.toContain("Promise.allSettled");
+  expect(collapsed).not.toContain("Project 9");
+  expect(render("success-expanded")).toContain("Project 9");
+  expect(render("partial-collapsed")).toContain("… mcp__executor__list_projects");
+  expect(render("error-expanded")).toContain("permission denied");
+});
+
+timedTest("MCP preview shows streaming progress and bounds collapsed output", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "mcp:native")!;
+  const panels = getToolPreviewPanels(scenario);
+  const render = (panelId: string) =>
+    stripAnsi(renderPreviewText(scenario, panels.find((panel) => panel.id === panelId)!, 120));
+  expect(render("partial-collapsed")).toContain("↳ Loading projects 2/9");
+  expect(render("success-collapsed")).not.toContain("Project");
+  expect(render("success-collapsed")).not.toContain("Project 9");
+  expect(render("success-expanded")).toContain("Project 9");
+  expect(render("error-expanded")).toContain("MCP connection failed");
+});
+
+timedTest("native streaming rows collapse after completion and reopen on expansion", () => {
+  for (const id of ["codemode:native", "mcp:native", "tool-search:native"]) {
+    const scenario = getToolPreviewScenarios().find((item) => item.id === id)!;
+    const callPanel = getToolPreviewPanels(scenario).find(
+      (panel) => panel.id === "call-collapsed",
+    )!;
+    const component = createPreviewComponent(scenario, callPanel);
+    const partial = scenario.partialResult ?? {
+      content: [{ type: "text", text: "Searching tools" }],
+    };
+    const visibleLines = () =>
+      component
+        .render(80)
+        .map(stripAnsi)
+        .filter((line) => line.trim());
+    component.updateResult({ ...partial, isError: false }, true);
+    expect(visibleLines().length).toBeGreaterThan(1);
+    component.updateResult({ ...scenario.successResult!, isError: false }, false);
+    expect(visibleLines()).toHaveLength(1);
+    component.setExpanded(true);
+    expect(visibleLines().length).toBeGreaterThan(1);
+    component.setExpanded(false);
+    expect(visibleLines()).toHaveLength(1);
+    component.updateResult({ ...scenario.errorResult!, isError: true }, false);
+    expect(visibleLines()).toHaveLength(1);
+  }
+});
+
+timedTest("collapsed native tool headers stay on one line with long multiline arguments", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "tool-search:native")!;
+  scenario.args = { query: "projects\n".repeat(50) };
+  const panel = getToolPreviewPanels(scenario).find((item) => item.id === "success-collapsed")!;
+  const lines = renderPreviewLines(scenario, panel, 40)
+    .map(stripAnsi)
+    .filter((line) => line.trim());
+  expect(lines).toHaveLength(1);
+  assertVisibleWidths(lines, 40);
+});
+
+timedTest("native headers show completed counts and freeze elapsed time", () => {
+  let now = 1000;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+  try {
+    for (const [id, summary] of [
+      ["codemode:native", "4 calls"],
+      ["tool-search:native", "1 tool"],
+      ["mcp:native", "1 call"],
+    ]) {
+      now = 1000;
+      const scenario = getToolPreviewScenarios().find((item) => item.id === id)!;
+      const panel = getToolPreviewPanels(scenario).find((item) => item.id === "call-collapsed")!;
+      const component = createPreviewComponent(scenario, panel);
+      now = 2400;
+      component.updateResult({ ...scenario.successResult!, isError: false }, false);
+      expect(stripAnsi(component.render(120).join("\n"))).toContain(`${summary} took 1.4s`);
+      now = 9000;
+      component.setExpanded(true);
+      component.setExpanded(false);
+      expect(stripAnsi(component.render(120).join("\n"))).toContain(`${summary} took 1.4s`);
+    }
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+timedTest("codemode streaming header counts completed calls", () => {
+  const scenario = getToolPreviewScenarios().find((item) => item.id === "codemode:native")!;
+  const panel = getToolPreviewPanels(scenario).find((item) => item.id === "call-collapsed")!;
+  const component = createPreviewComponent(scenario, panel);
+  component.updateResult(
+    {
+      content: [],
+      details: {
+        calls: [
+          { status: "ok", id: "1", name: "read", args: "{}" },
+          { status: "running", id: "2", name: "read", args: "{}" },
+        ],
+      },
+      isError: false,
+    },
+    true,
+  );
+  expect(stripAnsi(component.render(120).join("\n"))).toContain("1/2 calls");
+});
 
 timedTest("apply_patch preview renders collapsed and expanded states", () => {
   const scenario = getToolPreviewScenarios().find((item) => item.id === "apply_patch:multi-file");
@@ -161,37 +311,6 @@ timedTest("session_query preview appends collapsed result inline", () => {
   expect(partialText).toMatch(/1 line so far \(0s\)/);
   expect(expandedText).toMatch(/Question:/);
   expect(expandedText).toMatch(/test\/tool-preview.test.ts/);
-});
-
-timedTest("search_tools preview stays compact and expands ranked diagnostics", () => {
-  const scenario = getToolPreviewScenarios().find((item) => item.id === "search_tools:ranked");
-  expect(scenario).toBeTruthy();
-
-  const collapsed = getToolPreviewPanels(scenario).find(
-    (panel) => panel.id === "success-collapsed",
-  );
-  const expanded = getToolPreviewPanels(scenario).find((panel) => panel.id === "success-expanded");
-  const error = getToolPreviewPanels(scenario).find((panel) => panel.id === "error-expanded");
-  expect(collapsed).toBeTruthy();
-  expect(expanded).toBeTruthy();
-  expect(error).toBeTruthy();
-
-  const collapsedLines = renderPreviewLines(scenario, collapsed, 120).filter(
-    (line) => stripAnsi(line).trim().length > 0,
-  );
-  const collapsedText = stripAnsi(collapsedLines.join("\n"));
-  const expandedText = stripAnsi(renderPreviewText(scenario, expanded, 120));
-  const errorText = stripAnsi(renderPreviewText(scenario, error, 120));
-
-  expect(collapsedLines).toHaveLength(1);
-  expect(collapsedText).toMatch(/loaded session_query/);
-  expect(collapsedText).toMatch(/previous Pi sessions conversation history/);
-  expect(collapsedText).toMatch(/94%/);
-  expect(collapsedText).not.toMatch(/exact alias/);
-  expect(expandedText).toMatch(/94% session_query exact alias: conversation history/);
-  expect(expandedText).toMatch(/81% subagent fuzzy name: subagent/);
-  expect(expandedText).toMatch(/matched · threshold 70% · margin 6%/);
-  expect(errorText).toMatch(/Tool catalog unavailable/);
 });
 
 timedTest("look_at previews stay compact, metadata-only, and Base64-free", () => {
@@ -1085,6 +1204,7 @@ function createInteractiveModePreview(cwd: string) {
     getFullscreenCopyOnSelect: () => true,
     getFullscreenExitOutput: () => "transcript",
     getFullscreenScrollbar: () => "auto",
+    getFullscreenWheelScrollLines: () => "auto",
     getTransport: () => "auto",
     getShowTerminalProgress: () => false,
     getTreeFilterMode: () => "default",

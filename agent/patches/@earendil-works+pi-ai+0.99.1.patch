@@ -1,17 +1,17 @@
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
-index dfdb6ec..31746eb 100644
+index 40014b3..5ae83d8 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js
-@@ -175,6 +175,9 @@ export const stream = (model, context, options) => {
-             if (nextBody !== undefined) {
+@@ -176,6 +176,9 @@ export const stream = (model, context, options) => {
                  body = nextBody;
              }
+             const websocketRequestId = codexSessionId || uuidv7();
 +            const responseOptions = body.service_tier === undefined
 +                ? options
 +                : { ...options, serviceTier: body.service_tier };
-             const websocketRequestId = codexSessionId || uuidv7();
              const sseHeaders = buildSSEHeaders(model.headers, options?.headers, accountId, apiKey, codexSessionId);
              const websocketHeaders = buildWebSocketHeaders(model.headers, options?.headers, accountId, apiKey, websocketRequestId);
+             const bodyJson = JSON.stringify(body);
 @@ -200,7 +203,7 @@ export const stream = (model, context, options) => {
                                  startEmitted = true;
                                  stream.push({ type: "start", partial: output });
@@ -30,7 +30,7 @@ index dfdb6ec..31746eb 100644
              if (options?.signal?.aborted) {
                  throw new Error("Request was aborted");
              }
-@@ -1274,7 +1277,8 @@ function buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token)
+@@ -1290,7 +1293,8 @@ function buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token)
      }
      headers.set("Authorization", `Bearer ${token}`);
      headers.set("chatgpt-account-id", accountId);
@@ -41,18 +41,18 @@ index dfdb6ec..31746eb 100644
      return headers;
  }
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
-index 1396c8d..2ab2512 100644
+index 4d58c97..f2f7800 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
-@@ -129,6 +129,7 @@ export const stream = (model, context, options) => {
-             await processResponsesStream(openaiStream, output, stream, model, {
+@@ -141,6 +141,7 @@ export const stream = (model, context, options) => {
+                 onProviderStreamEvent: options?.onProviderStreamEvent,
                  serviceTier: options?.serviceTier,
                  grammarToolInputProperties,
 +                resolveServiceTier: resolveRequestedServiceTier,
                  applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
              });
              if (options?.signal?.aborted) {
-@@ -280,6 +281,11 @@ function getServiceTierCostMultiplier(model, serviceTier) {
+@@ -297,6 +298,11 @@ function getServiceTierCostMultiplier(model, serviceTier) {
              return 1;
      }
  }
@@ -65,22 +65,22 @@ index 1396c8d..2ab2512 100644
      const multiplier = getServiceTierCostMultiplier(model, serviceTier);
      if (multiplier === 1)
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js b/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
-index 216a45f..feee0ee 100644
+index da0fc83..50e8847 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
-@@ -13,6 +13,7 @@ export function buildBaseOptions(model, context, options, apiKey) {
-         : undefined;
+@@ -10,6 +10,7 @@ export function clampMaxTokensToContext(model, context, maxTokens) {
+ export function buildBaseOptions(model, context, options, apiKey) {
      return {
          temperature: options?.temperature,
 +        serviceTier: options?.serviceTier,
-         samplingParams,
+         samplingParams: options?.samplingParams,
          maxTokens: clampMaxTokensToContext(model, context, options?.maxTokens ?? model.maxTokens),
          signal: options?.signal,
 diff --git a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-index 6538c63..6461102 100644
+index 38781fb..1e72bf1 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-@@ -46,6 +46,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -49,6 +49,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "connection.?lost",
      "other side closed",
      "fetch failed",
@@ -90,7 +90,7 @@ index 6538c63..6461102 100644
      "getaddrinfo",
      "ENOTFOUND",
      "EAI_AGAIN",
-@@ -59,11 +62,13 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -62,11 +65,13 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      // WebSocket transports can report close/error text instead of HTTP/fetch text.
      "websocket.?closed",
      "websocket.?error",
@@ -104,14 +104,14 @@ index 6538c63..6461102 100644
      "stream ended before a terminal response event",
      "http2 request did not get a response",
      // Provider-requested retry delay cap failures should flow through the outer
-@@ -71,6 +76,10 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
-     "retry delay",
+@@ -75,6 +80,10 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      // Explicit retry guidance emitted mid-stream by OpenAI Responses and Bedrock
      // stream exceptions (#6019).
+     "you can retry your request",
 +    "invalid codex sse json",
 +    "invalid codex websocket json",
 +    "error occurred while processing your request",
 +    "response api in-stream error",
-     "you can retry your request",
      "try your request again",
      "please retry your request",
+     // gRPC based providers (e.g. NVIDIA NIM)

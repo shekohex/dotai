@@ -187,7 +187,7 @@ export const defaultModes = {
       modelId: "gpt-6-luna",
       thinkingLevel: "max",
       tmuxTarget: "window",
-      tools: ["read", "grep", "find", "bash", "websearch", "search_tools"],
+      tools: ["read", "grep", "find", "bash", "websearch", "tool_search"],
       autoExit: true,
       description:
         "Use for Q&A, debugging analysis, code explanation, architecture discussion, and grounded recommendations.",
@@ -248,7 +248,7 @@ export const defaultModes = {
         "apply_patch",
         "edit",
         "write",
-        "search_tools",
+        "tool_search",
         "look_at",
       ],
       description:

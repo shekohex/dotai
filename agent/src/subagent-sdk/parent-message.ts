@@ -28,6 +28,7 @@ export function createSubagentParentMessageTool(send: (message: SubagentParentMe
     SubagentParentMessageRenderState
   >({
     name: "subagent",
+    exposure: "model-only",
     label: "π",
     renderShell: "self",
     description:

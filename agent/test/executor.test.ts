@@ -293,7 +293,7 @@ timedTest("executor tools register upfront but stay inactive without legacy stat
   expect(fakePi.registeredTools.get("resume")?.promptGuidelines).toBeUndefined();
 });
 
-timedTest("executor hook does not remove execute after search_tools loads it", async () => {
+timedTest("executor hook does not remove execute after tool_search loads it", async () => {
   const fakePi = new FakePi();
   const ctx = createFakeContext([]);
   createExecutorExtension(fakePi as ExtensionAPI);

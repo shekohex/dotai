@@ -539,7 +539,7 @@ describe("goal extension", () => {
     const harness = createGoalHarness();
     const fakePi = {
       getActiveTools: () => harness.activeTools,
-      getAllTools: () => [{ name: "read" }, { name: "goal" }],
+      getAllTools: () => [{ name: "read" }, harness.registeredTools.get("goal")!],
       setActiveTools: (toolNames: string[]) => {
         harness.activeTools.splice(0, harness.activeTools.length, ...toolNames);
       },

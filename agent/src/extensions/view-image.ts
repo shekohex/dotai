@@ -3,6 +3,7 @@ import {
   defineTool,
   type ExtensionAPI,
   type ExtensionContext,
+  type ExtensionToolContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { errorMessage } from "../utils/error-message.js";
@@ -58,7 +59,7 @@ export function resolveImageDescriptionModels(ctx: ExtensionContext): Model<Api>
 async function loadImage(
   path: string,
   signal: AbortSignal | undefined,
-  ctx: ExtensionContext,
+  ctx: ExtensionToolContext,
 ): Promise<ImageContent> {
   if (readToolDefinition.execute === undefined) {
     throw new Error("The built-in read tool is unavailable.");
@@ -148,6 +149,7 @@ export async function presentImageToModel(
 export function createViewImageToolDefinition() {
   return defineTool<typeof ViewImageParams, ViewImageDetails, ViewImageRenderState>({
     name: "view_image",
+    exposure: "model-only",
     label: "View Image",
     renderShell: "self",
     description:

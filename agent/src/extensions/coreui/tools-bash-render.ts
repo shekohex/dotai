@@ -3,7 +3,10 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { Static } from "typebox";
 import { bashToolDefinition, readToolDefinition } from "./builtins.js";
-import type { BackgroundBashToolDetails } from "./background-bash-types.js";
+import {
+  BackgroundBashOutputSchema,
+  type BackgroundBashToolDetails,
+} from "./background-bash-types.js";
 import {
   parseBackgroundCommand,
   runBackgroundCommand,
@@ -164,6 +167,7 @@ export function createBashToolOverrideDefinition(
     ],
     renderShell: "self",
     parameters: bashToolParams,
+    outputSchema: Type.Union([rest.outputSchema!, BackgroundBashOutputSchema]),
     execute(toolCallId, params, signal, onUpdate, ctx) {
       const backgroundCommand = parseBackgroundCommand(params.command);
       if (backgroundCommand) {

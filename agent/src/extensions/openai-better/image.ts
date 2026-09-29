@@ -563,6 +563,7 @@ function parseRenderedResultDetails(value: unknown): CodexImageResult | undefine
 function createImageTool(getSettings: () => OpenAIBetterSettings) {
   return defineTool({
     name: OPENAI_IMAGE_TOOL,
+    exposure: "model-only",
     label: "imagen",
     renderShell: "self",
     description: [

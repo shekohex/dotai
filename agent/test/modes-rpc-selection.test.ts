@@ -3,7 +3,7 @@ import { rmSync } from "node:fs";
 import { afterEach, expect, test, vi } from "vitest";
 import { calls, createTestSession, says, when, type TestSession } from "@support/pi-test-harness";
 import { createPlaybookStreamFn } from "@support/pi-test-harness/playbook";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createToolSearchExtension, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -15,7 +15,6 @@ import { Type } from "typebox";
 import modesExtension from "../src/extensions/modes.js";
 import modelFamilySystemPromptExtension from "../src/extensions/model-family-system-prompt.js";
 import dynamicWorkflowsExtension from "../src/extensions/dynamic-workflows/extension.js";
-import searchToolsExtension from "../src/extensions/search-tools.js";
 import { registerPiAiProvider } from "../src/extensions/pi-ai-models.js";
 import {
   defineModesFile,
@@ -89,6 +88,69 @@ test("RPC controller model and thinking selection overrides restored persisted m
   }
 });
 
+test("mode restrictions block deferred tools activated outside the mode allowlist", async () => {
+  const provider = createRpcTestProvider();
+  const mutate = vi.fn(async () => ({ content: [{ type: "text" as const, text: "mutated" }] }));
+  let session: TestSession | undefined;
+  registerBuildMode("append", ["read", "discover"]);
+  try {
+    session = await createTestSession({
+      propagateErrors: false,
+      extensionFactories: [
+        modesExtension,
+        provider.extensionFactory,
+        (pi: ExtensionAPI) => {
+          pi.registerTool({
+            name: "discover",
+            label: "Discover",
+            description: "Activate test tool",
+            exposure: "model-only",
+            parameters: Type.Object({}),
+            execute: async () => {
+              pi.setActiveTools([...pi.getActiveTools(), "restricted_mutation"]);
+              return { content: [{ type: "text" as const, text: "activated" }] };
+            },
+          });
+          pi.registerTool({
+            name: "restricted_mutation",
+            label: "Mutation",
+            description: "Mutate test state",
+            exposure: "deferred",
+            parameters: Type.Object({}),
+            execute: mutate,
+          });
+        },
+      ],
+    });
+    patchHarnessAgent(session);
+    const runner = session.session.extensionRunner;
+    await runner.getCommand("mode").handler("build", runner.createCommandContext());
+    await session.run(
+      when("try mutation", [
+        calls("discover", {}),
+        calls("restricted_mutation", {}),
+        says("blocked"),
+      ]),
+    );
+    expect(mutate).not.toHaveBeenCalled();
+    expect(session.session.agent.state.messages).toContainEqual(
+      expect.objectContaining({
+        role: "toolResult",
+        toolName: "restricted_mutation",
+        isError: true,
+        content: [
+          expect.objectContaining({
+            text: expect.stringContaining("not allowed in the current mode"),
+          }),
+        ],
+      }),
+    );
+  } finally {
+    session?.dispose();
+    provider.dispose();
+  }
+});
+
 test("replace mode changes only preamble while preserving Pi sections and tool history", async () => {
   const provider = createRpcTestProvider();
   let session: TestSession | undefined;
@@ -106,13 +168,15 @@ test("replace mode changes only preamble while preserving Pi sections and tool h
         (pi) => {
           pi.registerTool({
             name: "goal",
+            exposure: "deferred",
             label: "Goal",
             description: "Manage durable autonomous objectives",
             parameters: Type.Object({}),
             execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
           });
+          pi.on("session_start", () => pi.setActiveTools([...pi.getActiveTools(), "tool_search"]));
         },
-        searchToolsExtension,
+        createToolSearchExtension(),
         (pi) => {
           pi.on("context_with_system", (event) => {
             projectedContexts.push(event.messages);
@@ -124,7 +188,7 @@ test("replace mode changes only preamble while preserving Pi sections and tool h
     patchHarnessAgent(session);
     await session.session.bindExtensions({ mode: "rpc" });
     const turn = when("load durable goal", [
-      calls("search_tools", { query: "durable goal" }),
+      calls("tool_search", { query: "durable goal" }),
       says("loaded"),
     ]);
     const { streamFn } = createPlaybookStreamFn([turn]);
@@ -156,7 +220,7 @@ test("replace mode changes only preamble while preserving Pi sections and tool h
       expect(messages[0].sections?.tools).toBeTruthy();
     }
     expect(resolveTranscriptTools(messages, true).requestTools.map((tool) => tool.name)).toContain(
-      "search_tools",
+      "tool_search",
     );
     expect(
       resolveTranscriptTools(messages, true).requestTools.map((tool) => tool.name),

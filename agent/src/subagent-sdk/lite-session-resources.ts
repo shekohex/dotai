@@ -8,6 +8,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { installBundledResourcePaths } from "../extensions/bundled-resources.js";
 import { getLiteBundledExtensionFactories } from "../extensions/lite-bundled-extensions.js";
+import { createNativeToolExtensions } from "../extensions/native-tool-extensions.js";
 import { applyModeSystemPrompt } from "../mode-system-prompt.js";
 import { createStructuredOutputTool } from "./bootstrap.js";
 import { STRUCTURED_OUTPUT_TOOL_NAME } from "./bootstrap-core.js";
@@ -36,12 +37,17 @@ export async function createLiteSessionResources(input: {
   sendParentMessage?: (message: SubagentParentMessage) => void;
 }) {
   const settingsManager = SettingsManager.create(input.cwd, input.agentDir);
+  const sessionTools = createLiteSessionTools(
+    input.mode,
+    input.params,
+    input.sendParentMessage !== undefined,
+  );
   installBundledResourcePaths();
   const resourceLoader = new DefaultResourceLoader({
     cwd: input.cwd,
     agentDir: input.agentDir,
     settingsManager,
-    extensionFactories: createLiteExtensionFactories(input.mode),
+    extensionFactories: createLiteExtensionFactories(input.mode, sessionTools),
   });
   await resourceLoader.reload();
   return {
@@ -53,23 +59,38 @@ export async function createLiteSessionResources(input: {
       input.sessionManager,
       input.sendParentMessage,
     ),
-    sessionTools: createLiteSessionTools(
-      input.mode,
-      input.params,
-      input.sendParentMessage !== undefined,
-    ),
+    sessionTools,
   };
 }
 
-function createLiteExtensionFactories(mode: ResolvedSubagentMode): InlineExtension[] {
+function createLiteExtensionFactories(
+  mode: ResolvedSubagentMode,
+  sessionTools: string[],
+): InlineExtension[] {
   return [
+    ...createNativeToolExtensions(),
     ...getLiteBundledExtensionFactories({ excludeIds: ["context-prune", "modes"] }),
-    { name: "lite-mode-prompt", factory: createLiteModePromptExtension(mode) },
+    { name: "lite-mode-prompt", factory: createLiteModePromptExtension(mode, sessionTools) },
   ];
 }
 
-function createLiteModePromptExtension(mode: ResolvedSubagentMode): ExtensionFactory {
+function createLiteModePromptExtension(
+  mode: ResolvedSubagentMode,
+  sessionTools: string[],
+): ExtensionFactory {
   return (pi) => {
+    pi.on("tool_call", (event) => {
+      const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName);
+      return (event.parentToolCallId !== undefined ||
+        tool?.exposure === "codemode" ||
+        tool?.exposure === "deferred") &&
+        !sessionTools.includes(event.toolName)
+        ? {
+            block: true,
+            reason: `Tool ${event.toolName} is not allowed in child mode ${mode.modeName}.`,
+          }
+        : undefined;
+    });
     pi.on("before_agent_start", (event) => {
       const systemPrompt = applyModeSystemPrompt(event.systemPrompt, mode);
       return systemPrompt === undefined ? undefined : { systemPrompt };

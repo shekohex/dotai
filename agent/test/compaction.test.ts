@@ -951,7 +951,7 @@ describe("compaction extension", () => {
         ),
       );
     const searchTool = {
-      name: "search_tools",
+      name: "tool_search",
       label: "Search Tools",
       description: "Load optional tools",
       parameters: { type: "object", properties: {} },
@@ -959,7 +959,7 @@ describe("compaction extension", () => {
     const dynamicTool = {
       name: "dynamic_tool",
       label: "Dynamic Tool",
-      description: "Available only after search_tools loads it",
+      description: "Available only after tool_search loads it",
       parameters: { type: "object", properties: {} },
     };
     const staleTool = {
@@ -970,18 +970,18 @@ describe("compaction extension", () => {
     };
     const harness = createCompactionHandlerHarness(codexOpenAIModel, {
       allTools: [dynamicTool, searchTool, staleTool] as ReturnType<ExtensionAPI["getAllTools"]>,
-      activeTools: ["search_tools", "dynamic_tool"],
+      activeTools: ["tool_search", "dynamic_tool"],
     });
     const providerSearchTool = {
       type: "function",
-      name: "search_tools",
+      name: "tool_search",
       description: "Load optional tools",
       parameters: { type: "object", properties: {} },
     };
     const providerDynamicTool = {
       type: "function",
       name: "dynamic_tool",
-      description: "Available only after search_tools loads it",
+      description: "Available only after tool_search loads it",
       parameters: { type: "object", properties: {} },
       defer_loading: true,
     };
@@ -1037,7 +1037,7 @@ describe("compaction extension", () => {
       {
         type: "function",
         name: "dynamic_tool",
-        description: "Available only after search_tools loads it",
+        description: "Available only after tool_search loads it",
         parameters: { type: "object", properties: {} },
       },
       namedProviderTool,
@@ -1328,7 +1328,7 @@ describe("compaction extension", () => {
         role: "user",
         content: [{ type: "input_text", text: "Load the subagent tool" }],
       },
-      { type: "function_call", name: "search_tools", call_id: "search-call", arguments: "{}" },
+      { type: "function_call", name: "tool_search", call_id: "search-call", arguments: "{}" },
       { type: "function_call_output", call_id: "search-call", output: "Loaded subagent" },
       {
         type: "reasoning",

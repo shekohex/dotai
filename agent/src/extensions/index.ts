@@ -9,7 +9,7 @@ import {
 import { installHerdrIntegrationConflictPatch } from "./herdr-integration-conflicts.js";
 import { createModesExtension } from "./modes/index.js";
 import type { ModeStartupSelection } from "./modes/startup-selection.js";
-import { piMcpAdapterExtensionFactory } from "./pi-mcp-adapter.js";
+import executorMcpExtension from "./executor-mcp.js";
 import { createSubagentExtension } from "./subagent.js";
 
 export interface BundledExtensionDefinition {
@@ -25,7 +25,7 @@ export const bundledExtensionDefinitions: BundledExtensionDefinition[] = [
   ...groupedExtensionsA,
   ...groupedExtensionsB,
   ...groupedExtensionsC,
-  { id: "pi-mcp-adapter", factory: piMcpAdapterExtensionFactory },
+  { id: "executor-mcp", factory: executorMcpExtension },
   { id: "subagent", factory: subagentExtensionFactory },
 ] satisfies GroupedExtensionDefinition[];
 

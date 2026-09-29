@@ -368,7 +368,7 @@ export async function handleGoalCommand(
   const trimmed = args.trim();
   if (trimmed === "on" || trimmed === "off") {
     ctx.ui.notify(
-      "Goal tool toggles were removed; use search_tools when model access is needed.",
+      "Goal tool toggles were removed; use tool_search when model access is needed.",
       "warning",
     );
     return;

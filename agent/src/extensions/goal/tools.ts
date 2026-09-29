@@ -381,6 +381,7 @@ async function resolveObjective(
 export function registerGoalTools(pi: ExtensionAPI, host: GoalToolHost): void {
   const goalTool = defineTool({
     name: "goal",
+    exposure: "deferred",
     label: "Goal",
     renderShell: "self",
     description: [

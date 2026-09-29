@@ -73,6 +73,7 @@ export function activateResumeToolForPausedExecution(
 export const createExecuteToolDefinition = (pi: ExtensionAPI, description: string) =>
   defineTool<typeof executeToolParams, ExecuteToolDetails, ExecuteRenderState>({
     name: "execute",
+    exposure: "deferred",
     label: "Execute",
     renderShell: "self",
     description: [

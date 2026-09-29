@@ -3,7 +3,6 @@ import type { ModeSpec } from "../../mode-utils.js";
 import { getContextPruneAPI } from "../context-prune/public-api.js";
 import { CONTEXT_PRUNE_TOOL_NAME, CONTEXT_TREE_QUERY_TOOL_NAME } from "../context-prune/types.js";
 import { normalizeToolNamesForModel, shouldUsePatch } from "../patch.js";
-import { DEFERRED_TOOL_NAMES } from "../search-tools.js";
 import { readChildState } from "../../subagent-sdk/launch.js";
 
 const STRUCTURED_OUTPUT_TOOL_NAME = "StructuredOutput";
@@ -31,6 +30,7 @@ function getAvailableToolNames(pi: ExtensionAPI, ctx: ExtensionContext): string[
 
   return pi
     .getAllTools()
+    .filter((tool) => tool.exposure !== "hidden")
     .map((tool) => tool.name)
     .filter((toolName) => {
       if (toolName === "ls") return false;
@@ -60,9 +60,14 @@ function getDefaultToolNames(
   const tools = new Set(availableToolNames);
   const activeToolNames = new Set(pi.getActiveTools());
 
-  for (const toolName of DEFERRED_TOOL_NAMES) {
-    if (!preserveActiveDeferredTools || !activeToolNames.has(toolName)) {
-      tools.delete(toolName);
+  for (const tool of pi.getAllTools()) {
+    if (
+      ((tool.exposure === "codemode" || tool.exposure === "deferred") &&
+        (!preserveActiveDeferredTools || !activeToolNames.has(tool.name))) ||
+      ((tool.name === "codemode" || tool.name === "tool_search" || tool.name === "workflow") &&
+        !activeToolNames.has(tool.name))
+    ) {
+      tools.delete(tool.name);
     }
   }
 
@@ -130,6 +135,17 @@ export function syncModeTools(
     ctx.model?.id,
     availableToolNames,
   );
+  for (const toolName of ["codemode", "tool_search"]) {
+    if (
+      pi.getActiveTools().includes(toolName) &&
+      availableToolNames.includes(toolName) &&
+      spec?.tools?.includes(`!${toolName}`) !== true &&
+      !nextTools.includes(toolName)
+    ) {
+      nextTools.push(toolName);
+      nextTools.sort(compareToolNames);
+    }
+  }
   const childState = readChildState();
   if (
     childState?.outputFormat?.type === "json_schema" &&
@@ -150,4 +166,18 @@ export function syncModeTools(
   ) {
     pi.setActiveTools(nextTools);
   }
+}
+
+export function isModeToolAllowed(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  spec: ModeSpec | undefined,
+  toolName: string,
+): boolean {
+  const availableToolNames = getAvailableToolNames(pi, ctx);
+  return normalizeToolNamesForModel(
+    resolveModeToolNames(spec?.tools, availableToolNames, availableToolNames),
+    ctx.model?.id,
+    availableToolNames,
+  ).includes(toolName);
 }

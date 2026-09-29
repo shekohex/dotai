@@ -20,8 +20,8 @@ describe("bundled extension selection", () => {
     expect(selectBundledExtensionNames([])).toContain("subagent");
   });
 
-  test("includes pi-mcp-adapter by default", () => {
-    expect(selectBundledExtensionNames([])).toContain("pi-mcp-adapter");
+  test("includes native Executor MCP registration by default", () => {
+    expect(selectBundledExtensionNames([])).toContain("executor-mcp");
   });
 
   test("does not load the retired custom Executor extension", () => {

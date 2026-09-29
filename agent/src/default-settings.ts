@@ -49,6 +49,8 @@ export type DefaultSettings = Omit<AgentSettings, "terminal"> & {
 export const defaultSettings = {
   defaultProvider: "openai-codex",
   defaultModel: "gpt-6-sol",
+  defaultTools: ["+codemode", "+tool_search"],
+  codemode: { mode: "on" },
   hideThinkingBlock: false,
   defaultThinkingLevel: "high",
   transport: "websocket-cached",

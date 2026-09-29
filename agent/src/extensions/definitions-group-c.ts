@@ -9,7 +9,6 @@ import notifyExtension from "./notify/index.js";
 import openWikiExtension from "./openwiki/index.js";
 import piOscExtension from "./pi-osc/extension.js";
 import promptStashExtension from "./prompt-stash.js";
-import searchToolsExtension from "./search-tools.js";
 import terminalTmuxUiExtension from "./terminal-tmux-ui.js";
 import tmuxShareExtension from "./tmux-share/index.js";
 import viewImageExtension from "./view-image.js";
@@ -26,7 +25,6 @@ export const groupedExtensionsC: GroupedExtensionDefinition[] = [
   { id: "goal", factory: goalExtension },
   { id: "prompt-stash", factory: promptStashExtension },
   { id: "ask-user-question", factory: askUserQuestionExtension },
-  { id: "search-tools", factory: searchToolsExtension },
   { id: "view-image", factory: viewImageExtension },
   { id: "terminal-tmux-ui", factory: terminalTmuxUiExtension },
   { id: "pi-osc", factory: piOscExtension },

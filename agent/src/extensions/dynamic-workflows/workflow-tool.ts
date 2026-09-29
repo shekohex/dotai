@@ -171,6 +171,7 @@ export function createWorkflowTool(
 
   return defineTool({
     name: "workflow",
+    exposure: "model-only",
     label: "Workflow",
     renderShell: "self",
     description: [

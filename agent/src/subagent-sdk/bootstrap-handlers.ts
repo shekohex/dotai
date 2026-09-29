@@ -290,6 +290,16 @@ function registerChildToolCallHandler(
   state: ChildBootstrapRuntimeState,
 ): void {
   pi.on("tool_call", (event, ctx) => {
+    const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName);
+    return (event.parentToolCallId !== undefined ||
+      tool?.exposure === "codemode" ||
+      tool?.exposure === "deferred") &&
+      isChildSession(childState, ctx) &&
+      !childState.tools.includes(event.toolName)
+      ? { block: true, reason: `Tool ${event.toolName} is not allowed in this child session.` }
+      : undefined;
+  });
+  pi.on("tool_call", (event, ctx) => {
     if (!isChildSession(childState, ctx)) {
       return;
     }

@@ -2832,9 +2832,6 @@ timedTest("benchmarks bundled system prompt token budget", async () => {
     expect(
       projectInstructionBreakdown.some((entry) => entry.name === loadedProjectAgentsPath),
     ).toBe(true);
-    expect(systemPrompt).toContain(
-      "- search_tools: Search for additional tools when active tools cannot perform the task.",
-    );
     expect(systemPrompt).not.toContain("- workflow:");
     expect(systemPrompt).not.toContain("For workflow, route subagents with opts.mode.");
     expect(systemPrompt).not.toContain("For workflow, parallel() takes functions");

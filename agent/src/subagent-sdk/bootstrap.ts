@@ -155,6 +155,7 @@ export function createStructuredOutputTool<TSchemaValue extends TSchema>(
 
   return defineTool<TSchemaValue, StructuredOutputToolDetails>({
     name: STRUCTURED_OUTPUT_TOOL_NAME,
+    exposure: "model-only",
     label: "SO",
     renderShell: "self",
     description:

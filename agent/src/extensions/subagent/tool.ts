@@ -17,6 +17,7 @@ import { normalizeSubagentExecutionError, validateToolParams } from "./shared.js
 function createSubagentToolDefinition(sdk: SubagentSDK, coordinator: LiveSessionCoordinator) {
   return defineTool<typeof SubagentToolParamsSchema, SubagentToolResultDetails>({
     name: "subagent",
+    exposure: "model-only",
     label: "π",
     renderShell: "self",
     description: [

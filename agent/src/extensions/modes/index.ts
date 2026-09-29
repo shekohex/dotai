@@ -55,6 +55,7 @@ import {
 } from "./runtime.js";
 import { isEphemeralSession } from "./session.js";
 import type { ModeStartupSelection } from "./startup-selection.js";
+import { isModeToolAllowed } from "./tools.js";
 
 export const MODE_STATE_ENTRY = "mode-state";
 export const MODE_MODEL_OVERRIDE_ENTRY = "mode-model-override-state";
@@ -520,6 +521,19 @@ function registerModesExtension(
   runtime: ModeRuntime,
 ): void {
   const failoverRuntime = createModeFailoverRuntime();
+  pi.on("tool_call", (event, ctx) => {
+    const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName);
+    const spec =
+      runtime.activeMode === undefined
+        ? undefined
+        : getEffectiveModeSpec(runtime, runtime.activeMode);
+    return (event.parentToolCallId !== undefined ||
+      tool?.exposure === "codemode" ||
+      tool?.exposure === "deferred") &&
+      !isModeToolAllowed(pi, ctx, spec, event.toolName)
+      ? { block: true, reason: `Tool ${event.toolName} is not allowed in the current mode.` }
+      : undefined;
+  });
   failoverRuntime.withInternalModelChange = (action) => withInternalModelChange(runtime, action);
   const modeApplyActions = createModeApplyActions({
     runtime,

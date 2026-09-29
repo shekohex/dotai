@@ -7,6 +7,7 @@ import { runConductorCommand } from "./conductor/command.js";
 import { installBundledResourcePaths } from "./extensions/bundled-resources.js";
 import { createBundledExtensionFactories } from "./extensions/index.js";
 import { createModeStartupSelection } from "./extensions/modes/startup-selection.js";
+import { createNativeToolExtensions } from "./extensions/native-tool-extensions.js";
 import { isRemoteMode, parseRemoteModeArgs, runRemoteMode } from "./remote/mode.js";
 import { ensureRuntimeDefaultSettings } from "./runtime-default-settings.js";
 import { handleWrapperUpdateCommand } from "./update/command.js";
@@ -66,7 +67,10 @@ if (shouldEnsureRuntimeDefaultSettings(args)) {
 const parsedArgs = parseArgs(args);
 const modeStartupSelection = createModeStartupSelection(parsedArgs);
 await main(args, {
-  extensionFactories: createBundledExtensionFactories({ modeStartupSelection, parsedArgs }),
+  extensionFactories: [
+    ...createNativeToolExtensions(),
+    ...createBundledExtensionFactories({ modeStartupSelection, parsedArgs }),
+  ],
 });
 
 function shouldEnsureRuntimeDefaultSettings(cliArgs: string[]): boolean {

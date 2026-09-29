@@ -244,6 +244,7 @@ describe("upstream agent auto-retry patch", () => {
     return retryablePrototype._isRetryableError.call(
       {
         model: createFakeModel("codex-openai", "gpt-5.5"),
+        _modelForMessage: () => createFakeModel("codex-openai", "gpt-5.5"),
         _isNonRetryableProviderLimitError: retryablePrototype._isNonRetryableProviderLimitError,
       },
       createAssistantError(errorMessage),

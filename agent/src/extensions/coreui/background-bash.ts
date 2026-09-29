@@ -170,6 +170,14 @@ export async function runBackgroundCommand(input: {
       },
     ],
     details: backgroundDetails(run, input.ctx.cwd, input.command.pollIntervalMs),
+    structuredContent: {
+      output: formatStartedMessage(run, input.command.pollIntervalMs),
+      background: true,
+      id: run.id,
+      status: "running",
+      output_file: run.outputFile,
+      wall_time_seconds: (Date.now() - run.startedAt) / MILLISECONDS_PER_SECOND,
+    },
   };
 }
 

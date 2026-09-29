@@ -184,6 +184,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "ask_user_question",
+    exposure: "model-only",
     label: "Ask User Question",
     description: `Ask the user one or more structured questions during execution. Use when you need to:
 1. Gather user preferences or requirements

@@ -88,6 +88,7 @@ function deactivateTool(pi: ExtensionAPI, toolName: string): void {
 function registerInterviewTool(pi: ExtensionAPI): void {
   pi.registerTool({
     name: INTERVIEW_TOOL_NAME,
+    exposure: "model-only",
     label: "Interview",
     renderShell: "self",
     description: INTERVIEW_DESCRIPTION,

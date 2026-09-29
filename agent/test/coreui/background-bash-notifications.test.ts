@@ -100,6 +100,13 @@ describe("background bash exit notifications", () => {
     });
     const exitFile = result.details?.exitFile;
     expect(exitFile).toBeDefined();
+    expect(result.structuredContent).toMatchObject({
+      background: true,
+      status: "running",
+      id: result.details?.id,
+      output_file: result.details?.outputFile,
+      output: expect.stringContaining("Started background"),
+    });
 
     await completeRun(exitFile as string, "0");
     const calls = await waitFor(() =>

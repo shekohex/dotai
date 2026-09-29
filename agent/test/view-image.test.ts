@@ -3,7 +3,6 @@ import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { groupedExtensionsC } from "../src/extensions/definitions-group-c.js";
-import { DEFERRED_TOOL_NAMES, SEARCH_TOOL_ALIASES } from "../src/extensions/search-tools.js";
 import viewImageExtension, { createViewImageToolDefinition } from "../src/extensions/view-image.js";
 import { completeSimpleModel } from "../src/extensions/pi-ai-models.js";
 
@@ -54,23 +53,20 @@ function createContext(cwd: string, model: Model<Api>): ExtensionContext {
 }
 
 describe("view_image", () => {
-  test("is bundled and discoverable as a deferred tool", () => {
+  test("is bundled as a direct model-only tool", () => {
     expect(groupedExtensionsC.some((definition) => definition.id === "view-image")).toBe(true);
-    expect(DEFERRED_TOOL_NAMES.has("view_image")).toBe(true);
-    expect(SEARCH_TOOL_ALIASES.view_image).toContain("inspect image");
+    expect(createViewImageToolDefinition().exposure).toBe("model-only");
   });
 
-  test("registers without activating itself", () => {
+  test("registers the image tool", () => {
     const registered: string[] = [];
     const pi = {
       registerTool: (tool: { name: string }) => registered.push(tool.name),
-      getActiveTools: () => ["read", "search_tools"],
     } as unknown as ExtensionAPI;
 
     viewImageExtension(pi);
 
     expect(registered).toEqual(["view_image"]);
-    expect(pi.getActiveTools()).not.toContain("view_image");
   });
 
   test("returns image content directly to vision-capable models", async () => {

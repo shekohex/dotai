@@ -508,6 +508,7 @@ export const recallObservationTool = defineTool<
   RecallObservationToolDetails
 >({
   name: RECALL_OBSERVATION_TOOL_NAME,
+  exposure: "deferred",
   label: "Recall memory evidence",
   description:
     "Recover exact evidence and source context behind one compacted observational-memory observation or reflection id — or a list of ids via `ids` — on the current branch. " +

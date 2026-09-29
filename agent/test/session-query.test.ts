@@ -10,7 +10,7 @@ import type {
 import { describe, expect, test, vi } from "vitest";
 import { groupedExtensionsB } from "../src/extensions/definitions-group-b.js";
 import { executeSessionQueryRequest } from "../src/extensions/session-query/execution.js";
-import sessionQueryExtension from "../src/extensions/session-query/index.js";
+import sessionQueryExtension, { sessionQueryTool } from "../src/extensions/session-query/index.js";
 import { syncModeTools } from "../src/extensions/modes/tools.js";
 import { streamModel } from "../src/extensions/pi-ai-models.js";
 
@@ -51,7 +51,7 @@ function createHarness(
       entries.push({ type: "custom", customType, data } as never);
     },
     getActiveTools: () => activeTools,
-    getAllTools: () => [{ name: "read" }, { name: "session_query" }],
+    getAllTools: () => [{ name: "read" }, sessionQueryTool],
     on(eventName: string, handler: Handler) {
       handlers.set(eventName, [...(handlers.get(eventName) ?? []), handler]);
     },

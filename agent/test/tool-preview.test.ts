@@ -1226,6 +1226,10 @@ function createInteractiveModePreview(cwd: string) {
     },
     extensionRunner: {
       getMarkdownTransformers: () => [],
+      resolveToolRenderers: (
+        _toolName: string,
+        resolveFallback: () => typeof readToolDefinition | undefined,
+      ) => resolveFallback(),
     },
     getToolDefinition: (toolName: string) =>
       toolName === readToolDefinition.name ? readToolDefinition : undefined,

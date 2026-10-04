@@ -41,7 +41,7 @@ index 40014b3..5ae83d8 100644
      return headers;
  }
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
-index 4d58c97..f2f7800 100644
+index 2a6b4e4..c63dc25 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js
 @@ -141,6 +141,7 @@ export const stream = (model, context, options) => {
@@ -52,7 +52,7 @@ index 4d58c97..f2f7800 100644
                  applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
              });
              if (options?.signal?.aborted) {
-@@ -297,6 +298,11 @@ function getServiceTierCostMultiplier(model, serviceTier) {
+@@ -301,6 +302,11 @@ function getServiceTierCostMultiplier(model, serviceTier) {
              return 1;
      }
  }
@@ -65,22 +65,22 @@ index 4d58c97..f2f7800 100644
      const multiplier = getServiceTierCostMultiplier(model, serviceTier);
      if (multiplier === 1)
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js b/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
-index da0fc83..50e8847 100644
+index 4e36f35..5e31e23 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/simple-options.js
-@@ -10,6 +10,7 @@ export function clampMaxTokensToContext(model, context, maxTokens) {
- export function buildBaseOptions(model, context, options, apiKey) {
+@@ -19,6 +19,7 @@ export function buildBaseOptions(model, context, options, apiKey) {
+     const samplingParams = resolveSamplingParams(model, options?.reasoning ?? "off", options?.samplingParams);
      return {
          temperature: options?.temperature,
 +        serviceTier: options?.serviceTier,
-         samplingParams: options?.samplingParams,
+         samplingParams,
          maxTokens: clampMaxTokensToContext(model, context, options?.maxTokens ?? model.maxTokens),
          signal: options?.signal,
 diff --git a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-index 38781fb..1e72bf1 100644
+index a13c9b8..84bb07a 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/utils/retry.js
-@@ -49,6 +49,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -50,6 +50,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      "connection.?lost",
      "other side closed",
      "fetch failed",
@@ -90,7 +90,7 @@ index 38781fb..1e72bf1 100644
      "getaddrinfo",
      "ENOTFOUND",
      "EAI_AGAIN",
-@@ -62,11 +65,13 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -63,11 +66,13 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      // WebSocket transports can report close/error text instead of HTTP/fetch text.
      "websocket.?closed",
      "websocket.?error",
@@ -104,7 +104,7 @@ index 38781fb..1e72bf1 100644
      "stream ended before a terminal response event",
      "http2 request did not get a response",
      // Provider-requested retry delay cap failures should flow through the outer
-@@ -75,6 +80,10 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -76,6 +81,10 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      // Explicit retry guidance emitted mid-stream by OpenAI Responses and Bedrock
      // stream exceptions (#6019).
      "you can retry your request",

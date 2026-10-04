@@ -81,7 +81,7 @@ describe("runtime default settings", () => {
       await expect(ensureRuntimeDefaultSettings(settingsPath)).resolves.toBe(true);
 
       expect(JSON.parse(await readFile(settingsPath, "utf8"))).toMatchObject({
-        defaultProvider: "openai-codex",
+        defaultProvider: "codex-openai",
         theme: "catppuccin-latte/catppuccin-mocha",
         retry: { enabled: true, maxRetries: 1024 },
         compaction: { enabled: true, reserveTokens: 27_200, keepRecentTokens: 20_000 },
@@ -112,7 +112,7 @@ describe("runtime default settings", () => {
       await expect(ensureRuntimeDefaultSettings(settingsPath)).resolves.toBe(true);
 
       expect(JSON.parse(await readFile(settingsPath, "utf8"))).toMatchObject({
-        defaultProvider: "openai-codex",
+        defaultProvider: "codex-openai",
         defaultModel: "local",
         retry: { enabled: true, maxRetries: 2 },
         compaction: { enabled: true, reserveTokens: 27_200, keepRecentTokens: 20_000 },

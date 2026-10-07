@@ -5,7 +5,6 @@ $ErrorActionPreference = "Stop"
 
 # Define Paths
 $RepoDir = $PSScriptRoot
-$ClaudeConfig = Join-Path $HOME ".claude"
 $OpenCodeConfig = Join-Path $HOME ".config\opencode"
 $CodexConfig = Join-Path $HOME ".codex"
 $GeminiConfig = Join-Path $HOME ".gemini"
@@ -239,7 +238,6 @@ function Sync-Skills-Directory {
 function Sync-Codex-Prompts {
     $codexPromptsTarget = Join-Path $CodexConfig "prompts"
     $codexPromptsSource = Join-Path $RepoDir ".codex/prompts"
-    $claudeCommandsSource = Join-Path $RepoDir ".claude/commands"
 
     function Flatten-Prompts($sourceDir, $targetDir) {
         if (-not (Test-Path -LiteralPath $targetDir)) {
@@ -255,13 +253,6 @@ function Sync-Codex-Prompts {
     if (Test-Path -LiteralPath $codexPromptsSource) {
         Log-Info "Syncing custom prompts to Codex..."
         Flatten-Prompts $codexPromptsSource $codexPromptsTarget
-        Log-Info "Custom prompts synchronized to $codexPromptsTarget"
-        return
-    }
-
-    if (Test-Path -LiteralPath $claudeCommandsSource) {
-        Log-Info "Syncing Claude commands to Codex prompts..."
-        Flatten-Prompts $claudeCommandsSource $codexPromptsTarget
         Log-Info "Custom prompts synchronized to $codexPromptsTarget"
         return
     }
@@ -313,10 +304,6 @@ function Main {
     Sync-Skills-Directory
     Sync-Codex-Prompts
 
-    # Sync AI.md to CLAUDE.md
-    $claudeFile = Join-Path $ClaudeConfig "CLAUDE.md"
-    Check-And-Sync-File $AiMd $claudeFile "Claude instructions" | Out-Null
-
     # Sync AI.md to AGENTS.md
     $opencodeFile = Join-Path $OpenCodeConfig "AGENTS.md"
     Check-And-Sync-File $AiMd $opencodeFile "OpenCode instructions" | Out-Null
@@ -340,12 +327,6 @@ function Main {
         Sync-Directory $dotGeminiWorkflowsSrc $antigravityWorkflows "Antigravity workflows"
     }
 
-    # Sync .claude directory
-    $dotClaudeSrc = Join-Path $RepoDir ".claude"
-    if (Test-Path -LiteralPath $dotClaudeSrc) {
-        Sync-Directory $dotClaudeSrc $ClaudeConfig "Claude"
-    }
-
     # Sync .opencode directory
     $dotOpencodeSrc = Join-Path $RepoDir ".opencode"
     if (Test-Path -LiteralPath $dotOpencodeSrc) {
@@ -362,7 +343,6 @@ function Main {
     Sync-Mcp-Configs
 
     Log-Info "Installation complete!"
-    Log-Info "Claude config: $ClaudeConfig"
     Log-Info "OpenCode config: $OpenCodeConfig"
     Log-Info "Codex config: $CodexConfig"
     Log-Info "Gemini config: $GeminiConfig"
@@ -372,7 +352,6 @@ function Main {
     }
     Write-Host ""
     Write-Host "Synchronized files:"
-    Write-Host "  - AI.md -> $claudeFile"
     Write-Host "  - AI.md -> $opencodeFile"
     Write-Host "  - AI.md -> $codexFile"
     Write-Host "  - AI.md -> $geminiFile"
@@ -384,11 +363,10 @@ function Main {
             Write-Host "  - skills/ -> ~/.hermes/skills/dotai/"
         }
     }
-    if ((Test-Path -LiteralPath (Join-Path $RepoDir ".codex/prompts")) -or (Test-Path -LiteralPath (Join-Path $RepoDir ".claude/commands"))) {
+    if (Test-Path -LiteralPath (Join-Path $RepoDir ".codex/prompts")) {
         Write-Host "  - prompts/ -> ~/.codex/prompts/"
     }
     if (Test-Path -LiteralPath $McpJson) {
-        Write-Host "  - mcp.json -> Claude MCP servers"
         Write-Host "  - mcp.json -> OpenCode MCP servers"
     }
     if (Test-Path -LiteralPath (Join-Path $RepoDir ".codex")) {

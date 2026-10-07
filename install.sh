@@ -3,7 +3,6 @@
 set -e
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLAUDE_CONFIG="$HOME/.claude"
 OPENCODE_CONFIG="$HOME/.config/opencode"
 CODEX_CONFIG="$HOME/.codex"
 GEMINI_CONFIG="$HOME/.gemini"
@@ -317,7 +316,6 @@ sync_skills_directory() {
 sync_codex_prompts_directory() {
   local codex_prompts_target="$CODEX_CONFIG/prompts"
   local codex_prompts_source="$REPO_DIR/.codex/prompts"
-  local claude_commands_source="$REPO_DIR/.claude/commands"
 
   flatten_prompts() {
     local source_dir="$1"
@@ -333,13 +331,6 @@ sync_codex_prompts_directory() {
   if [[ -d "$codex_prompts_source" ]]; then
     log_info "Syncing custom prompts to Codex..."
     flatten_prompts "$codex_prompts_source" "$codex_prompts_target"
-    log_info "Custom prompts synchronized to $codex_prompts_target"
-    return 0
-  fi
-
-  if [[ -d "$claude_commands_source" ]]; then
-    log_info "Syncing Claude commands to Codex prompts..."
-    flatten_prompts "$claude_commands_source" "$codex_prompts_target"
     log_info "Custom prompts synchronized to $codex_prompts_target"
     return 0
   fi
@@ -435,11 +426,6 @@ main() {
   sync_skills_directory
   sync_codex_prompts_directory
 
-  # Sync AI.md to CLAUDE.md
-  if check_and_sync_file "$REPO_DIR/AI.md" "$CLAUDE_CONFIG/CLAUDE.md" "Claude instructions"; then
-    log_info "Claude configuration synchronized"
-  fi
-
   # Sync AI.md to AGENTS.md
   if check_and_sync_file "$REPO_DIR/AI.md" "$OPENCODE_CONFIG/AGENTS.md" "OpenCode instructions"; then
     log_info "OpenCode configuration synchronized"
@@ -466,11 +452,6 @@ main() {
     sync_directory "$REPO_DIR/.gemini/workflows" "$ANTIGRAVITY_WORKFLOWS" "Antigravity workflows"
   fi
 
-  # Sync .claude directory
-  if [[ -d "$REPO_DIR/.claude" ]]; then
-    sync_directory "$REPO_DIR/.claude" "$CLAUDE_CONFIG" "Claude"
-  fi
-
   # Sync .opencode directory
   if [[ -d "$REPO_DIR/.opencode" ]]; then
     sync_directory "$REPO_DIR/.opencode" "$OPENCODE_CONFIG" "OpenCode"
@@ -486,7 +467,6 @@ main() {
   sync_mcp_configs
 
   log_info "Installation complete!"
-  log_info "Claude config: $CLAUDE_CONFIG"
   log_info "OpenCode config: $OPENCODE_CONFIG"
   log_info "Codex config: $CODEX_CONFIG"
   log_info "Gemini config: $GEMINI_CONFIG"
@@ -496,7 +476,6 @@ main() {
   fi
   echo ""
   echo "Synchronized files:"
-  echo "  - AI.md → $CLAUDE_CONFIG/CLAUDE.md"
   echo "  - AI.md → $OPENCODE_CONFIG/AGENTS.md"
   echo "  - AI.md → $CODEX_CONFIG/AGENTS.md"
   echo "  - AI.md → $GEMINI_CONFIG/GEMINI.md"
@@ -509,11 +488,10 @@ main() {
       echo "  - skills/ → $HERMES_CONFIG/skills/dotai/"
     fi
   fi
-  if [[ -d "$REPO_DIR/.codex/prompts" || -d "$REPO_DIR/.claude/commands" ]]; then
+  if [[ -d "$REPO_DIR/.codex/prompts" ]]; then
     echo "  - prompts/ → ~/.codex/prompts/"
   fi
   if [[ -f "$MCP_JSON" ]]; then
-    echo "  - mcp.json → Claude MCP servers"
     echo "  - mcp.json → OpenCode MCP servers"
   fi
   if [[ -d "$REPO_DIR/.codex" ]]; then

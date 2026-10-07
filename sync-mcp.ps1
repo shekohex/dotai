@@ -13,9 +13,7 @@ $ScriptDir = $PSScriptRoot
 $McpJson = Join-Path $ScriptDir "mcp.json"
 
 # Target directories and files
-$ClaudeDir = Join-Path $env:USERPROFILE ".claude"
 $OpenCodeDir = Join-Path $env:USERPROFILE ".config\opencode"
-$ClaudeConfig = Join-Path $env:USERPROFILE ".claude.json"
 $OpenCodeConfig = Join-Path $OpenCodeDir "opencode.jsonc"
 
 # Helper functions for colored logging
@@ -32,9 +30,6 @@ function Check-Dependencies {
 }
 
 function Ensure-Directories {
-    if (-not (Test-Path -LiteralPath $ClaudeDir)) {
-        New-Item -ItemType Directory -Force -Path $ClaudeDir | Out-Null
-    }
     if (-not (Test-Path -LiteralPath $OpenCodeDir)) {
         New-Item -ItemType Directory -Force -Path $OpenCodeDir | Out-Null
     }
@@ -46,38 +41,6 @@ function Backup-Config([string]$ConfigFile) {
         $backupFile = "$ConfigFile.backup_$timestamp"
         Copy-Item -LiteralPath $ConfigFile -Destination $backupFile -Force
         Log-Info "Backed up $ConfigFile to $backupFile"
-    }
-}
-
-function Sync-To-Claude([string]$ClaudeConfigPath) {
-    Log-Info "Syncing MCP config to Claude format..."
-
-    # Check if Claude config exists
-    if (-not (Test-Path -LiteralPath $ClaudeConfigPath)) {
-        Log-Warn "Claude config not found, creating minimal config"
-        "{}" | Out-File -FilePath $ClaudeConfigPath -Encoding utf8
-    }
-
-    # Use the cross-platform jq utility via PowerShell
-    $tempMcp = Join-Path $env:TEMP "mcp_servers_$([Random]::new().Next()).json"
-    $jqFilter = '.mcpServers | with_entries(select(.value.enabled == true))'
-
-    try {
-        & (Join-Path $ScriptDir "jq-patch.ps1") extract_field $McpJson $tempMcp $jqFilter
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to extract MCP servers"
-        }
-
-        & (Join-Path $ScriptDir "jq-patch.ps1") set_field $ClaudeConfigPath "$ClaudeConfigPath.tmp" ".mcpServers" $tempMcp
-        if ($LASTEXITCODE -eq 0) {
-            Move-Item "$ClaudeConfigPath.tmp" $ClaudeConfigPath -Force
-            Log-Info "Claude MCP config updated"
-        }
-    }
-    finally {
-        if (Test-Path $tempMcp) {
-            Remove-Item $tempMcp -Force -ErrorAction SilentlyContinue
-        }
     }
 }
 
@@ -152,12 +115,6 @@ function Sync-Configs {
 
     Ensure-Directories
 
-    # Sync to Claude
-    if (Test-Path -LiteralPath $ClaudeConfig) {
-        Backup-Config $ClaudeConfig
-    }
-    Sync-To-Claude $ClaudeConfig
-
     # Sync to OpenCode
     if (Test-Path -LiteralPath $OpenCodeConfig) {
         Backup-Config $OpenCodeConfig
@@ -174,7 +131,6 @@ function Show-Usage {
     Write-Host "  -DryRun        Show what would be changed without applying"
     Write-Host ""
     Write-Host "Synchronizes MCP server configurations from mcp.json to:"
-    Write-Host "  - $ClaudeConfig"
     Write-Host "  - $OpenCodeConfig"
 }
 

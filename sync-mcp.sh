@@ -13,11 +13,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MCP_JSON="$SCRIPT_DIR/mcp.json"
 
 # Target directories
-CLAUDE_DIR="$HOME/.claude"
 OPENCODE_DIR="$HOME/.config/opencode"
 
 # Target files
-CLAUDE_CONFIG="$HOME/.claude.json"
 OPENCODE_CONFIG="$OPENCODE_DIR/opencode.jsonc"
 
 # Function to print colored output
@@ -46,7 +44,6 @@ check_dependencies() {
 
 # Create directories if they don't exist
 ensure_directories() {
-  mkdir -p "$CLAUDE_DIR"
   mkdir -p "$OPENCODE_DIR"
 }
 
@@ -74,31 +71,8 @@ configs_differ() {
   ! git diff --no-index --quiet "$file1" "$file2" 2>/dev/null
 }
 
-# Sync MCP config to Claude format
-sync_to_claude() {
-  local claude_config="$1"
-
-  print_status "Syncing MCP config to Claude format..."
-
-  # Check if Claude config exists
-  if [[ ! -f "$claude_config" ]]; then
-    print_warning "Claude config not found, creating minimal config"
-    echo '{}' >"$claude_config"
-  fi
-
-  # Extract mcpServers from mcp.json and merge into Claude config
-  local mcp_servers
-  mcp_servers=$(jq '.mcpServers | with_entries(select(.value.enabled == true))' "$MCP_JSON")
-
-  # Update Claude config with MCP servers
-  jq --argjson mcpServers "$mcp_servers" '.mcpServers = $mcpServers' "$claude_config" >"$claude_config.tmp"
-  mv "$claude_config.tmp" "$claude_config"
-
-  print_status "Claude MCP config updated"
-}
-
-# Transform Claude format to OpenCode format
-# Claude: {"type": "http", "url": "..."}
+# Transform MCP server definitions to OpenCode format
+# MCP: {"type": "http", "url": "..."}
 # OpenCode: {"type": "remote", "url": "...", "enabled": true}
 transform_to_opencode_format() {
   local mcp_servers="$1"
@@ -216,12 +190,6 @@ sync_configs() {
 
   ensure_directories
 
-  # Sync to Claude
-  if [[ -f "$CLAUDE_CONFIG" ]]; then
-    backup_config "$CLAUDE_CONFIG"
-  fi
-  sync_to_claude "$CLAUDE_CONFIG"
-
   # Sync to OpenCode
   if [[ -f "$OPENCODE_CONFIG" ]]; then
     backup_config "$OPENCODE_CONFIG"
@@ -239,7 +207,6 @@ usage() {
   echo "  --dry-run      Show what would be changed without applying"
   echo ""
   echo "Synchronizes MCP server configurations from mcp.json to:"
-  echo "  - $CLAUDE_CONFIG"
   echo "  - $OPENCODE_CONFIG"
 }
 

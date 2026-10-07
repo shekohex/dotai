@@ -47,14 +47,14 @@ Utilities for handling path resolution and expansion:
 ```batch
 REM Windows examples
 path-utils.bat get_home_dir
-path-utils.bat expand_path "~\.claude"
+path-utils.bat expand_path "~\.config\opencode"
 path-utils.bat join_paths "%USERPROFILE%" ".config" "opencode"
 ```
 
 ```bash
 # Unix examples
 ./path-utils.sh get_home_dir
-./path-utils.sh expand_path "~/.claude"  
+./path-utils.sh expand_path "~/.config/opencode"
 ./path-utils.sh join_paths "$HOME" ".config" "opencode"
 ```
 
@@ -72,14 +72,16 @@ The Windows batch script now uses the new utilities:
 **Before (problematic):**
 ```batch
 for /f "delims=" %%i in ('jq ".mcpServers" "%MCP_JSON%"') do set "mcp_servers=%%i"
-jq --argjson mcpServers "!mcp_servers!" ".mcpServers = $mcpServers" "%claude_config%" > "%claude_config%.tmp"
+jq --argjson mcp "!mcp_servers!" ".mcp = $mcp" "%opencode_config%" > "%opencode_config%.tmp"
 ```
 
 **After (Windows-compatible):**
 ```batch
 set "temp_mcp=%TEMP%\mcp_servers_%RANDOM%.json"
+set "temp_opencode=%TEMP%\opencode_mcp_%RANDOM%.json"
 call "%SCRIPT_DIR%jq-patch.bat" extract_field "%MCP_JSON%" "%temp_mcp%" ".mcpServers"
-call "%SCRIPT_DIR%jq-patch.bat" set_field "%claude_config%" "%claude_config%.tmp" ".mcpServers" "%temp_mcp%"
+call "%SCRIPT_DIR%jq-patch.bat" transform_opencode "%temp_mcp%" "%temp_opencode%"
+call "%SCRIPT_DIR%jq-patch.bat" set_field "%opencode_config%" "%opencode_config%.tmp" ".mcp" "%temp_opencode%"
 ```
 
 ## Usage Examples
@@ -106,7 +108,7 @@ for /f %%i in ('path-utils.bat get_home_dir') do set "HOME_DIR=%%i"
 for /f %%i in ('path-utils.bat get_config_dir') do set "CONFIG_DIR=%%i"
 
 REM Expand tilde paths
-for /f %%i in ('path-utils.bat expand_path "~\.claude\config.json"') do set "CLAUDE_CONFIG=%%i"
+for /f %%i in ('path-utils.bat expand_path "~\.config\opencode\opencode.jsonc"') do set "OPENCODE_CONFIG=%%i"
 
 REM Join paths safely
 for /f %%i in ('path-utils.bat join_paths "%USERPROFILE%" ".config" "opencode" "config.json"') do set "OPENCODE_CONFIG=%%i"
@@ -129,11 +131,11 @@ type opencode_servers.json
 ### Test Path Operations
 ```batch
 REM Test path expansion
-path-utils.bat expand_path "~\.claude"
+path-utils.bat expand_path "~\.config\opencode"
 path-utils.bat expand_path "~/.config/opencode"
 
 REM Test path joining  
-path-utils.bat join_paths "%USERPROFILE%" ".claude" "config.json"
+path-utils.bat join_paths "%USERPROFILE%" ".config" "opencode" "opencode.jsonc"
 ```
 
 ### Test Full MCP Sync
@@ -142,7 +144,6 @@ REM Run the Windows MCP sync
 sync-mcp.bat
 
 REM Check the generated configs
-type "%USERPROFILE%\.claude.json"
 type "%USERPROFILE%\.config\opencode\opencode.jsonc"
 ```
 

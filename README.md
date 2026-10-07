@@ -1,6 +1,6 @@
 # AI Configuration Management
 
-A unified configuration management system for AI tools including Claude Code and OpenCode. This repository synchronizes configuration files and AI instructions across different AI development environments.
+A unified configuration management system for AI tools including OpenCode. This repository synchronizes configuration files and AI instructions across different AI development environments.
 
 ## Table of Contents
 
@@ -164,11 +164,6 @@ xcopy /?  # Directory copy (Windows)
 
 ## Target Locations
 
-### Claude Code
-- Configuration directory: `$HOME/.claude/` (Unix) / `%USERPROFILE%\.claude\` (Windows)
-- Instructions file: `CLAUDE.md`
-- MCP servers: Updated in `.claude.json` (maintains existing Claude format)
-
 ### OpenCode
 - Configuration directory: `$HOME/.config/opencode/` (Unix) / `%USERPROFILE%\.config\opencode\` (Windows)
 - Skills directory: `$HOME/.opencode/skill/` (Unix) / `%USERPROFILE%\.opencode\skill\` (Windows)
@@ -179,13 +174,12 @@ xcopy /?  # Directory copy (Windows)
 
 ### AI Instructions (AI.md)
 Contains general AI development guidelines that are synchronized to:
-- `CLAUDE.md` for Claude Code
 - `AGENTS.md` for OpenCode
 
 ### MCP Server Configuration (mcp.json)
-Unified MCP server configuration in Claude format that gets transformed and synchronized to:
+Unified MCP server configuration (`mcpServers` format) that gets transformed and synchronized to:
 
-**Claude Format (maintained):**
+**Source format (mcp.json):**
 ```json
 {
   "mcpServers": {
@@ -303,10 +297,9 @@ Edit `mcp.json` with your MCP server configurations and run:
 ```
 
 This will automatically:
-1. Update the `mcpServers` section in `~/.claude/.claude.json`
-2. Transform and update the `mcp` section in `~/.config/opencode/opencode.jsonc`
-3. Create backups of existing configurations
-4. Show diffs and ask for confirmation
+1. Transform and update the `mcp` section in `~/.config/opencode/opencode.jsonc`
+2. Create backups of existing configurations
+3. Show diffs and ask for confirmation
 
 ### After Updating Skills
 Edit skills in the `skills/` directory and run:
@@ -331,9 +324,9 @@ sync-mcp.bat
 ### Viewing Changes
 The installer automatically shows diffs when files differ. Example output:
 ```
-[WARN] Files differ for Claude instructions:
+[WARN] Files differ for OpenCode instructions:
 
---- /home/user/.claude/CLAUDE.md    2024-01-01 12:00:00
+--- /home/user/.config/opencode/AGENTS.md    2024-01-01 12:00:00
 +++ /home/user/.ai/AI.md           2024-01-01 12:05:00
 @@ -1,3 +1,5 @@
  # AI Instructions
@@ -342,7 +335,7 @@ The installer automatically shows diffs when files differ. Example output:
 +- Use git for version control
 +- Write clear commit messages
 
-Replace Claude instructions with new version? (y/N):
+Replace OpenCode instructions with new version? (y/N):
 ```
 
 ## Troubleshooting
@@ -355,7 +348,6 @@ chmod +x install.sh
 
 ### Missing Target Directories
 The installer creates directories automatically, but ensure you have write permissions to:
-- `$HOME/.claude/`
 - `$HOME/.config/opencode/`
 
 ### Git Not Available
@@ -392,5 +384,5 @@ Backups are automatically created with timestamps:
 
 To restore a backup:
 ```bash
-cp ~/.claude/CLAUDE.md.backup.20240101_120000 ~/.claude/CLAUDE.md
+cp ~/.config/opencode/AGENTS.md.backup.20240101_120000 ~/.config/opencode/AGENTS.md
 ```

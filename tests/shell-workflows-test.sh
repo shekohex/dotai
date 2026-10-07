@@ -71,7 +71,7 @@ test_install_supports_noninteractive_env() {
   HOME="$temp_home" PATH="$fake_bin:$PATH" DOTAI_NONINTERACTIVE=1 bash "$ROOT_DIR/install.sh" >"$temp_home/install-env.log" 2>&1 < /dev/null || \
     fail "install.sh should succeed with DOTAI_NONINTERACTIVE=1"
 
-  assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.claude/CLAUDE.md"
+  assert_file_equals <(printf 'old claude\n') "$temp_home/.claude/CLAUDE.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.config/opencode/AGENTS.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.codex/AGENTS.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.gemini/GEMINI.md"
@@ -106,7 +106,7 @@ test_install_supports_noninteractive_flag() {
   HOME="$temp_home" PATH="$fake_bin:$PATH" bash "$ROOT_DIR/install.sh" --non-interactive >"$temp_home/install-flag.log" 2>&1 < /dev/null || \
     fail "install.sh should succeed with --non-interactive"
 
-  assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.claude/CLAUDE.md"
+  assert_file_equals <(printf 'old claude\n') "$temp_home/.claude/CLAUDE.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.config/opencode/AGENTS.md"
   assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.pi/agent/AGENTS.md"
   assert_contains 'ci --ignore-scripts' "$npm_log"
@@ -422,6 +422,52 @@ EOF
   wait "$openchamber_supervisor_pid" 2>/dev/null || true
 }
 
+test_claude_setup_is_disconnected() {
+  local temp_dir fixture_repo temp_home existing_config
+  temp_dir="$(mktemp -d)"
+  fixture_repo="$temp_dir/repo"
+  mkdir -p "$fixture_repo/.codex" "$fixture_repo/.claude/commands"
+  cp "$ROOT_DIR/install.sh" "$ROOT_DIR/sync-mcp.sh" "$ROOT_DIR/AI.md" "$ROOT_DIR/mcp.json" "$fixture_repo/"
+  cp "$ROOT_DIR/.codex/paseo-codex-profile.py" "$fixture_repo/.codex/"
+  printf 'unused Claude command\n' > "$fixture_repo/.claude/commands/legacy.md"
+
+  for existing_config in false true; do
+    temp_home="$temp_dir/home-$existing_config"
+    mkdir -p "$temp_home"
+    if [[ "$existing_config" == true ]]; then
+      mkdir -p "$temp_home/.claude"
+      printf 'existing Claude instructions\n' > "$temp_home/.claude/CLAUDE.md"
+      printf '{"mcpServers":{"keep":{"type":"http","url":"https://example.com"}}}\n' > "$temp_home/.claude.json"
+      cp "$temp_home/.claude/CLAUDE.md" "$temp_dir/expected-claude.md"
+      cp "$temp_home/.claude.json" "$temp_dir/expected-claude.json"
+    fi
+
+    HOME="$temp_home" bash "$fixture_repo/install.sh" --non-interactive >"$temp_home/install.log" 2>&1 || \
+      fail "installer should succeed without Claude setup"
+    HOME="$temp_home" bash "$fixture_repo/sync-mcp.sh" >"$temp_home/sync-mcp.log" 2>&1 || \
+      fail "standalone MCP sync should succeed without Claude setup"
+
+    if [[ "$existing_config" == true ]]; then
+      assert_file_equals "$temp_dir/expected-claude.md" "$temp_home/.claude/CLAUDE.md"
+      assert_file_equals "$temp_dir/expected-claude.json" "$temp_home/.claude.json"
+      [[ "$(find "$temp_home" -name '*backup*' -path '*/.claude*' | wc -l)" -eq 0 ]] || fail "Claude files should not be backed up"
+    else
+      [[ ! -e "$temp_home/.claude" && ! -e "$temp_home/.claude.json" ]] || fail "Claude configuration should not be created"
+    fi
+
+    [[ ! -e "$temp_home/.codex/prompts/legacy.md" ]] || fail "Codex should not import Claude commands"
+    assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.config/opencode/AGENTS.md"
+    assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.codex/AGENTS.md"
+    assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.gemini/GEMINI.md"
+    assert_file_equals "$ROOT_DIR/AI.md" "$temp_home/.pi/agent/AGENTS.md"
+    jq -e --slurpfile source "$ROOT_DIR/mcp.json" '.mcp | keys == ($source[0].mcpServers | with_entries(select(.value.enabled == true)) | keys)' \
+      "$temp_home/.config/opencode/opencode.jsonc" >/dev/null || fail "OpenCode MCP servers should remain synchronized"
+    assert_not_contains 'Claude' "$temp_home/install.log"
+    assert_not_contains 'Claude' "$temp_home/sync-mcp.log"
+  done
+}
+
+test_claude_setup_is_disconnected
 test_install_refuses_implicit_noninteractive_without_opt_in
 test_install_supports_noninteractive_env
 test_install_supports_noninteractive_flag

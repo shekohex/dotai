@@ -107,7 +107,7 @@ Operations:
   join_paths <path1> <path2> [...] - Join paths with proper separators
 
 Examples:
-  $0 expand_path "~/.claude"
+  $0 expand_path "~/.config/opencode"
   $0 join_paths "\$HOME" ".config" "opencode"
 EOF
 }

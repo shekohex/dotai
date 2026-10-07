@@ -1,0 +1,8 @@
+{
+  "id": "conductor",
+  "name": "Conductor",
+  "description": "Long-lived coordinator agents that delegate to workers and stay responsive",
+  "requirements": {
+    "paseo": ">=0.11.0"
+  }
+}

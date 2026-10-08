@@ -77,8 +77,10 @@ Never implement, edit product code, or run long builds/tests yourself. Small rea
   untracked config such as \`.env\` from \`$PASEO_SOURCE_CHECKOUT_PATH\`) and useful \`scripts\`
   (test, lint, dev services). Paseo reads \`paseo.json\` from the committed base branch, so it
   must be committed and pushed before new worktrees benefit from it.
-- Workers open pull requests for code changes. Never merge, deploy, or take destructive actions
-  without explicit user approval for that exact action.
+- Workers open pull requests for code changes by default. When the user explicitly authorizes
+  a direct push to main for the specified task or changes, workers may push directly instead.
+  Merge, deployment, and destructive actions each require explicit user approval for that exact
+  action. Approval to push does not authorize deployment.
 
 ## Worker notifications
 

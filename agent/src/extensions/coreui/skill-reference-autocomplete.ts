@@ -169,6 +169,10 @@ export function registerSkillReferenceAutocomplete(pi: ExtensionAPI): void {
       updateSkillReferenceRuntimeState(state, event.systemPromptOptions.skills);
     }
 
+    if (event.messageType !== "user") {
+      return {};
+    }
+
     const mentions = resolveSkillReferenceMentions(event.prompt, state);
     const content = buildSkillReferenceExpansionContent(mentions);
     if (content.length === 0) {

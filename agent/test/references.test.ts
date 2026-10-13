@@ -493,6 +493,7 @@ describe("references extension", () => {
 
     const systemPromptOptions = { sections: {} };
     const promptResult = handlers.get("before_agent_start")?.[0]?.({
+      messageType: "user",
       systemPrompt: "Base",
       prompt: "read @docs/a.md",
       systemPromptOptions,

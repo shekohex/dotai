@@ -1,5 +1,6 @@
+import type { BeforeAgentStartEvent } from "@earendil-works/pi-coding-agent";
 import { formatDuration, formatTokenValue } from "./format.js";
-import type { ThreadGoal } from "./types.js";
+import { GOAL_EXTENSION_ENTRY_TYPE, type ThreadGoal } from "./types.js";
 
 const CONTINUATION_MARKER_PREFIX = '<pi_goal_continuation goal_id="';
 
@@ -27,6 +28,16 @@ export function continuationGoalIdFromPrompt(prompt: string): string | null {
   }
 
   return prompt.slice(CONTINUATION_MARKER_PREFIX.length, end);
+}
+
+export function continuationGoalIdFromEvent(event: BeforeAgentStartEvent): string | null {
+  if (event.messageType === "custom") {
+    return event.message.customType === GOAL_EXTENSION_ENTRY_TYPE &&
+      typeof event.message.content === "string"
+      ? continuationGoalIdFromPrompt(event.message.content)
+      : null;
+  }
+  return continuationGoalIdFromPrompt(event.prompt);
 }
 
 export function escapeXmlText(value: string): string {

@@ -13,7 +13,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { setKeybindings } from "@earendil-works/pi-tui";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, getSystemMessageText } from "@earendil-works/pi-ai";
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { stripVTControlCharacters as stripAnsi } from "node:util";
 import { createPlaybookStreamFn } from "@support/pi-test-harness/playbook";
 import { KeybindingsManager } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";
@@ -24,6 +25,7 @@ import webSearchExtension, { webSearchTool } from "../src/extensions/websearch.t
 import patchExtension from "../src/extensions/patch.ts";
 import handoffExtension from "../src/extensions/handoff.ts";
 import { createLiteLLMProviderRegistrations } from "../src/extensions/litellm.ts";
+import { resolveRemoteCompactionRequestBudget } from "../src/extensions/compaction/openai-remote-request-shrink.ts";
 import { registerPiAiProvider } from "../src/extensions/pi-ai-models.ts";
 import modesExtension, {
   createModesExtension,
@@ -55,6 +57,8 @@ import promptStashExtension, {
 } from "../src/extensions/prompt-stash.ts";
 import agentsMdExtension from "../src/extensions/agents-md.ts";
 import skillReadExtension from "../src/extensions/skill-read.ts";
+import referencesExtension from "../src/extensions/references/index.ts";
+import { registerSkillReferenceAutocomplete } from "../src/extensions/coreui/skill-reference-autocomplete.ts";
 import { createSubagentExtension } from "../src/extensions/subagent.ts";
 import { createToolStateEntry, TOOL_STATE_ENTRY_TYPE } from "../src/utils/tool-state.ts";
 import type { MuxAdapter, PaneSubmitMode } from "../src/subagent-sdk/mux.ts";
@@ -2462,21 +2466,22 @@ timedTest("LiteLLM provider registrations route codex-openai via OpenAI Response
     codexRegistration.config.models!.every((model) => model.api === "openai-responses"),
   ).toBeTruthy();
   expect(
-    codexRegistration.config.models!.every((model) => model.contextWindow <= 272_000),
+    codexRegistration.config.models!.every((model) => model.contextWindow <= 476_000),
   ).toBeTruthy();
-  const observedSerializerOverhead = 35_000;
-  const compactionSafetyMargin = 10_000;
-  const defaultCompactionReserve = 27_200;
   const nativeCompactionRequestBudget = 258_400;
+  const nativeModels = getBuiltinModels("openai-codex");
   for (const model of codexRegistration.config.models!.filter((model) =>
     model.id.startsWith("gpt-5.6-"),
   )) {
-    const requestTokensAtCompactionThreshold =
-      model.contextWindow -
-      defaultCompactionReserve +
-      observedSerializerOverhead +
-      compactionSafetyMargin;
-    expect(requestTokensAtCompactionThreshold).toBeLessThanOrEqual(nativeCompactionRequestBudget);
+    const nativeModel = nativeModels.find((candidate) => candidate.id === model.id);
+    expect(nativeModel).toBeDefined();
+    expect(
+      resolveRemoteCompactionRequestBudget({
+        ...nativeModel!,
+        provider: "codex-openai",
+        contextWindow: model.contextWindow,
+      }),
+    ).toBeLessThanOrEqual(nativeCompactionRequestBudget);
   }
 });
 
@@ -2571,6 +2576,65 @@ timedTest("modes extension injects selected mode systemPrompt into next agent tu
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+timedTest(
+  "custom-message runs keep references context without expanding prompt mentions",
+  async () => {
+    const cwd = await createTempDir("agent-custom-message-references-");
+    let session: TestSession | undefined;
+    const extensionErrors: string[] = [];
+    const systemPrompts: string[] = [];
+
+    await writeFile(
+      join(cwd, "references.json"),
+      JSON.stringify({ docs: { path: cwd, description: "Docs" } }),
+    );
+
+    try {
+      await withTempAgentDir(cwd, async () => {
+        session = await createTestSession({
+          cwd,
+          extensionFactories: [referencesExtension, registerSkillReferenceAutocomplete],
+        });
+        session.session.extensionRunner.onError((error) => extensionErrors.push(error.error));
+        const playbook = createPlaybookStreamFn([when("continue", [says("ok")])]);
+        session.session.agent.streamFunction = (model, context, options) => {
+          systemPrompts.push(
+            context.messages
+              .filter((message) => message.role === "system")
+              .map(getSystemMessageText)
+              .join("\n"),
+          );
+          return playbook.streamFn(model, context, options);
+        };
+
+        await session.session.sendCustomMessage(
+          {
+            customType: "test-continuation",
+            content: "read @docs/a.md with $webfetch",
+            display: false,
+          },
+          { triggerTurn: true },
+        );
+        await session.session.agent.waitForIdle();
+
+        expect(extensionErrors).toEqual([]);
+        expect(systemPrompts[0]).toContain("<available_references>");
+        expect(
+          session.events.messages.filter(
+            (message) =>
+              message.role === "custom" &&
+              ["reference-expansion", "skill-reference-expansion"].includes(message.customType),
+          ),
+        ).toEqual([]);
+        expect(playbook.state.consumed).toBe(1);
+      });
+    } finally {
+      session?.dispose();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 
 timedTest("interview tool is hidden by default and toggled by command", async () => {
   const cwd = await createTempDir("agent-interview-toggle-tools-");

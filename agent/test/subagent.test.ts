@@ -517,8 +517,7 @@ timedTest("lite subagent replace mode keeps generated tool prompt tail", async (
 
     try {
       const result = await session.extensionRunner.emitBeforeAgentStart(
-        "Inspect code",
-        undefined,
+        { messageType: "user", prompt: "Inspect code" },
         session.extensionRunner.createCommandContext().getSystemPromptOptions(),
       );
       const systemPrompt = result.systemPromptOptions.forceSystemPrompt;

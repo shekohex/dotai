@@ -5,6 +5,7 @@ import {
   CURSOR_MARKER,
   Key,
   matchesKey,
+  renderFakeCursor,
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
@@ -36,8 +37,7 @@ import { pickRandomWelcomeMessage } from "./whimsical.js";
 
 const PASTE_START = "\u001B[200~";
 const PASTE_END = "\u001B[201~";
-const CURSOR = "\u001B[7m \u001B[27m";
-const EDITOR_CURSOR = "\u001B[7m \u001B[0m";
+const CURSOR = renderFakeCursor(" ");
 const CURSOR_SHAPES: Record<CursorShape, string> = {
   "blinking-block": "\u001B[1 q",
   "steady-block": "\u001B[2 q",
@@ -654,16 +654,16 @@ class CorePromptEditor extends CustomEditor {
     }
 
     const markerIndex = lines.findIndex(
-      (line) => line.includes(CURSOR_MARKER) || line.includes(EDITOR_CURSOR),
+      (line) => line.includes(CURSOR_MARKER) || line.includes(CURSOR),
     );
     if (markerIndex === -1) return;
 
     const line = lines[markerIndex] ?? "";
     const markerStart = line.indexOf(CURSOR_MARKER);
-    const cursorIndex = line.indexOf(EDITOR_CURSOR, markerStart === -1 ? 0 : markerStart);
+    const cursorIndex = line.indexOf(CURSOR, markerStart === -1 ? 0 : markerStart);
     if (cursorIndex === -1) return;
 
-    const hintStart = cursorIndex + EDITOR_CURSOR.length;
+    const hintStart = cursorIndex + CURSOR.length;
     const beforeHint = line.slice(0, hintStart);
     const afterHint = line.slice(hintStart);
     const availableWidth = visibleWidth(afterHint);

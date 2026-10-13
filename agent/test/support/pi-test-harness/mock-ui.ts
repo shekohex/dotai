@@ -119,6 +119,9 @@ export function createMockUIContext(config: MockUIConfig = {}, uiLog: UICallReco
     setEditorComponent(...args: unknown[]): void {
       record("setEditorComponent", args);
     },
+    addAutocompleteProvider(...args: unknown[]): void {
+      record("addAutocompleteProvider", args);
+    },
 
     get theme(): any {
       // Return a minimal theme stub

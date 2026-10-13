@@ -1876,26 +1876,31 @@ Ship it`);
     expect(harness.sentMessages).toHaveLength(0);
   });
 
-  test("stale queued continuation aborts before start", async () => {
-    const harness = createGoalHarness();
-    await harness.runCommand("ship it");
-    const queued = harness.sentMessages[0];
-    if (typeof queued?.message.content !== "string") {
-      throw new Error("expected queued continuation content");
-    }
+  test.each(["user", "custom"] as const)(
+    "stale queued %s continuation aborts before start",
+    async (messageType) => {
+      const harness = createGoalHarness();
+      await harness.runCommand("ship it");
+      const queued = harness.sentMessages[0];
+      if (typeof queued?.message.content !== "string") {
+        throw new Error("expected queued continuation content");
+      }
 
-    await harness.runTool({ action: "update", status: "complete" });
-    const results = await harness.emit("before_agent_start", {
-      type: "before_agent_start",
-      prompt: queued.message.content,
-      systemPrompt: "base prompt",
-      systemPromptOptions: {},
-    });
+      await harness.runTool({ action: "update", status: "complete" });
+      const results = await harness.emit("before_agent_start", {
+        type: "before_agent_start",
+        ...(messageType === "user"
+          ? { messageType, prompt: queued.message.content }
+          : { messageType, message: queued.message }),
+        systemPrompt: "base prompt",
+        systemPromptOptions: {},
+      });
 
-    const result = results[0] as { systemPrompt?: string } | undefined;
-    expect(harness.abortCount).toBe(1);
-    expect(result?.systemPrompt ?? "").toContain("stale");
-  });
+      const result = results[0] as { systemPrompt?: string } | undefined;
+      expect(harness.abortCount).toBe(1);
+      expect(result?.systemPrompt ?? "").toContain("stale");
+    },
+  );
 
   test("agent end waits for idle before continuing", async () => {
     const harness = createGoalHarness({

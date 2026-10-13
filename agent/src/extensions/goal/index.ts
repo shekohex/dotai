@@ -13,7 +13,7 @@ import {
   isErrorAssistantMessage,
   type AssistantMessageLike,
 } from "./messages.js";
-import { continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
+import { continuationGoalIdFromEvent, continuationPrompt } from "./prompts.js";
 import {
   staleContinuationContextOverride,
   staleGoalContinuationMessage,
@@ -638,10 +638,10 @@ class GoalRuntime {
   }
 
   private handleBeforeAgentStart(
-    event: { prompt: string; systemPrompt: string },
+    event: Pi.BeforeAgentStartEvent,
     ctx: ExtensionContext,
   ): { systemPrompt: string } | undefined {
-    const continuationGoalId = continuationGoalIdFromPrompt(event.prompt);
+    const continuationGoalId = continuationGoalIdFromEvent(event);
     if (continuationGoalId === null) {
       this.continuationBlockedByAssistantError = false;
       this.clearContinuationState();

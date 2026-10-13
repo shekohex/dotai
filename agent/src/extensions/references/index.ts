@@ -42,7 +42,8 @@ export default function referencesExtension(pi: ExtensionAPI): void {
 
   pi.on("before_agent_start", (event) => {
     const context = buildReferencesSystemContext(state);
-    const mentions = resolveReferenceMentions(event.prompt, state);
+    const mentions =
+      event.messageType === "user" ? resolveReferenceMentions(event.prompt, state) : [];
     const content = buildReferenceExpansionContent(mentions);
     if (context.length > 0) {
       event.systemPromptOptions.sections.references = context;

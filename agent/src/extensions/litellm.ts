@@ -34,7 +34,7 @@ const LITELLM_AUTH_PROVIDER = "litellm";
 export const LITELLM_API_KEY_ENV = "LITELLM_API_KEY";
 const LITELLM_READINESS_PATH = "/health/readiness";
 // Pi's context count excludes provider instructions and tool schemas serialized by LiteLLM.
-const CODEX_OPENAI_CONTEXT_WINDOW = 240_000;
+const CODEX_OPENAI_CONTEXT_WINDOW = 476_000;
 
 let litellmStatePromise: Promise<LiteLLMState> | undefined;
 

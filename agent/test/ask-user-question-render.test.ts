@@ -85,7 +85,7 @@ test("ask user question uses RPC UI primitives", async () => {
       }
     | undefined;
   const selectCalls: Array<{ title: string; options: string[] }> = [];
-  const editorCalls: Array<{ title: string; prefill?: string }> = [];
+  const inputCalls: Array<{ title: string; placeholder?: string }> = [];
   registerAskUserQuestionTool({
     on() {},
     registerTool(tool) {
@@ -132,9 +132,12 @@ test("ask user question uses RPC UI primitives", async () => {
           selectCalls.push({ title, options });
           return "Fast";
         },
-        editor: async (title: string, prefill?: string) => {
-          editorCalls.push({ title, prefill });
+        input: async (title: string, placeholder?: string) => {
+          inputCalls.push({ title, placeholder });
           return '["Lint, format","Tests"]';
+        },
+        editor: async () => {
+          throw new Error("RPC editor bypasses the client's questionnaire handler");
         },
         custom: async () => {
           throw new Error("RPC path must not call custom UI");
@@ -149,7 +152,7 @@ test("ask user question uses RPC UI primitives", async () => {
       options: ["Fast", "Safe", "Type something.", "Chat about this"],
     },
   ]);
-  expect(editorCalls[0]?.title).toContain("- Lint, format: Run lint and format");
+  expect(inputCalls[0]?.title).toContain("1. Lint, format: Run lint and format");
   expect(result).toMatchObject({
     details: {
       cancelled: false,
@@ -163,7 +166,7 @@ test("ask user question uses RPC UI primitives", async () => {
 
 test("ask user question preserves previews and custom multi-select text over RPC", async () => {
   let registeredTool: { execute: (...args: never[]) => Promise<unknown> } | undefined;
-  const editorTitles: string[] = [];
+  const selectTitles: string[] = [];
   registerAskUserQuestionTool({
     on() {},
     registerTool(tool) {
@@ -172,7 +175,6 @@ test("ask user question preserves previews and custom multi-select text over RPC
     events: { emit() {} },
   } as never);
 
-  const editorAnswers = ['["Alpha, beta","Custom choice"]', "Visual"];
   const result = await registeredTool!.execute(
     "question-call",
     {
@@ -203,9 +205,13 @@ test("ask user question preserves previews and custom multi-select text over RPC
       hasUI: true,
       mode: "rpc",
       ui: {
-        editor: async (title: string) => {
-          editorTitles.push(title);
-          return editorAnswers.shift();
+        input: async () => '["Alpha, beta","Custom choice"]',
+        select: async (title: string) => {
+          selectTitles.push(title);
+          return "Visual";
+        },
+        editor: async () => {
+          throw new Error("RPC editor bypasses the client's questionnaire handler");
         },
         custom: async () => {
           throw new Error("RPC path must not call custom UI");
@@ -214,7 +220,7 @@ test("ask user question preserves previews and custom multi-select text over RPC
     },
   );
 
-  expect(editorTitles[1]).toContain("[ preview ]");
+  expect(selectTitles[0]).toContain("[ preview ]");
   expect(result).toMatchObject({
     details: {
       cancelled: false,

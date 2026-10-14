@@ -49,7 +49,7 @@ function buildAskUserQuestionEventBase(
 const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
 
 const MULTI_SELECT_INSTRUCTIONS =
-  "Enter one or more option labels, separated by commas or new lines.";
+  "Enter option numbers (1-based) or labels, separated by commas or new lines. Use a JSON string array for labels containing commas.";
 
 function questionAnswerFromRpcValue(
   question: QuestionData,
@@ -79,13 +79,19 @@ function multiSelectAnswerFromRpcValue(
 ): QuestionAnswer {
   const authoredLabels = new Set(question.options.map((option) => option.label));
   let submittedLabels: string[];
-  try {
-    const parsed: unknown = JSON.parse(value);
-    submittedLabels = Array.isArray(parsed)
-      ? parsed.filter((label): label is string => typeof label === "string")
-      : [];
-  } catch {
-    submittedLabels = value.split(/[\n,]/u).map((label) => label.trim());
+  if (/^\s*\d+(?:\s*[,\n]\s*\d+)*\s*$/u.test(value)) {
+    submittedLabels = value
+      .split(/[\n,]/u)
+      .map((index) => question.options[Number(index) - 1]?.label ?? index.trim());
+  } else {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      submittedLabels = Array.isArray(parsed)
+        ? parsed.filter((label): label is string => typeof label === "string")
+        : [];
+    } catch {
+      submittedLabels = value.split(/[\n,]/u).map((label) => label.trim());
+    }
   }
   const selected = submittedLabels.filter((label) => authoredLabels.has(label));
   const notes = submittedLabels.filter((label) => !authoredLabels.has(label)).join(", ");
@@ -106,16 +112,13 @@ async function runRpcQuestionnaire(
   const answers: QuestionAnswer[] = [];
   for (const [questionIndex, question] of params.questions.entries()) {
     let answer: QuestionAnswer | undefined;
-    if (question.options.length === 0) {
-      const value = await ctx.ui.input(question.question);
-      if (value !== undefined) {
-        answer = questionAnswerFromRpcValue(question, questionIndex, value);
-      }
-    } else if (question.multiSelect === true) {
+    // Clients can render one form from tool arguments and consume select/input replies internally.
+    // An editor request bypasses that handling and opens a second question dialog.
+    if (question.multiSelect === true) {
       const optionList = question.options
-        .map((option) => `- ${option.label}: ${option.description}`)
+        .map((option, index) => `${index + 1}. ${option.label}: ${option.description}`)
         .join("\n");
-      const value = await ctx.ui.editor(
+      const value = await ctx.ui.input(
         `${question.question}\n\n${optionList}\n\n${MULTI_SELECT_INSTRUCTIONS} Enter "${displayLabel("chat")}" to continue in chat instead.`,
         "",
       );
@@ -125,27 +128,34 @@ async function runRpcQuestionnaire(
             ? questionAnswerFromRpcValue(question, questionIndex, value.trim())
             : multiSelectAnswerFromRpcValue(question, questionIndex, value);
       }
-    } else if (question.options.some((option) => option.preview !== undefined)) {
+    } else {
       const optionList = question.options
         .map(
           (option) =>
-            `- ${option.label}: ${option.description}${option.preview !== null && option.preview !== undefined && option.preview.length > 0 ? `\n\n${option.preview}` : ""}`,
+            `- ${option.label}: ${option.description}${option.preview !== undefined && option.preview.length > 0 ? `\n\n${option.preview}` : ""}`,
         )
         .join("\n\n");
-      const value = await ctx.ui.editor(
-        `${question.question}\n\n${optionList}\n\nEnter one option label exactly, or "${displayLabel("chat")}" to continue in chat.`,
-        "",
-      );
-      if (value !== undefined) {
-        answer = questionAnswerFromRpcValue(question, questionIndex, value.trim());
-      }
-    } else {
-      const items = buildItemsForQuestion(question);
-      const value = await ctx.ui.select(question.question, [
-        ...items.map((item) => item.label),
+      const title = question.options.some(
+        (option) => option.preview !== undefined && option.preview.length > 0,
+      )
+        ? `${question.question}\n\n${optionList}`
+        : question.question;
+      const value = await ctx.ui.select(title, [
+        ...question.options.map((option) => option.label),
+        displayLabel("other"),
         displayLabel("chat"),
       ]);
-      if (value !== undefined) {
+      if (value === displayLabel("other")) {
+        const customValue = await ctx.ui.input(question.question);
+        if (customValue !== undefined) {
+          answer = {
+            questionIndex,
+            question: question.question,
+            kind: "custom",
+            answer: customValue,
+          };
+        }
+      } else if (value !== undefined) {
         answer = questionAnswerFromRpcValue(question, questionIndex, value);
       }
     }

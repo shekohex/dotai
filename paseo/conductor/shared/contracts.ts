@@ -1,16 +1,24 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
+import { ticketPrefixSchema } from "./progress.js";
+
 export const createConductorRpc = defineRpc({
   name: "conductor.create",
   input: z
     .object({
-      workspaceId: z.string().min(1),
+      projectId: z.string().min(1),
+      /** Base branch for a new worktree; empty means the project's default. */
+      branch: z.string().trim().optional(),
+      /** true cuts a fresh worktree; false opens a new workspace on the project's main checkout. */
+      newWorktree: z.boolean(),
       provider: z.string().min(1),
       model: z.string().optional(),
       thinkingOptionId: z.string().optional(),
       title: z.string().min(1),
       prompt: z.string().optional(),
+      /** How ticket ids read (AI for AI-01); default T. */
+      ticketPrefix: ticketPrefixSchema.optional(),
     })
     .strict(),
   output: z.object({ agentId: z.string() }).strict(),

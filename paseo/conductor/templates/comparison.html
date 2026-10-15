@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Comparison: Search providers</title>
+    <!-- Conductor template. Self-contained: keep assets next to this file and link them by relative path. -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --surface: #fafafa;
+        --surface-2: #f4f4f5;
+        --surface-3: #e4e4e7;
+        --fg: #1a1a1e;
+        --muted: #71717a;
+        --faint: #a1a1aa;
+        --border: #e4e4e7;
+        --accent: #20744a;
+        --accent-soft: #20744a14;
+        --accent-fg: #ffffff;
+        --ok: #20744a;
+        --warn: #b7791f;
+        --bad: #b04138;
+        --info: #2563eb;
+        --radius: 12px;
+        --radius-sm: 8px;
+        --font:
+          Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #141716;
+          --surface: #181b1a;
+          --surface-2: #1e2120;
+          --surface-3: #272a29;
+          --fg: #eceeed;
+          --muted: #a1a5a4;
+          --faint: #717574;
+          --border: #252b2a;
+          --accent: #7ccba0;
+          --accent-soft: #7ccba01a;
+          --accent-fg: #0f1211;
+          --ok: #7ccba0;
+          --warn: #e0b25c;
+          --bad: #e07a6f;
+          --info: #7aa7f0;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.6 var(--font);
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 40px 24px 80px;
+      }
+      header.top {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 32px;
+      }
+      .eyebrow {
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      h1 {
+        font-size: clamp(28px, 4vw, 38px);
+        line-height: 1.15;
+        margin: 0;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        font-size: 22px;
+        line-height: 1.3;
+        margin: 0 0 12px;
+        letter-spacing: -0.01em;
+      }
+      h3 {
+        font-size: 17px;
+        margin: 0 0 6px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      .lede {
+        font-size: 18px;
+        color: var(--muted);
+        max-width: 68ch;
+      }
+      a {
+        color: var(--accent);
+      }
+      code {
+        font: 14px/1.5 var(--mono);
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1px 5px;
+      }
+      pre {
+        font: 14px/1.55 var(--mono);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 14px 16px;
+        overflow: auto;
+      }
+      pre code {
+        background: none;
+        border: 0;
+        padding: 0;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+      }
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface-2);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .chip.ok {
+        color: var(--ok);
+        border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+        background: color-mix(in srgb, var(--ok) 10%, transparent);
+      }
+      .chip.warn {
+        color: var(--warn);
+        border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+        background: color-mix(in srgb, var(--warn) 10%, transparent);
+      }
+      .chip.bad {
+        color: var(--bad);
+        border-color: color-mix(in srgb, var(--bad) 40%, transparent);
+        background: color-mix(in srgb, var(--bad) 10%, transparent);
+      }
+      .chip.info {
+        color: var(--info);
+        border-color: color-mix(in srgb, var(--info) 40%, transparent);
+        background: color-mix(in srgb, var(--info) 10%, transparent);
+      }
+      .callout {
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--accent);
+        background: var(--accent-soft);
+        border-radius: var(--radius-sm);
+        padding: 12px 16px;
+      }
+      .callout.warn {
+        border-left-color: var(--warn);
+        background: color-mix(in srgb, var(--warn) 8%, transparent);
+      }
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+        font-size: 15px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th {
+        background: var(--surface-2);
+        font-size: 13px;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      .table-scroll {
+        overflow-x: auto;
+      }
+      footer {
+        margin-top: 48px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+        color: var(--faint);
+        font-size: 13px;
+      }
+      @media (max-width: 600px) {
+        .wrap {
+          padding: 24px 16px 56px;
+        }
+        .card {
+          padding: 16px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+
+      .options {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        margin-bottom: 32px;
+      }
+      .option {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        position: relative;
+      }
+      .option.pick {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent);
+      }
+      .option .badge {
+        position: absolute;
+        top: -11px;
+        left: 16px;
+        background: color-mix(in srgb, var(--ok) 14%, var(--surface));
+      }
+      .option .price {
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .option ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 15px;
+      }
+      .option li {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: 8px;
+      }
+      .option li.pro::before {
+        content: "+";
+        color: var(--ok);
+        font-weight: 700;
+      }
+      .option li.con::before {
+        content: "–";
+        color: var(--bad);
+        font-weight: 700;
+      }
+      .yes {
+        color: var(--ok);
+        font-weight: 600;
+      }
+      .no {
+        color: var(--bad);
+        font-weight: 600;
+      }
+      .meh {
+        color: var(--warn);
+        font-weight: 600;
+      }
+      section {
+        margin-bottom: 36px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <span class="eyebrow">Comparison</span>
+        <h1>Which search provider should we use?</h1>
+        <p class="lede">
+          Three options side by side, with a recommendation.
+          <!-- EDIT -->
+        </p>
+        <div class="meta"><span>Question Q4</span><span>Ticket T02</span></div>
+      </header>
+      <div class="options">
+        <!-- EDIT: one .option per choice; add class "pick" to the recommended one. -->
+        <article class="option pick">
+          <span class="chip ok badge">Recommended</span>
+          <h3>A · Hosted index</h3>
+          <div class="price">
+            $49<span
+              style="font-size: 15px; color: var(--muted); font-weight: 500"
+            >
+              / month</span
+            >
+          </div>
+          <ul>
+            <li class="pro">Live in a day</li>
+            <li class="pro">Typo tolerance built in</li>
+            <li class="con">Data leaves our servers</li>
+          </ul>
+        </article>
+        <article class="option">
+          <h3>B · Postgres full text</h3>
+          <div class="price">$0</div>
+          <ul>
+            <li class="pro">No new service</li>
+            <li class="con">Weak ranking</li>
+            <li class="con">No typo tolerance</li>
+          </ul>
+        </article>
+        <article class="option">
+          <h3>C · Self-hosted engine</h3>
+          <div class="price">
+            ~$20<span
+              style="font-size: 15px; color: var(--muted); font-weight: 500"
+            >
+              / month</span
+            >
+          </div>
+          <ul>
+            <li class="pro">Data stays with us</li>
+            <li class="con">We run and upgrade it</li>
+          </ul>
+        </article>
+      </div>
+      <section>
+        <h2>Side by side</h2>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Need</th>
+                <th>A</th>
+                <th>B</th>
+                <th>C</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Results under 100 ms</td>
+                <td class="yes">Yes</td>
+                <td class="meh">Mostly</td>
+                <td class="yes">Yes</td>
+              </tr>
+              <tr>
+                <td>Handles typos</td>
+                <td class="yes">Yes</td>
+                <td class="no">No</td>
+                <td class="yes">Yes</td>
+              </tr>
+              <tr>
+                <td>Data stays in-house</td>
+                <td class="no">No</td>
+                <td class="yes">Yes</td>
+                <td class="yes">Yes</td>
+              </tr>
+              <tr>
+                <td>Effort to run</td>
+                <td class="yes">None</td>
+                <td class="yes">None</td>
+                <td class="meh">Some</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section>
+        <h2>Recommendation</h2>
+        <div class="callout">
+          <strong>Pick A</strong> now for speed; revisit C if data residency
+          becomes a requirement.
+        </div>
+      </section>
+      <footer>Made with a Conductor template</footer>
+    </div>
+  </body>
+</html>

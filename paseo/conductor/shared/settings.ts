@@ -11,6 +11,14 @@ export const conductorSettings = defineSettings({
       lastModel: z.string().default(""),
       lastThinkingOptionId: z.string().default(""),
       lastWorkspaceId: z.string().default(""),
+      lastProjectId: z.string().default(""),
+      lastNewWorktree: z.boolean().default(false),
+      /** Nudge an agent whose working ticket has had no progress update for a while. */
+      checkIns: z.boolean().default(true),
+      checkInMinutes: z.number().int().min(5).max(120).default(15),
+      /** Tell the conductor when a ticket stays blocked or stuck this long. */
+      escalate: z.boolean().default(true),
+      escalateMinutes: z.number().int().min(2).max(120).default(10),
     })
     .strict(),
 });

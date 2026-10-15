@@ -11,7 +11,14 @@ export const SPACING = {
   6: 24,
   8: 32,
 } as const;
-export const FONT_SIZE = { sm: 12, base: 14 } as const;
+export const FONT_SIZE: Readonly<Record<"sm" | "base", number>> = {
+  sm: 12,
+  base: 14,
+};
+/** Larger scale for the progress dashboard, read at a glance beside the chat. Nothing below 13. */
+export const PROGRESS_FONT: Readonly<
+  Record<"small" | "secondary" | "body" | "section" | "title", number>
+> = { small: 13, secondary: 14, body: 16, section: 17, title: 19 };
 export const ICON_SIZE = { sm: 14, md: 16 } as const;
 export const LIST_WIDTH = 320;
 export const DETAIL_MAX_WIDTH = 720;
@@ -106,3 +113,57 @@ export function createStyles(theme: PluginTheme, compact: boolean) {
 }
 
 export type Styles = ReturnType<typeof createStyles>;
+
+/** The shared styles with the progress type scale applied. */
+export function createProgressStyles(theme: PluginTheme, compact: boolean) {
+  const { colors } = theme;
+  const base = createStyles(theme, compact);
+  const sized = StyleSheet.create({
+    rowTitle: {
+      color: colors.foreground,
+      fontSize: PROGRESS_FONT.body,
+      lineHeight: 22,
+    },
+    rowHint: {
+      color: colors.foregroundMuted,
+      fontSize: PROGRESS_FONT.secondary,
+      lineHeight: 20,
+      marginTop: SPACING[1],
+    },
+    rowError: {
+      color: colors.statusDanger,
+      fontSize: PROGRESS_FONT.secondary,
+      marginTop: SPACING[1],
+    },
+    title: {
+      color: colors.foreground,
+      fontSize: PROGRESS_FONT.body,
+      fontWeight: "600",
+      flexShrink: 1,
+    },
+    muted: { color: colors.foregroundMuted, fontSize: PROGRESS_FONT.secondary },
+    success: { color: colors.statusSuccess, fontSize: PROGRESS_FONT.secondary },
+    warning: { color: colors.statusWarning, fontSize: PROGRESS_FONT.secondary },
+    danger: { color: colors.statusDanger, fontSize: PROGRESS_FONT.secondary },
+    empty: {
+      color: colors.foregroundMuted,
+      fontSize: PROGRESS_FONT.body,
+      textAlign: "center",
+      paddingVertical: SPACING[8],
+    },
+    modalText: {
+      color: colors.foregroundMuted,
+      fontSize: PROGRESS_FONT.body,
+      lineHeight: 23,
+    },
+    runTitle: {
+      color: colors.foreground,
+      fontSize: PROGRESS_FONT.title,
+      fontWeight: "600",
+      lineHeight: 26,
+    },
+  });
+  return { ...base, ...sized };
+}
+
+export type ProgressStyles = ReturnType<typeof createProgressStyles>;

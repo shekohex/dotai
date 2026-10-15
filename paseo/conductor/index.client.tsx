@@ -1,8 +1,11 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 
-import { ConductorPanel } from "./client/panel.js";
+import { ConductorPanel, ProgressPanel } from "./client/panel.js";
 import { ConductorsScreen } from "./client/screens.js";
+import { contributeProgressPills } from "./client/progress/pill.js";
+import { ConductorSettingsScreen } from "./client/settings.js";
 import { ConductorsSidebarItem } from "./client/sidebar.js";
+import { contributeTimeline } from "./client/timeline.js";
 
 export default function contribute(client: PluginClientContext) {
   const cleanups = [
@@ -10,6 +13,12 @@ export default function contribute(client: PluginClientContext) {
       id: "conductors",
       title: "Conductors",
       Component: ConductorsScreen,
+    }),
+    client.addSettingsScreen({
+      id: "conductor",
+      title: "Conductor",
+      icon: "Workflow",
+      Component: ConductorSettingsScreen,
     }),
     client.addSidebarHeaderItem({
       id: "conductors",
@@ -20,9 +29,17 @@ export default function contribute(client: PluginClientContext) {
       id: "conductor",
       title: "Conductor",
       icon: "Workflow",
-      context: "agent",
+      context: "workspace",
       locations: ["workspace", "explorer"],
       Component: ConductorPanel,
+    }),
+    client.addWorkspacePanel({
+      id: "progress",
+      title: "Progress",
+      icon: "ListChecks",
+      context: "workspace",
+      locations: ["workspace", "explorer"],
+      Component: ProgressPanel,
     }),
     client.addCommandCenterItem({
       id: "new-conductor",
@@ -44,7 +61,7 @@ export default function contribute(client: PluginClientContext) {
     }),
     client.addCommandCenterItem({
       id: "new-conductor-here",
-      title: "Start conductor in this workspace",
+      title: "Start conductor in this project",
       icon: "Workflow",
       keywords: ["coordinator", "hub", "orchestrate"],
       context: "workspace",
@@ -58,11 +75,23 @@ export default function contribute(client: PluginClientContext) {
       id: "open-conductor-panel",
       title: "Open conductor panel",
       icon: "Workflow",
-      context: "agent",
+      context: "workspace",
       onSelect: ({ openPanel }) => openPanel("conductor"),
     }),
+    client.addCommandCenterItem({
+      id: "open-progress-panel",
+      title: "Open conductor progress",
+      icon: "ListChecks",
+      keywords: ["progress", "tickets", "dashboard"],
+      context: "workspace",
+      onSelect: ({ openPanel }) => openPanel("progress"),
+    }),
   ];
+  const removePills = contributeProgressPills(client);
+  const removeTimeline = contributeTimeline(client);
   return () => {
+    removePills();
+    removeTimeline();
     for (const cleanup of cleanups) cleanup();
   };
 }

@@ -5,6 +5,8 @@ export interface ConductorPaths {
   root: string;
   sharedMemoryDir: string;
   ledgerFile: string;
+  /** Copies of the HTML page templates agents may fill and deliver. */
+  templatesDir: string;
   conductorDir(conductorId: string): string;
 }
 
@@ -16,6 +18,7 @@ export function resolveConductorPaths(
     root,
     sharedMemoryDir: path.join(root, "memory"),
     ledgerFile: path.join(root, "ledger.json"),
+    templatesDir: path.join(root, "templates"),
     conductorDir: (conductorId) => path.join(root, "conductors", conductorId),
   };
 }

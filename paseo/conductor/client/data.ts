@@ -2,7 +2,11 @@ import { usePaseo } from "@getpaseo/plugin/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-import { conductorLabels, PARENT_AGENT_LABEL } from "../shared/labels.js";
+import {
+  conductorLabels,
+  PARENT_AGENT_LABEL,
+  workspaceConductorIds,
+} from "../shared/labels.js";
 
 type PaseoApi = ReturnType<typeof usePaseo>;
 export type AgentSnapshot = Awaited<
@@ -54,6 +58,23 @@ export function useWorkers(conductorId: string) {
     queryKey: ["conductor", "workers", conductorId],
     queryFn: () =>
       listActiveAgents(paseo, { [PARENT_AGENT_LABEL]: conductorId }),
+    refetchInterval: REFETCH_MS,
+  });
+}
+
+/** Conductors working in a workspace, directly or through workers; most recently active first. */
+export function useWorkspaceConductors(workspaceId: string) {
+  const paseo = usePaseo();
+  useAgentUpdates();
+  return useQuery({
+    queryKey: ["conductor", "workspace-conductors", workspaceId],
+    queryFn: async () =>
+      workspaceConductorIds(
+        (await paseo.agents.list({ page: { limit: 200 } })).entries
+          .map((entry) => entry.agent)
+          .filter((agent) => !agent.archivedAt),
+        workspaceId,
+      ),
     refetchInterval: REFETCH_MS,
   });
 }

@@ -11,9 +11,13 @@
     "format:write": "prettier --write .",
     "lint": "oxlint --deny-warnings index.client.tsx index.server.ts client server shared",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "templates": "node scripts/build-templates.mjs"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "express": "^5.1.0"
+  },
   "devDependencies": {
     "@getpaseo/client": "0.11.0",
     "@getpaseo/plugin": "0.11.0",
@@ -27,6 +31,7 @@
     "react-native": "^0.81.5",
     "typescript": "^5.9.2",
     "vitest": "^5.0.1",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@types/express": "^5.0.3"
   }
 }

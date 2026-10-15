@@ -4,6 +4,7 @@ import { SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
 import { Text, View } from "react-native";
 
 import { useConductors, useWorkers } from "./data.js";
+import { ProgressView } from "./progress/view.js";
 import { MemorySections } from "./memory-sections.js";
 import { EmptyRow, NavigationRow } from "./rows.js";
 import type { Styles } from "./styles.js";
@@ -68,6 +69,13 @@ export function ConductorDetail({
           )}
         </SettingsCard>
       </SettingsSection>
+
+      <ProgressView
+        conductorId={conductorId}
+        theme={theme}
+        workspaceId={conductor?.workspaceId ?? undefined}
+        navigation={navigation}
+      />
 
       {groups.length === 0 ? (
         <SettingsSection title="Workers">

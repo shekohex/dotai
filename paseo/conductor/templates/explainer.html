@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Explainer: How the sync engine works</title>
+    <!-- Conductor template. Self-contained: keep assets next to this file and link them by relative path. -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --surface: #fafafa;
+        --surface-2: #f4f4f5;
+        --surface-3: #e4e4e7;
+        --fg: #1a1a1e;
+        --muted: #71717a;
+        --faint: #a1a1aa;
+        --border: #e4e4e7;
+        --accent: #20744a;
+        --accent-soft: #20744a14;
+        --accent-fg: #ffffff;
+        --ok: #20744a;
+        --warn: #b7791f;
+        --bad: #b04138;
+        --info: #2563eb;
+        --radius: 12px;
+        --radius-sm: 8px;
+        --font:
+          Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #141716;
+          --surface: #181b1a;
+          --surface-2: #1e2120;
+          --surface-3: #272a29;
+          --fg: #eceeed;
+          --muted: #a1a5a4;
+          --faint: #717574;
+          --border: #252b2a;
+          --accent: #7ccba0;
+          --accent-soft: #7ccba01a;
+          --accent-fg: #0f1211;
+          --ok: #7ccba0;
+          --warn: #e0b25c;
+          --bad: #e07a6f;
+          --info: #7aa7f0;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.6 var(--font);
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 40px 24px 80px;
+      }
+      header.top {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 32px;
+      }
+      .eyebrow {
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      h1 {
+        font-size: clamp(28px, 4vw, 38px);
+        line-height: 1.15;
+        margin: 0;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        font-size: 22px;
+        line-height: 1.3;
+        margin: 0 0 12px;
+        letter-spacing: -0.01em;
+      }
+      h3 {
+        font-size: 17px;
+        margin: 0 0 6px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      .lede {
+        font-size: 18px;
+        color: var(--muted);
+        max-width: 68ch;
+      }
+      a {
+        color: var(--accent);
+      }
+      code {
+        font: 14px/1.5 var(--mono);
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1px 5px;
+      }
+      pre {
+        font: 14px/1.55 var(--mono);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 14px 16px;
+        overflow: auto;
+      }
+      pre code {
+        background: none;
+        border: 0;
+        padding: 0;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+      }
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface-2);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .chip.ok {
+        color: var(--ok);
+        border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+        background: color-mix(in srgb, var(--ok) 10%, transparent);
+      }
+      .chip.warn {
+        color: var(--warn);
+        border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+        background: color-mix(in srgb, var(--warn) 10%, transparent);
+      }
+      .chip.bad {
+        color: var(--bad);
+        border-color: color-mix(in srgb, var(--bad) 40%, transparent);
+        background: color-mix(in srgb, var(--bad) 10%, transparent);
+      }
+      .chip.info {
+        color: var(--info);
+        border-color: color-mix(in srgb, var(--info) 40%, transparent);
+        background: color-mix(in srgb, var(--info) 10%, transparent);
+      }
+      .callout {
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--accent);
+        background: var(--accent-soft);
+        border-radius: var(--radius-sm);
+        padding: 12px 16px;
+      }
+      .callout.warn {
+        border-left-color: var(--warn);
+        background: color-mix(in srgb, var(--warn) 8%, transparent);
+      }
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+        font-size: 15px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th {
+        background: var(--surface-2);
+        font-size: 13px;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      .table-scroll {
+        overflow-x: auto;
+      }
+      footer {
+        margin-top: 48px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+        color: var(--faint);
+        font-size: 13px;
+      }
+      @media (max-width: 600px) {
+        .wrap {
+          padding: 24px 16px 56px;
+        }
+        .card {
+          padding: 16px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 200px 1fr;
+        gap: 40px;
+        align-items: start;
+      }
+      nav.toc {
+        position: sticky;
+        top: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 14px;
+      }
+      nav.toc a {
+        color: var(--muted);
+        text-decoration: none;
+        padding: 6px 10px;
+        border-radius: 6px;
+        border-left: 2px solid transparent;
+      }
+      nav.toc a:hover {
+        background: var(--surface-2);
+        color: var(--fg);
+      }
+      nav.toc a.active {
+        color: var(--fg);
+        border-left-color: var(--accent);
+        background: var(--surface-2);
+      }
+      section {
+        scroll-margin-top: 24px;
+        margin-bottom: 40px;
+      }
+      .steps {
+        counter-reset: step;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 0;
+        list-style: none;
+      }
+      .steps li {
+        counter-increment: step;
+        display: grid;
+        grid-template-columns: 32px 1fr;
+        gap: 12px;
+      }
+      .steps li::before {
+        content: counter(step);
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 700;
+        font-size: 14px;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 8px;
+      }
+      .diagram {
+        width: 100%;
+        height: auto;
+      }
+      .diagram .box {
+        fill: var(--surface-2);
+        stroke: var(--border);
+      }
+      .diagram .box.hot {
+        fill: var(--accent-soft);
+        stroke: var(--accent);
+      }
+      .diagram text {
+        fill: var(--fg);
+        font: 600 14px var(--font);
+      }
+      .diagram .sub {
+        fill: var(--muted);
+        font-weight: 400;
+        font-size: 12px;
+      }
+      .diagram .edge {
+        stroke: var(--faint);
+        stroke-width: 1.5;
+        fill: none;
+        marker-end: url(#arrow);
+      }
+      @media (max-width: 800px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        nav.toc {
+          position: static;
+          flex-direction: row;
+          flex-wrap: wrap;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <span class="eyebrow">Explainer</span>
+        <h1>How the sync engine works</h1>
+        <p class="lede">
+          One page, plain words: what happens between a change on one device and
+          the same change on another.
+          <!-- EDIT: one-sentence promise of the page -->
+        </p>
+        <div class="meta">
+          <span>Ticket T03</span><span>Updated 2026-10-16</span
+          ><span class="chip ok">Reviewed</span>
+        </div>
+      </header>
+      <div class="layout">
+        <nav class="toc" aria-label="On this page">
+          <a href="#summary">Summary</a>
+          <a href="#flow">The flow</a>
+          <a href="#diagram">Diagram</a>
+          <a href="#details">Details</a>
+          <a href="#risks">Risks</a>
+        </nav>
+        <main>
+          <section id="summary">
+            <h2>Summary</h2>
+            <div class="callout">
+              <strong>In short:</strong> every change is written locally first,
+              queued, and sent in small batches; the server orders them and fans
+              them out.
+            </div>
+          </section>
+          <section id="flow">
+            <h2>The flow</h2>
+            <ol class="steps">
+              <li>
+                <div>
+                  <h3>Write locally</h3>
+                  <p>
+                    The app saves the change on the device right away, so it
+                    never waits on the network.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <div>
+                  <h3>Queue and batch</h3>
+                  <p>
+                    Changes wait in a queue and leave every 2 seconds, or sooner
+                    when 50 pile up.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <div>
+                  <h3>Order on the server</h3>
+                  <p>
+                    The server stamps each batch with a sequence number, so
+                    every device applies changes in the same order.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <div>
+                  <h3>Fan out</h3>
+                  <p>
+                    Other devices get the batch over a live connection and apply
+                    it.
+                  </p>
+                </div>
+              </li>
+            </ol>
+          </section>
+          <section id="diagram">
+            <h2>Diagram</h2>
+            <figure class="card">
+              <svg
+                class="diagram"
+                viewBox="0 0 720 200"
+                role="img"
+                aria-label="Device to queue to server to other devices"
+              >
+                <defs>
+                  <marker
+                    id="arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M0 0L10 5L0 10z"
+                      fill="currentColor"
+                      style="color: var(--faint)"
+                    />
+                  </marker>
+                </defs>
+                <rect
+                  class="box"
+                  x="10"
+                  y="70"
+                  width="140"
+                  height="60"
+                  rx="10"
+                />
+                <text x="80" y="98" text-anchor="middle">Device A</text>
+                <text class="sub" x="80" y="116" text-anchor="middle">
+                  local write
+                </text>
+                <rect
+                  class="box"
+                  x="200"
+                  y="70"
+                  width="140"
+                  height="60"
+                  rx="10"
+                />
+                <text x="270" y="98" text-anchor="middle">Queue</text>
+                <text class="sub" x="270" y="116" text-anchor="middle">
+                  2 s or 50 items
+                </text>
+                <rect
+                  class="box hot"
+                  x="390"
+                  y="70"
+                  width="140"
+                  height="60"
+                  rx="10"
+                />
+                <text x="460" y="98" text-anchor="middle">Server</text>
+                <text class="sub" x="460" y="116" text-anchor="middle">
+                  orders batches
+                </text>
+                <rect
+                  class="box"
+                  x="580"
+                  y="20"
+                  width="130"
+                  height="60"
+                  rx="10"
+                />
+                <text x="645" y="55" text-anchor="middle">Device B</text>
+                <rect
+                  class="box"
+                  x="580"
+                  y="120"
+                  width="130"
+                  height="60"
+                  rx="10"
+                />
+                <text x="645" y="155" text-anchor="middle">Device C</text>
+                <path class="edge" d="M150 100H198" />
+                <path class="edge" d="M340 100H388" />
+                <path class="edge" d="M530 92C555 80 560 55 578 52" />
+                <path class="edge" d="M530 108C555 120 560 145 578 148" />
+              </svg>
+              <figcaption>
+                Changes flow left to right; the highlighted step decides the
+                order.
+              </figcaption>
+            </figure>
+          </section>
+          <section id="details">
+            <h2>Details</h2>
+            <p>
+              The queue survives restarts because it lives in the local
+              database. A batch that fails is retried with backoff:
+            </p>
+            <pre><code>retry delay = min(30 s, 1 s × 2^attempt)</code></pre>
+          </section>
+          <section id="risks">
+            <h2>Risks</h2>
+            <div class="callout warn">
+              Two devices editing the same field offline: the later batch wins.
+              Fine for titles, not for counters.
+            </div>
+          </section>
+          <footer>Made with a Conductor template</footer>
+        </main>
+      </div>
+    </div>
+    <script>
+      // Highlight the section in view in the table of contents.
+      const links = [...document.querySelectorAll("nav.toc a")];
+      const io = new IntersectionObserver(
+        (es) => {
+          for (const e of es)
+            if (e.isIntersecting) {
+              links.forEach((a) =>
+                a.classList.toggle(
+                  "active",
+                  a.getAttribute("href") === "#" + e.target.id,
+                ),
+              );
+            }
+        },
+        { rootMargin: "-30% 0px -60% 0px" },
+      );
+      document.querySelectorAll("main section").forEach((s) => io.observe(s));
+    </script>
+  </body>
+</html>

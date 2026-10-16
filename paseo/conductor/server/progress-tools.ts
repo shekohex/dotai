@@ -42,28 +42,43 @@ export const CAPABILITY_URL_ENV = "CONDUCTOR_PROGRESS_URL";
 
 type Lifecycle = "accepting" | "closing" | "closed";
 
-/** Finds the conductor an agent works for: itself, or the nearest conductor ancestor. */
+/**
+ * The conductor an agent works for (itself or the nearest conductor ancestor), or why there is
+ * none. "unregistered": Paseo has no record of the agent yet. Pi connects its MCP servers inside
+ * session creation, before Paseo registers the agent with its parent, so this is not "no".
+ */
+export type Resolution =
+  | { conductorId: string }
+  | {
+      conductorId: null;
+      reason: "unregistered" | "no conductor" | "paseo not attached";
+    };
+
 export async function resolveConductorId(
   paseo: PaseoApi,
   agentId: string,
-): Promise<string | null> {
+): Promise<Resolution> {
   let current = agentId;
   for (let hop = 0; hop < MAX_PARENT_HOPS; hop += 1) {
     const snapshot = (await paseo.agents.ref(current).refresh())?.agent;
-    if (!snapshot) return null;
+    if (!snapshot)
+      return {
+        conductorId: null,
+        reason: hop === 0 ? "unregistered" : "no conductor",
+      };
     const labels = snapshot.labels ?? {};
-    if (isConductor(labels)) return current;
+    if (isConductor(labels)) return { conductorId: current };
     const parent = labels[PARENT_AGENT_LABEL];
-    if (!parent) return null;
+    if (!parent) return { conductorId: null, reason: "no conductor" };
     current = parent;
   }
-  return null;
+  return { conductorId: null, reason: "no conductor" };
 }
 
 interface RegistryFile {
   port?: number;
   tokens: Record<string, string>;
-  /** agentId -> conductorId; parent labels never change, so a resolved link stays valid. */
+  /** agentId -> conductorId; parents never change, so a link stays valid until an archive. */
   conductors?: Record<string, string>;
 }
 
@@ -170,33 +185,49 @@ export class ProgressToolServer {
     this.lifecycle = "closed";
   }
 
-  /** Caches the agent's conductor early so its tool keeps working across plugin reloads. */
+  /** Caches the agent's conductor once Paseo has registered it, so reloads keep its tool. */
   async warm(agentId: string): Promise<void> {
-    await this.conductorOf(agentId);
+    await this.resolve(agentId);
   }
 
-  /** The agent's conductor: cached, else walked up the parent chain once Paseo is attached. */
-  private async conductorOf(agentId: string): Promise<string | null> {
+  /** Drops links to or from an archived agent; anything still live resolves again on use. */
+  async forget(agentId: string): Promise<void> {
+    let changed = false;
+    for (const [agent, conductor] of this.conductors)
+      if (agent === agentId || conductor === agentId) {
+        this.conductors.delete(agent);
+        changed = true;
+      }
+    if (changed) await this.persist();
+  }
+
+  /** Cached links only; "no" is never cached, since the answer can still change to yes. */
+  private async resolve(agentId: string): Promise<Resolution> {
     const cached = this.conductors.get(agentId);
-    if (cached) return cached;
-    if (!this.paseo) return null;
-    const conductorId = await resolveConductorId(this.paseo, agentId).catch(
-      () => null,
+    if (cached) return { conductorId: cached };
+    if (!this.paseo) return { conductorId: null, reason: "paseo not attached" };
+    const resolution = await resolveConductorId(this.paseo, agentId).catch(
+      (): Resolution => ({ conductorId: null, reason: "unregistered" }),
     );
-    if (conductorId) {
-      this.conductors.set(agentId, conductorId);
+    if (resolution.conductorId) {
+      this.conductors.set(agentId, resolution.conductorId);
       await this.persist();
     }
-    return conductorId;
+    return resolution;
+  }
+
+  private async conductorOf(agentId: string): Promise<string | null> {
+    return (await this.resolve(agentId)).conductorId;
   }
 
   /**
-   * Agents outside any conductor get an empty tool list, so they pay no schema tokens.
-   * Paseo's create hooks cannot see a parent, so this is the earliest point we can decide.
-   * Calls are still served: right after a plugin reload Paseo may not be attached yet, and an
-   * agent that listed the tool earlier should get a clear error rather than "Method not found".
+   * Agents known to be outside any conductor get an empty tool list, so they pay no schema
+   * tokens. When we can't tell yet (the agent isn't registered, or Paseo isn't attached after a
+   * reload) the tool is listed and gated per call instead: clients like Pi list tools once, while
+   * the agent is still being created, and keep that list for the whole session.
    */
-  private createMcp(agentId: string, conductorId: string | null): McpServer {
+  private createMcp(agentId: string, resolution: Resolution): McpServer {
+    const conductorId = resolution.conductorId;
     const mcp = new McpServer(
       { name: PROGRESS_MCP_SERVER, version: "0.1.0" },
       { capabilities: { tools: {}, resources: {} } },
@@ -274,10 +305,16 @@ export class ProgressToolServer {
         return { contents: [{ uri: uri.href, mimeType: "text/plain", text }] };
       },
     );
-    if (!conductorId) {
-      mcp.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-        tools: [],
-      }));
+    if (
+      resolution.conductorId === null &&
+      resolution.reason === "no conductor"
+    ) {
+      mcp.server.setRequestHandler(ListToolsRequestSchema, async () => {
+        console.log(
+          `Conductor progress tool hidden from ${agentId}: no conductor in its parent chain`,
+        );
+        return { tools: [] };
+      });
       mcp.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
         resources: [],
       }));
@@ -293,13 +330,26 @@ export class ProgressToolServer {
     const token = z.string().min(1).safeParse(request.params.token);
     const agentId = token.success ? this.tokens.get(token.data) : undefined;
     if (this.lifecycle !== "accepting" || !agentId) {
+      if (this.lifecycle === "accepting")
+        console.log(
+          `Conductor progress tool: unknown token ${token.success ? `${token.data.slice(0, 6)}…` : "(none)"}, its agent was created before this registry or never opened a session`,
+        );
       response
         .status(this.lifecycle === "accepting" ? 404 : 503)
         .json({ error: "Unknown progress capability" });
       return;
     }
-    const conductorId = await this.conductorOf(agentId);
-    const mcp = this.createMcp(agentId, conductorId);
+    const resolution = await this.resolve(agentId);
+    if (
+      resolution.conductorId === null &&
+      resolution.reason !== "no conductor" &&
+      (request.body as { method?: unknown } | undefined)?.method ===
+        "tools/list"
+    )
+      console.log(
+        `Conductor progress tool served gated to ${agentId}: ${resolution.reason}, checked again per call`,
+      );
+    const mcp = this.createMcp(agentId, resolution);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableDnsRebindingProtection: false,

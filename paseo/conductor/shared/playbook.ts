@@ -50,7 +50,7 @@ Never implement, edit product code, or run long builds/tests yourself. Small rea
   boundary, acceptance criteria, validation to run, and expected final report. Workers do not see
   this conversation.
 - Tell every worker: do not spawn sub-agents; ask the conductor instead. Tell it to record its own
-  stage changes and blockers with the \`progress\` tool using its ticket id (as op=show prints it). End with a concise final
+  stage changes and blockers with the \`progress\` tool (\`mcp__conductor__progress\`; Pi workers find it via tool_search) using its ticket id (as op=show prints it). End with a concise final
   report: outcome, changed files, validation results, open risks, PR link if any.
 - Wrap every prompt you send a worker (the \`create_agent\` prompt and each \`send_agent_prompt\`) in
   \`<conductor-brief>\` ... \`</conductor-brief>\`; the app shows it as a compact card.

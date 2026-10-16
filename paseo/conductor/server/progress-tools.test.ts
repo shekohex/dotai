@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -122,5 +122,89 @@ describe("ProgressToolServer", () => {
     const reply = await call(lonerUrl, { op: "show" });
     expect(reply.isError).toBe(true);
     expect(JSON.stringify(reply)).toContain("not working under a conductor");
+  });
+
+  it("lists the tool to an agent Paseo hasn't registered yet, then routes calls once it has", async () => {
+    const paths = resolveConductorPaths(
+      await mkdtemp(path.join(os.tmpdir(), "tools-")),
+    );
+    const store = new ProgressStore(paths);
+    server = new ProgressToolServer(paths, store);
+    server.attach(fakePaseo);
+    await server.start();
+    // Pi lists tools inside session creation: bound, but no agent record or parent label yet.
+    const url = server.reserve();
+    await server.bind(url, "pi-worker");
+    const client = new Client({ name: "pi", version: "1" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+      "progress",
+    ]);
+    const early = await client.callTool({
+      name: "progress",
+      arguments: { op: "show" },
+    });
+    expect(early.isError).toBe(true);
+    expect(JSON.stringify(early)).toContain("retry");
+
+    agents["pi-worker"] = {
+      labels: { "paseo.parent-agent-id": "conductor" },
+    };
+    try {
+      expect((await client.listTools()).tools).toHaveLength(1);
+      await client.callTool({
+        name: "progress",
+        arguments: { op: "start", title: "Pi run" },
+      });
+      expect((await store.state("conductor"))?.title).toBe("Pi run");
+    } finally {
+      delete agents["pi-worker"];
+      await client.close();
+    }
+  });
+
+  it("gives a worker of the new conductor the tool after the old one is archived", async () => {
+    const paths = resolveConductorPaths(
+      await mkdtemp(path.join(os.tmpdir(), "tools-")),
+    );
+    const store = new ProgressStore(paths);
+    server = new ProgressToolServer(paths, store);
+    server.attach(fakePaseo);
+    await server.start();
+    Object.assign(agents, {
+      old: { labels: { "conductor.role": "coordinator" } },
+      "old-worker": { labels: { "paseo.parent-agent-id": "old" } },
+      next: { labels: { "conductor.role": "coordinator" } },
+    });
+    try {
+      const oldUrl = server.reserve();
+      await server.bind(oldUrl, "old-worker");
+      await server.warm("old-worker");
+      await call(oldUrl, { op: "start", title: "Old run" });
+      delete agents["old"];
+      delete agents["old-worker"];
+      await server.forget("old");
+
+      const url = server.reserve();
+      await server.bind(url, "new-worker");
+      const client = new Client({ name: "pi", version: "1" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+      expect((await client.listTools()).tools).toHaveLength(1);
+      agents["new-worker"] = { labels: { "paseo.parent-agent-id": "next" } };
+      await client.callTool({
+        name: "progress",
+        arguments: { op: "start", title: "New run" },
+      });
+      await client.close();
+      expect((await store.state("next"))?.title).toBe("New run");
+      expect((await store.state("old"))?.title).toBe("Old run");
+      const registry = JSON.parse(
+        await readFile(path.join(paths.root, "progress-tools.json"), "utf8"),
+      ) as { conductors: Record<string, string> };
+      expect(registry.conductors).toEqual({ "new-worker": "next" });
+    } finally {
+      for (const id of ["old", "old-worker", "next", "new-worker"])
+        delete agents[id];
+    }
   });
 });

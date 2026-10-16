@@ -58,6 +58,7 @@ import {
 } from "./progress-files.js";
 import { ProgressStore } from "./progress-store.js";
 import { CAPABILITY_URL_ENV, ProgressToolServer } from "./progress-tools.js";
+import { pluginBuild } from "./version.js";
 
 const TICK_MS = 60_000;
 const KICKOFF_PROMPT =
@@ -151,6 +152,9 @@ export function contributeServer(server: PluginServerContext) {
   void installTemplates(paths.templatesDir).catch((error: unknown) =>
     console.warn("Conductor could not install page templates", error),
   );
+  console.log(
+    `Conductor plugin ${pluginBuild([contributeServer, ProgressToolServer, ProgressStore])} starting`,
+  );
   const toolsReady = tools.start().catch((error: unknown) => {
     console.warn("Conductor progress tool server failed to start", error);
   });
@@ -196,13 +200,20 @@ export function contributeServer(server: PluginServerContext) {
     attach(context.paseo);
     if (event.agent.parentAgentId) void monitor.refresh();
   };
-  server.on("agent.created", observe);
+  server.on("agent.created", (event, context) => {
+    observe(event, context);
+    // Now Paseo knows the agent and its parent, so its conductor can be found and cached.
+    void tools.warm(event.agent.id);
+  });
   server.on("agent.turn_started", observe);
   server.on("agent.turn_ended", observe);
   server.on("agent.permission_requested", observe);
   server.on("agent.permission_resolved", observe);
   server.on("agent.closed", observe);
-  server.on("agent.archived", observe);
+  server.on("agent.archived", (event, context) => {
+    observe(event, context);
+    void tools.forget(event.agent.id);
+  });
 
   // Covers app/SDK creations. MCP create_workspace bypasses plugin hooks, so the playbook
   // tells conductors to do the same refresh themselves.

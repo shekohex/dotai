@@ -60,9 +60,13 @@ workspace's project selected.
 ### Progress
 
 Every agent gets a `progress` tool from a local MCP server the plugin runs under the key
-`conductor` (`mcp__conductor__progress` in Claude, `conductor.progress` in Codex). It also serves
+`conductor` (`mcp__conductor__progress` in Claude and Pi, where it is found via tool_search, `conductor.progress` in Codex). It also serves
 the guide and the live state as resources (`conductor://progress/guide`, `conductor://progress/state`).
-Agents outside a conductor see no tools or resources. The conductor and its
+Agents outside a conductor see no tools or resources. Pi lists tools while its agent is still
+being created, before Paseo records the parent, so an agent the plugin can't place yet gets the tool
+anyway, checked on each call. `paseo plugin logs conductor` says why an agent got no tool or a
+checked one ("progress tool hidden from …", "served gated to …", "unknown token"), and the startup
+line gives the build (`Conductor plugin 0.1.0 #<code hash>`) to compare machines. The conductor and its
 workers use it to record tickets, stages, questions, blockers, and deliverables. Workers resolve to
 their parent conductor, so everything lands in one shared log,
 `~/.paseo/conductor/conductors/<id>/progress.jsonl`, next to the notes. You see it live in the

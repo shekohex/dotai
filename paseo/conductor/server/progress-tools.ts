@@ -1,6 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import path from "node:path";
 
 import type { PaseoApi } from "@getpaseo/client";
@@ -11,7 +16,6 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import express, { type Request, type Response } from "express";
 import { z } from "zod";
 
 import {
@@ -122,12 +126,18 @@ export class ProgressToolServer {
     this.tokens = new Map(Object.entries(saved.tokens));
     this.conductors = new Map(Object.entries(saved.conductors ?? {}));
 
-    const app = express();
-    app.use(express.json({ limit: "1mb" }));
-    app.post("/mcp/:token", (request, response) => {
-      void this.handle(request, response);
+    const server = createServer((request, response) => {
+      const [root, token, extra] = new URL(request.url ?? "/", "http://localhost")
+        .pathname.split("/")
+        .filter(Boolean);
+      if (root !== "mcp" || !token || extra !== undefined) {
+        response.writeHead(404).end();
+      } else if (request.method !== "POST") {
+        response.writeHead(405, { allow: "POST" }).end();
+      } else {
+        void this.handle(request, response, token);
+      }
     });
-    const server = createServer(app);
     const listen = (port: number) =>
       new Promise<number>((resolve, reject) => {
         server.once("error", reject);
@@ -326,25 +336,37 @@ export class ProgressToolServer {
     return mcp;
   }
 
-  private async handle(request: Request, response: Response): Promise<void> {
-    const token = z.string().min(1).safeParse(request.params.token);
+  private async handle(
+    request: IncomingMessage,
+    response: ServerResponse,
+    rawToken: string,
+  ): Promise<void> {
+    const token = z.string().min(1).safeParse(rawToken);
     const agentId = token.success ? this.tokens.get(token.data) : undefined;
     if (this.lifecycle !== "accepting" || !agentId) {
       if (this.lifecycle === "accepting")
         console.log(
           `Conductor progress tool: unknown token ${token.success ? `${token.data.slice(0, 6)}…` : "(none)"}, its agent was created before this registry or never opened a session`,
         );
-      response
-        .status(this.lifecycle === "accepting" ? 404 : 503)
-        .json({ error: "Unknown progress capability" });
+      sendJson(response, this.lifecycle === "accepting" ? 404 : 503, {
+        error: "Unknown progress capability",
+      });
+      return;
+    }
+    const body = await readJsonBody(request);
+    if (body === BAD_BODY) {
+      sendJson(response, 400, {
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32700, message: "Parse error: invalid or oversized JSON" },
+      });
       return;
     }
     const resolution = await this.resolve(agentId);
     if (
       resolution.conductorId === null &&
       resolution.reason !== "no conductor" &&
-      (request.body as { method?: unknown } | undefined)?.method ===
-        "tools/list"
+      (body as { method?: unknown } | undefined)?.method === "tools/list"
     )
       console.log(
         `Conductor progress tool served gated to ${agentId}: ${resolution.reason}, checked again per call`,
@@ -360,10 +382,10 @@ export class ProgressToolServer {
     });
     try {
       await mcp.connect(transport);
-      await transport.handleRequest(request, response, request.body);
+      await transport.handleRequest(request, response, body);
     } catch (error) {
       if (!response.headersSent) {
-        response.status(500).json({
+        sendJson(response, 500, {
           jsonrpc: "2.0",
           id: null,
           error: {
@@ -374,4 +396,30 @@ export class ProgressToolServer {
       }
     }
   }
+}
+
+const BODY_LIMIT_BYTES = 1024 * 1024;
+const BAD_BODY = Symbol("bad body");
+
+/** The request's JSON body, or BAD_BODY when it is malformed or over the limit. */
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = chunk as Buffer;
+    size += buffer.length;
+    if (size > BODY_LIMIT_BYTES) return BAD_BODY;
+    chunks.push(buffer);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  } catch {
+    return BAD_BODY;
+  }
+}
+
+function sendJson(response: ServerResponse, status: number, body: unknown): void {
+  response
+    .writeHead(status, { "content-type": "application/json" })
+    .end(JSON.stringify(body));
 }

@@ -78,3 +78,26 @@ export function useWorkspaceConductors(workspaceId: string) {
     refetchInterval: REFETCH_MS,
   });
 }
+
+/**
+ * Every agent on the host, for titles and status anywhere. Paseo's useAgent only works inside a
+ * workspace panel; the Conductors screen and sidebar are not one, so they read this instead.
+ */
+export function useAgentDirectory() {
+  const paseo = usePaseo();
+  useAgentUpdates();
+  return useQuery({
+    queryKey: ["conductor", "agents"],
+    queryFn: async () =>
+      (await paseo.agents.list({ page: { limit: 200 } })).entries.map(
+        (entry) => entry.agent,
+      ),
+    refetchInterval: REFETCH_MS,
+  });
+}
+
+export function useAgentSnapshot(agentId: string): AgentSnapshot | null {
+  return (
+    useAgentDirectory().data?.find((agent) => agent.id === agentId) ?? null
+  );
+}

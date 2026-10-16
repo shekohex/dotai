@@ -7,7 +7,6 @@
 import {
   openExternalUrl,
   type PluginWorkspacePanelProps,
-  useAgent,
   useRpc,
 } from "@getpaseo/plugin/client";
 import {
@@ -75,6 +74,7 @@ import {
   useLastPresent,
   When,
 } from "./ui.js";
+import { useAgentSnapshot } from "../data.js";
 import { LinkedSection } from "./links.js";
 import { MentionProvider, MentionSpans } from "./mentions.js";
 
@@ -795,16 +795,16 @@ function AgentRow({
   agentId: string;
   onOpen?(agentId: string): void;
 }) {
-  const agent = useAgent(agentId, (snapshot) => ({
+  const snapshot = useAgentSnapshot(agentId);
+  if (!snapshot) return null;
+  const agent = {
     title: snapshot.title,
-    alert:
-      snapshot.requiresAttention && snapshot.attentionReason === "permission"
-        ? { text: "Needs your permission", danger: false }
-        : snapshot.status === "error"
-          ? { text: "Stopped with an error", danger: true }
-          : null,
-  }));
-  if (!agent) return null;
+    alert: snapshot.pendingPermissions.length
+      ? { text: "Needs your permission", danger: false }
+      : snapshot.status === "error"
+        ? { text: "Stopped with an error", danger: true }
+        : null,
+  };
   const title = agent.title?.trim() || "Untitled agent";
   const open = onOpen ? () => onOpen(agentId) : undefined;
   return (

@@ -2,7 +2,6 @@
  * The run's story at a glance: colored chips for tickets, labels, and agents, activity rows shaped
  * like commit messages, their details, and a ticket's timeline as a rail of steps and events.
  */
-import { useAgent } from "@getpaseo/plugin/client";
 import {
   Icon,
   ScrollView,
@@ -16,6 +15,7 @@ import {
   View,
 } from "react-native";
 
+import { useAgentSnapshot } from "../data.js";
 import { chipTone, isDarkSurface } from "../../shared/colors.js";
 import {
   type TimelineEvent,
@@ -185,7 +185,7 @@ export function useAgentLabel(
   agentId: string | undefined,
   conductorId: string,
 ): string | null {
-  const title = useAgent(agentId ?? "", (snapshot) => snapshot.title);
+  const title = useAgentSnapshot(agentId ?? "")?.title;
   if (!agentId) return null;
   if (agentId === "user") return "You";
   if (agentId === conductorId) return "Conductor";

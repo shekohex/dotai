@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2022",
+    "types": ["node", "react", "react-native"]
+  },
+  "include": [
+    "index.client.tsx",
+    "index.server.ts",
+    "client/**/*.ts",
+    "client/**/*.tsx",
+    "server/**/*.ts",
+    "shared/**/*.ts"
+  ]
+}

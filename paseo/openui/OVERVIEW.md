@@ -1,0 +1,19 @@
+Lets agents answer with interactive UI instead of long text. An agent calls a `render` tool with a short program in OpenUI Lang, and the Paseo app draws it in the conversation as native cards, tables, steps, charts, diffs, forms, images, and more, using the current theme.
+
+Every new agent gets an `openui` tool server. The agent reads a generated component guide once, then renders. The daemon checks each program and sends mistakes back to the agent so it can fix them. Buttons and forms send the user's answer back to the agent as a message. With `wait` set, the agent's call stays open until the user answers, and the answer becomes the tool result.
+
+Agents created before the plugin was installed do not have the tool. Run `/openui` in such an agent: it sends the agent a short reference, and from then on any ```openui fenced block in its replies is drawn as the same UI. Agents with the tool can use fenced blocks too.
+
+Charts (line, area, column and percent-stacked, pie and donut, scatter with bubbles and trend lines, heatmap, calendar heatmap, treemap, funnel, waterfall, histogram, box plot, candlestick, radar, gauge, sparkline) are drawn natively with hover or tap readouts, a hide/show legend, and a data-table view. Timeline, Gantt and Spinner cover history, schedules and running work. Most components take a Lucide icon, and some icons can spin, pulse or bounce.
+
+Agents can save UI for reuse. A component is one OpenUI expression with `{{prop}}` holes (and `{{#each list}}` loops), used inline as `@Use("name", {props})`. A program is a whole multi-statement program with the same holes, used as the entire UI with `@Run("name", {props})`; its props reach the components nested inside it. Both are saved with `render({define: {...}})` in scope `project` (default: `.paseo/openui/components.json` and `programs.json` in the repository the agent works in, safe to commit) or `global`. A project definition wins over a global one, and a name already taken in a scope is never replaced unless the agent passes `overwrite`: it gets the existing definition back instead.
+
+`Embed` frames a web page (https URLs, or an .html file in the project; YouTube and Vimeo links become players) and `Html` frames the agent's own HTML in a sandbox with scripts but no access to the app. They draw inline on desktop and web without any server (the page's HTML travels to the app as text), so they work when the daemon is on another machine; phones have no embedded browser, so they show a card that opens the page. Opening a page, video or file in the browser uses a short-lived file server on the daemon: through `tailscale serve` when Tailscale is available, otherwise at the machine's private network address (192.168.x.x, 10.x.x.x), otherwise localhost. The server is reachable on that network by its unguessable URL until it is closed or idle for ten minutes.
+
+Images, videos, and files are shown by path. The daemon only serves files inside the agent's working directory or the system temp directory, never hidden files or folders, and never URLs. Images up to 4 MB are drawn inline. Videos, audio, PDFs, and HTML pages open in the browser from a short-lived local server. If Tailscale is installed, that server is exposed on your tailnet with `tailscale serve` so other devices can open it, and it is removed when the server stops.
+
+The `wait` option can time out in providers with short tool timeouts. The UI stays on screen and later taps reach the agent as messages.
+
+Requires Paseo 0.11.4 or later.
+
+After installing or updating, run `npm install` in the plugin directory: it builds the OpenUI language library and a path file into the plugin (not committed), then reload the plugin. SVG text needs system fonts on the daemon machine; Arabic text in an Svg should use the font Noto Sans Arabic.

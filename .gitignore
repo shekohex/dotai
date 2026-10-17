@@ -27,3 +27,6 @@ __pycache__/
 .claude/plugins/cache/
 agent/dist/
 agent/node_modules/
+
+# Dependencies and tool caches
+node_modules/

@@ -1,5 +1,6 @@
-import { action, createLibrary, defineComponent, markReactive } from "./lang-core/index.mjs";
+import { action, createLibrary, defineComponent, defineFunction, markReactive } from "./lang-core/index.mjs";
 import { z } from "zod";
+import { rowsOnDates } from "./calendar";
 
 /**
  * The component contract shared by the daemon (validation and the agent guide) and the app
@@ -77,6 +78,29 @@ const Accordion = define(
   "Accordion",
   "Collapsible sections; use to keep long detail out of the way.",
   z.object({ items: z.array(Panel.ref) }),
+);
+
+const Dialog = define(
+  "Dialog",
+  "A modal window that opens over the chat while its bound $variable is true: details, confirmations, forms. Open it with a Button whose action is @Set($open, true); the window's own close control sets it back to false.",
+  z.object({
+    title: z.string(),
+    children: z.array(z.any()),
+    description: z.string().optional(),
+    open: reactive(z.boolean().optional()),
+  }),
+);
+
+const Popover = define(
+  "Popover",
+  "A button that unfolds a panel of extra content right below it and folds it again on the next tap. Local to the UI: no variable needed.",
+  z.object({ label: z.string(), children: z.array(z.any()), icon: iconName }),
+);
+
+const Tooltip = define(
+  "Tooltip",
+  "Wraps one component and shows a short hint on hover (desktop) or tap (touch). Use for explaining a badge, icon or metric.",
+  z.object({ text: z.string(), child: z.any() }),
 );
 
 const Separator = define("Separator", "A thin horizontal rule.", z.object({}));
@@ -169,6 +193,18 @@ const Table = define(
     headers: z.array(z.string()),
     rows: z.array(z.array(scalar)),
     caption: z.string().optional(),
+  }),
+);
+
+const DataTable = define(
+  "DataTable",
+  "A Table the user can work with: tap a header to sort, search across all cells, and page through long data. Prefer it over Table for more than about 8 rows.",
+  z.object({
+    headers: z.array(z.string()),
+    rows: z.array(z.array(scalar)),
+    caption: z.string().optional(),
+    pageSize: z.number().optional(),
+    search: z.boolean().optional(),
   }),
 );
 
@@ -632,26 +668,114 @@ const Stepper = define(
   }),
 );
 
+const Slider = define(
+  "Slider",
+  "Drag to pick a number in a range; the value shows beside the track. Bind with a $variable so prices, totals and charts follow it as it moves.",
+  z.object({
+    name: z.string(),
+    min: z.number(),
+    max: z.number(),
+    step: z.number().optional(),
+    label: z.string().optional(),
+    unit: z.string().optional(),
+    value: reactive(z.number().optional()),
+  }),
+);
+
+const ToggleGroup = define(
+  "ToggleGroup",
+  "A compact segmented control: pick one of a few short options such as Monthly | Annual or Chart | Table. Better than Select for switching views.",
+  z.object({
+    name: z.string(),
+    options: z.array(z.string()),
+    label: z.string().optional(),
+    icons: z.array(z.string()).optional(),
+    value: reactive(z.string().optional()),
+  }),
+);
+
+const Combobox = define(
+  "Combobox",
+  "Pick one option from a long list with a search box. Use instead of Select for more than about 8 options.",
+  z.object({
+    name: z.string(),
+    options: z.array(z.string()),
+    label: z.string().optional(),
+    placeholder: z.string().optional(),
+    value: reactive(z.string().optional()),
+  }),
+);
+
+const MultiSelect = define(
+  "MultiSelect",
+  "Pick any number of options from a long list with a search box. The value is an array of the chosen strings. Use instead of CheckboxGroup for more than about 8 options.",
+  z.object({
+    name: z.string(),
+    options: z.array(z.string()),
+    label: z.string().optional(),
+    placeholder: z.string().optional(),
+    value: reactive(z.array(z.string()).optional()),
+  }),
+);
+
+const DatePicker = define(
+  "DatePicker",
+  "A calendar to pick a day, or a range with range=true. The value is a YYYY-MM-DD string, or a [start, end] array for a range (one entry while the end is still to be picked). Filter data by it with @DateIn.",
+  z.object({
+    name: z.string(),
+    label: z.string().optional(),
+    range: z.boolean().optional(),
+    min: z.string().optional(),
+    max: z.string().optional(),
+    value: reactive(z.union([z.string(), z.array(z.string())]).optional()),
+  }),
+);
+
 const Form = define(
   "Form",
   "Groups fields so their values are sent together when a button in buttons fires @ToAssistant.",
   z.object({ name: z.string(), fields: z.array(z.any()), buttons: z.array(Button.ref) }),
 );
 
+const Has = defineFunction({
+  name: "Has",
+  description: "True when the array contains the value. Use with a CheckboxGroup or MultiSelect $variable to show or hide things.",
+  params: z.object({ array: z.array(z.any()), value: z.any() }),
+  returns: z.boolean(),
+  fn: ({ array, value }) => array.includes(value),
+});
+
+const Join = defineFunction({
+  name: "Join",
+  description: "Joins an array into one string with a separator (default \", \").",
+  params: z.object({ array: z.array(z.any()), separator: z.string().optional() }),
+  returns: z.string(),
+  fn: ({ array, separator }) => array.join(separator ?? ", "),
+});
+
+const DateIn = defineFunction({
+  name: "DateIn",
+  description: "Keeps the rows whose date field is inside a DatePicker value (a day or a [start, end] range). With no date picked yet it keeps every row. Dates are YYYY-MM-DD, or start with it.",
+  params: z.object({ rows: z.array(z.any()), field: z.string(), value: z.any() }),
+  returns: z.array(z.any()),
+  fn: ({ rows, field, value }) => rowsOnDates(rows, field, value),
+});
+
 export const library = createLibrary({
   root: "Stack",
   components: [
-    Stack, Grid, Card, Tab, Tabs, Panel, Accordion, Separator,
+    Stack, Grid, Card, Tab, Tabs, Panel, Accordion, Dialog, Popover, Tooltip, Separator,
     Heading, Text, Markdown, CodeBlock, Diff, Callout, Badge, Icon, Link, FileRef,
-    Table, Pair, KeyValue, List, Step, Steps, Metric, Progress, BarChart, Slice, StackedBar, FileTree,
+    Table, DataTable, Pair, KeyValue, List, Step, Steps, Metric, Progress, BarChart, Slice, StackedBar, FileTree,
     Series, LineChart, AreaChart, ColumnChart, PieChart, Points, ScatterChart,
     Heatmap, Funnel, Delta, Waterfall, Histogram, Spread, BoxPlot, Candlestick, RadarChart, CalendarHeatmap, Tile, Treemap, Gauge, Sparkline, Moment, Timeline, Task, Gantt, Spinner,
     Latex, Svg, Graph, QrCode,
     Image, Video, Attachment, Embed, Html,
-    Button, Input, TextArea, Select, RadioGroup, CheckboxGroup, Switch, Stepper, Form,
+    Button, Input, TextArea, Select, RadioGroup, CheckboxGroup, Switch, Stepper, Slider, ToggleGroup, Combobox, MultiSelect, DatePicker, Form,
   ],
+  functions: [Has, Join, DateIn],
   componentGroups: [
-    { name: "Layout", components: ["Stack", "Grid", "Card", "Tabs", "Tab", "Accordion", "Panel", "Separator"] },
+    { name: "Layout", components: ["Stack", "Grid", "Card", "Tabs", "Tab", "Accordion", "Panel", "Dialog", "Popover", "Tooltip", "Separator"] },
     {
       name: "Text and code",
       components: ["Heading", "Text", "Markdown", "CodeBlock", "Diff", "Callout", "Badge", "Icon", "Link", "FileRef"],
@@ -659,7 +783,7 @@ export const library = createLibrary({
     {
       name: "Data",
       components: [
-        "Table", "KeyValue", "Pair", "List", "Steps", "Step", "Metric", "Progress",
+        "Table", "DataTable", "KeyValue", "Pair", "List", "Steps", "Step", "Metric", "Progress",
         "BarChart", "StackedBar", "FileTree",
       ],
     },
@@ -677,7 +801,7 @@ export const library = createLibrary({
     {
       name: "Input",
       components: [
-        "Button", "Form", "Input", "TextArea", "Select", "RadioGroup", "CheckboxGroup", "Switch", "Stepper",
+        "Button", "Form", "Input", "TextArea", "Select", "RadioGroup", "CheckboxGroup", "Switch", "Stepper", "Slider", "ToggleGroup", "Combobox", "MultiSelect", "DatePicker",
       ],
     },
   ],
@@ -699,6 +823,8 @@ const SHARED_RULES = [
   "Use Lucide icons often: they make a UI scannable and feel native. Heading, Card, Tab, Panel, Metric, Badge, Button, Callout, Step, Moment and Spinner take an icon name as their last argument (Rocket, GitBranch, Bug, ShieldCheck, Database, Clock, FlaskConical, Zap, TriangleAlert). Pass null for skipped arguments before it.",
   "Motion: Steps with status running spin a Loader; Spinner shows work in progress; Icon(name, tone, size, animation) loops spin, pulse (live or recording) or bounce (needs attention). Use motion sparingly, for what is happening now.",
   "Prefer the specialised component: Gauge for one value against a limit, Sparkline for a trend inside a row, Heatmap for a value per row and column, CalendarHeatmap for activity per day, Treemap for parts of a total across many items, Funnel for stages that narrow, Waterfall for a total built from ups and downs, Histogram for the spread of raw samples, BoxPlot to compare spreads, Candlestick for open/high/low/close, RadarChart for profiles on several axes, Timeline for events in order, Gantt for schedules, Spinner for running work. Pass raw numbers to Histogram and BoxPlot; they compute the bins and quartiles.",
+  "Make the UI alive: declare state with `$name = default` and bind inputs to it (Switch, ToggleGroup, Select, Combobox, RadioGroup, CheckboxGroup, MultiSelect, Slider, Stepper, DatePicker, Input take the $variable as their last argument). Everything that reads the variable updates as the user changes it, with no round trip to you. Use it for calculators and pricing (Slider or Stepper for quantity, Switch for annual billing, totals in Metric), comparisons (CheckboxGroup or Switch decide which rows and columns show), filters and search (Select or Input narrow a Table or chart), and view modes (ToggleGroup plus a ternary between components: view = $mode == \"Chart\" ? chart : table). Pick the control by size: ToggleGroup for 2 to 4 short views, Select or RadioGroup for a handful, Combobox or MultiSelect for long lists, DatePicker (range=true for a period) for dates. Use DataTable instead of Table for long data: it sorts, searches and pages by itself. Dialog opens over the chat from a Button with @Set($open, true) (declare $open = false and pass it as the Dialog's last argument), and Popover and Tooltip tuck away secondary detail.",
+  "Derive values in their own statements from the data and the $variables: `shown = $level == \"all\" ? items : @Filter(items, \"sev\", \"==\", $level)`. Functions: @Filter(array, field, op, value) with op ==, !=, >, <, >=, <=, contains (field \"\" for plain arrays); @Sort(array, field, \"asc\"|\"desc\"); @Each(array, \"row\", expression) builds a list, e.g. Table rows @Each(shown, \"r\", [r.name, r.sev]) or chart values; @Count, @Sum, @Avg, @Min, @Max, @Round(number, decimals), @First, @Last; @Has(array, value) is true when a CheckboxGroup or MultiSelect holds the value (show or hide columns and blocks with it); @Join(array, separator); @DateIn(rows, field, $picked) keeps the rows whose YYYY-MM-DD field is in a DatePicker value. Put the full data in the program once and let the user slice it. Prefer this over a Form with a button: use a Form only when the answer must come back to you.",
   "Never put secrets or personal data in the program: it is stored in the conversation.",
   "Image, Video and Attachment take a file path on this machine (inside your working directory or the temp directory), never a URL. Save screenshots, charts or recordings to a file first, then reference the path.",
 ];
@@ -733,6 +859,41 @@ plan = Gantt([Task("Design", "2026-03-01", "2026-03-14", "accent", 100), Task("B
   `root = Stack([trend, share])
 trend = LineChart(["Mon", "Tue", "Wed", "Thu", "Fri"], [Series("Requests", [120, 180, 150, 240, 210]), Series("Errors", [4, 9, 6, 15, 7], "danger")], "Traffic this week", "", true)
 share = PieChart([Slice("Chrome", 64), Slice("Safari", 22), Slice("Firefox", 9), Slice("Other", 5)], "Browsers", true, "%")`,
+  `$seats = 5
+$annual = false
+$plan = "Team"
+root = Stack([title, controls, total, note], "column", "m")
+title = Heading("Checkout", 2, "ShoppingCart")
+controls = Card([Select("plan", ["Team", "Business"], "Plan", $plan), Slider("seats", 1, 100, 1, "Seats", "seats", $seats), Switch("annual", "Pay annually (-20%)", $annual)])
+price = $plan == "Team" ? 12 : 30
+total = Metric("Total per month", "$" + @Round($seats * price * ($annual ? 0.8 : 1), 2), $seats + " seats at $" + price, "accent", "CreditCard")
+note = $annual ? Callout("Annual billing saves 20%", "success", "Tag") : Callout("Switch to annual to save 20%", "info", "Info")`,
+  `$level = "all"
+$q = ""
+$sort = "count"
+issues = [{name: "Memory leak", sev: "high", count: 3}, {name: "Typo in docs", sev: "low", count: 9}, {name: "Crash on start", sev: "high", count: 1}, {name: "Slow search", sev: "medium", count: 5}]
+bySeverity = $level == "all" ? issues : @Filter(issues, "sev", "==", $level)
+matching = @Filter(bySeverity, "name", "contains", $q)
+ordered = @Sort(matching, $sort, "desc")
+root = Stack([filters, summary, tbl, chart], "column", "m")
+filters = Card([Select("level", ["all", "high", "medium", "low"], "Severity", $level), Input("q", "Search", "name", "text", $q), RadioGroup("sort", ["count", "name"], "Sort by", $sort)])
+summary = Metric("Showing", @Count(ordered) + " of " + @Count(issues), @Sum(@Each(ordered, "r", r.count)) + " reports", null, "ListFilter")
+tbl = Table(["Issue", "Severity", "Reports"], @Each(ordered, "r", [r.name, r.sev, r.count]))
+chart = ColumnChart(@Each(ordered, "r", r.name), [Series("Reports", @Each(ordered, "r", r.count))], "Reports per issue")`,
+  `$period = []
+$view = "Table"
+$team = "all"
+$open = false
+events = [{what: "Deploy v2.4", at: "2026-03-02", team: "Platform", cost: 12}, {what: "Outage", at: "2026-03-10", team: "Platform", cost: 90}, {what: "Fix rollout", at: "2026-03-12", team: "Payments", cost: 30}, {what: "Retro", at: "2026-04-01", team: "Payments", cost: 5}]
+inPeriod = @DateIn(events, "at", $period)
+shown = $team == "all" ? inPeriod : @Filter(inPeriod, "team", "==", $team)
+rows = @Each(shown, "e", [e.at, e.what, e.team, e.cost])
+table = DataTable(["Date", "Event", "Team", "Cost"], rows, "Events", 10, false)
+chart = ColumnChart(@Each(shown, "e", e.what), [Series("Cost", @Each(shown, "e", e.cost))], "Cost per event")
+body = $view == "Table" ? table : chart
+filters = Card([DatePicker("period", "Period", true, null, null, $period), Combobox("team", ["all", "Platform", "Payments"], "Team", "Any team", $team), ToggleGroup("view", ["Table", "Chart"], "Show", ["Table", "ChartColumn"], $view)])
+help = Dialog("How costs are counted", [Markdown("Cost is engineer-hours spent on the event.")], null, $open)
+root = Stack([filters, Metric("Total cost", @Sum(@Each(shown, "e", e.cost)), @Count(shown) + " events", null, "Wallet"), body, Button("How is cost counted?", @Set($open, true), "secondary", "Info"), help], "column", "m")`,
   `root = Stack([f])
 f = Form("deploy", [Select("env", ["staging", "production"], "Environment"), Switch("migrate", "Run migrations", true), Input("note", "Note", "optional")], [Button("Deploy", @ToAssistant("Deploy"), "primary")])`,
 ];
@@ -743,7 +904,7 @@ export const GUIDE_OPTIONS = {
   examples: GUIDE_EXAMPLES,
   bindings: true,
   toolCalls: false,
-  builtinFunctions: false,
+  builtinFunctions: true,
 } as const;
 
 export const FENCE_OPTIONS = {

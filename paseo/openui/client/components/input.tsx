@@ -1,14 +1,15 @@
 import { TextInput } from "@getpaseo/plugin/client/react-native";
 import { Icon } from "@getpaseo/plugin/client/react-native";
-import { type ReactNode, useContext } from "react";
-import { Pressable, Switch as RNSwitch, Text, View } from "react-native";
+import { type ReactNode, useContext, useMemo, useRef, useState } from "react";
+import { PanResponder, Pressable, Switch as RNSwitch, Text, View } from "react-native";
+import { sliderFraction, sliderValue } from "../../shared/slider";
 import { useBidi } from "../bidi";
 import { FormNameContext, useField, useTriggerAction } from "../runtime";
 import { FONT, GAP, RADIUS, useUiEnv } from "../tokens";
 import { AnimatedIcon } from "./animated-icon";
 import type { NodeProps } from "./types";
 
-function Field({ label, children }: { label?: string; children: ReactNode }) {
+export function Field({ label, children }: { label?: string; children: ReactNode }) {
   const { colors } = useUiEnv();
   const bidi = useBidi();
   return (
@@ -151,7 +152,7 @@ export function Select({ props }: NodeProps) {
   );
 }
 
-function OptionRow({
+export function OptionRow({
   label,
   selected,
   multiple,
@@ -286,6 +287,77 @@ export function Stepper({ props }: NodeProps) {
         {button("Minus", value - step, "Decrease")}
         <Text style={{ minWidth: 40, textAlign: "center", color: colors.foreground, fontSize: FONT.l, fontWeight: "600" }}>{value}</Text>
         {button("Plus", value + step, "Increase")}
+      </View>
+    </Field>
+  );
+}
+
+const THUMB = 22;
+
+export function Slider({ props }: NodeProps) {
+  const { colors, disabled } = useUiEnv();
+  const min = Number(props.min ?? 0);
+  const max = Number(props.max ?? 100);
+  const step = Number(props.step ?? 1) || 1;
+  const field = useField<number>(String(props.name), props.value, "Slider", min);
+  const value = typeof field.value === "number" ? field.value : min;
+  const [width, setWidth] = useState(0);
+  const latest = useRef({ width, min, max, step, disabled, setValue: field.setValue, value });
+  latest.current = { width, min, max, step, disabled, setValue: field.setValue, value };
+  const dragStart = useRef(0);
+  const responder = useMemo(() => {
+    const move = (x: number) => {
+      const now = latest.current;
+      if (now.disabled || now.width <= 0) return;
+      const next = sliderValue(x / now.width, now.min, now.max, now.step);
+      if (next !== now.value) now.setValue(next);
+    };
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (event) => {
+        dragStart.current = event.nativeEvent.locationX;
+        move(dragStart.current);
+      },
+      onPanResponderMove: (_event, gesture) => move(dragStart.current + gesture.dx),
+    });
+  }, []);
+  const fraction = sliderFraction(value, min, max);
+  const unit = props.unit ? ` ${props.unit}` : "";
+  return (
+    <Field label={props.label}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: GAP.m }}>
+        <View
+          accessibilityRole="adjustable"
+          accessibilityValue={{ min, max, now: value }}
+          accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+          onAccessibilityAction={(event) => {
+            const direction = event.nativeEvent.actionName === "increment" ? 1 : -1;
+            field.setValue(Math.min(max, Math.max(min, value + direction * step)));
+          }}
+          onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+          style={{ flex: 1, height: 36, justifyContent: "center", opacity: disabled ? 0.4 : 1 }}
+          {...responder.panHandlers}
+        >
+          <View pointerEvents="none" style={{ height: 6, borderRadius: 3, backgroundColor: colors.surface2, overflow: "hidden" }}>
+            <View style={{ width: `${fraction * 100}%`, height: 6, backgroundColor: colors.accent }} />
+          </View>
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              left: Math.max(0, fraction * width - THUMB / 2),
+              width: THUMB,
+              height: THUMB,
+              borderRadius: THUMB / 2,
+              backgroundColor: colors.accent,
+              borderWidth: 3,
+              borderColor: colors.surface0,
+            }}
+          />
+        </View>
+        <Text style={{ minWidth: 56, textAlign: "right", color: colors.foreground, fontSize: FONT.l, fontWeight: "600" }}>{`${value}${unit}`}</Text>
       </View>
     </Field>
   );

@@ -32,7 +32,7 @@ import { Text } from "react-native";
 import { library } from "../shared/library";
 import { COMPONENTS } from "./components";
 import { useBidi } from "./bidi";
-import { FONT, useUiEnv } from "./tokens";
+import { FONT, UiEnvContext, useUiEnv } from "./tokens";
 
 type LegacyAction = { type?: string; params?: Record<string, unknown> };
 
@@ -59,12 +59,43 @@ function useRuntime(): RuntimeValue {
   return value;
 }
 
+/**
+ * Re-provides the UI's contexts inside a host-owned surface such as a modal, which may mount
+ * its content outside this React tree.
+ */
+export function useContextBridge(): (children: ReactNode) => ReactNode {
+  const runtime = useRuntime();
+  const env = useUiEnv();
+  const formName = useContext(FormNameContext);
+  return (children) => (
+    <UiEnvContext.Provider value={env}>
+      <RuntimeContext.Provider value={runtime}>
+        <FormNameContext.Provider value={formName}>{children}</FormNameContext.Provider>
+      </RuntimeContext.Provider>
+    </UiEnvContext.Provider>
+  );
+}
+
 export function useRenderNode() {
   return useRuntime().renderNode;
 }
 
 export function useTriggerAction() {
   return useRuntime().triggerAction;
+}
+
+/** The library's own @Functions, pairing each schema entry with the code that runs it. */
+type RuntimeFunctions = NonNullable<EvaluationContext["functions"]>;
+type FunctionSchemas = Record<string, Omit<RuntimeFunctions[string], "fn">>;
+
+function runtimeFunctions(schemas: FunctionSchemas | undefined): RuntimeFunctions {
+  const defined = library.functions ?? {};
+  return Object.fromEntries(
+    Object.entries(schemas ?? {}).flatMap(([name, schema]) => {
+      const fn = defined[name]?.fn;
+      return fn ? [[name, { ...schema, fn }]] : [];
+    }),
+  );
 }
 
 /** A field bound to a `$variable` or to this form's state, with its default stored once. */
@@ -167,7 +198,7 @@ export function OpenUiView({ source, onAction, onProblems }: OpenUiViewProps) {
     () => ({
       getState: (name) => unwrap(store.get(name)),
       resolveRef: () => undefined,
-      functions: {},
+      functions: runtimeFunctions(schema.functions),
       actions: schema.actions,
     }),
     [store, schema.actions],

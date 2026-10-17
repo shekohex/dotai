@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sourceSpecSchema } from "./sources";
 
 export const OPENUI_MCP_SERVER = "openui";
 export const RENDER_TOOL = "render";
@@ -20,10 +21,10 @@ export const renderInputSchema = z.object({
     .object({
       name: z.string().describe("Letters, digits, - and _; starts with a letter."),
       kind: z
-        .enum(["component", "program"])
+        .enum(["component", "program", "source"])
         .optional()
         .describe(
-          'Default component: one OpenUI expression used inline as @Use("name", {props}). program: a whole multi-statement program (with root = ...) used as the entire ui: @Run("name", {props}).',
+          'Default component: one OpenUI expression used inline as @Use("name", {props}). program: a whole multi-statement program (with root = ...) used as the entire ui: @Run("name", {props}). source: live data or an action behind a program, run by the daemon and read with Query("name", {args}) or fired with Mutation("name", {args}); give it `source`.',
         ),
       scope: z
         .enum(["project", "global"])
@@ -34,7 +35,13 @@ export const renderInputSchema = z.object({
         .optional()
         .describe('The OpenUI source with {{prop}} holes, e.g. Card([Heading("{{title}}")]). Omit to delete.'),
       description: z.string().optional().describe("One line on what it shows and which props it takes."),
-      example: z.unknown().optional().describe("Sample props object; the template is test-rendered with it before saving."),
+      example: z.unknown().optional().describe("Sample props object; the template is test-rendered with it before saving. For a source: the args object it is test-run with (default {})."),
+      source: sourceSpecSchema
+        .partial()
+        .optional()
+        .describe(
+          "For kind source. type command: `run` is a shell command line that reads {\"args\": {...}} as one JSON line on stdin (also in $OPENUI_ARGS) and prints JSON to stdout. type http: `url` (+ method, headers; ${ENV} is filled from the daemon environment). mode once (default): one JSON value per call; mode stream: one JSON value per line (NDJSON, or SSE `data:` lines) and the UI shows the latest, or the last `window` frames as an array. timeoutSeconds: for once, the most it may run (default 10, max 3600); for stream, the most silence between lines (default 30, 0 = never). access read (default): Query may run it by itself; write: only a Mutation button runs it. `args` and `returns` describe the input and output for whoever reads the guide. To change only timeouts, window, access or descriptions of an existing source, pass just those fields.",
+        ),
       overwrite: z.boolean().optional().describe("Replace an existing definition of the same name in the same scope. Default false: you get the existing one back instead."),
     })
     .optional()

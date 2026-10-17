@@ -14,7 +14,10 @@ import { expandRpc } from "./shared/components";
 import { readImage, shareableFile } from "./server/files";
 import { renderRaster } from "./server/raster";
 import { MediaServer, privateLanAddress, tailscaleCli } from "./server/media-server";
+import { SourceService } from "./server/source-service";
+import { SourceRunner, StreamHub } from "./server/sources";
 import { RenderToolServer } from "./server/tool-server";
+import { sourceCallRpc, sourceReadRpc, sourceStopRpc } from "./shared/sources";
 import { Waiters } from "./server/waiters";
 
 async function agentProjectRoot(paseo: PaseoApi, agentId: string): Promise<string | undefined> {
@@ -23,11 +26,21 @@ async function agentProjectRoot(paseo: PaseoApi, agentId: string): Promise<strin
   return agent.cwd ? projectRootOf(agent.cwd) : undefined;
 }
 
+async function agentLocation(paseo: PaseoApi, agentId: string): Promise<{ cwd: string; projectRoot?: string } | undefined> {
+  const agent = paseo.agents.ref(agentId);
+  await agent.refresh();
+  if (!agent.cwd) return undefined;
+  const projectRoot = await projectRootOf(agent.cwd);
+  return { cwd: agent.cwd, ...(projectRoot ? { projectRoot } : {}) };
+}
+
 export default function contribute(server: PluginServerContext) {
   const waiters = new Waiters();
   const media = new MediaServer({ tailscale: tailscaleCli(), lanAddress: () => privateLanAddress() });
   const library = new Library(new FileStore(DEFAULT_GLOBAL_DIRECTORY));
-  const tools = new RenderToolServer(waiters, library);
+  const runner = new SourceRunner();
+  const sources = new SourceService(library, runner, new StreamHub(runner));
+  const tools = new RenderToolServer(waiters, library, runner);
   const toolsReady = tools.start().then(() => {
     console.log(`OpenUI MCP server listening at ${tools.url}`);
   });
@@ -67,6 +80,19 @@ export default function contribute(server: PluginServerContext) {
 
   server.handle(expandRpc, async ({ agentId, ui }, { paseo }) => library.expand(ui, await agentProjectRoot(paseo, agentId)));
 
+  server.handle(sourceCallRpc, async ({ agentId, source, args, intent }, { paseo }) => {
+    const where = await agentLocation(paseo, agentId);
+    if (!where) return { ok: false as const, error: { kind: "spawn" as const, message: "This agent has no working directory, so a source has nowhere to run." } };
+    return sources.call({ id: agentId, ...where }, source, args ?? {}, intent);
+  });
+
+  server.handle(sourceReadRpc, ({ streamId, cursor, waitMs }) => sources.read(streamId, cursor, waitMs));
+
+  server.handle(sourceStopRpc, ({ streamId }) => {
+    sources.stop(streamId);
+    return { ok: true as const };
+  });
+
   server.handle(rasterRpc, (request) => renderRaster(request));
 
   server.handle(embedRpc, async ({ agentId, path: requested }, { paseo }) => ({ html: await embedFileHtml(paseo, agentId, requested) }));
@@ -82,6 +108,7 @@ export default function contribute(server: PluginServerContext) {
 
   return async () => {
     await toolsReady.catch(() => undefined);
+    sources.close();
     await Promise.all([tools.close(), media.close()]);
   };
 }

@@ -1,7 +1,10 @@
 import { expandUi, NAME_PATTERN, templateProps } from "../shared/template";
 import type { RenderInput } from "../shared/render";
 import { checkUi } from "./guide";
-import type { Kind, Library, Named, Scope } from "./library";
+import { defineSource, type SourceEnv } from "./define-source";
+import type { Library, Named, Scope } from "./library";
+
+type Kind = "component" | "program";
 
 export interface Outcome {
   text: string;
@@ -28,7 +31,8 @@ function describeExisting(kind: Kind, existing: Named): string {
 }
 
 /** Saves, replaces or deletes a reusable component or program, testing the template with the example first. */
-export async function defineEntry(library: Library, projectRoot: string | undefined, define: NonNullable<RenderInput["define"]>): Promise<Outcome> {
+export async function defineEntry(library: Library, projectRoot: string | undefined, define: NonNullable<RenderInput["define"]>, sources: SourceEnv): Promise<Outcome> {
+  if (define.kind === "source") return defineSource(library, projectRoot, define, sources);
   const { name, template, description, example, overwrite } = define;
   const kind: Kind = define.kind ?? "component";
   const scope: Scope = define.scope ?? (projectRoot ? "project" : "global");

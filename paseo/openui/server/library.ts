@@ -1,9 +1,11 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { sourceSpecSchema, type SourceSpec, withDefaults } from "../shared/sources";
 import { expandUi, type Expansion, type Library as Templates } from "../shared/template";
 
-export type Kind = "component" | "program";
+/** A source's `template` holds its JSON spec; see `readSource`. */
+export type Kind = "component" | "program" | "source";
 export type Scope = "global" | "project";
 
 export interface Entry {
@@ -20,8 +22,8 @@ export interface Store {
   update<T>(kind: Kind, change: (all: Record<string, Entry>) => T): Promise<T>;
 }
 
-const FILE: Record<Kind, string> = { component: "components.json", program: "programs.json" };
-const KINDS: Kind[] = ["component", "program"];
+const FILE: Record<Kind, string> = { component: "components.json", program: "programs.json", source: "sources.json" };
+const KINDS: Kind[] = ["component", "program", "source"];
 
 /** `<directory>/components.json` and `programs.json`, replaced atomically; writes to one directory are serialized. */
 export class FileStore implements Store {
@@ -72,7 +74,18 @@ export async function projectRootOf(cwd: string): Promise<string | undefined> {
 export interface Snapshot {
   components: Map<string, Named>;
   programs: Map<string, Named>;
+  sources: Map<string, Named>;
   templates: Templates;
+}
+
+/** The spec a saved source holds, or undefined when the file was edited into something unusable. */
+export function readSource(entry: Named): SourceSpec | undefined {
+  try {
+    const parsed = sourceSpecSchema.safeParse(JSON.parse(entry.template));
+    return parsed.success ? withDefaults(parsed.data) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export type SaveResult = { saved: true; replaced?: Named; shadowed?: Named } | { saved: false; existing: Named };
@@ -100,7 +113,7 @@ export class Library {
   }
 
   async snapshot(projectRoot?: string): Promise<Snapshot> {
-    const [components, programs] = await Promise.all(
+    const [components, programs, sources] = await Promise.all(
       KINDS.map(async (kind) => {
         const merged = new Map<string, Named>();
         for (const scope of ["global", "project"] as const) {
@@ -113,7 +126,7 @@ export class Library {
       component: (name) => components?.get(name)?.template,
       program: (name) => programs?.get(name)?.template,
     };
-    return { components: components as Map<string, Named>, programs: programs as Map<string, Named>, templates };
+    return { components: components as Map<string, Named>, programs: programs as Map<string, Named>, sources: sources as Map<string, Named>, templates };
   }
 
   async expand(ui: string, projectRoot?: string): Promise<Expansion> {

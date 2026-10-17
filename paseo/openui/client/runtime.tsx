@@ -28,11 +28,12 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { library } from "../shared/library";
 import { COMPONENTS } from "./components";
+import { LiveBar, runSteps, useLive, useQuerySync } from "./live";
 import { useBidi } from "./bidi";
-import { FONT, UiEnvContext, useUiEnv } from "./tokens";
+import { FONT, GAP, UiEnvContext, useUiEnv } from "./tokens";
 
 type LegacyAction = { type?: string; params?: Record<string, unknown> };
 
@@ -179,7 +180,10 @@ export interface OpenUiViewProps {
 
 /** Parses an OpenUI Lang program and draws it with Paseo's native components. */
 export function OpenUiView({ source, onAction, onProblems }: OpenUiViewProps) {
-  const { colors } = useUiEnv();
+  const { colors, agentId } = useUiEnv();
+  const live = useLive(agentId);
+  const liveRef = useRef(live);
+  liveRef.current = live;
   const actionRef = useRef(onAction);
   actionRef.current = onAction;
   const problemsRef = useRef(onProblems);
@@ -194,15 +198,17 @@ export function OpenUiView({ source, onAction, onProblems }: OpenUiViewProps) {
   }, [source]);
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
+  const { manager } = live;
   const evaluationContext = useMemo<EvaluationContext>(
     () => ({
       getState: (name) => unwrap(store.get(name)),
-      resolveRef: () => undefined,
+      resolveRef: (name) => manager.getSnapshot()[name],
       functions: runtimeFunctions(schema.functions),
       actions: schema.actions,
     }),
-    [store, schema.actions],
+    [store, schema.actions, manager],
   );
+  useQuerySync(live, result, evaluationContext, snapshot);
 
   const root = useMemo(() => {
     if (!result.root && !result.rootExpression) return null;
@@ -215,7 +221,7 @@ export function OpenUiView({ source, onAction, onProblems }: OpenUiViewProps) {
       return result.root;
     }
     // The snapshot changes whenever bound state does, which is what re-evaluates props.
-  }, [result, evaluationContext, store, snapshot]);
+  }, [result, evaluationContext, store, snapshot, live.snapshot]);
 
   useEffect(() => {
     problemsRef.current?.(result.meta.errors.filter((error) => error.severity !== "warning") as never);
@@ -288,6 +294,7 @@ export function OpenUiView({ source, onAction, onProblems }: OpenUiViewProps) {
               break;
           }
         }
+        runSteps(liveRef.current, result, evaluationContext, action.steps);
         return;
       }
       emit({
@@ -316,7 +323,19 @@ export function OpenUiView({ source, onAction, onProblems }: OpenUiViewProps) {
   );
 
   if (!root) return <Text style={{ color: colors.foregroundMuted, fontSize: FONT.m }}>Nothing to show yet.</Text>;
-  return <RuntimeContext.Provider value={runtime}>{renderNode(root)}</RuntimeContext.Provider>;
+  const usesSources = result.queryStatements.length > 0 || result.mutationStatements.length > 0;
+  return (
+    <RuntimeContext.Provider value={runtime}>
+      {usesSources ? (
+        <View style={{ gap: GAP.m }}>
+          {renderNode(root)}
+          <LiveBar live={live} />
+        </View>
+      ) : (
+        renderNode(root)
+      )}
+    </RuntimeContext.Provider>
+  );
 }
 
 function isElement(value: unknown): value is ElementNode {

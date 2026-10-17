@@ -6,9 +6,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { hashText } from "../shared/hash";
 import { OPENUI_MCP_SERVER, RENDER_TOOL, renderInputSchema } from "../shared/render";
-import { componentsText, checkUi, guideText } from "./guide";
+import { componentsText, checkUi, guideText, sourceIndex } from "./guide";
 import { defineEntry } from "./define";
 import { type Library, projectRootOf } from "./library";
+import type { SourceRunner } from "./sources";
 import type { Waiters } from "./waiters";
 
 const STATE_DIR = path.join(homedir(), ".paseo", "openui");
@@ -35,7 +36,7 @@ const INSTRUCTIONS = [
 
 const GUIDE_URI = "openui://guide";
 
-function createMcp(waiters: Waiters, library: Library, projectRoot: string | undefined): McpServer {
+function createMcp(waiters: Waiters, library: Library, runner: SourceRunner, projectRoot: string | undefined, agentCwd: string | undefined): McpServer {
   const mcp = new McpServer(
     { name: OPENUI_MCP_SERVER, version: "0.1.0" },
     { capabilities: { tools: {}, resources: {} }, instructions: INSTRUCTIONS },
@@ -56,7 +57,7 @@ function createMcp(waiters: Waiters, library: Library, projectRoot: string | und
     async (input, extra) => {
       if (input.guide) return textResult(`${guideText()}\n\n${componentsText(await library.snapshot(projectRoot), true)}`);
       if (input.define) {
-        const outcome = await defineEntry(library, projectRoot, input.define);
+        const outcome = await defineEntry(library, projectRoot, input.define, { runner, cwd: agentCwd });
         return textResult(outcome.text, outcome.isError);
       }
       if (!input.ui) {
@@ -66,7 +67,7 @@ function createMcp(waiters: Waiters, library: Library, projectRoot: string | und
       if (expanded.errors.length > 0) {
         return textResult(`Fix these component problems and call render again:\n- ${expanded.errors.join("\n- ")}`, true);
       }
-      const report = checkUi(expanded.ui);
+      const report = checkUi(expanded.ui, sourceIndex(await library.snapshot(projectRoot)));
       const notes = report.warnings.length ? `\nWarnings:\n- ${report.warnings.join("\n- ")}` : "";
       if (report.errors.length > 0) {
         return textResult(
@@ -111,6 +112,7 @@ export class RenderToolServer {
   constructor(
     private readonly waiters: Waiters,
     private readonly library: Library,
+    private readonly runner: SourceRunner,
   ) {}
 
   get url(): string {
@@ -158,7 +160,7 @@ export class RenderToolServer {
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const cwd = new URL(request.url ?? "/", "http://localhost").searchParams.get("cwd");
-    const mcp = createMcp(this.waiters, this.library, cwd ? await projectRootOf(cwd) : undefined);
+    const mcp = createMcp(this.waiters, this.library, this.runner, cwd ? await projectRootOf(cwd) : undefined, cwd ?? undefined);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableDnsRebindingProtection: false,

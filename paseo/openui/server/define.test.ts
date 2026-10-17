@@ -2,8 +2,11 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { defineEntry } from "./define";
+import { defineEntry as define } from "./define";
+import { SourceRunner } from "./sources";
 import { FileStore, Library } from "./library";
+
+const defineEntry = (library: Library, project: string | undefined, input: Parameters<typeof define>[2]) => define(library, project, input, { runner: new SourceRunner(), cwd: project });
 
 async function setup() {
   const base = await mkdtemp(path.join(tmpdir(), "openui-define-"));

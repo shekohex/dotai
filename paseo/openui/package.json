@@ -30,8 +30,8 @@
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
-    "@getpaseo/client": "^0.11.4",
-    "@getpaseo/plugin": "0.11.4",
+    "@getpaseo/client": "0.12.0",
+    "@getpaseo/plugin": "0.12.0",
     "@tanstack/react-query": "^5.90.11",
     "@types/node": "^24.5.2",
     "@types/react": "~19.2.0",

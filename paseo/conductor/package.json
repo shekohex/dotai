@@ -18,9 +18,9 @@
     "@modelcontextprotocol/sdk": "1.29.0"
   },
   "devDependencies": {
-    "@getpaseo/client": "0.11.0",
-    "@getpaseo/plugin": "0.11.0",
-    "@getpaseo/protocol": "0.11.0",
+    "@getpaseo/client": "0.12.0",
+    "@getpaseo/plugin": "0.12.0",
+    "@getpaseo/protocol": "0.12.0",
     "@tanstack/react-query": "^5.90.2",
     "@types/node": "^24.5.2",
     "@types/react": "^19.1.16",

@@ -485,7 +485,7 @@ function createMediaView(parent: unknown, initial: MediaViewProps): PierreView<M
     host.style.color = props.colors.foregroundMuted;
   };
 
-  const show = (props: MediaViewProps, url: string) => {
+  const show = (props: MediaViewProps, url: string, onError?: () => void) => {
     host.textContent = "";
     const fit = { maxWidth: "100%", maxHeight: "100%" };
     if (props.kind === "image") {
@@ -504,6 +504,7 @@ function createMediaView(parent: unknown, initial: MediaViewProps): PierreView<M
       video.src = url;
       video.controls = true;
       video.preload = "metadata";
+      if (onError) video.addEventListener("error", onError);
       host.appendChild(video);
     } else if (props.kind === "audio") {
       const card = styled(document.createElement("div"), {
@@ -524,6 +525,7 @@ function createMediaView(parent: unknown, initial: MediaViewProps): PierreView<M
       audio.src = url;
       audio.controls = true;
       audio.preload = "metadata";
+      if (onError) audio.addEventListener("error", onError);
       card.append(title, audio);
       host.appendChild(card);
     } else {
@@ -539,6 +541,24 @@ function createMediaView(parent: unknown, initial: MediaViewProps): PierreView<M
     release();
     host.style.alignItems = "center";
     host.style.colorScheme = props.appearance;
+    // Video and audio stream from the daemon with Range when it is reachable; otherwise, or if the
+    // element cannot load that URL, the file is fetched over the RPC channel in slices.
+    if (props.kind === "video" || props.kind === "audio") {
+      const url = await props.getUrl().catch(() => null);
+      if (mine !== generation) return;
+      if (url) {
+        show(props, url, () => {
+          if (mine === generation) void loadSliced(props, mine);
+        });
+        return;
+      }
+    }
+    await loadSliced(props, mine);
+  };
+
+  const loadSliced = async (props: MediaViewProps, mine: number) => {
+    release();
+    host.style.alignItems = "center";
     const limit = MEDIA_LIMITS_MB[props.kind];
     if (props.size > limit * 1024 * 1024) {
       message(props, `Too large to preview (${(props.size / 1024 / 1024).toFixed(1)} MB, limit ${limit} MB).`);

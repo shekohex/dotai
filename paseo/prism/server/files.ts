@@ -10,7 +10,7 @@ const HIGHLIGHT_MAX_BYTES = 300 * 1024;
 const CHUNK_MAX_BYTES = 768 * 1024;
 
 /** The absolute path of `path` inside `cwd`; anything that escapes the workspace is refused. */
-function insideWorkspace(cwd: string, path: string): string {
+export function insideWorkspace(cwd: string, path: string): string {
   const absolute = resolve(cwd, path);
   const outside = relative(cwd, absolute);
   if (outside.startsWith("..") || isAbsolute(outside)) throw new Error(`${path} is outside the workspace`);
@@ -28,6 +28,10 @@ const MEDIA_TYPES: Record<string, [MediaKind, string]> = {
   pdf: ["pdf", "application/pdf"],
 };
 
+export function mediaTypeOf(path: string): [MediaKind, string] | undefined {
+  return MEDIA_TYPES[extname(path).slice(1).toLowerCase()];
+}
+
 export interface FileContents {
   content: string;
   tokens: LineTokens[] | null;
@@ -42,7 +46,7 @@ export interface FileContents {
 export async function readWorkspaceFile(input: { cwd: string; path: string; syntax: string }): Promise<FileContents> {
   const absolute = insideWorkspace(input.cwd, input.path);
   const info = await stat(absolute);
-  const [kind, mimeType] = MEDIA_TYPES[extname(input.path).slice(1).toLowerCase()] ?? ["text", "text/plain"];
+  const [kind, mimeType] = mediaTypeOf(input.path) ?? ["text", "text/plain"];
   const base = { mtimeMs: info.mtimeMs, kind, mimeType, size: info.size };
   // Media is fetched in slices by the client, never as text.
   if (kind !== "text") return { ...base, content: "", tokens: null, binary: false, tooLarge: false };

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { Image, Text, View } from "react-native";
 
-import { fileBytesRpc, type MediaKind } from "../shared/contracts.js";
+import { fileBytesRpc, mediaUrlRpc, type MediaKind } from "../shared/contracts.js";
 import type { MarkdownViewProps, MediaViewProps, PierreApi } from "../shared/pierre-api.js";
 import { useWorkspaceDirectory } from "./data.js";
 import { PierreMount } from "./pierre.js";
@@ -41,10 +41,12 @@ export function MediaPreview({
 }) {
   const cwd = useWorkspaceDirectory(workspaceId);
   const readBytes = useRpc(fileBytesRpc);
+  const mediaUrl = useRpc(mediaUrlRpc);
   const fetchChunk = useCallback(
     (offset: number, length: number) => readBytes({ cwd: cwd ?? "", path, offset, length }).then((result) => result.chunk),
     [readBytes, cwd, path],
   );
+  const getUrl = useCallback(() => mediaUrl({ cwd: cwd ?? "", path }).then((result) => result.url), [mediaUrl, cwd, path]);
   const create = useCallback(
     (host: unknown, initial: MediaViewProps) => api?.createMediaView(host, initial) ?? { update() {}, destroy() {} },
     [api],
@@ -59,8 +61,9 @@ export function MediaPreview({
       appearance: appearanceOf(theme),
       colors: pierreColorsOf(theme),
       fetchChunk,
+      getUrl,
     }),
-    [path, file, theme, fetchChunk],
+    [path, file, theme, fetchChunk, getUrl],
   );
   const nativeImage = useQuery({
     queryKey: ["prism", "native-image", cwd, path, file.mtimeMs],

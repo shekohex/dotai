@@ -4,8 +4,10 @@ import { stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 
 import { insideWorkspace, mediaTypeOf } from "./files.js";
+import { shareOverTailscale, type TailscaleShare } from "./tailscale.js";
 
 const TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
+const SHARE_RETRY_MS = 60_000;
 
 interface Grant {
   absolutePath: string;
@@ -21,9 +23,12 @@ export function createMediaServer() {
   const grants = new Map<string, Grant>();
   let server: Server | null = null;
   let starting: Promise<number> | null = null;
+  let share: Promise<TailscaleShare | null> | null = null;
+  let shareFailedAt = 0;
 
   const handle: Parameters<typeof createServer>[1] = async (request, response) => {
-    const token = /^\/m\/([0-9a-f]+)$/.exec((request.url ?? "").split("?")[0] ?? "")?.[1];
+    // Tailscale mounts the files under /prism-media and may or may not strip that prefix.
+    const token = /^(?:\/prism-media)?\/m\/([0-9a-f]+)$/.exec((request.url ?? "").split("?")[0] ?? "")?.[1];
     const grant = token ? grants.get(token) : undefined;
     if (!grant || grant.expiresAt < Date.now()) {
       response.writeHead(404).end();
@@ -80,20 +85,42 @@ export function createMediaServer() {
     return starting;
   };
 
+  const tailnetShare = async (port: number, enabled: boolean): Promise<TailscaleShare | null> => {
+    if (!enabled) return null;
+    if (share && (await share) === null && Date.now() - shareFailedAt > SHARE_RETRY_MS) share = null;
+    share ??= shareOverTailscale(port).then((result) => {
+      if (result === null) shareFailedAt = Date.now();
+      return result;
+    });
+    return share;
+  };
+
+  const stopShare = async () => {
+    const current = share;
+    share = null;
+    await (await current)?.stop();
+  };
+
   return {
-    /** A URL for one workspace media file, or null when the file is not media or leaves the workspace. */
-    async urlFor(cwd: string, path: string): Promise<string | null> {
+    stopShare,
+    /**
+     * URLs for one workspace media file, best first: the tailnet HTTPS address when Tailscale can publish
+     * it (works from other machines), then loopback. Empty when the file is not media.
+     */
+    async urlsFor(cwd: string, path: string, useTailscale: boolean): Promise<string[]> {
       const media = mediaTypeOf(path);
-      if (!media) return null;
+      if (!media) return [];
       const absolutePath = insideWorkspace(cwd, path);
       const port = await listen();
       const now = Date.now();
       for (const [key, grant] of grants) if (grant.expiresAt < now) grants.delete(key);
       const token = randomBytes(24).toString("hex");
       grants.set(token, { absolutePath, mimeType: media[1], expiresAt: now + TOKEN_TTL_MS });
-      return `http://127.0.0.1:${port}/m/${token}`;
+      const tailnet = await tailnetShare(port, useTailscale);
+      return [...(tailnet ? [`${tailnet.origin}/m/${token}`] : []), `http://127.0.0.1:${port}/m/${token}`];
     },
-    close() {
+    async close() {
+      await stopShare();
       grants.clear();
       server?.close();
       server?.closeAllConnections();

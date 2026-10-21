@@ -160,11 +160,11 @@ export const fileBytesRpc = defineRpc({
   output: z.object({ chunk: z.string() }).strict(),
 });
 
-/** A loopback URL that serves one media file with HTTP Range, valid for hours. Null if it is not media. */
+/** URLs that serve one media file with HTTP Range, best first, valid for hours. Empty if it is not media. */
 export const mediaUrlRpc = defineRpc({
   name: "prism.media-url",
   input: z.object({ cwd: z.string(), path: z.string() }).strict(),
-  output: z.object({ url: z.string().nullable() }).strict(),
+  output: z.object({ urls: z.array(z.string()) }).strict(),
 });
 
 export const writeFileRpc = defineRpc({

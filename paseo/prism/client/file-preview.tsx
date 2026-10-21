@@ -46,7 +46,7 @@ export function MediaPreview({
     (offset: number, length: number) => readBytes({ cwd: cwd ?? "", path, offset, length }).then((result) => result.chunk),
     [readBytes, cwd, path],
   );
-  const getUrl = useCallback(() => mediaUrl({ cwd: cwd ?? "", path }).then((result) => result.url), [mediaUrl, cwd, path]);
+  const getUrls = useCallback(() => mediaUrl({ cwd: cwd ?? "", path }).then((result) => result.urls), [mediaUrl, cwd, path]);
   const create = useCallback(
     (host: unknown, initial: MediaViewProps) => api?.createMediaView(host, initial) ?? { update() {}, destroy() {} },
     [api],
@@ -61,9 +61,9 @@ export function MediaPreview({
       appearance: appearanceOf(theme),
       colors: pierreColorsOf(theme),
       fetchChunk,
-      getUrl,
+      getUrls,
     }),
-    [path, file, theme, fetchChunk, getUrl],
+    [path, file, theme, fetchChunk, getUrls],
   );
   const nativeImage = useQuery({
     queryKey: ["prism", "native-image", cwd, path, file.mtimeMs],

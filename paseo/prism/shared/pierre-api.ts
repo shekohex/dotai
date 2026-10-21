@@ -83,8 +83,8 @@ export interface MediaViewProps {
   appearance: "dark" | "light";
   colors: PierreColors;
   fetchChunk(offset: number, length: number): Promise<string>;
-  /** A URL that serves the file with HTTP Range, when this client can reach one. */
-  getUrl(): Promise<string | null>;
+  /** URLs that serve the file with HTTP Range, best first; this client may not reach any of them. */
+  getUrls(): Promise<string[]>;
 }
 
 /** Rendered Markdown, sanitized. */

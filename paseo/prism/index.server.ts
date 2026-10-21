@@ -15,7 +15,7 @@ import { listBranches, listFiles, readFileDiff, readStatus } from "./server/git.
 const COALESCE_MS = 800;
 
 export default function contribute(server: PluginServerContext) {
-  server.registerSettings(prismSettings);
+  const settings = server.registerSettings(prismSettings);
   const status = coalesce(
     ({ cwd, compare }: { cwd: string; compare: Parameters<typeof readStatus>[1] }) => readStatus(cwd, compare),
     ({ cwd, compare }) => `${cwd}\0${compare.mode}\0${compare.baseRef}`,
@@ -28,7 +28,14 @@ export default function contribute(server: PluginServerContext) {
   server.handle(fileRpc, (input) => readWorkspaceFile(input));
   server.handle(fileBytesRpc, (input) => readWorkspaceFileChunk(input));
   const media = createMediaServer();
-  server.handle(mediaUrlRpc, async ({ cwd, path }) => ({ url: await media.urlFor(cwd, path) }));
+  const tailscaleEnabled = async () => {
+    const state = await settings.read();
+    return state.status === "ready" && state.values.tailscaleServe;
+  };
+  server.handle(mediaUrlRpc, async ({ cwd, path }) => ({ urls: await media.urlsFor(cwd, path, await tailscaleEnabled()) }));
+  const stopSharingWhenDisabled = settings.subscribe(async (state) => {
+    if (state.status === "ready" && !state.values.tailscaleServe) await media.stopShare();
+  });
   server.handle(writeFileRpc, (input) => writeWorkspaceFile(input));
   server.handle(reviewRpc, ({ workspaceId, action }) => applyReviewAction(workspaceId, action));
   server.handle(viewerRpc, async () => ({ viewer: await readViewer() }));
@@ -38,5 +45,8 @@ export default function contribute(server: PluginServerContext) {
     total: WEB_BUNDLE.length,
     chunk: WEB_BUNDLE.slice(offset, offset + length),
   }));
-  return () => media.close();
+  return async () => {
+    stopSharingWhenDisabled();
+    await media.close();
+  };
 }

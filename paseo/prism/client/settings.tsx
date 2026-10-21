@@ -36,6 +36,14 @@ export function PrismSettingsScreen() {
         />
       </SettingsCard>
       <SettingsCard>
+        <SettingsSwitch
+          label="Share media over Tailscale"
+          hint="When Tailscale is running on the daemon machine, publish video and audio with `tailscale serve` so other machines can stream them. Only your tailnet can reach it. Off, or without Tailscale, media streams from loopback or loads in slices."
+          value={values.tailscaleServe}
+          onValueChange={(tailscaleServe) => void settings.save({ ...values, tailscaleServe }, revision)}
+        />
+      </SettingsCard>
+      <SettingsCard>
         <SettingsSelect
           label="Code theme"
           hint="Syntax colors in diffs. Auto picks the bundled theme that matches your Paseo theme, such as Catppuccin or Tokyo Night."

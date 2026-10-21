@@ -11,6 +11,8 @@ export const prismSettings = defineSettings({
       hideBuiltinPanels: z.boolean().default(true),
       /** Highlights theme for code in diffs; "auto" matches the Paseo theme. */
       syntaxTheme: z.string().default("auto"),
+      /** Publish media over `tailscale serve` when Tailscale is running, so other machines can stream it. */
+      tailscaleServe: z.boolean().default(true),
     })
     .strict(),
 });

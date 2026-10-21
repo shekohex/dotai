@@ -541,17 +541,20 @@ function createMediaView(parent: unknown, initial: MediaViewProps): PierreView<M
     release();
     host.style.alignItems = "center";
     host.style.colorScheme = props.appearance;
-    // Video and audio stream from the daemon with Range when it is reachable; otherwise, or if the
-    // element cannot load that URL, the file is fetched over the RPC channel in slices.
+    // Video and audio stream from the daemon with Range. Each URL is tried in turn; when none loads,
+    // the file is fetched over the RPC channel in slices.
     if (props.kind === "video" || props.kind === "audio") {
-      const url = await props.getUrl().catch(() => null);
+      const urls = await props.getUrls().catch(() => []);
       if (mine !== generation) return;
-      if (url) {
+      const tryUrl = (index: number) => {
+        const url = urls[index];
+        if (url === undefined) return void loadSliced(props, mine);
         show(props, url, () => {
-          if (mine === generation) void loadSliced(props, mine);
+          if (mine === generation) tryUrl(index + 1);
         });
-        return;
-      }
+      };
+      tryUrl(0);
+      return;
     }
     await loadSliced(props, mine);
   };

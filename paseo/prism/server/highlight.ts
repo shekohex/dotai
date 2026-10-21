@@ -38,13 +38,16 @@ export async function tokenizeLines(
   syntax: string,
 ): Promise<LineTokens[] | null> {
   try {
+    const theme = await loadSyntaxTheme(syntax);
+    // React Native has no "inherit" color, so uncolored tokens get the theme's own text color.
+    const foreground = String(theme.style["editor.foreground"] ?? theme.style.text ?? "#ffffff");
     const { tokens } = codeToTokens(text, {
       lang: language as never,
-      theme: await loadSyntaxTheme(syntax),
+      theme,
       tokenizeMaxLineLength: MAX_LINE_LENGTH,
     });
     return tokens.map((line) =>
-      line.map((token): [string, string] => [token.content, token.color ?? "inherit"]),
+      line.map((token): [string, string] => [token.content, token.color ?? foreground]),
     );
   } catch (error) {
     console.error(`[prism] highlight failed for ${language}:`, error);

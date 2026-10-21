@@ -2,6 +2,8 @@
 import { File, FileDiff, canUseWASM, type DiffLineAnnotation, getSharedHighlighter, parsePatchFiles } from "@pierre/diffs";
 import { themes as catalog } from "@pierre/highlights/themes/loader";
 import { Editor } from "@pierre/diffs/edit";
+import DOMPurify from "dompurify";
+import { marked } from "marked";
 import { FileTree, createFileTreeIconResolver, getBuiltInSpriteSheet } from "@pierre/trees";
 
 import { ICON_COLORS, TOKEN_COLORS } from "../../shared/file-icon-colors.js";
@@ -11,6 +13,8 @@ import type {
   DiffViewProps,
   FileIconProps,
   FileViewProps,
+  MarkdownViewProps,
+  MediaViewProps,
   PierreApi,
   PierreColors,
   PierreView,
@@ -444,6 +448,194 @@ function createFileView(parent: unknown, initial: FileViewProps): PierreView<Fil
   };
 }
 
+const MEDIA_LIMITS_MB: Record<MediaViewProps["kind"], number> = { image: 40, audio: 80, video: 150, pdf: 100 };
+const SLICE_BYTES = 512 * 1024;
+const PARALLEL_SLICES = 4;
+
+function decodeBase64(chunk: string): Uint8Array {
+  const binary = atob(chunk);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function createMediaView(parent: unknown, initial: MediaViewProps): PierreView<MediaViewProps> {
+  const host = styled(document.createElement("div"), {
+    width: "100%",
+    height: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "auto",
+    boxSizing: "border-box",
+  });
+  (parent as HTMLElement).appendChild(host);
+
+  let loadedKey = "";
+  let objectUrl: string | null = null;
+  let generation = 0;
+
+  const release = () => {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = null;
+  };
+
+  const message = (props: MediaViewProps, text: string) => {
+    host.textContent = text;
+    host.style.color = props.colors.foregroundMuted;
+  };
+
+  const show = (props: MediaViewProps, url: string) => {
+    host.textContent = "";
+    const fit = { maxWidth: "100%", maxHeight: "100%" };
+    if (props.kind === "image") {
+      let zoomed = false;
+      const image = styled(document.createElement("img"), { ...fit, objectFit: "contain", cursor: "zoom-in", margin: "auto" });
+      image.src = url;
+      image.alt = props.name;
+      image.addEventListener("click", () => {
+        zoomed = !zoomed;
+        Object.assign(image.style, zoomed ? { maxWidth: "none", maxHeight: "none", cursor: "zoom-out" } : { ...fit, cursor: "zoom-in" });
+      });
+      host.style.alignItems = "flex-start";
+      host.appendChild(image);
+    } else if (props.kind === "video") {
+      const video = styled(document.createElement("video"), { ...fit, outline: "none", borderRadius: "8px", background: "#000" });
+      video.src = url;
+      video.controls = true;
+      video.preload = "metadata";
+      host.appendChild(video);
+    } else if (props.kind === "audio") {
+      const card = styled(document.createElement("div"), {
+        display: "flex",
+        flexDirection: "column",
+        gap: "12px",
+        width: "min(520px, 90%)",
+        padding: "20px",
+        borderRadius: "12px",
+        background: props.colors.surface1,
+        border: `1px solid ${props.colors.border}`,
+        color: props.colors.foreground,
+        fontFamily: "inherit",
+      });
+      const title = styled(document.createElement("div"), { fontWeight: "600", wordBreak: "break-all" });
+      title.textContent = props.name.split("/").pop() ?? props.name;
+      const audio = styled(document.createElement("audio"), { width: "100%" });
+      audio.src = url;
+      audio.controls = true;
+      audio.preload = "metadata";
+      card.append(title, audio);
+      host.appendChild(card);
+    } else {
+      const frame = styled(document.createElement("iframe"), { width: "100%", height: "100%", border: "none", background: "#fff" });
+      frame.src = url;
+      frame.title = props.name;
+      host.appendChild(frame);
+    }
+  };
+
+  const load = async (props: MediaViewProps) => {
+    const mine = ++generation;
+    release();
+    host.style.alignItems = "center";
+    host.style.colorScheme = props.appearance;
+    const limit = MEDIA_LIMITS_MB[props.kind];
+    if (props.size > limit * 1024 * 1024) {
+      message(props, `Too large to preview (${(props.size / 1024 / 1024).toFixed(1)} MB, limit ${limit} MB).`);
+      return;
+    }
+    const slices = Math.ceil(props.size / SLICE_BYTES);
+    const parts = Array.from<Uint8Array>({ length: slices });
+    let next = 0;
+    let done = 0;
+    message(props, "Loading… 0%");
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(PARALLEL_SLICES, slices) }, async () => {
+          while (next < slices && mine === generation) {
+            const index = next++;
+            parts[index] = decodeBase64(await props.fetchChunk(index * SLICE_BYTES, SLICE_BYTES));
+            done++;
+            if (mine === generation) message(props, `Loading… ${Math.round((done / slices) * 100)}%`);
+          }
+        }),
+      );
+    } catch (error) {
+      if (mine === generation) message(props, `Could not load ${props.name}: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    if (mine !== generation) return;
+    objectUrl = URL.createObjectURL(new Blob(parts as BlobPart[], { type: props.mimeType }));
+    show(props, objectUrl);
+  };
+
+  const update = (props: MediaViewProps) => {
+    host.style.background = props.colors.surface0;
+    const key = `${props.name}|${props.kind}|${props.size}|${props.version}`;
+    if (key === loadedKey) return;
+    loadedKey = key;
+    void load(props);
+  };
+
+  update(initial);
+  return {
+    update,
+    destroy() {
+      generation++;
+      release();
+      host.remove();
+    },
+  };
+}
+
+function markdownCss(props: MarkdownViewProps): string {
+  const { colors, code, uiFontSize } = props;
+  return `
+.prism-md { font-size: ${uiFontSize + 1}px; line-height: 1.6; color: ${colors.foreground}; max-width: 860px; margin: 0 auto; padding: 20px 28px 48px; overflow-wrap: anywhere; }
+.prism-md h1, .prism-md h2 { padding-bottom: 0.3em; border-bottom: 1px solid ${colors.border}; }
+.prism-md h1, .prism-md h2, .prism-md h3, .prism-md h4 { margin: 1.4em 0 0.6em; line-height: 1.25; }
+.prism-md h1 { font-size: 1.9em; } .prism-md h2 { font-size: 1.5em; } .prism-md h3 { font-size: 1.25em; }
+.prism-md p, .prism-md ul, .prism-md ol, .prism-md pre, .prism-md blockquote, .prism-md table { margin: 0 0 1em; }
+.prism-md a { color: ${colors.accent}; }
+.prism-md code { font-family: ${code.family}; font-size: 0.9em; padding: 0.15em 0.4em; border-radius: 5px; background: ${colors.surface1}; }
+.prism-md pre { padding: 14px 16px; border-radius: 8px; background: ${colors.surface1}; overflow: auto; }
+.prism-md pre code { padding: 0; background: none; font-size: ${code.size}px; line-height: ${code.lineHeight}px; }
+.prism-md blockquote { padding: 0 1em; border-left: 4px solid ${colors.border}; color: ${colors.foregroundMuted}; }
+.prism-md table { border-collapse: collapse; display: block; overflow: auto; }
+.prism-md th, .prism-md td { padding: 6px 12px; border: 1px solid ${colors.border}; }
+.prism-md th { background: ${colors.surface1}; }
+.prism-md hr { border: none; border-top: 1px solid ${colors.border}; margin: 1.5em 0; }
+.prism-md img { max-width: 100%; }
+.prism-md input[type=checkbox] { margin-right: 0.5em; }
+`;
+}
+
+function createMarkdownView(parent: unknown, initial: MarkdownViewProps): PierreView<MarkdownViewProps> {
+  const host = styled(document.createElement("div"), { width: "100%", height: "100%", overflow: "auto" });
+  const style = document.createElement("style");
+  const body = document.createElement("div");
+  body.className = "prism-md";
+  host.append(style, body);
+  (parent as HTMLElement).appendChild(host);
+
+  let renderedText: string | null = null;
+  const update = (props: MarkdownViewProps) => {
+    style.textContent = markdownCss(props);
+    host.style.background = props.colors.surface0;
+    host.style.colorScheme = props.appearance;
+    if (props.text === renderedText) return;
+    renderedText = props.text;
+    const html = marked.parse(props.text, { gfm: true, async: false });
+    body.innerHTML = DOMPurify.sanitize(html);
+    body.querySelectorAll("a[href]").forEach((link) => {
+      link.setAttribute("target", "_blank");
+      link.setAttribute("rel", "noopener noreferrer");
+    });
+  };
+  update(initial);
+  return { update, destroy: () => host.remove() };
+}
+
 function treeVars(props: TreeViewProps): Record<string, string> {
   const { colors } = props;
   return {
@@ -689,5 +881,5 @@ function createFileIcon(parent: unknown, initial: FileIconProps): PierreView<Fil
   return { update, destroy: () => host.remove() };
 }
 
-const api: PierreApi = { supported: canUseWASM(), createDiffView, createFileView, createTreeView, createFileIcon };
+const api: PierreApi = { supported: canUseWASM(), createDiffView, createFileView, createMediaView, createMarkdownView, createTreeView, createFileIcon };
 export default api;

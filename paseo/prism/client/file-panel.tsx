@@ -13,6 +13,7 @@ import { useFileActions } from "./file-actions.js";
 import { useSyncBuiltinHiding } from "./hide-builtins.js";
 import { HeaderBar, HeaderButton } from "./panel-header.js";
 import { updateWorkspaceView, useWorkspaceView } from "./store.js";
+import { isMarkdownPath, MarkdownPreview, MediaPreview } from "./file-preview.js";
 import { PierreMount, usePierre } from "./pierre.js";
 import { CODE_SURFACE_PROPS, appearanceOf, pierreColorsOf, pierreFontOf, typographyFor, type Typography } from "./styling.js";
 
@@ -70,13 +71,14 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
   const pierre = usePierre();
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [rendered, setRendered] = useState(true);
 
   // Opening a file (or choosing Edit on it) resets the editor.
   useEffect(() => {
     setDraft(null);
   }, [path]);
   useEffect(() => {
-    if (startInEdit && file.data && !file.data.binary && !file.data.tooLarge) {
+    if (startInEdit && file.data && file.data.kind === "text" && !file.data.binary && !file.data.tooLarge) {
       setDraft((current) => current ?? file.data.content);
       updateWorkspaceView(workspaceId, () => ({ fileEdit: false }));
     }
@@ -118,14 +120,16 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
     [path, syntax, file.data, draft !== null, theme, typo],
   );
 
-  const editable = Boolean(file.data && !file.data.binary && !file.data.tooLarge);
+  const media = file.data && file.data.kind !== "text" ? { ...file.data, kind: file.data.kind } : null;
+  const markdown = path !== null && isMarkdownPath(path) && file.data?.kind === "text";
+  const editable = Boolean(file.data && file.data.kind === "text" && !file.data.binary && !file.data.tooLarge);
   const dirty = draft !== null && draft !== file.data?.content;
   const notice = !path
     ? "Open a file from the Files panel."
     : file.isError
       ? `Could not open ${path}: ${file.error.message}`
       : file.data?.binary
-        ? "Binary file."
+        ? "No preview for this binary file."
         : file.data?.tooLarge
           ? "File is too large to show (over 1 MB)."
           : null;
@@ -152,6 +156,15 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
             void file.refetch();
           }}
         />
+        {markdown && pierre && draft === null ? (
+          <HeaderButton
+            theme={theme}
+            compact={compact}
+            icon={rendered ? "Code" : "Eye"}
+            label={rendered ? "Show Markdown source" : "Show Markdown preview"}
+            onPress={() => setRendered((current) => !current)}
+          />
+        ) : null}
         {draft === null ? (
           <HeaderButton
             theme={theme}
@@ -170,6 +183,10 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
       </HeaderBar>
       {notice ? (
         <Text style={{ color: theme.colors.foregroundMuted, padding: 16, fontSize: typo.ui }}>{notice}</Text>
+      ) : media && path ? (
+        <MediaPreview api={pierre} theme={theme} typo={typo} workspaceId={workspaceId} path={path} file={media} />
+      ) : markdown && rendered && draft === null && pierre && file.data ? (
+        <MarkdownPreview api={pierre} theme={theme} typo={typo} text={file.data.content} />
       ) : pierre && viewProps ? (
         <PierreMount create={create} props={viewProps} style={{ flex: 1 }} />
       ) : draft !== null ? (

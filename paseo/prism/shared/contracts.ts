@@ -131,6 +131,9 @@ export const syntaxThemesRpc = defineRpc({
   output: z.object({ themes: z.array(syntaxThemeSchema) }).strict(),
 });
 
+export const mediaKindSchema = z.enum(["text", "image", "video", "audio", "pdf"]);
+export type MediaKind = z.infer<typeof mediaKindSchema>;
+
 export const fileRpc = defineRpc({
   name: "prism.file",
   input: z.object({ cwd: z.string(), path: z.string(), syntax: z.string() }).strict(),
@@ -142,8 +145,19 @@ export const fileRpc = defineRpc({
       binary: z.boolean(),
       tooLarge: z.boolean(),
       mtimeMs: z.number(),
+      /** What the file is, by its extension; anything else is text or an unreadable binary. */
+      kind: mediaKindSchema,
+      mimeType: z.string(),
+      size: z.number().int().nonnegative(),
     })
     .strict(),
+});
+
+/** A slice of a file, base64 encoded, for media that is assembled on the client. */
+export const fileBytesRpc = defineRpc({
+  name: "prism.file-bytes",
+  input: z.object({ cwd: z.string(), path: z.string(), offset: z.number().int().nonnegative(), length: z.number().int().positive() }).strict(),
+  output: z.object({ chunk: z.string() }).strict(),
 });
 
 export const writeFileRpc = defineRpc({

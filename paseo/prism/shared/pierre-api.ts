@@ -72,6 +72,28 @@ export interface FileViewProps {
   onEdit(text: string): void;
 }
 
+/** An image, video, audio file or PDF, assembled from file slices the daemon serves. */
+export interface MediaViewProps {
+  name: string;
+  kind: "image" | "video" | "audio" | "pdf";
+  mimeType: string;
+  size: number;
+  /** Changes whenever the file does, so an edit reloads the preview. */
+  version: number;
+  appearance: "dark" | "light";
+  colors: PierreColors;
+  fetchChunk(offset: number, length: number): Promise<string>;
+}
+
+/** Rendered Markdown, sanitized. */
+export interface MarkdownViewProps {
+  text: string;
+  appearance: "dark" | "light";
+  colors: PierreColors;
+  code: PierreFont;
+  uiFontSize: number;
+}
+
 export interface FileIconProps {
   name: string;
   size: number;
@@ -111,6 +133,8 @@ export interface PierreApi {
   supported: boolean;
   createDiffView(host: unknown, props: DiffViewProps): PierreView<DiffViewProps>;
   createFileView(parent: unknown, initial: FileViewProps): PierreView<FileViewProps>;
+  createMediaView(parent: unknown, initial: MediaViewProps): PierreView<MediaViewProps>;
+  createMarkdownView(parent: unknown, initial: MarkdownViewProps): PierreView<MarkdownViewProps>;
   createTreeView(host: unknown, props: TreeViewProps): PierreView<TreeViewProps>;
   /** A file-type icon from Pierre's icon set (the one Trees and diffs.com/icons use). */
   createFileIcon(host: unknown, props: FileIconProps): PierreView<FileIconProps>;

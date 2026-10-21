@@ -6,13 +6,15 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 
 import { writeFileRpc } from "../shared/contracts.js";
+import type { FileViewProps } from "../shared/pierre-api.js";
 import { useAppAppearance } from "./appearance.js";
 import { useFile, useSyntaxTheme, useWorkspaceDirectory } from "./data.js";
 import { useFileActions } from "./file-actions.js";
 import { useSyncBuiltinHiding } from "./hide-builtins.js";
 import { HeaderBar, HeaderButton } from "./panel-header.js";
 import { updateWorkspaceView, useWorkspaceView } from "./store.js";
-import { CODE_SURFACE_PROPS, typographyFor, type Typography } from "./styling.js";
+import { PierreMount, usePierre } from "./pierre.js";
+import { CODE_SURFACE_PROPS, appearanceOf, pierreColorsOf, pierreFontOf, typographyFor, type Typography } from "./styling.js";
 
 type LineToken = [text: string, color: string];
 
@@ -65,6 +67,7 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
   const queryClient = useQueryClient();
   const toast = useToast();
   const runAction = useFileActions(workspaceId);
+  const pierre = usePierre();
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -93,6 +96,27 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
       setSaving(false);
     }
   }, [path, draft, file.data, write, cwd, queryClient, toast]);
+
+  const create = useCallback(
+    (host: unknown, initial: FileViewProps) => pierre?.createFileView(host, initial) ?? { update() {}, destroy() {} },
+    [pierre],
+  );
+  const viewProps = useMemo<FileViewProps | null>(
+    () =>
+      path && syntax && file.data
+        ? {
+            name: path,
+            content: file.data.content,
+            editing: draft !== null,
+            syntax,
+            appearance: appearanceOf(theme),
+            colors: pierreColorsOf(theme),
+            code: pierreFontOf(typo),
+            onEdit: setDraft,
+          }
+        : null,
+    [path, syntax, file.data, draft !== null, theme, typo],
+  );
 
   const editable = Boolean(file.data && !file.data.binary && !file.data.tooLarge);
   const dirty = draft !== null && draft !== file.data?.content;
@@ -146,6 +170,8 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
       </HeaderBar>
       {notice ? (
         <Text style={{ color: theme.colors.foregroundMuted, padding: 16, fontSize: typo.ui }}>{notice}</Text>
+      ) : pierre && viewProps ? (
+        <PierreMount create={create} props={viewProps} style={{ flex: 1 }} />
       ) : draft !== null ? (
         <TextInput
           {...CODE_SURFACE_PROPS}

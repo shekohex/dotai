@@ -58,6 +58,20 @@ export interface DiffViewProps {
   onFocused(): void;
 }
 
+/** A file shown with syntax colors, optionally editable in place. */
+export interface FileViewProps {
+  name: string;
+  content: string;
+  /** While true the file is an editor; `content` is only the starting text. */
+  editing: boolean;
+  syntax: string;
+  appearance: "dark" | "light";
+  colors: PierreColors;
+  code: PierreFont;
+  /** The full text after every edit. */
+  onEdit(text: string): void;
+}
+
 export interface FileIconProps {
   name: string;
   size: number;
@@ -96,6 +110,7 @@ export interface PierreApi {
   /** False where WebAssembly + SIMD is missing; the RN renderers take over. */
   supported: boolean;
   createDiffView(host: unknown, props: DiffViewProps): PierreView<DiffViewProps>;
+  createFileView(parent: unknown, initial: FileViewProps): PierreView<FileViewProps>;
   createTreeView(host: unknown, props: TreeViewProps): PierreView<TreeViewProps>;
   /** A file-type icon from Pierre's icon set (the one Trees and diffs.com/icons use). */
   createFileIcon(host: unknown, props: FileIconProps): PierreView<FileIconProps>;

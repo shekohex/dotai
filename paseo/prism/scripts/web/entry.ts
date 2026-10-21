@@ -1,6 +1,7 @@
 // Web and desktop only: Pierre's DOM components behind a small API the plugin's React Native code drives.
-import { FileDiff, canUseWASM, type DiffLineAnnotation, getSharedHighlighter, parsePatchFiles } from "@pierre/diffs";
+import { File, FileDiff, canUseWASM, type DiffLineAnnotation, getSharedHighlighter, parsePatchFiles } from "@pierre/diffs";
 import { themes as catalog } from "@pierre/highlights/themes/loader";
+import { Editor } from "@pierre/diffs/edit";
 import { FileTree, createFileTreeIconResolver, getBuiltInSpriteSheet } from "@pierre/trees";
 
 import { ICON_COLORS, TOKEN_COLORS } from "../../shared/file-icon-colors.js";
@@ -9,6 +10,7 @@ import type {
   DiffSide,
   DiffViewProps,
   FileIconProps,
+  FileViewProps,
   PierreApi,
   PierreColors,
   PierreView,
@@ -25,7 +27,7 @@ let patchCounter = 0;
  * diffs 1.6.0 hands its resolver a `fallbackLoader` that the published `@pierre/theming` 1.0.1
  * ignores, so the theme is registered on the shared resolver directly.
  */
-function themeFor(props: DiffViewProps): { name: string; ready: Promise<void> } {
+function themeFor(props: { syntax: string }): { name: string; ready: Promise<void> } {
   const name = props.syntax;
   let ready = registeredThemes.get(name);
   if (!ready) {
@@ -372,6 +374,76 @@ function createDiffView(parent: unknown, initial: DiffViewProps): PierreView<Dif
   };
 }
 
+function createFileView(parent: unknown, initial: FileViewProps): PierreView<FileViewProps> {
+  const host = document.createElement("div");
+  host.style.width = "100%";
+  host.style.height = "100%";
+  host.style.overflow = "auto";
+  (parent as HTMLElement).appendChild(host);
+
+  let file: File | null = null;
+  let editor: Editor<"file"> | null = null;
+  let stopEditing: (() => void) | null = null;
+  let renderedKey = "";
+  let destroyed = false;
+  let latest = initial;
+
+  const endEditing = () => {
+    stopEditing?.();
+    stopEditing = null;
+    editor = null;
+  };
+
+  const draw = (props: FileViewProps, theme: string) => {
+    setVars(host, diffVars(props.colors, props.code));
+    const options = {
+      theme: { dark: theme, light: theme },
+      themeType: props.appearance,
+      preferredHighlighter: "highlights" as const,
+      overflow: "scroll" as const,
+      disableFileHeader: true,
+      onEditChange: (event: { file: { contents: string } }) => latest.onEdit(event.file.contents),
+    };
+    // An open editor owns the text; only a new file, theme or the end of editing redraws.
+    const key = JSON.stringify([props.name, props.content, theme, props.editing]);
+    if (props.editing && editor) return;
+    if (!props.editing && key === renderedKey) return;
+    endEditing();
+    renderedKey = key;
+    if (file) file.setOptions(options);
+    else file = new File(options);
+    file.render({
+      file: { name: props.name, contents: props.content, cacheKey: `prism-file-${patchCounter++}` },
+      containerWrapper: host,
+      forceRender: true,
+    });
+    if (props.editing) {
+      editor = new Editor("file");
+      stopEditing = editor.edit(file);
+      editor.focus();
+    }
+  };
+
+  const update = (props: FileViewProps) => {
+    latest = props;
+    const theme = themeFor(props);
+    void theme.ready.then(() => {
+      if (!destroyed) draw(props, theme.name);
+    });
+  };
+
+  update(initial);
+  return {
+    update,
+    destroy() {
+      destroyed = true;
+      endEditing();
+      file?.cleanUp();
+      host.remove();
+    },
+  };
+}
+
 function treeVars(props: TreeViewProps): Record<string, string> {
   const { colors } = props;
   return {
@@ -617,5 +689,5 @@ function createFileIcon(parent: unknown, initial: FileIconProps): PierreView<Fil
   return { update, destroy: () => host.remove() };
 }
 
-const api: PierreApi = { supported: canUseWASM(), createDiffView, createTreeView, createFileIcon };
+const api: PierreApi = { supported: canUseWASM(), createDiffView, createFileView, createTreeView, createFileIcon };
 export default api;

@@ -1,0 +1,34 @@
+{
+  "name": "@shekohex/paseo-plugin-prism",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/dev-reload.mjs",
+    "lint": "oxlint --deny-warnings index.client.tsx index.server.ts client server shared",
+    "typecheck": "tsc --noEmit && tsc -p scripts/web",
+    "build:web": "node scripts/build-web.mjs",
+    "postinstall": "node scripts/build-web.mjs"
+  },
+  "dependencies": {
+    "@pierre/diffs": "1.6.0",
+    "@pierre/trees": "1.0.0-beta.6"
+  },
+  "devDependencies": {
+    "@getpaseo/client": "^0.12.0",
+    "@getpaseo/plugin": "0.12.0",
+    "@getpaseo/protocol": "^0.12.0",
+    "@tanstack/react-query": "^5.90.0",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.16",
+    "esbuild": "^0.28.2",
+    "oxlint": "^1.18.0",
+    "react": "^19.1.1",
+    "react-native": "^0.81.5",
+    "typescript": "^5.9.2",
+    "zod": "^4.4.3"
+  }
+}

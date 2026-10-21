@@ -1,0 +1,8 @@
+{
+  "id": "prism",
+  "name": "Prism",
+  "description": "Fast file tree, changes tree and diff viewer built on Pierre, for desktop and mobile",
+  "requirements": {
+    "paseo": ">=0.12.0"
+  }
+}

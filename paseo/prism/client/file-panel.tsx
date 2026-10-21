@@ -1,0 +1,186 @@
+import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
+import { FlatList, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRpc } from "@getpaseo/plugin/client";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { Text, View } from "react-native";
+
+import { writeFileRpc } from "../shared/contracts.js";
+import { useAppAppearance } from "./appearance.js";
+import { useFile, useSyntaxTheme, useWorkspaceDirectory } from "./data.js";
+import { useFileActions } from "./file-actions.js";
+import { useSyncBuiltinHiding } from "./hide-builtins.js";
+import { HeaderBar, HeaderButton } from "./panel-header.js";
+import { updateWorkspaceView, useWorkspaceView } from "./store.js";
+import { CODE_SURFACE_PROPS, typographyFor, type Typography } from "./styling.js";
+
+type LineToken = [text: string, color: string];
+
+const FileLine = memo(function FileLine({
+  number,
+  text,
+  tokens,
+  foreground,
+  muted,
+  typo,
+}: {
+  number: number;
+  text: string;
+  tokens: LineToken[] | undefined;
+  foreground: string;
+  muted: string;
+  typo: Typography;
+}) {
+  return (
+    <View {...CODE_SURFACE_PROPS} style={{ flexDirection: "row" }}>
+      <Text style={{ width: 52, paddingRight: 10, textAlign: "right", fontFamily: typo.mono, fontSize: typo.code, color: muted }}>
+        {number}
+      </Text>
+      <Text selectable style={{ flex: 1, fontFamily: typo.mono, fontSize: typo.code, color: foreground }}>
+        {tokens && tokens.length > 0
+          ? tokens.map(([part, color], index) => (
+              <Text key={index} style={{ color }}>
+                {part}
+              </Text>
+            ))
+          : text === ""
+            ? " "
+            : text}
+      </Text>
+    </View>
+  );
+});
+
+/** Shows one file with syntax colors, and edits and saves it. */
+export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelProps) {
+  const { compact } = layout;
+  useSyncBuiltinHiding();
+  const typo = typographyFor(useAppAppearance(), compact);
+  const path = useWorkspaceView(workspaceId, (state) => state.filePath);
+  const startInEdit = useWorkspaceView(workspaceId, (state) => state.fileEdit);
+  const syntax = useSyntaxTheme(theme);
+  const file = useFile(workspaceId, path, syntax);
+  const cwd = useWorkspaceDirectory(workspaceId);
+  const write = useRpc(writeFileRpc);
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const runAction = useFileActions(workspaceId);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Opening a file (or choosing Edit on it) resets the editor.
+  useEffect(() => {
+    setDraft(null);
+  }, [path]);
+  useEffect(() => {
+    if (startInEdit && file.data && !file.data.binary && !file.data.tooLarge) {
+      setDraft((current) => current ?? file.data.content);
+      updateWorkspaceView(workspaceId, () => ({ fileEdit: false }));
+    }
+  }, [startInEdit, file.data, workspaceId]);
+
+  const lines = useMemo(() => (file.data ? file.data.content.split("\n") : []), [file.data]);
+  const save = useCallback(async () => {
+    if (path === null || draft === null || !file.data) return;
+    setSaving(true);
+    try {
+      await write({ cwd: cwd ?? "", path, content: draft, expectedMtimeMs: file.data.mtimeMs });
+      setDraft(null);
+      await queryClient.invalidateQueries({ queryKey: ["prism"] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save");
+    } finally {
+      setSaving(false);
+    }
+  }, [path, draft, file.data, write, cwd, queryClient, toast]);
+
+  const editable = Boolean(file.data && !file.data.binary && !file.data.tooLarge);
+  const dirty = draft !== null && draft !== file.data?.content;
+  const notice = !path
+    ? "Open a file from the Files panel."
+    : file.isError
+      ? `Could not open ${path}: ${file.error.message}`
+      : file.data?.binary
+        ? "Binary file."
+        : file.data?.tooLarge
+          ? "File is too large to show (over 1 MB)."
+          : null;
+
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.colors.surface0 }}>
+      <HeaderBar theme={theme} compact={compact}>
+        <Text numberOfLines={1} style={{ flex: 1, color: theme.colors.foreground, fontSize: typo.ui }}>
+          {path ?? "File"}
+          {dirty ? " •" : ""}
+        </Text>
+        {path ? (
+          <HeaderButton theme={theme} compact={compact} icon="Copy" label="Copy path" onPress={() => runAction("copy-path", path)} />
+        ) : null}
+        <HeaderButton
+          theme={theme}
+          compact={compact}
+          icon="RotateCw"
+          label="Reload file"
+          busy={file.isFetching}
+          disabled={!path}
+          onPress={() => {
+            setDraft(null);
+            void file.refetch();
+          }}
+        />
+        {draft === null ? (
+          <HeaderButton
+            theme={theme}
+            compact={compact}
+            icon="Pencil"
+            label="Edit file"
+            disabled={!editable}
+            onPress={() => setDraft(file.data?.content ?? "")}
+          />
+        ) : (
+          <>
+            <HeaderButton theme={theme} compact={compact} icon="X" label="Discard changes" onPress={() => setDraft(null)} />
+            <HeaderButton theme={theme} compact={compact} icon="Save" label="Save file" busy={saving} disabled={!dirty} onPress={() => void save()} />
+          </>
+        )}
+      </HeaderBar>
+      {notice ? (
+        <Text style={{ color: theme.colors.foregroundMuted, padding: 16, fontSize: typo.ui }}>{notice}</Text>
+      ) : draft !== null ? (
+        <TextInput
+          {...CODE_SURFACE_PROPS}
+          multiline
+          value={draft}
+          onChangeText={setDraft}
+          autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
+          style={{
+            flex: 1,
+            padding: 12,
+            textAlignVertical: "top",
+            color: theme.colors.foreground,
+            fontFamily: typo.mono,
+            fontSize: typo.code,
+          }}
+        />
+      ) : (
+        <FlatList
+          data={lines}
+          keyExtractor={(_, index) => String(index)}
+          initialNumToRender={60}
+          renderItem={({ item, index }) => (
+            <FileLine
+              number={index + 1}
+              text={item}
+              tokens={file.data?.tokens?.[index]}
+              foreground={theme.colors.foreground}
+              muted={theme.colors.foregroundMuted}
+              typo={typo}
+            />
+          )}
+        />
+      )}
+    </View>
+  );
+}

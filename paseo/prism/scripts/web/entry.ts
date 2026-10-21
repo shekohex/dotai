@@ -437,6 +437,18 @@ const TREE_CSS = `
 }
 `;
 
+function directoriesOf(paths: readonly string[]): string[] {
+  const directories = new Set<string>();
+  for (const path of paths) {
+    let slash = path.indexOf("/");
+    while (slash !== -1) {
+      directories.add(path.slice(0, slash + 1));
+      slash = path.indexOf("/", slash + 1);
+    }
+  }
+  return [...directories];
+}
+
 function createTreeView(parent: unknown, initial: TreeViewProps): PierreView<TreeViewProps> {
   const host = document.createElement("div");
   host.style.height = "100%";
@@ -447,6 +459,8 @@ function createTreeView(parent: unknown, initial: TreeViewProps): PierreView<Tre
   let pathsKey = "";
   let statusKey = "";
   let searchValue = "";
+  let expandAll = initial.expandAll;
+  let currentPaths = initial.paths;
 
   const gitStatus = () =>
     Object.entries(props.statuses).map(([path, status]) => ({ path, status }));
@@ -454,6 +468,7 @@ function createTreeView(parent: unknown, initial: TreeViewProps): PierreView<Tre
   const mount = () => {
     tree?.cleanUp();
     host.textContent = "";
+    currentPaths = props.paths;
     tree = new FileTree({
       paths: props.paths,
       flattenEmptyDirectories: true,
@@ -478,6 +493,55 @@ function createTreeView(parent: unknown, initial: TreeViewProps): PierreView<Tre
         ];
         return { text: parts.map((part) => part.text).join(""), parts };
       },
+      composition: {
+        contextMenu: {
+          enabled: true,
+          triggerMode: "right-click",
+          render: (item, context) => {
+            const { colors } = props;
+            const menu = styled(document.createElement("div"), {
+              position: "absolute",
+              top: "0",
+              left: "0",
+              zIndex: "10",
+              minWidth: "180px",
+              padding: "4px",
+              background: colors.surface2,
+              color: colors.foreground,
+              border: `1px solid ${colors.border}`,
+              borderRadius: "8px",
+              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
+              font: "inherit",
+              fontSize: `${props.uiFontSize}px`,
+            });
+            menu.setAttribute("role", "menu");
+            for (const entry of props.menu(item.path, item.kind === "directory")) {
+              const option = styled(document.createElement("button"), {
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                padding: "6px 10px",
+                background: "none",
+                border: "none",
+                borderRadius: "5px",
+                color: "inherit",
+                font: "inherit",
+                cursor: "pointer",
+              });
+              option.setAttribute("role", "menuitem");
+              option.textContent = entry.label;
+              option.addEventListener("mouseenter", () => (option.style.background = alpha(colors.foreground, 0.1)));
+              option.addEventListener("mouseleave", () => (option.style.background = "none"));
+              option.addEventListener("click", () => {
+                context.close();
+                props.onMenuAction(entry.id, item.path);
+              });
+              menu.appendChild(option);
+            }
+            return menu;
+          },
+        },
+      },
       onSelectionChange: (selected) => {
         const path = selected[selected.length - 1];
         if (path && !path.endsWith("/")) props.onOpenFile(path);
@@ -492,10 +556,22 @@ function createTreeView(parent: unknown, initial: TreeViewProps): PierreView<Tre
     setVars(host, treeVars(next));
     const nextPathsKey = `${next.expandAll}|${next.paths.join("\n")}`;
     const nextStatusKey = JSON.stringify([next.statuses, next.stats, next.commentCounts]);
-    if (tree === null || nextPathsKey !== pathsKey) {
+    if (tree === null || next.expandAll !== expandAll) {
       pathsKey = nextPathsKey;
       statusKey = nextStatusKey;
+      expandAll = next.expandAll;
       mount();
+    } else if (nextPathsKey !== pathsKey) {
+      // A changed file list keeps the folders the user opened.
+      pathsKey = nextPathsKey;
+      statusKey = nextStatusKey;
+      const opened = directoriesOf(currentPaths).filter((directory) => {
+        const item = tree?.getItem(directory);
+        return item !== null && item !== undefined && "isExpanded" in item && item.isExpanded();
+      });
+      currentPaths = next.paths;
+      tree.resetPaths(next.paths, { initialExpandedPaths: opened });
+      tree.setGitStatus(gitStatus());
     } else if (nextStatusKey !== statusKey) {
       statusKey = nextStatusKey;
       tree.setGitStatus(gitStatus());

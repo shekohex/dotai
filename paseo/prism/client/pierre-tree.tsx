@@ -3,6 +3,7 @@ import { useCallback, useMemo } from "react";
 
 import type { ChangedFile } from "../shared/contracts.js";
 import type { PierreApi, TreeStatus, TreeViewProps } from "../shared/pierre-api.js";
+import { fileMenuFor, type FileActionId } from "./file-actions.js";
 import { PierreMount } from "./pierre.js";
 import { pierreColorsOf, type Typography } from "./styling.js";
 
@@ -27,6 +28,7 @@ export function PierreTree({
   expandAll,
   search,
   onOpenFile,
+  onAction,
 }: {
   api: PierreApi;
   theme: PluginTheme;
@@ -38,12 +40,14 @@ export function PierreTree({
   expandAll: boolean;
   search: string;
   onOpenFile: (path: string) => void;
+  onAction: (action: FileActionId, path: string) => void;
 }) {
   const create = useCallback(
     (host: unknown, initial: TreeViewProps) => api.createTreeView(host, initial),
     [api],
   );
   const props = useMemo<TreeViewProps>(() => {
+    const changedPaths = new Set(changed.map((file) => file.path));
     const statuses: Record<string, TreeStatus> = {};
     for (const path of ignored) statuses[path] = "ignored";
     const stats: Record<string, { additions: number; deletions: number }> = {};
@@ -61,7 +65,9 @@ export function PierreTree({
       colors: pierreColorsOf(theme),
       uiFontSize: typo.ui,
       onOpenFile,
+      menu: (path, isDir) => fileMenuFor(isDir, !isDir && changedPaths.has(path)),
+      onMenuAction: (id, path) => onAction(id as FileActionId, path),
     };
-  }, [paths, changed, ignored, commentCounts, expandAll, search, theme, typo.ui, onOpenFile]);
+  }, [paths, changed, ignored, commentCounts, expandAll, search, theme, typo.ui, onOpenFile, onAction]);
   return <PierreMount create={create} props={props} style={{ flex: 1 }} />;
 }

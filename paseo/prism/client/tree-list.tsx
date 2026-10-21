@@ -26,6 +26,7 @@ interface TreeListProps {
   decorate: (row: TreeRow) => RowDecoration | null;
   onPressFile: (path: string) => void;
   onToggleDir: (path: string) => void;
+  onLongPressRow?: (row: TreeRow) => void;
   empty: string;
 }
 
@@ -46,6 +47,7 @@ const Row = memo(function Row({
   decoration,
   onPressFile,
   onToggleDir,
+  onLongPressRow,
 }: RowProps) {
   const styles = useMemo(
     () => ({
@@ -84,6 +86,7 @@ const Row = memo(function Row({
       accessibilityRole="button"
       accessibilityLabel={row.name}
       onPress={onPress}
+      onLongPress={onLongPressRow ? () => onLongPressRow(row) : undefined}
       style={[styles.row, { paddingLeft: 8 + row.depth * INDENT }]}
     >
       {row.isDir ? (
@@ -128,6 +131,7 @@ export function TreeList({
   decorate,
   onPressFile,
   onToggleDir,
+  onLongPressRow,
   empty,
 }: TreeListProps) {
   const height = rowHeight(compact);
@@ -142,9 +146,10 @@ export function TreeList({
         decoration={decorate(item)}
         onPressFile={onPressFile}
         onToggleDir={onToggleDir}
+        onLongPressRow={onLongPressRow}
       />
     ),
-    [theme, compact, typo, selectedPath, decorate, onPressFile, onToggleDir],
+    [theme, compact, typo, selectedPath, decorate, onPressFile, onToggleDir, onLongPressRow],
   );
   return (
     <FlatList

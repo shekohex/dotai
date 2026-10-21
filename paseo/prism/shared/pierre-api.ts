@@ -81,6 +81,9 @@ export interface TreeViewProps {
   colors: PierreColors;
   uiFontSize: number;
   onOpenFile(path: string): void;
+  /** Right-click menu entries for a file or folder. */
+  menu(path: string, isDir: boolean): readonly { id: string; label: string }[];
+  onMenuAction(id: string, path: string): void;
 }
 
 export interface PierreView<Props> {

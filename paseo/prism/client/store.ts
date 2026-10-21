@@ -5,6 +5,9 @@ import type { DiffSide } from "../shared/pierre-api.js";
 
 export interface WorkspaceViewState {
   selectedPath: string | null;
+  /** The file open in the File panel, and whether it opens in edit mode. */
+  filePath: string | null;
+  fileEdit: boolean;
   ignoreWhitespace: boolean;
   splitDiff: boolean;
   /** A review comment to scroll to in the Diffs panel; cleared once shown. */
@@ -24,6 +27,8 @@ export interface WorkspaceViewState {
 
 const INITIAL: WorkspaceViewState = {
   selectedPath: null,
+  filePath: null,
+  fileEdit: false,
   ignoreWhitespace: false,
   splitDiff: false,
   draft: null,
@@ -113,6 +118,12 @@ let openPanelImpl: OpenPanel | null = null;
 
 export function setPanelOpener(opener: OpenPanel | null): void {
   openPanelImpl = opener;
+}
+
+/** Opens a file in the File panel, in a workspace tab. */
+export function showFile(workspaceId: string, path: string, edit = false): void {
+  updateWorkspaceView(workspaceId, () => ({ filePath: path, fileEdit: edit }));
+  openPanelImpl?.("file", { workspaceId, location: "workspace" });
 }
 
 /** Selects a file and shows it in the Diff panel, opening a workspace tab for it if needed. */

@@ -6,9 +6,11 @@ import { Text, View } from "react-native";
 import { buildTrie, flattenTrie, type TreeRow } from "../shared/tree.js";
 import { useAppAppearance } from "./appearance.js";
 import { useProjectFiles, useRepoStatus } from "./data.js";
+import { fileMenuFor, useFileActions } from "./file-actions.js";
+import { FileMenuSheet } from "./file-menu.js";
 import { useSyncBuiltinHiding } from "./hide-builtins.js";
 import { HeaderBar, HeaderButton } from "./panel-header.js";
-import { collapseDirs, showDiff, toggleDir, updateWorkspaceView, useWorkspaceView } from "./store.js";
+import { collapseDirs, toggleDir, updateWorkspaceView, useWorkspaceView } from "./store.js";
 import { usePierre } from "./pierre.js";
 import { PierreTree } from "./pierre-tree.js";
 import { useCommentCounts } from "./review-data.js";
@@ -74,13 +76,9 @@ export function FilesPanel({ theme, layout, workspaceId }: PluginWorkspacePanelP
     [changed, ignored, theme, commentCounts],
   );
   const onToggleDir = useCallback((path: string) => toggleDir(workspaceId, SCOPE, path), [workspaceId]);
-  // Only changed files have something to show yet; a file viewer is not built.
-  const onPressFile = useCallback(
-    (path: string) => {
-      if (changed.has(path)) showDiff(workspaceId, path);
-    },
-    [changed, workspaceId],
-  );
+  const runAction = useFileActions(workspaceId);
+  const onPressFile = useCallback((path: string) => runAction("open", path), [runAction]);
+  const [menuRow, setMenuRow] = useState<TreeRow | null>(null);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.surface0 }}>
@@ -150,6 +148,7 @@ export function FilesPanel({ theme, layout, workspaceId }: PluginWorkspacePanelP
           expandAll={false}
           search={search}
           onOpenFile={onPressFile}
+          onAction={runAction}
         />
       ) : (
         <TreeList
@@ -161,9 +160,19 @@ export function FilesPanel({ theme, layout, workspaceId }: PluginWorkspacePanelP
           decorate={decorate}
           onPressFile={onPressFile}
           onToggleDir={onToggleDir}
+          onLongPressRow={setMenuRow}
           empty={filesQuery.isPending ? "Loading files…" : search === "" ? "No files" : "No matches"}
         />
       )}
+      {menuRow ? (
+        <FileMenuSheet
+          theme={theme}
+          title={menuRow.name}
+          items={fileMenuFor(menuRow.isDir, !menuRow.isDir && changed.has(menuRow.path))}
+          onSelect={(id) => runAction(id, menuRow.path)}
+          onClose={() => setMenuRow(null)}
+        />
+      ) : null}
     </View>
   );
 }

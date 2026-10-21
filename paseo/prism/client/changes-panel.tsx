@@ -6,6 +6,7 @@ import { Text, View } from "react-native";
 import { buildTrie, flattenTrie } from "../shared/tree.js";
 import type { ChangedFile } from "../shared/contracts.js";
 import { useRepoStatus } from "./data.js";
+import { useFileActions } from "./file-actions.js";
 import { useSyncBuiltinHiding } from "./hide-builtins.js";
 import { HeaderBar, HeaderButton } from "./panel-header.js";
 import { setCompare, showDiff, toggleDir, useWorkspaceView } from "./store.js";
@@ -33,6 +34,7 @@ export function ChangesPanel({ theme, layout, workspaceId }: PluginWorkspacePane
   const files = query.data?.files ?? EMPTY;
   const pierre = usePierre();
   const commentCounts = useCommentCounts(workspaceId);
+  const runAction = useFileActions(workspaceId);
   const changedPaths = useMemo(() => files.map((file) => file.path), [files]);
 
   const trie = useMemo(() => buildTrie(files.map((file) => file.path)), [files]);
@@ -147,6 +149,7 @@ export function ChangesPanel({ theme, layout, workspaceId }: PluginWorkspacePane
           expandAll
           search=""
           onOpenFile={onPressFile}
+          onAction={runAction}
         />
       ) : (
         <TreeList

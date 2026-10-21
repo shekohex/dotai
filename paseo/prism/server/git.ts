@@ -20,6 +20,7 @@ const UNTRACKED_COUNT_LIMIT = 200;
 const UNTRACKED_COUNT_MAX_BYTES = 512 * 1024;
 const HIGHLIGHT_MAX_BYTES = 300 * 1024;
 const FILE_LIST_LIMIT = 100_000;
+const IGNORED_LIST_LIMIT = 30_000;
 const WALK_SKIPPED = new Set([".git", "node_modules"]);
 const FALLBACK_BASES = ["main", "master", "develop"];
 
@@ -327,13 +328,13 @@ export async function readFileDiff(input: {
   return { patch: result.stdout, binary, tooLarge: false, tokens };
 }
 
-async function walkDirectory(root: string, relative: string, out: string[]): Promise<void> {
-  if (out.length >= FILE_LIST_LIMIT) return;
+async function walkDirectory(root: string, relative: string, out: string[], limit = FILE_LIST_LIMIT): Promise<void> {
+  if (out.length >= limit) return;
   const entries = await readdir(join(root, relative), { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
     if (WALK_SKIPPED.has(entry.name)) continue;
     const next = relative === "" ? entry.name : `${relative}/${entry.name}`;
-    if (entry.isDirectory()) await walkDirectory(root, next, out);
+    if (entry.isDirectory()) await walkDirectory(root, next, out, limit);
     else out.push(next);
   }
 }
@@ -356,7 +357,17 @@ export async function listFiles(cwd: string, includeIgnored: boolean): Promise<F
   if (includeIgnored) {
     // `--directory` lists an ignored folder once instead of walking node_modules and friends.
     const extra = await runGit(cwd, ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"]);
-    ignored = extra.stdout.split("\0").filter((path) => path !== "");
+    const roots = extra.stdout.split("\0").filter((path) => path !== "");
+    ignored = [...roots];
+    // Open each ignored folder (build output, caches) so its files can be browsed; node_modules and
+    // .git stay listed as closed folders.
+    const contents: string[] = [];
+    for (const root of roots) {
+      if (!root.endsWith("/")) continue;
+      if (WALK_SKIPPED.has(root.slice(0, -1).split("/").pop() ?? "")) continue;
+      await walkDirectory(cwd, root.slice(0, -1), contents, IGNORED_LIST_LIMIT);
+    }
+    ignored.push(...contents);
     paths.push(...ignored);
   }
   const truncated = paths.length > FILE_LIST_LIMIT;

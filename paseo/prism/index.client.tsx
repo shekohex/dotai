@@ -2,6 +2,7 @@ import type { PluginClientContext } from "@getpaseo/plugin/client";
 
 import { ChangesPanel } from "./client/changes-panel.js";
 import { DiffPanel } from "./client/diff-panel.js";
+import { FilePanel } from "./client/file-panel.js";
 import { FilesPanel } from "./client/files-panel.js";
 import { PrismSettingsScreen } from "./client/settings.js";
 import { contributeComposerPills } from "./client/composer-pill.js";
@@ -45,6 +46,14 @@ export default function contribute(client: PluginClientContext) {
       context: "workspace",
       locations: ["explorer", "workspace"],
       Component: FilesPanel,
+    }),
+    client.addWorkspacePanel({
+      id: "file",
+      title: "File",
+      icon: "FileText",
+      context: "workspace",
+      locations: ["workspace"],
+      Component: FilePanel,
     }),
     client.addWorkspacePanel({
       id: "diff",

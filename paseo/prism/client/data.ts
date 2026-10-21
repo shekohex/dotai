@@ -1,10 +1,12 @@
 import { useRpc, useSettings, useWorkspace } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
-import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 
 import {
   branchesRpc,
   diffRpc,
+  fileRpc,
   filesRpc,
   statusRpc,
   syntaxThemeRpc,
@@ -73,14 +75,27 @@ export function useFileDiffs(
   const diff = useRpc(diffRpc);
   const cwd = useWorkspaceDirectory(workspaceId);
   const compare = useWorkspaceView(workspaceId, (state) => state.compare);
+  const queryClient = useQueryClient();
+  // The key leaves out `rev`, so an edit refetches in place and the old diff stays on screen meanwhile
+  // instead of collapsing the file to a loading notice.
+  const seen = useRef(new Map<string, string>());
+  useEffect(() => {
+    for (const file of files) {
+      const stamp = `${file.status}\0${file.rev}`;
+      const previous = seen.current.get(file.path);
+      seen.current.set(file.path, stamp);
+      if (previous !== undefined && previous !== stamp) {
+        void queryClient.invalidateQueries({ queryKey: ["prism", "diff", cwd, compare, file.path] });
+      }
+    }
+  }, [files, cwd, compare, queryClient]);
   return useQueries({
     queries: files.map((file) => ({
-      // `rev` changes whenever the file does, so an edit can never leave a stale diff behind.
-      queryKey: ["prism", "diff", cwd, compare, file.path, file.status, file.rev, ignoreWhitespace, syntax],
+      queryKey: ["prism", "diff", cwd, compare, file.path, ignoreWhitespace, syntax],
       queryFn: () =>
         diff({ cwd: cwd ?? "", path: file.path, oldPath: file.oldPath, compare, ignoreWhitespace, syntax: syntax ?? "" }),
       enabled: cwd !== null && syntax !== null,
-      staleTime: 30_000,
+      staleTime: 0,
     })),
   });
 }
@@ -102,4 +117,17 @@ export function useSyntaxTheme(theme: PluginTheme): string | null {
     staleTime: Infinity,
   });
   return query.data?.name ?? null;
+}
+
+/** One file's text and tokens. Always refetched on open, so the view never shows a stale file. */
+export function useFile(workspaceId: string, path: string | null, syntax: string | null) {
+  const read = useRpc(fileRpc);
+  const cwd = useWorkspaceDirectory(workspaceId);
+  return useQuery({
+    queryKey: ["prism", "file", cwd, path, syntax],
+    queryFn: () => read({ cwd: cwd ?? "", path: path ?? "", syntax: syntax ?? "" }),
+    enabled: cwd !== null && path !== null && syntax !== null,
+    staleTime: 0,
+    gcTime: 0,
+  });
 }

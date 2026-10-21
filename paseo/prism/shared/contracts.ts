@@ -130,3 +130,24 @@ export const syntaxThemesRpc = defineRpc({
   input: z.object({}).strict(),
   output: z.object({ themes: z.array(syntaxThemeSchema) }).strict(),
 });
+
+export const fileRpc = defineRpc({
+  name: "prism.file",
+  input: z.object({ cwd: z.string(), path: z.string(), syntax: z.string() }).strict(),
+  output: z
+    .object({
+      content: z.string(),
+      /** Colored tokens per line, null for unknown languages and big files. */
+      tokens: z.array(z.array(z.tuple([z.string(), z.string()]))).nullable(),
+      binary: z.boolean(),
+      tooLarge: z.boolean(),
+      mtimeMs: z.number(),
+    })
+    .strict(),
+});
+
+export const writeFileRpc = defineRpc({
+  name: "prism.write-file",
+  input: z.object({ cwd: z.string(), path: z.string(), content: z.string(), expectedMtimeMs: z.number() }).strict(),
+  output: z.object({ mtimeMs: z.number() }).strict(),
+});

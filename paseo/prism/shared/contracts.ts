@@ -11,9 +11,6 @@ export const compareSchema = z
   .strict();
 export type Compare = z.infer<typeof compareSchema>;
 
-/** Working tree against the base branch: the scope of the totals Paseo shows on its own chip. */
-export const BRANCH_COMPARE: Compare = { mode: "all", baseRef: null };
-
 export const DEFAULT_COMPARE: Compare = { mode: "uncommitted", baseRef: null };
 
 /** A Highlights syntax theme: its bundled name and whether it is a dark or light theme. */

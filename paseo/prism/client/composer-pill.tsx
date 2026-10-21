@@ -9,15 +9,15 @@ import { Pressable, Text, View } from "react-native";
 import { breakdownOf, CATEGORIES } from "../shared/classify.js";
 import { useAppAppearance } from "./appearance.js";
 import { useRepoStatus } from "./data.js";
-import { BRANCH_COMPARE } from "../shared/contracts.js";
-import { openPrismPanel, setCompare } from "./store.js";
+import { DEFAULT_COMPARE, statusRpc } from "../shared/contracts.js";
+import { openPrismPanel } from "./store.js";
 import { formatCompact } from "./web.js";
 import { typographyFor } from "./styling.js";
 
 /** What the change set is made of: code, tests, mocks, lockfiles and so on, with totals. */
 function BreakdownContent({ theme, layout, workspaceId, close }: PluginButtonContentProps) {
   const typo = typographyFor(useAppAppearance(), layout.compact);
-  const status = useRepoStatus(workspaceId, BRANCH_COMPARE);
+  const status = useRepoStatus(workspaceId);
   const files = status.data?.files;
   const rows = files ? breakdownOf(files) : [];
   const totals = rows.reduce(
@@ -27,7 +27,6 @@ function BreakdownContent({ theme, layout, workspaceId, close }: PluginButtonCon
   const number = { fontSize: typo.ui, fontVariant: ["tabular-nums" as const], minWidth: 52, textAlign: "right" as const };
   const open = (id: "changes" | "diff") => {
     // The Explorer side panel does not exist in the compact layout, so panels open as workspace tabs there.
-    setCompare(workspaceId, BRANCH_COMPARE);
     openPrismPanel(workspaceId, id, id === "diff" || layout.compact ? "workspace" : "explorer");
     close();
   };
@@ -71,22 +70,51 @@ function BreakdownContent({ theme, layout, workspaceId, close }: PluginButtonCon
   );
 }
 
-function totalsLabel(stat: { additions: number; deletions: number } | null | undefined): string {
+type Totals = { additions: number; deletions: number };
+
+function totalsLabel(stat: Totals | null): string {
   return stat && (stat.additions > 0 || stat.deletions > 0) ? `+${formatCompact(stat.additions)} −${formatCompact(stat.deletions)}` : "Changes";
 }
 
-/** Adds a Changes pill to every agent's composer; its label tracks the workspace's live diff totals. */
+const REFRESH_DELAY_MS = 600;
+
+/** Adds a Changes pill to every agent's composer; its label tracks the workspace's uncommitted totals. */
 export function contributeComposerPills(client: PluginClientContext): () => void {
   const pills = new Map<string, { pill: PluginButtonRegistration; workspaceId: string }>();
   const labels = new Map<string, string>();
   const lifetime = new AbortController();
   let releaseWorkspaces = () => {};
 
-  const setLabel = (workspaceId: string, stat: Parameters<typeof totalsLabel>[0]) => {
+  const setLabel = (workspaceId: string, stat: Totals | null) => {
     const label = totalsLabel(stat);
     if (labels.get(workspaceId) === label) return;
     labels.set(workspaceId, label);
     for (const entry of pills.values()) if (entry.workspaceId === workspaceId) entry.pill.update({ label });
+  };
+
+  // Paseo's own totals span the whole branch, so uncommitted totals come from our status; any workspace
+  // update schedules a refresh, and the daemon coalesces the git work.
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const refreshTotals = (workspace: { id: string; workspaceDirectory: string }) => {
+    clearTimeout(timers.get(workspace.id));
+    timers.set(
+      workspace.id,
+      setTimeout(() => {
+        if (lifetime.signal.aborted || !workspace.workspaceDirectory) return;
+        client
+          .rpc(statusRpc, { cwd: workspace.workspaceDirectory, compare: DEFAULT_COMPARE })
+          .then(({ files }) =>
+            setLabel(
+              workspace.id,
+              files.reduce(
+                (sum, file) => ({ additions: sum.additions + file.additions, deletions: sum.deletions + file.deletions }),
+                { additions: 0, deletions: 0 },
+              ),
+            ),
+          )
+          .catch(() => setLabel(workspace.id, null));
+      }, REFRESH_DELAY_MS),
+    );
   };
 
   const register = (agent: { id: string; workspaceId?: string | null }) => {
@@ -121,11 +149,11 @@ export function contributeComposerPills(client: PluginClientContext): () => void
       releaseWorkspaces = () => void subscription.release();
       subscription.subscribe({
         snapshot: ({ entries }) => {
-          for (const workspace of entries) setLabel(workspace.id, workspace.diffStat);
+          for (const workspace of entries) refreshTotals(workspace);
         },
         update: (message) => {
           if (message.type !== "workspace_update" || message.payload.kind !== "upsert") return;
-          setLabel(message.payload.workspace.id, message.payload.workspace.diffStat);
+          refreshTotals(message.payload.workspace);
         },
       });
       return undefined;
@@ -154,6 +182,7 @@ export function contributeComposerPills(client: PluginClientContext): () => void
 
   return () => {
     lifetime.abort();
+    timers.forEach((timer) => clearTimeout(timer));
     releaseWorkspaces();
     removeAll();
   };

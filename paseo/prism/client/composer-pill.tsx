@@ -9,14 +9,15 @@ import { Pressable, Text, View } from "react-native";
 import { breakdownOf, CATEGORIES } from "../shared/classify.js";
 import { useAppAppearance } from "./appearance.js";
 import { useRepoStatus } from "./data.js";
-import { openPrismPanel } from "./store.js";
+import { BRANCH_COMPARE } from "../shared/contracts.js";
+import { openPrismPanel, setCompare } from "./store.js";
 import { formatCompact } from "./web.js";
 import { typographyFor } from "./styling.js";
 
 /** What the change set is made of: code, tests, mocks, lockfiles and so on, with totals. */
 function BreakdownContent({ theme, layout, workspaceId, close }: PluginButtonContentProps) {
   const typo = typographyFor(useAppAppearance(), layout.compact);
-  const status = useRepoStatus(workspaceId);
+  const status = useRepoStatus(workspaceId, BRANCH_COMPARE);
   const files = status.data?.files;
   const rows = files ? breakdownOf(files) : [];
   const totals = rows.reduce(
@@ -26,6 +27,7 @@ function BreakdownContent({ theme, layout, workspaceId, close }: PluginButtonCon
   const number = { fontSize: typo.ui, fontVariant: ["tabular-nums" as const], minWidth: 52, textAlign: "right" as const };
   const open = (id: "changes" | "diff") => {
     // The Explorer side panel does not exist in the compact layout, so panels open as workspace tabs there.
+    setCompare(workspaceId, BRANCH_COMPARE);
     openPrismPanel(workspaceId, id, id === "diff" || layout.compact ? "workspace" : "explorer");
     close();
   };

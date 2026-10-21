@@ -9,6 +9,7 @@ import {
   statusRpc,
   syntaxThemeRpc,
   type ChangedFile,
+  type Compare,
 } from "../shared/contracts.js";
 import { prismSettings } from "../shared/settings.js";
 import { appearanceOf } from "./styling.js";
@@ -21,7 +22,8 @@ export function useWorkspaceDirectory(workspaceId: string): string | null {
 }
 
 /** Repo status. The workspace's live diff totals are part of the key, so edits refetch it. */
-export function useRepoStatus(workspaceId: string) {
+/** `compareOverride` reads a fixed comparison instead of the one picked in the panels. */
+export function useRepoStatus(workspaceId: string, compareOverride?: Compare) {
   const status = useRpc(statusRpc);
   const snapshot = useWorkspace(workspaceId, (workspace) => ({
     cwd: workspace.directory,
@@ -29,7 +31,8 @@ export function useRepoStatus(workspaceId: string) {
     deletions: workspace.diffStat?.deletions ?? 0,
   }));
   const cwd = snapshot?.cwd ?? null;
-  const compare = useWorkspaceView(workspaceId, (state) => state.compare);
+  const viewCompare = useWorkspaceView(workspaceId, (state) => state.compare);
+  const compare = compareOverride ?? viewCompare;
   return useQuery({
     queryKey: ["prism", "status", cwd, compare, snapshot?.additions, snapshot?.deletions],
     queryFn: () => status({ cwd: cwd ?? "", compare }),

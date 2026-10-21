@@ -72,24 +72,55 @@ function BreakdownContent({ theme, layout, workspaceId, close }: PluginButtonCon
 
 type Totals = { additions: number; deletions: number };
 
-function totalsLabel(stat: Totals | null): string {
-  return stat && (stat.additions > 0 || stat.deletions > 0) ? `+${formatCompact(stat.additions)} −${formatCompact(stat.deletions)}` : "Changes";
+function hasChanges(stat: Totals | null | undefined): stat is Totals {
+  return Boolean(stat && (stat.additions > 0 || stat.deletions > 0));
+}
+
+function totalsLabel(stat: Totals): string {
+  return `+${formatCompact(stat.additions)} −${formatCompact(stat.deletions)}`;
 }
 
 const REFRESH_DELAY_MS = 600;
 
 /** Adds a Changes pill to every agent's composer; its label tracks the workspace's uncommitted totals. */
 export function contributeComposerPills(client: PluginClientContext): () => void {
-  const pills = new Map<string, { pill: PluginButtonRegistration; workspaceId: string }>();
-  const labels = new Map<string, string>();
+  const pills = new Map<string, PluginButtonRegistration>();
+  const agents = new Map<string, string>();
+  const totals = new Map<string, Totals | null>();
   const lifetime = new AbortController();
   let releaseWorkspaces = () => {};
 
-  const setLabel = (workspaceId: string, stat: Totals | null) => {
+  // The pill exists only while its workspace has uncommitted changes.
+  const syncPill = (agentId: string) => {
+    const workspaceId = agents.get(agentId);
+    const stat = workspaceId === undefined ? null : totals.get(workspaceId);
+    const existing = pills.get(agentId);
+    if (workspaceId === undefined || !hasChanges(stat) || lifetime.signal.aborted) {
+      existing?.remove();
+      pills.delete(agentId);
+      return;
+    }
     const label = totalsLabel(stat);
-    if (labels.get(workspaceId) === label) return;
-    labels.set(workspaceId, label);
-    for (const entry of pills.values()) if (entry.workspaceId === workspaceId) entry.pill.update({ label });
+    if (existing) return existing.update({ label });
+    pills.set(
+      agentId,
+      client.addComposerPill({
+        id: "changes",
+        workspaceId,
+        agentId,
+        button: {
+          title: "Changes",
+          icon: "FileDiff",
+          label,
+          behavior: { kind: "popover", Content: BreakdownContent },
+        },
+      }),
+    );
+  };
+
+  const setTotals = (workspaceId: string, stat: Totals | null) => {
+    totals.set(workspaceId, stat);
+    for (const [agentId, agentWorkspaceId] of agents) if (agentWorkspaceId === workspaceId) syncPill(agentId);
   };
 
   // Paseo's own totals span the whole branch, so uncommitted totals come from our status; any workspace
@@ -104,7 +135,7 @@ export function contributeComposerPills(client: PluginClientContext): () => void
         client
           .rpc(statusRpc, { cwd: workspace.workspaceDirectory, compare: DEFAULT_COMPARE })
           .then(({ files }) =>
-            setLabel(
+            setTotals(
               workspace.id,
               files.reduce(
                 (sum, file) => ({ additions: sum.additions + file.additions, deletions: sum.deletions + file.deletions }),
@@ -112,32 +143,24 @@ export function contributeComposerPills(client: PluginClientContext): () => void
               ),
             ),
           )
-          .catch(() => setLabel(workspace.id, null));
+          .catch(() => setTotals(workspace.id, null));
       }, REFRESH_DELAY_MS),
     );
   };
 
   const register = (agent: { id: string; workspaceId?: string | null }) => {
-    if (lifetime.signal.aborted || !agent.workspaceId || pills.has(agent.id)) return;
-    const workspaceId = agent.workspaceId;
-    pills.set(agent.id, {
-      workspaceId,
-      pill: client.addComposerPill({
-        id: "changes",
-        workspaceId,
-        agentId: agent.id,
-        button: {
-          title: "Changes",
-          icon: "FileDiff",
-          label: labels.get(workspaceId) ?? "Changes",
-          behavior: { kind: "popover", Content: BreakdownContent },
-        },
-      }),
-    });
+    if (!agent.workspaceId) return;
+    agents.set(agent.id, agent.workspaceId);
+    syncPill(agent.id);
+  };
+  const forget = (agentId: string) => {
+    agents.delete(agentId);
+    syncPill(agentId);
   };
   const removeAll = () => {
-    for (const { pill } of pills.values()) pill.remove();
+    for (const pill of pills.values()) pill.remove();
     pills.clear();
+    agents.clear();
   };
   const report = (error: unknown) => {
     if (!lifetime.signal.aborted) console.error("[prism] observation failed", error);
@@ -172,8 +195,7 @@ export function contributeComposerPills(client: PluginClientContext): () => void
           if (message.type !== "agent_update") return;
           const update = message.payload;
           if (update.kind === "upsert") return register(update.agent);
-          pills.get(update.agentId)?.pill.remove();
-          pills.delete(update.agentId);
+          forget(update.agentId);
         },
       });
       return undefined;

@@ -1,8 +1,0 @@
-{
-  "id": "bidi-fix",
-  "name": "Bidi fix",
-  "description": "Right-to-left alignment and bidi isolation for Arabic and mixed Arabic/English messages (web and desktop)",
-  "requirements": {
-    "paseo": ">=0.13.0"
-  }
-}

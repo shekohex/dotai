@@ -3,6 +3,6 @@
   "name": "OpenUI",
   "description": "Let agents answer with rich, interactive UI instead of text",
   "requirements": {
-    "paseo": ">=0.12.0"
+    "paseo": ">=0.13.0"
   }
 }

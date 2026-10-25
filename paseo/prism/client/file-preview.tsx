@@ -1,14 +1,15 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin/client";
+import { Markdown, ScrollView } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { Image, Text, View } from "react-native";
 
 import { fileBytesRpc, mediaUrlRpc, type MediaKind } from "../shared/contracts.js";
-import type { MarkdownViewProps, MediaViewProps, PierreApi } from "../shared/pierre-api.js";
+import type { MediaViewProps, PierreApi } from "../shared/pierre-api.js";
 import { useWorkspaceDirectory } from "./data.js";
 import { PierreMount } from "./pierre.js";
-import { appearanceOf, pierreColorsOf, pierreFontOf, type Typography } from "./styling.js";
+import { appearanceOf, pierreColorsOf, type Typography } from "./styling.js";
 
 const NATIVE_IMAGE_LIMIT_BYTES = 8 * 1024 * 1024;
 // A multiple of three, so the base64 slices join into one valid string.
@@ -89,22 +90,11 @@ export function MediaPreview({
   );
 }
 
-/** Rendered Markdown on web and desktop. */
-export function MarkdownPreview({
-  api,
-  theme,
-  typo,
-  text,
-}: {
-  api: PierreApi;
-  theme: PluginTheme;
-  typo: Typography;
-  text: string;
-}) {
-  const create = useCallback((host: unknown, initial: MarkdownViewProps) => api.createMarkdownView(host, initial), [api]);
-  const props = useMemo<MarkdownViewProps>(
-    () => ({ text, appearance: appearanceOf(theme), colors: pierreColorsOf(theme), code: pierreFontOf(typo), uiFontSize: typo.ui }),
-    [text, theme, typo],
+/** Rendered Markdown, drawn by the host on every platform. */
+export function MarkdownPreview({ theme, typo, text }: { theme: PluginTheme; typo: Typography; text: string }) {
+  return (
+    <ScrollView style={{ flex: 1, backgroundColor: theme.colors.surface0 }} contentContainerStyle={{ padding: typo.ui + 6 }}>
+      <Markdown>{text}</Markdown>
+    </ScrollView>
   );
-  return <PierreMount create={create} props={props} style={{ flex: 1 }} />;
 }

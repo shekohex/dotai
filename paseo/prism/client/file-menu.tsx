@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Modal } from "@getpaseo/plugin/client/react-native";
+import { Modal } from "@getpaseo/plugin/client/ui";
 import { Pressable, Text } from "react-native";
 
 import type { FileActionId, FileMenuItem } from "./file-actions.js";

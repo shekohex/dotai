@@ -1,9 +1,10 @@
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
-import { FlatList, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
+import { FlatList, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRpc } from "@getpaseo/plugin/client";
+import { useRpc, useTabState } from "@getpaseo/plugin/client";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
+import { z } from "zod";
 
 import { writeFileRpc } from "../shared/contracts.js";
 import type { FileViewProps } from "../shared/pierre-api.js";
@@ -16,6 +17,10 @@ import { updateWorkspaceView, useWorkspaceView } from "./store.js";
 import { isMarkdownPath, MarkdownPreview, MediaPreview } from "./file-preview.js";
 import { PierreMount, usePierre } from "./pierre.js";
 import { CODE_SURFACE_PROPS, appearanceOf, pierreColorsOf, pierreFontOf, typographyFor, type Typography } from "./styling.js";
+
+// What the tab remembers across reloads.
+const tabStateSchema = z.object({ path: z.string().nullable(), rendered: z.boolean() });
+const DEFAULT_TAB_STATE = { path: null, rendered: true };
 
 type LineToken = [text: string, color: string];
 
@@ -55,11 +60,14 @@ const FileLine = memo(function FileLine({
 });
 
 /** Shows one file with syntax colors, and edits and saves it. */
-export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelProps) {
+export function FilePanel({ theme, layout, workspaceId, tab }: PluginWorkspacePanelProps) {
   const { compact } = layout;
   useSyncBuiltinHiding();
   const typo = typographyFor(useAppAppearance(), compact);
-  const path = useWorkspaceView(workspaceId, (state) => state.filePath);
+  const storedPath = useWorkspaceView(workspaceId, (state) => state.filePath);
+  const [tabState, setTabState] = useTabState(tab, tabStateSchema, DEFAULT_TAB_STATE);
+  // Opening a file sets the store; a restored tab brings its file back from its saved state.
+  const path = storedPath ?? tabState.path;
   const startInEdit = useWorkspaceView(workspaceId, (state) => state.fileEdit);
   const syntax = useSyntaxTheme(theme);
   const file = useFile(workspaceId, path, syntax);
@@ -71,8 +79,11 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
   const pierre = usePierre();
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [rendered, setRendered] = useState(true);
+  const rendered = tabState.rendered;
 
+  useEffect(() => {
+    if (storedPath !== null && storedPath !== tabState.path) setTabState({ ...tabState, path: storedPath });
+  }, [storedPath, tabState, setTabState]);
   // Opening a file (or choosing Edit on it) resets the editor.
   useEffect(() => {
     setDraft(null);
@@ -124,6 +135,9 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
   const markdown = path !== null && isMarkdownPath(path) && file.data?.kind === "text";
   const editable = Boolean(file.data && file.data.kind === "text" && !file.data.binary && !file.data.tooLarge);
   const dirty = draft !== null && draft !== file.data?.content;
+  useEffect(() => {
+    tab.setModified(dirty);
+  }, [tab, dirty]);
   const notice = !path
     ? "Open a file from the Files panel."
     : file.isError
@@ -156,13 +170,13 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
             void file.refetch();
           }}
         />
-        {markdown && pierre && draft === null ? (
+        {markdown && draft === null ? (
           <HeaderButton
             theme={theme}
             compact={compact}
             icon={rendered ? "Code" : "Eye"}
             label={rendered ? "Show Markdown source" : "Show Markdown preview"}
-            onPress={() => setRendered((current) => !current)}
+            onPress={() => setTabState({ ...tabState, rendered: !rendered })}
           />
         ) : null}
         {draft === null ? (
@@ -185,8 +199,8 @@ export function FilePanel({ theme, layout, workspaceId }: PluginWorkspacePanelPr
         <Text style={{ color: theme.colors.foregroundMuted, padding: 16, fontSize: typo.ui }}>{notice}</Text>
       ) : media && path ? (
         <MediaPreview api={pierre} theme={theme} typo={typo} workspaceId={workspaceId} path={path} file={media} />
-      ) : markdown && rendered && draft === null && pierre && file.data ? (
-        <MarkdownPreview api={pierre} theme={theme} typo={typo} text={file.data.content} />
+      ) : markdown && rendered && draft === null && file.data ? (
+        <MarkdownPreview theme={theme} typo={typo} text={file.data.content} />
       ) : pierre && viewProps ? (
         <PierreMount create={create} props={viewProps} style={{ flex: 1 }} />
       ) : draft !== null ? (

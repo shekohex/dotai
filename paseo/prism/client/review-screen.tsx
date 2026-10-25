@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { usePaseo } from "@getpaseo/plugin/client";
-import { Icon, ScrollView, TextInput, useToast } from "@getpaseo/plugin/client/react-native";
+import { Icon, ScrollView, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";

@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { TextInput } from "@getpaseo/plugin/client/react-native";
+import { TextInput } from "@getpaseo/plugin/client/ui";
 import { memo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 

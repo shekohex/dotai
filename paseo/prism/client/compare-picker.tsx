@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { FlatList, Icon, TextInput } from "@getpaseo/plugin/client/react-native";
+import { FlatList, Icon, TextInput } from "@getpaseo/plugin/client/ui";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 

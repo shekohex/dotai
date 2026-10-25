@@ -2,8 +2,6 @@
 import { File, FileDiff, canUseWASM, type DiffLineAnnotation, getSharedHighlighter, parsePatchFiles } from "@pierre/diffs";
 import { themes as catalog } from "@pierre/highlights/themes/loader";
 import { Editor } from "@pierre/diffs/edit";
-import DOMPurify from "dompurify";
-import { marked } from "marked";
 import { FileTree, createFileTreeIconResolver, getBuiltInSpriteSheet } from "@pierre/trees";
 
 import { ICON_COLORS, TOKEN_COLORS } from "../../shared/file-icon-colors.js";
@@ -13,7 +11,6 @@ import type {
   DiffViewProps,
   FileIconProps,
   FileViewProps,
-  MarkdownViewProps,
   MediaViewProps,
   PierreApi,
   PierreColors,
@@ -611,54 +608,6 @@ function createMediaView(parent: unknown, initial: MediaViewProps): PierreView<M
   };
 }
 
-function markdownCss(props: MarkdownViewProps): string {
-  const { colors, code, uiFontSize } = props;
-  return `
-.prism-md { font-size: ${uiFontSize + 1}px; line-height: 1.6; color: ${colors.foreground}; max-width: 860px; margin: 0 auto; padding: 20px 28px 48px; overflow-wrap: anywhere; }
-.prism-md h1, .prism-md h2 { padding-bottom: 0.3em; border-bottom: 1px solid ${colors.border}; }
-.prism-md h1, .prism-md h2, .prism-md h3, .prism-md h4 { margin: 1.4em 0 0.6em; line-height: 1.25; }
-.prism-md h1 { font-size: 1.9em; } .prism-md h2 { font-size: 1.5em; } .prism-md h3 { font-size: 1.25em; }
-.prism-md p, .prism-md ul, .prism-md ol, .prism-md pre, .prism-md blockquote, .prism-md table { margin: 0 0 1em; }
-.prism-md a { color: ${colors.accent}; }
-.prism-md code { font-family: ${code.family}; font-size: 0.9em; padding: 0.15em 0.4em; border-radius: 5px; background: ${colors.surface1}; }
-.prism-md pre { padding: 14px 16px; border-radius: 8px; background: ${colors.surface1}; overflow: auto; }
-.prism-md pre code { padding: 0; background: none; font-size: ${code.size}px; line-height: ${code.lineHeight}px; }
-.prism-md blockquote { padding: 0 1em; border-left: 4px solid ${colors.border}; color: ${colors.foregroundMuted}; }
-.prism-md table { border-collapse: collapse; display: block; overflow: auto; }
-.prism-md th, .prism-md td { padding: 6px 12px; border: 1px solid ${colors.border}; }
-.prism-md th { background: ${colors.surface1}; }
-.prism-md hr { border: none; border-top: 1px solid ${colors.border}; margin: 1.5em 0; }
-.prism-md img { max-width: 100%; }
-.prism-md input[type=checkbox] { margin-right: 0.5em; }
-`;
-}
-
-function createMarkdownView(parent: unknown, initial: MarkdownViewProps): PierreView<MarkdownViewProps> {
-  const host = styled(document.createElement("div"), { width: "100%", height: "100%", overflow: "auto" });
-  const style = document.createElement("style");
-  const body = document.createElement("div");
-  body.className = "prism-md";
-  host.append(style, body);
-  (parent as HTMLElement).appendChild(host);
-
-  let renderedText: string | null = null;
-  const update = (props: MarkdownViewProps) => {
-    style.textContent = markdownCss(props);
-    host.style.background = props.colors.surface0;
-    host.style.colorScheme = props.appearance;
-    if (props.text === renderedText) return;
-    renderedText = props.text;
-    const html = marked.parse(props.text, { gfm: true, async: false });
-    body.innerHTML = DOMPurify.sanitize(html);
-    body.querySelectorAll("a[href]").forEach((link) => {
-      link.setAttribute("target", "_blank");
-      link.setAttribute("rel", "noopener noreferrer");
-    });
-  };
-  update(initial);
-  return { update, destroy: () => host.remove() };
-}
-
 function treeVars(props: TreeViewProps): Record<string, string> {
   const { colors } = props;
   return {
@@ -904,5 +853,5 @@ function createFileIcon(parent: unknown, initial: FileIconProps): PierreView<Fil
   return { update, destroy: () => host.remove() };
 }
 
-const api: PierreApi = { supported: canUseWASM(), createDiffView, createFileView, createMediaView, createMarkdownView, createTreeView, createFileIcon };
+const api: PierreApi = { supported: canUseWASM(), createDiffView, createFileView, createMediaView, createTreeView, createFileIcon };
 export default api;

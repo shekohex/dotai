@@ -1,4 +1,4 @@
-import { copyText, useToast } from "@getpaseo/plugin/client/react-native";
+import { copyText, useToast } from "@getpaseo/plugin/client/ui";
 import { useCallback } from "react";
 
 import { useWorkspaceDirectory } from "./data.js";

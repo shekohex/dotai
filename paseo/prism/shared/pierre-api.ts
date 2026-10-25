@@ -87,15 +87,6 @@ export interface MediaViewProps {
   getUrls(): Promise<string[]>;
 }
 
-/** Rendered Markdown, sanitized. */
-export interface MarkdownViewProps {
-  text: string;
-  appearance: "dark" | "light";
-  colors: PierreColors;
-  code: PierreFont;
-  uiFontSize: number;
-}
-
 export interface FileIconProps {
   name: string;
   size: number;
@@ -136,7 +127,6 @@ export interface PierreApi {
   createDiffView(host: unknown, props: DiffViewProps): PierreView<DiffViewProps>;
   createFileView(parent: unknown, initial: FileViewProps): PierreView<FileViewProps>;
   createMediaView(parent: unknown, initial: MediaViewProps): PierreView<MediaViewProps>;
-  createMarkdownView(parent: unknown, initial: MarkdownViewProps): PierreView<MarkdownViewProps>;
   createTreeView(host: unknown, props: TreeViewProps): PierreView<TreeViewProps>;
   /** A file-type icon from Pierre's icon set (the one Trees and diffs.com/icons use). */
   createFileIcon(host: unknown, props: FileIconProps): PierreView<FileIconProps>;

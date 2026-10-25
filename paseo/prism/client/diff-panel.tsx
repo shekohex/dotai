@@ -1,6 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
-import { FlatList, Icon } from "@getpaseo/plugin/client/react-native";
+import { FlatList, Icon } from "@getpaseo/plugin/client/ui";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View, type FlatList as NativeFlatList } from "react-native";
 

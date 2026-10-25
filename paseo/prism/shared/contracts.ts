@@ -172,3 +172,12 @@ export const writeFileRpc = defineRpc({
   input: z.object({ cwd: z.string(), path: z.string(), content: z.string(), expectedMtimeMs: z.number() }).strict(),
   output: z.object({ mtimeMs: z.number() }).strict(),
 });
+
+/** Pierre's file-type icons as standalone SVG, for lists the host draws natively. */
+export const fileIconsRpc = defineRpc({
+  name: "prism.file-icons",
+  input: z.object({ names: z.array(z.string()).max(500) }).strict(),
+  output: z
+    .object({ icons: z.record(z.string(), z.object({ svg: z.string(), token: z.string().nullable() }).strict()) })
+    .strict(),
+});

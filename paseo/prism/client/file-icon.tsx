@@ -1,50 +1,50 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { Icon } from "@getpaseo/plugin/client/react-native";
-import { memo } from "react";
+import { useRpc } from "@getpaseo/plugin/client";
+import { Icon } from "@getpaseo/plugin/client/ui";
+import { memo, useEffect, useSyncExternalStore } from "react";
 import { View } from "react-native";
 
-import { ICON_COLORS } from "../shared/file-icon-colors.js";
+import { fileIconsRpc } from "../shared/contracts.js";
+import { ICON_COLORS, TOKEN_COLORS } from "../shared/file-icon-colors.js";
 import { appearanceOf } from "./styling.js";
 
-type Glyph = [lucide: string, tint: keyof typeof ICON_COLORS | null];
+interface FileIconArt {
+  svg: string;
+  token: string | null;
+}
 
-const BY_EXTENSION: Record<string, Glyph> = {
-  ts: ["FileCode", "blue"], tsx: ["FileCode", "cyan"], js: ["FileCode", "yellow"], jsx: ["FileCode", "cyan"],
-  mjs: ["FileCode", "yellow"], cjs: ["FileCode", "yellow"], py: ["FileCode", "blue"], rs: ["FileCode", "orange"],
-  go: ["FileCode", "cyan"], java: ["FileCode", "red"], kt: ["FileCode", "purple"], swift: ["FileCode", "orange"],
-  c: ["FileCode", "blue"], h: ["FileCode", "blue"], cpp: ["FileCode", "blue"], cs: ["FileCode", "green"],
-  rb: ["FileCode", "red"], php: ["FileCode", "indigo"], lua: ["FileCode", "blue"], zig: ["FileCode", "orange"],
-  vue: ["FileCode", "green"], svelte: ["FileCode", "red"], astro: ["FileCode", "purple"],
-  html: ["FileCode", "orange"], css: ["Palette", "indigo"], scss: ["Palette", "pink"], sass: ["Palette", "pink"],
-  sh: ["FileTerminal", "green"], bash: ["FileTerminal", "green"], zsh: ["FileTerminal", "green"],
-  sql: ["Database", "purple"], graphql: ["FileCode", "pink"], tf: ["FileCode", "indigo"],
-  json: ["FileJson", "orange"], yml: ["FileCog", "red"], yaml: ["FileCog", "red"], toml: ["FileCog", "gray"],
-  lock: ["Lock", "gray"], env: ["FileCog", "yellow"],
-  md: ["FileText", "green"], mdx: ["FileText", "green"], txt: ["FileText", null],
-  png: ["Image", "pink"], jpg: ["Image", "pink"], jpeg: ["Image", "pink"], gif: ["Image", "pink"],
-  webp: ["Image", "pink"], avif: ["Image", "pink"], ico: ["Image", "pink"], svg: ["Image", "orange"],
-  zip: ["FileArchive", "orange"], tar: ["FileArchive", "orange"], gz: ["FileArchive", "orange"], tgz: ["FileArchive", "orange"],
-  wasm: ["Cpu", "indigo"],
-};
+const BATCH_DELAY_MS = 30;
+const art = new Map<string, FileIconArt>();
+const requested = new Set<string>();
+const listeners = new Set<() => void>();
+let queue: string[] = [];
+let timer: ReturnType<typeof setTimeout> | undefined;
 
-const BY_NAME: Record<string, Glyph> = {
-  "package.json": ["Package", "red"], "package-lock.json": ["Lock", "red"], "bun.lock": ["Lock", "mauve"],
-  "bun.lockb": ["Lock", "mauve"], "yarn.lock": ["Lock", "blue"], "pnpm-lock.yaml": ["Lock", "yellow"],
-  "cargo.toml": ["Package", "orange"], "cargo.lock": ["Lock", "orange"], dockerfile: ["Container", "blue"],
-  ".gitignore": ["GitBranch", "vermilion"], ".gitattributes": ["GitBranch", "vermilion"],
-  "tsconfig.json": ["FileCog", "blue"], license: ["FileText", null],
-};
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
 
-function glyphFor(name: string, isDir: boolean, expanded: boolean): Glyph {
-  if (isDir) return [expanded ? "FolderOpen" : "Folder", null];
-  const lower = name.toLowerCase();
-  const extension = lower.slice(lower.lastIndexOf(".") + 1);
-  return BY_NAME[lower] ?? BY_EXTENSION[extension] ?? ["File", null];
+/** Asks the daemon for the icons of the rows on screen, a batch at a time. */
+function request(name: string, load: (names: string[]) => Promise<Record<string, FileIconArt>>): void {
+  if (requested.has(name)) return;
+  requested.add(name);
+  queue.push(name);
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    const names = queue.splice(0, queue.length);
+    load(names)
+      .then((icons) => {
+        for (const [key, value] of Object.entries(icons)) art.set(key, value);
+        for (const listener of listeners) listener();
+      })
+      .catch(() => names.forEach((key) => requested.delete(key)));
+  }, BATCH_DELAY_MS);
 }
 
 /**
- * Native-style lists draw Lucide glyphs tinted with Pierre's icon palette. Pierre's own file icons are
- * SVG sprites, and Paseo 0.12.0 plugins can only draw Lucide names; web and desktop use the real ones.
+ * Files draw Pierre's own icons, fetched as SVG from the daemon and tinted with its palette. Folders and
+ * files whose icon is still loading use Lucide glyphs.
  */
 export const FileIcon = memo(function FileIcon({
   theme,
@@ -60,16 +60,27 @@ export const FileIcon = memo(function FileIcon({
   size?: number;
 }) {
   const leaf = name.split("/").pop() ?? name;
-  const [glyph, tint] = glyphFor(leaf, isDir, expanded);
+  const loadIcons = useRpc(fileIconsRpc);
+  const icon = useSyncExternalStore(
+    subscribe,
+    () => art.get(leaf),
+    () => art.get(leaf),
+  );
+  useEffect(() => {
+    if (!isDir) request(leaf, (names) => loadIcons({ names }).then((result) => result.icons));
+  }, [isDir, leaf, loadIcons]);
+
   const dark = appearanceOf(theme) === "dark";
-  const color = isDir ? theme.colors.accent : tint ? ICON_COLORS[tint]?.[dark ? 0 : 1] : undefined;
+  const tint = icon?.token ? TOKEN_COLORS[icon.token] : undefined;
+  const palette = tint ? ICON_COLORS[tint] : undefined;
+  const color = isDir ? theme.colors.accent : palette ? palette[dark ? 0 : 1] : theme.colors.foregroundMuted;
   return (
     <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-      <Icon
-        name={glyph}
-        size={size - 1}
-        color={color ?? theme.colors.foregroundMuted}
-      />
+      {icon && !isDir ? (
+        <Icon icon={{ svg: icon.svg }} size={size} color={color} />
+      ) : (
+        <Icon name={isDir ? (expanded ? "FolderOpen" : "Folder") : "File"} size={size - 1} color={color} />
+      )}
     </View>
   );
 });
